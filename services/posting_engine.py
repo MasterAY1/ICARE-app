@@ -3,7 +3,9 @@ from datetime import date, datetime
 from domain.entities.event_store import DomainEvent
 from domain.entities.ledger import FinancialTransaction, LedgerEntry
 from interfaces.unit_of_work import UnitOfWork
+from decimal import Decimal
 from core.exceptions import RepositoryError
+from core.money import to_decimal, format_money_str
 
 class FinancialPostingEngine:
     _branch_cache = {}
@@ -127,13 +129,13 @@ class FinancialPostingEngine:
 
             # 4. Extract Amount
             payload = event.payload or {}
-            amount = 0.0
+            amount = Decimal("0.00")
             for key in ["amount", "deposit_amount", "withdrawal_amount", "amount_paid", "loan_amount", "fee_amount"]:
                 if key in payload and payload[key] is not None:
-                    amount = float(payload[key])
+                    amount = to_decimal(payload[key], quantize=True)
                     break
 
-            if amount <= 0:
+            if amount <= Decimal("0.00"):
                 # We skip posting or throw error. For core banking, entries must have positive amount
                 raise ValueError("Transaction amount must be greater than zero.")
 
@@ -229,7 +231,7 @@ class FinancialPostingEngine:
                         "branch_id": e.branch_id or tx.branch_id,
                         "account_code": e.account_code,
                         "side": e.side,
-                        "amount": float(e.amount),
+                        "amount": format_money_str(e.amount),
                         "aggregate_type": e.aggregate_type,
                         "aggregate_id": e.aggregate_id
                     })

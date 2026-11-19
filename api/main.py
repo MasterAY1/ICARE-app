@@ -171,11 +171,26 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
+    expose_headers=["X-Request-ID", "X-CSRF-Token"],
 )
 
 
 from api.core.errors import ICAREException, translate_error_to_icare_response
 from fastapi.exceptions import RequestValidationError
+from services.rbac_scope_service import UnknownRoleError
+
+
+@app.exception_handler(UnknownRoleError)
+async def unknown_role_exception_handler(request: Request, exc: UnknownRoleError):
+    return JSONResponse(
+        status_code=status.HTTP_403_FORBIDDEN,
+        content={
+            "error_code": "ROLE_FORBIDDEN",
+            "title": "Access Forbidden",
+            "message": str(exc),
+            "action": "Contact your administrator to verify account role permissions.",
+        },
+    )
 
 
 @app.exception_handler(ICAREException)

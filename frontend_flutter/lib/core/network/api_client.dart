@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../offline/connectivity_service.dart';
 import '../offline/offline_database_service.dart';
+import 'http_adapter_config.dart';
 
 final apiClientProvider = Provider<ApiClient>((ref) {
   final connectivity = ref.watch(connectivityServiceProvider);
@@ -98,18 +99,25 @@ String resolveDefaultApiUrl({
 class ApiClient {
   late final Dio _dio;
   String? _authToken;
+  String? _csrfToken;
+  final bool _isWeb;
   final ConnectivityService? _connectivityService;
   final OfflineDatabaseService? _offlineDb;
 
   String get baseUrl => _dio.options.baseUrl;
+  String? get csrfToken => _csrfToken;
+
+  static bool _isAuthEndpoint(String path) => path.startsWith('/api/v1/auth/');
 
   ApiClient({
     String? baseUrl,
     ConnectivityService? connectivityService,
     OfflineDatabaseService? offlineDb,
     HttpClientAdapter? adapter,
+    bool? isWebOverride,
   })  : _connectivityService = connectivityService,
-        _offlineDb = offlineDb {
+        _offlineDb = offlineDb,
+        _isWeb = isWebOverride ?? kIsWeb {
     final effectiveUrl = resolveDefaultApiUrl(baseUrl: baseUrl);
     _dio = Dio(BaseOptions(
       baseUrl: effectiveUrl,
@@ -123,15 +131,30 @@ class ApiClient {
 
     if (adapter != null) {
       _dio.httpClientAdapter = adapter;
+    } else {
+      configurePlatformHttpAdapter(_dio);
     }
 
     _dio.interceptors.add(InterceptorsWrapper(
       onRequest: (options, handler) async {
-        if (_authToken != null) {
+        if (_authToken != null && _authToken!.isNotEmpty) {
           options.headers['Authorization'] = 'Bearer $_authToken';
         }
 
-        final bypassCache = options.extra['bypass_offline_cache'] == true;
+        final isAuthPath = _isAuthEndpoint(options.path);
+        if (_isWeb) {
+          if (isAuthPath) {
+            options.headers['X-Auth-Mode'] = 'cookie';
+          }
+          if (const {'POST', 'PUT', 'PATCH', 'DELETE'}.contains(options.method.toUpperCase())) {
+            final csrf = (_csrfToken != null && _csrfToken!.isNotEmpty) ? _csrfToken : readWebCsrfCookie();
+            if (csrf != null && csrf.isNotEmpty) {
+              options.headers['X-CSRF-Token'] = csrf;
+            }
+          }
+        }
+
+        final bypassCache = options.extra['bypass_offline_cache'] == true || isAuthPath;
 
         // If offline and request is GET, instantly serve cached response if present
         if (!bypassCache &&
@@ -155,8 +178,12 @@ class ApiClient {
         // Any successful response confirms network connectivity
         _connectivityService?.reportOnline();
 
-        // Transparently cache successful GET responses
-        if (response.requestOptions.method.toUpperCase() == 'GET' &&
+        final bypassCache = response.requestOptions.extra['bypass_offline_cache'] == true ||
+            _isAuthEndpoint(response.requestOptions.path);
+
+        // Transparently cache successful GET responses (never auth endpoints)
+        if (!bypassCache &&
+            response.requestOptions.method.toUpperCase() == 'GET' &&
             response.statusCode != null &&
             response.statusCode! >= 200 &&
             response.statusCode! < 300 &&
@@ -177,8 +204,13 @@ class ApiClient {
           _connectivityService?.reportOffline();
         }
 
+        final bypassCache = err.requestOptions.extra['bypass_offline_cache'] == true ||
+            _isAuthEndpoint(err.requestOptions.path);
+
         // If this was a GET request and network dropped or timed out, resolve with cached data
-        if (_isConnectionError(err) && err.requestOptions.method.toUpperCase() == 'GET') {
+        if (!bypassCache &&
+            _isConnectionError(err) &&
+            err.requestOptions.method.toUpperCase() == 'GET') {
           final cacheKey = _getCacheKey(
             err.requestOptions.path,
             err.requestOptions.queryParameters,
@@ -250,7 +282,11 @@ class ApiClient {
   }
 
   void setAuthToken(String? token) {
-    _authToken = token;
+    _authToken = (token != null && token.trim().isNotEmpty) ? token.trim() : null;
+  }
+
+  void setCsrfToken(String? token) {
+    _csrfToken = (token != null && token.trim().isNotEmpty) ? token.trim() : null;
   }
 
   /// Queries backend to recover authoritative status of an in-flight or interrupted transaction.

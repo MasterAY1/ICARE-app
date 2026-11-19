@@ -32,7 +32,14 @@ class LoginResponse(BaseModel):
     mfa_token: Optional[str] = None
     password_change_required: bool = False
     temp_token: Optional[str] = None
+    csrf_token: Optional[str] = None
     message: Optional[str] = None
+
+
+class SessionMeResponse(BaseModel):
+    authenticated: bool = True
+    user: UserInfo
+    csrf_token: Optional[str] = None
 
 
 class ChangeInitialPasswordRequest(BaseModel):

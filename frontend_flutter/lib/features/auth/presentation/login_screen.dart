@@ -21,10 +21,22 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
     with TickerProviderStateMixin {
   final TextEditingController _usernameController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
+  final TextEditingController _mfaCodeController = TextEditingController();
+  final TextEditingController _currentTempPasswordController = TextEditingController();
+  final TextEditingController _newPasswordController = TextEditingController();
+  final TextEditingController _confirmPasswordController = TextEditingController();
+
   final FocusNode _usernameFocus = FocusNode();
   final FocusNode _passwordFocus = FocusNode();
+  final FocusNode _mfaCodeFocus = FocusNode();
+  final FocusNode _currentTempPasswordFocus = FocusNode();
+  final FocusNode _newPasswordFocus = FocusNode();
+  final FocusNode _confirmPasswordFocus = FocusNode();
 
   bool _obscurePassword = true;
+  bool _obscureCurrentTempPassword = true;
+  bool _obscureNewPassword = true;
+  bool _obscureConfirmPassword = true;
   String? _localValidationError;
 
   // Animation Controllers
@@ -155,9 +167,25 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
     _pressController.dispose();
     _usernameController.dispose();
     _passwordController.dispose();
+    _mfaCodeController.dispose();
+    _currentTempPasswordController.dispose();
+    _newPasswordController.dispose();
+    _confirmPasswordController.dispose();
     _usernameFocus.dispose();
     _passwordFocus.dispose();
+    _mfaCodeFocus.dispose();
+    _currentTempPasswordFocus.dispose();
+    _newPasswordFocus.dispose();
+    _confirmPasswordFocus.dispose();
     super.dispose();
+  }
+
+  void _clearSensitiveInputs() {
+    _passwordController.clear();
+    _mfaCodeController.clear();
+    _currentTempPasswordController.clear();
+    _newPasswordController.clear();
+    _confirmPasswordController.clear();
   }
 
   void _triggerErrorShake(String message) {
@@ -181,14 +209,57 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
           username: username,
           password: password,
         );
+  }
 
-    if (!mounted) return;
-    final currentAuth = ref.read(authControllerProvider);
-    if (currentAuth is AuthStateAuthenticated && ModalRoute.of(context)?.isCurrent == true) {
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const CoAppScaffold()),
-      );
+  Future<void> _handleMfaSubmit() async {
+    final code = _mfaCodeController.text.trim();
+    if (code.isEmpty) {
+      _triggerErrorShake('Please enter your 6-digit authenticator code or backup code.');
+      return;
     }
+
+    setState(() => _localValidationError = null);
+    await ref.read(authControllerProvider.notifier).submitMfaChallenge(code: code);
+  }
+
+  Future<void> _handleInitialPasswordSubmit() async {
+    final currentPw = _currentTempPasswordController.text;
+    final newPw = _newPasswordController.text.trim();
+    final confirmPw = _confirmPasswordController.text.trim();
+
+    if (currentPw.trim().isEmpty || newPw.isEmpty || confirmPw.isEmpty) {
+      _triggerErrorShake('Please complete all password fields before continuing.');
+      return;
+    }
+    if (newPw.length < 8) {
+      _triggerErrorShake('New password must be at least 8 characters long.');
+      return;
+    }
+    if (newPw != confirmPw) {
+      _triggerErrorShake('New password and confirmation password do not match.');
+      return;
+    }
+    if (newPw == currentPw) {
+      _triggerErrorShake('New password cannot be identical to your temporary password.');
+      return;
+    }
+
+    setState(() => _localValidationError = null);
+    await ref.read(authControllerProvider.notifier).submitInitialPasswordChange(
+          currentPassword: currentPw,
+          newPassword: newPw,
+        );
+  }
+
+  void _handleCancelChallenge() {
+    setState(() {
+      _localValidationError = null;
+      _mfaCodeController.clear();
+      _currentTempPasswordController.clear();
+      _newPasswordController.clear();
+      _confirmPasswordController.clear();
+    });
+    ref.read(authControllerProvider.notifier).cancelChallenge();
   }
 
 
@@ -196,11 +267,36 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
   Widget build(BuildContext context) {
     ref.listen<AuthState>(authControllerProvider, (previous, next) {
       if (next is AuthStateAuthenticated && ModalRoute.of(context)?.isCurrent == true) {
+        _clearSensitiveInputs();
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(builder: (_) => const CoAppScaffold()),
         );
       } else if (next is AuthStateError) {
         _triggerErrorShake(next.message);
+      } else if (next is AuthStatePasswordChangeRequired) {
+        if (previous is! AuthStatePasswordChangeRequired) {
+          _currentTempPasswordController.text = _passwordController.text;
+          _newPasswordController.clear();
+          _confirmPasswordController.clear();
+          setState(() => _localValidationError = null);
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) _newPasswordFocus.requestFocus();
+          });
+        }
+        if (next.errorMessage != null && next.errorMessage!.isNotEmpty) {
+          _triggerErrorShake(next.errorMessage!);
+        }
+      } else if (next is AuthStateMfaRequired) {
+        if (previous is! AuthStateMfaRequired) {
+          _mfaCodeController.clear();
+          setState(() => _localValidationError = null);
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) _mfaCodeFocus.requestFocus();
+          });
+        }
+        if (next.errorMessage != null && next.errorMessage!.isNotEmpty) {
+          _triggerErrorShake(next.errorMessage!);
+        }
       }
     });
 
@@ -486,49 +582,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                       ),
                       const SizedBox(height: 20),
 
-                      // Staggered Form Inputs
+                      // Staggered Form Inputs (Sign-In / First-Time Password Rotation / MFA)
                       SlideTransition(
                         position: _inputsSlide,
                         child: FadeTransition(
                           opacity: _inputsFade,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-
-                              // Username Input
-                              _buildInputField(
-                                label: 'Username / Operator ID',
-                                controller: _usernameController,
-                                focusNode: _usernameFocus,
-                                hintText: 'Enter your assigned username',
-                                prefixIcon: Icons.person_outline_rounded,
-                                onSubmitted: (_) => _passwordFocus.requestFocus(),
-                              ),
-                              const SizedBox(height: 14),
-
-                              // Password Input
-                              _buildInputField(
-                                label: 'Access Password',
-                                controller: _passwordController,
-                                focusNode: _passwordFocus,
-                                hintText: 'Enter your password',
-                                prefixIcon: Icons.lock_outline_rounded,
-                                isPassword: true,
-                                obscureText: _obscurePassword,
-                                onToggleVisibility: () => setState(() => _obscurePassword = !_obscurePassword),
-                                onSubmitted: (_) => _handleLogin(),
-                              ),
-                              const SizedBox(height: 16),
-
-                              // Error Banner (Anti-Clipping Invariant Enforced)
-                              if (_localValidationError != null || authState is AuthStateError) ...[
-                                _buildErrorNoticeBanner(
-                                  _localValidationError ?? (authState as AuthStateError).message,
-                                ),
-                                const SizedBox(height: 16),
-                              ],
-                            ],
-                          ),
+                          child: _buildActiveFormInputs(authState),
                         ),
                       ),
 
@@ -540,7 +599,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                           child: Column(
                             children: [
                               // Kinetic Morphing Submit Button
-                              _buildMorphingSubmitButton(isLoading),
+                              _buildActiveSubmitSection(isLoading, authState),
                               const SizedBox(height: 14),
 
                               // Branch Onboarding Portal Link (Zero Clipping Enforced)
@@ -746,8 +805,265 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
     );
   }
 
+  String? _resolveActiveError(AuthState authState) {
+    if (_localValidationError != null) return _localValidationError;
+    if (authState is AuthStateError) return authState.message;
+    if (authState is AuthStateMfaRequired) return authState.errorMessage;
+    if (authState is AuthStatePasswordChangeRequired) return authState.errorMessage;
+    return null;
+  }
+
+  Widget _buildChallengeHeader({
+    required IconData icon,
+    required String title,
+    required String username,
+    required String subtitle,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFF10B981).withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: const Color(0xFF10B981).withValues(alpha: 0.28),
+          width: 1.0,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 18, color: const Color(0xFF34D399)),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  title,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 14.5,
+                    fontWeight: FontWeight.w700,
+                  ),
+                  softWrap: true,
+                ),
+              ),
+            ],
+          ),
+          if (username.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text(
+              'Account: $username',
+              style: const TextStyle(
+                color: Color(0xFF34D399),
+                fontSize: 11.5,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+          const SizedBox(height: 6),
+          Text(
+            subtitle,
+            style: const TextStyle(
+              color: Color(0xFFCBD5E1),
+              fontSize: 12.0,
+              height: 1.4,
+            ),
+            softWrap: true,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildActiveFormInputs(AuthState authState) {
+    final activeError = _resolveActiveError(authState);
+
+    if (authState is AuthStateMfaRequired) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _buildChallengeHeader(
+            icon: Icons.verified_user_outlined,
+            title: 'Two-Factor Verification',
+            username: authState.username,
+            subtitle: authState.message,
+          ),
+          const SizedBox(height: 14),
+          _buildInputField(
+            label: 'Authenticator or Backup Code',
+            controller: _mfaCodeController,
+            focusNode: _mfaCodeFocus,
+            hintText: 'Enter 6-digit code or backup code',
+            prefixIcon: Icons.pin_outlined,
+            onSubmitted: (_) => _handleMfaSubmit(),
+          ),
+          const SizedBox(height: 16),
+          if (activeError != null) ...[
+            _buildErrorNoticeBanner(activeError),
+            const SizedBox(height: 16),
+          ],
+        ],
+      );
+    }
+
+    if (authState is AuthStatePasswordChangeRequired) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _buildChallengeHeader(
+            icon: Icons.lock_reset_rounded,
+            title: 'Set Your New Password',
+            username: authState.username,
+            subtitle: authState.message,
+          ),
+          const SizedBox(height: 14),
+          _buildInputField(
+            label: 'Current Temporary Password',
+            controller: _currentTempPasswordController,
+            focusNode: _currentTempPasswordFocus,
+            hintText: 'Enter your temporary password',
+            prefixIcon: Icons.lock_clock_outlined,
+            isPassword: true,
+            obscureText: _obscureCurrentTempPassword,
+            onToggleVisibility: () => setState(() => _obscureCurrentTempPassword = !_obscureCurrentTempPassword),
+            onSubmitted: (_) => _newPasswordFocus.requestFocus(),
+          ),
+          const SizedBox(height: 12),
+          _buildInputField(
+            label: 'New Password',
+            controller: _newPasswordController,
+            focusNode: _newPasswordFocus,
+            hintText: 'Minimum 8 characters',
+            prefixIcon: Icons.lock_outline_rounded,
+            isPassword: true,
+            obscureText: _obscureNewPassword,
+            onToggleVisibility: () => setState(() => _obscureNewPassword = !_obscureNewPassword),
+            onSubmitted: (_) => _confirmPasswordFocus.requestFocus(),
+          ),
+          const SizedBox(height: 12),
+          _buildInputField(
+            label: 'Confirm New Password',
+            controller: _confirmPasswordController,
+            focusNode: _confirmPasswordFocus,
+            hintText: 'Re-enter your new password',
+            prefixIcon: Icons.lock_outline_rounded,
+            isPassword: true,
+            obscureText: _obscureConfirmPassword,
+            onToggleVisibility: () => setState(() => _obscureConfirmPassword = !_obscureConfirmPassword),
+            onSubmitted: (_) => _handleInitialPasswordSubmit(),
+          ),
+          const SizedBox(height: 16),
+          if (activeError != null) ...[
+            _buildErrorNoticeBanner(activeError),
+            const SizedBox(height: 16),
+          ],
+        ],
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // Username Input
+        _buildInputField(
+          label: 'Username / Operator ID',
+          controller: _usernameController,
+          focusNode: _usernameFocus,
+          hintText: 'Enter your assigned username',
+          prefixIcon: Icons.person_outline_rounded,
+          onSubmitted: (_) => _passwordFocus.requestFocus(),
+        ),
+        const SizedBox(height: 14),
+
+        // Password Input
+        _buildInputField(
+          label: 'Access Password',
+          controller: _passwordController,
+          focusNode: _passwordFocus,
+          hintText: 'Enter your password',
+          prefixIcon: Icons.lock_outline_rounded,
+          isPassword: true,
+          obscureText: _obscurePassword,
+          onToggleVisibility: () => setState(() => _obscurePassword = !_obscurePassword),
+          onSubmitted: (_) => _handleLogin(),
+        ),
+        const SizedBox(height: 16),
+
+        // Error Banner (Anti-Clipping Invariant Enforced)
+        if (activeError != null) ...[
+          _buildErrorNoticeBanner(activeError),
+          const SizedBox(height: 16),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildActiveSubmitSection(bool isLoading, AuthState authState) {
+    if (authState is AuthStateMfaRequired) {
+      return Column(
+        children: [
+          _buildMorphingSubmitButton(
+            isLoading: authState.isSubmitting,
+            label: 'Verify and Sign In',
+            keyName: 'mfa_idle',
+            onPressed: _handleMfaSubmit,
+          ),
+          const SizedBox(height: 8),
+          TextButton(
+            onPressed: authState.isSubmitting ? null : _handleCancelChallenge,
+            child: const Text(
+              'Back to Sign In',
+              style: TextStyle(
+                color: Color(0xFF94A3B8),
+                fontSize: 12.5,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+
+    if (authState is AuthStatePasswordChangeRequired) {
+      return Column(
+        children: [
+          _buildMorphingSubmitButton(
+            isLoading: authState.isSubmitting,
+            label: 'Update Password and Continue',
+            keyName: 'pwd_rotate_idle',
+            onPressed: _handleInitialPasswordSubmit,
+          ),
+          const SizedBox(height: 8),
+          TextButton(
+            onPressed: authState.isSubmitting ? null : _handleCancelChallenge,
+            child: const Text(
+              'Cancel and Return to Sign In',
+              style: TextStyle(
+                color: Color(0xFF94A3B8),
+                fontSize: 12.5,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+
+    return _buildMorphingSubmitButton(
+      isLoading: isLoading,
+      label: 'Sign In to Core Banking',
+      keyName: 'signin_idle',
+      onPressed: _handleLogin,
+    );
+  }
+
   /// Morphing Interactive Submit Button
-  Widget _buildMorphingSubmitButton(bool isLoading) {
+  Widget _buildMorphingSubmitButton({
+    required bool isLoading,
+    required String label,
+    required String keyName,
+    required VoidCallback onPressed,
+  }) {
     return AnimatedBuilder(
       animation: _scaleAnimation,
       builder: (context, child) {
@@ -765,7 +1081,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
               : (_) {
                   _pressController.reverse();
                   HapticFeedback.mediumImpact();
-                  _handleLogin();
+                  onPressed();
                 },
           onTapCancel: () => _pressController.reverse(),
           child: AnimatedContainer(
@@ -798,22 +1114,26 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                         valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
                       ),
                     )
-                  : const Row(
-                      key: ValueKey('signin_idle'),
+                  : Row(
+                      key: ValueKey(keyName),
                       mainAxisSize: MainAxisSize.min,
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Text(
-                          'Sign In to Core Banking',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 14.5,
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: 0.2,
+                        Flexible(
+                          child: Text(
+                            label,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 14.5,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 0.2,
+                            ),
+                            softWrap: true,
+                            textAlign: TextAlign.center,
                           ),
                         ),
-                        SizedBox(width: 8),
-                        Icon(Icons.arrow_forward_rounded, size: 16, color: Colors.white),
+                        const SizedBox(width: 8),
+                        const Icon(Icons.arrow_forward_rounded, size: 16, color: Colors.white),
                       ],
                     ),
             ),

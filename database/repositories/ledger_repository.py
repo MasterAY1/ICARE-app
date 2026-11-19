@@ -4,6 +4,7 @@ from domain.entities.ledger import FinancialTransaction, LedgerEntry
 from interfaces.ledger_repository import LedgerRepository
 from database.repositories.base_repository import BaseRepository
 from core.exceptions import RepositoryError
+from core.money import to_decimal, sum_money, format_money_str
 
 class SupabaseLedgerRepository(BaseRepository[LedgerEntry], LedgerRepository):
     def __init__(self, client):
@@ -11,10 +12,10 @@ class SupabaseLedgerRepository(BaseRepository[LedgerEntry], LedgerRepository):
         self.table_name = "financial_ledger_entries"
 
     def create_transaction(self, tx: FinancialTransaction, entries: List[LedgerEntry]) -> str:
-        # Validate Debit = Credit
-        debits = sum(e.amount for e in entries if e.side == "Debit")
-        credits = sum(e.amount for e in entries if e.side == "Credit")
-        if abs(debits - credits) > 1e-6:
+        # Validate exact Debit = Credit balance using Decimal arithmetic
+        debits = sum_money(e.amount for e in entries if e.side == "Debit")
+        credits = sum_money(e.amount for e in entries if e.side == "Credit")
+        if debits != credits:
             raise RepositoryError(f"Unbalanced transaction: Debits ({debits}) must equal Credits ({credits})")
 
         # Create financial transaction header
@@ -40,7 +41,7 @@ class SupabaseLedgerRepository(BaseRepository[LedgerEntry], LedgerRepository):
                 "branch_id": e.branch_id or tx.branch_id,
                 "account_code": e.account_code,
                 "side": e.side,
-                "amount": float(e.amount),
+                "amount": format_money_str(e.amount),
                 "aggregate_type": e.aggregate_type,
                 "aggregate_id": e.aggregate_id
             })
@@ -74,7 +75,7 @@ class SupabaseLedgerRepository(BaseRepository[LedgerEntry], LedgerRepository):
                 branch_id=str(r.get("branch_id")),
                 account_code=str(r.get("account_code")),
                 side=str(r.get("side")),
-                amount=float(r.get("amount")),
+                amount=to_decimal(r.get("amount"), quantize=True),
                 aggregate_type=str(r.get("aggregate_type")),
                 aggregate_id=str(r.get("aggregate_id")),
                 created_at=r.get("created_at")
@@ -113,7 +114,7 @@ class SupabaseLedgerRepository(BaseRepository[LedgerEntry], LedgerRepository):
                 branch_id=str(r.get("branch_id")),
                 account_code=str(r.get("account_code")),
                 side=str(r.get("side")),
-                amount=float(r.get("amount")),
+                amount=to_decimal(r.get("amount"), quantize=True),
                 aggregate_type=str(r.get("aggregate_type")),
                 aggregate_id=str(r.get("aggregate_id")),
                 created_at=r.get("created_at")

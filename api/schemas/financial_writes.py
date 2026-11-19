@@ -1,8 +1,8 @@
 """
 Schemas for Phase 3 Atomic Financial Writes & Ledger Postings.
 """
-from typing import List, Optional
-from pydantic import BaseModel, Field
+from typing import Annotated, List, Optional
+from pydantic import BaseModel, Field, StringConstraints
 
 
 class BatchCollectionItem(BaseModel):
@@ -30,10 +30,10 @@ class BatchCollectionInput(BaseModel):
     collections: List[BatchCollectionItem]
     group_savings_deposit: float = 0.0
     group_savings_withdrawal: float = 0.0
-    idempotency_key: Optional[str] = Field(None, description="Unique client transaction key for offline synchronization idempotency")
+    idempotency_key: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=128)] = Field(..., description="Mandatory unique client transaction key for financial idempotency")
     batch_id: Optional[str] = Field(None, description="Batch identifier for idempotent submission")
-    is_late_entry: bool = Field(False, description="Explicit administrative or authorized late entry override")
-    is_offline_sync: bool = Field(False, description="True only when replayed from the offline outbox queue")
+    is_late_entry: bool = Field(False, description="Administrative late-entry override (requires Admin or Super Admin role)")
+    is_offline_sync: bool = Field(False, description="Audit metadata indicating offline outbox replay; does not bypass business-date controls")
 
 
 class BatchCollectionResponse(BaseModel):

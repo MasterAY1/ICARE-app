@@ -170,7 +170,12 @@ class UserService:
                     new={"is_active": activate},
                 )
 
-                return {"success": True, "message": f"User {target.username} {action_word}d successfully."}
+                return {
+                    "success": True,
+                    "message": f"User {target.username} {action_word}d successfully.",
+                    "user_id": target.id,
+                    "username": target.username,
+                }
 
         except Exception as e:
             return {"success": False, "message": f"Failed to {action_word} user: {e}"}
@@ -229,7 +234,12 @@ class UserService:
                     display_name=username,
                 )
 
-                return {"success": True, "message": f"Password reset for {username}."}
+                return {
+                    "success": True,
+                    "message": f"Password reset for {username}.",
+                    "user_id": target.id,
+                    "username": target.username,
+                }
 
         except Exception as e:
             return {"success": False, "message": f"Failed to reset password: {e}"}
@@ -281,7 +291,12 @@ class UserService:
                     new={"branch_ids": branch_ids},
                 )
 
-                return {"success": True, "message": f"Assigned {len(branch_ids)} branches to {target.username}."}
+                return {
+                    "success": True,
+                    "message": f"Assigned {len(branch_ids)} branches to {target.username}.",
+                    "user_id": target.id,
+                    "username": target.username,
+                }
 
         except Exception as e:
             return {"success": False, "message": f"Failed to assign branches: {e}"}
@@ -317,7 +332,12 @@ class UserService:
                     new={"full_name": new_name},
                 )
 
-                return {"success": True, "message": f"Updated {username} from '{old_name}' to '{new_name}'."}
+                return {
+                    "success": True,
+                    "message": f"Updated {username} from '{old_name}' to '{new_name}'.",
+                    "user_id": user.id,
+                    "username": user.username,
+                }
 
         except Exception as e:
             return {"success": False, "message": f"Failed to update officer name: {e}"}
@@ -430,7 +450,12 @@ class UserService:
                     new=None
                 )
 
-                return {"success": True, "message": f"Successfully deleted user '{user.username}' permanently."}
+                return {
+                    "success": True,
+                    "message": f"Successfully deleted user '{user.username}' permanently.",
+                    "user_id": user.id,
+                    "username": user.username,
+                }
 
         except Exception as e:
             return {"success": False, "message": f"Failed to delete user: {e}"}

@@ -12,21 +12,104 @@ Complies with:
 import base64
 import hashlib
 import hmac
+import logging
 import os
 import secrets
 import struct
 import threading
 import time
 from datetime import datetime
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 from urllib.parse import quote
 
 from auth.session import get_auth_secret
 
+logger = logging.getLogger("icare.auth.mfa")
 
-# Replay Protection: sliding window cache of consumed (user_id, time_step) tokens
-_REPLAY_CACHE: Dict[str, float] = {}
-_REPLAY_LOCK = threading.Lock()
+
+class MFAReplayStore:
+    """
+    Thread-safe distributed TOTP replay protection store.
+    Uses PostgreSQL atomic nonce insertion (`consume_mfa_totp_nonce` RPC) when
+    persistence is enabled, fronted by an L1 cache. Fails closed on DB failure.
+    """
+
+    def __init__(self, client_provider: Optional[Callable[[], Any]] = None):
+        self._client_provider = client_provider
+        self._lock = threading.Lock()
+        self._cache: Dict[str, float] = {}
+
+    def _is_persistence_enabled(self) -> bool:
+        if self._client_provider is not None:
+            return True
+        return os.getenv("ENVIRONMENT", "").strip().lower() != "test"
+
+    def _get_client(self) -> Any:
+        if self._client_provider is not None:
+            return self._client_provider()
+        from database.connection import get_supabase_client
+        return get_supabase_client()
+
+    def check_and_record(
+        self,
+        user_id: str,
+        counter: int,
+        now: float,
+        ttl_seconds: int = 90,
+    ) -> bool:
+        """
+        Checks if a (user_id, counter) TOTP step was already consumed.
+        Returns True if already replayed (reject), False if fresh (recorded).
+        """
+        clean_uid = str(user_id).strip().lower()
+        key = f"{clean_uid}:{counter}"
+        with self._lock:
+            expired_keys = [k for k, exp in self._cache.items() if exp < now]
+            for k in expired_keys:
+                del self._cache[k]
+            if key in self._cache:
+                return True
+
+        if self._is_persistence_enabled():
+            try:
+                client = self._get_client()
+                res = client.rpc(
+                    "consume_mfa_totp_nonce",
+                    {
+                        "p_replay_key": key,
+                        "p_user_id": clean_uid,
+                        "p_ttl_seconds": int(ttl_seconds),
+                    },
+                ).execute()
+                data = getattr(res, "data", None)
+                if data is True:
+                    with self._lock:
+                        self._cache[key] = now + float(ttl_seconds)
+                    return False
+                if data is False:
+                    with self._lock:
+                        self._cache[key] = now + float(ttl_seconds)
+                    return True
+                logger.error("Unexpected consume_mfa_totp_nonce response %r (failing closed).", data)
+                return True
+            except Exception as exc:
+                logger.error("Distributed MFA replay verification failed (failing closed): %s", exc)
+                return True
+
+        with self._lock:
+            self._cache[key] = now + float(ttl_seconds)
+            return False
+
+    def clear_all(self) -> None:
+        with self._lock:
+            self._cache.clear()
+
+
+_GLOBAL_MFA_REPLAY_STORE = MFAReplayStore()
+
+
+def get_mfa_replay_store() -> MFAReplayStore:
+    return _GLOBAL_MFA_REPLAY_STORE
 
 
 def generate_totp_secret() -> str:
@@ -78,25 +161,12 @@ def _check_and_record_replay(user_id: str, counter: int, now: float) -> bool:
     Checks if a (user_id, counter) pair was already consumed.
     Returns True if already replayed (consumption rejected), False if fresh (consumption recorded).
     """
-    key = f"{user_id}:{counter}"
-    with _REPLAY_LOCK:
-        # Purge expired entries
-        expired_keys = [k for k, exp in _REPLAY_CACHE.items() if exp < now]
-        for k in expired_keys:
-            del _REPLAY_CACHE[k]
-
-        if key in _REPLAY_CACHE:
-            return True
-
-        # Keep in cache for 90 seconds (window width)
-        _REPLAY_CACHE[key] = now + 90.0
-        return False
+    return _GLOBAL_MFA_REPLAY_STORE.check_and_record(user_id, counter, now, ttl_seconds=90)
 
 
 def clear_replay_cache() -> None:
-    """Clears the in-memory replay cache (primarily for automated test teardown)."""
-    with _REPLAY_LOCK:
-        _REPLAY_CACHE.clear()
+    """Clears the L1 in-memory replay cache (primarily for automated test teardown)."""
+    _GLOBAL_MFA_REPLAY_STORE.clear_all()
 
 
 def verify_totp_code(
@@ -249,6 +319,10 @@ def validate_mfa_challenge_token(token_str: str) -> Optional[dict]:
         exp = int(exp_str)
         now = datetime.now().timestamp()
         if now - ts > exp or now - ts < -30:
+            return None
+
+        from auth.token_store import get_revocation_store
+        if get_revocation_store().is_token_revoked(token_str):
             return None
 
         return {

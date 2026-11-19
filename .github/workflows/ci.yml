@@ -77,6 +77,14 @@ jobs:
                  tests/test_network_resilience_and_reliability.py \
                  tests/test_observability_and_disaster_recovery.py \
                  tests/test_performance_and_load.py \
+                 tests/test_p1_financial_controls.py \
+                 tests/test_p2_auth_and_rbac.py \
+                 tests/test_p3_precision_and_security.py \
+                 tests/test_services/test_offline_collections_idempotency.py \
+                 tests/test_services/test_posting_rules_ledger.py \
+                 tests/test_api/test_phase3_endpoints.py \
+                 tests/test_wave_a3_collections_integrity.py \
+                 tests/test_am_bm_user_management_rbac.py \
                  -v
 
   frontend-check:
@@ -101,9 +109,9 @@ jobs:
         working-directory: frontend_flutter
         run: flutter analyze --no-fatal-infos --no-fatal-warnings
 
-      - name: Run Flutter Unit Tests (Network Isolation & Sync)
+      - name: Run Flutter Unit Tests (All Suites Including Offline Sync & Encryption)
         working-directory: frontend_flutter
-        run: flutter test test/core/network/api_client_test.dart
+        run: flutter test
 
   frontend-build:
     name: Flutter Web Release Compilation & Artifact Packaging

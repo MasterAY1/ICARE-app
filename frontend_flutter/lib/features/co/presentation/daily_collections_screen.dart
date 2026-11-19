@@ -24,6 +24,8 @@ import '../../../core/offline/offline_sync_manager.dart';
 import '../../../core/errors/app_error_formatter.dart';
 
 import '../../../core/network/api_client.dart';
+import '../../../core/auth/auth_controller.dart';
+import '../../../core/auth/auth_state.dart';
 
 import '../data/datasources/co_api_service.dart';
 
@@ -58,6 +60,20 @@ final effectiveCollectionsDateProvider = Provider<DateTime>((ref) {
 });
 
 final collectionsLateEntryProvider = StateProvider<bool>((ref) => false);
+
+bool _canAuthorizeLateEntry(AuthState authState) {
+  if (authState is! AuthStateAuthenticated) return false;
+  final normRole = authState.user.role.trim().toLowerCase();
+  return normRole == 'admin' ||
+      normRole == 'super admin' ||
+      normRole == 'super_admin' ||
+      normRole == 'superadmin' ||
+      normRole == 'administrator' ||
+      normRole == 'global_admin' ||
+      normRole == 'global admin' ||
+      normRole == 'system admin' ||
+      normRole == 'system administrator';
+}
 
 // ==========================================
 
@@ -531,7 +547,7 @@ class _DailyCollectionsScreenState extends ConsumerState<DailyCollectionsScreen>
 
     });
 
-    final isLateEntry = ref.read(collectionsLateEntryProvider);
+    final isLateEntry = _canAuthorizeLateEntry(ref.read(authControllerProvider)) && ref.read(collectionsLateEntryProvider);
 
     _showAnimatedCollectionFlowModal(
 
@@ -699,7 +715,7 @@ class _DailyCollectionsScreenState extends ConsumerState<DailyCollectionsScreen>
 
     final grpSavAmt = double.tryParse(_grpSavingsCtrl.text.replaceAll(',', '').trim()) ?? 0.0;
 
-    final isLateEntry = ref.read(collectionsLateEntryProvider);
+    final isLateEntry = _canAuthorizeLateEntry(ref.read(authControllerProvider)) && ref.read(collectionsLateEntryProvider);
     final payload = {
 
       'group_name': groupName,
@@ -864,7 +880,7 @@ class _DailyCollectionsScreenState extends ConsumerState<DailyCollectionsScreen>
 
     final isOnline = ref.read(isOnlineProvider);
 
-    final isLateEntry = ref.read(collectionsLateEntryProvider);
+    final isLateEntry = _canAuthorizeLateEntry(ref.read(authControllerProvider)) && ref.read(collectionsLateEntryProvider);
 
     showGeneralDialog(
 
@@ -912,6 +928,7 @@ class _DailyCollectionsScreenState extends ConsumerState<DailyCollectionsScreen>
             final isOnline = ref.read(isOnlineProvider);
             final syncMgr = ref.read(offlineSyncManagerProvider);
             final api = ref.read(coApiServiceProvider);
+            final authorizedLateEntry = _canAuthorizeLateEntry(ref.read(authControllerProvider)) && isLateEntry;
             final payload = {
               'client_id': clientObj['client_id'],
               'client_name': clientObj['client_name'],
@@ -919,7 +936,7 @@ class _DailyCollectionsScreenState extends ConsumerState<DailyCollectionsScreen>
               'group_name': clientObj['group_name'],
               'loan_id': _scSelectedLoanId,
               'date': dateStr,
-              'is_late_entry': isLateEntry,
+              'is_late_entry': authorizedLateEntry,
               'savings_deposit': savVal,
               'group_savings_deposit': grpSavVal,
               'loan_repayment': repVal,
@@ -1818,9 +1835,10 @@ class _DailyCollectionsScreenState extends ConsumerState<DailyCollectionsScreen>
 
             Expanded(child: modeSegment),
 
-            const SizedBox(width: 8),
-
-            backdateWidget,
+            if (_canAuthorizeLateEntry(ref.watch(authControllerProvider))) ...[
+              const SizedBox(width: 8),
+              backdateWidget,
+            ],
 
           ],
 
@@ -1884,7 +1902,7 @@ class _DailyCollectionsScreenState extends ConsumerState<DailyCollectionsScreen>
 
           ),
 
-          backdateWidget,
+          if (_canAuthorizeLateEntry(ref.watch(authControllerProvider))) backdateWidget,
 
         ],
 

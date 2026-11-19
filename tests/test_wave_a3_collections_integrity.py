@@ -96,12 +96,14 @@ def test_multi_loan_l2_batch_submit_preserves_loan_id():
             return _FluentQuery([])
 
         mock_uow.client.table.side_effect = fake_table
+        mock_uow.client.rpc.return_value.execute.return_value.data = {"action": "PROCEED", "status": "NEW"}
 
         with patch("services.business_date_service.BusinessDateService.is_operational_open", return_value=(True, "Working Day")), \
              patch("services.collection_batch_service.unit_of_work.SupabaseUnitOfWork", return_value=mock_uow), \
              patch("services.collection_batch_service.save_repayment") as mock_save_rep:
             payload = {
                 "group_name": "Market Group",
+                "idempotency_key": "IDEM-WAVE-A3-L2-001",
                 "collections": [
                     {
                         "client_id": "CL-001-L2",

@@ -24,6 +24,10 @@ class RBACScope:
         return self.is_director or self.role in ["Director", "DIRECTOR", "Board Director"]
 
 
+class UnknownRoleError(ValueError):
+    """Raised when an unmapped or missing role string is encountered during RBAC normalization."""
+
+
 class RBACScopeService:
 
     ROLE_NAVIGATION = {
@@ -37,6 +41,9 @@ class RBACScopeService:
         "Area Manager": [
             "Dashboard", "Portfolio", "Master Cashbook", "CO Cashbook", "User Management",
             "Audit Ledger", "Reports & Export"
+        ],
+        "Account Manager": [
+            "Dashboard", "Master Cashbook", "Reports & Export"
         ],
         "Admin": [
             "Dashboard", "Portfolio", "Loan Origination", "Collections", "Withdrawal Operations", "Legacy LAPS Migration", "CO Cashbook",
@@ -64,6 +71,9 @@ class RBACScopeService:
         "AREA_MANAGER": "Area Manager",
         "AREA MANAGER": "Area Manager",
         "REGIONAL MANAGER": "Area Manager",
+        "ACCOUNT MANAGER": "Account Manager",
+        "ACCOUNT_MANAGER": "Account Manager",
+        "ACCOUNTANT": "Account Manager",
         "ADMIN": "Admin",
         "ADMINISTRATOR": "Admin",
         "SUPER_ADMIN": "Admin",
@@ -81,22 +91,33 @@ class RBACScopeService:
 
     @classmethod
     def normalize_role(cls, role: Optional[str]) -> str:
-        if not role:
-            return "CO"
+        """
+        Strictly resolves known role aliases to canonical RBAC role names.
+        Fails closed with UnknownRoleError on missing, blank, or unrecognized role strings.
+        """
+        if role is None:
+            raise UnknownRoleError("User role is missing or empty.")
         raw_str = str(role).strip()
-        upper_str = raw_str.upper()
-        if upper_str in cls.ROLE_ALIASES:
-            return cls.ROLE_ALIASES[upper_str]
-        underscore_str = upper_str.replace(" ", "_")
+        if not raw_str:
+            raise UnknownRoleError("User role is missing or empty.")
+        cleaned = " ".join(raw_str.upper().split())
+        if cleaned in cls.ROLE_ALIASES:
+            return cls.ROLE_ALIASES[cleaned]
+        underscore_str = cleaned.replace(" ", "_")
         if underscore_str in cls.ROLE_ALIASES:
             return cls.ROLE_ALIASES[underscore_str]
-        space_str = upper_str.replace("_", " ")
+        space_str = cleaned.replace("_", " ")
         if space_str in cls.ROLE_ALIASES:
             return cls.ROLE_ALIASES[space_str]
-        if raw_str in cls.ROLE_ALIASES:
-            return cls.ROLE_ALIASES[raw_str]
-        return "Admin" if "ADMIN" in upper_str else ("Branch Manager" if "BRANCH" in upper_str or "MANAGER" in upper_str else "CO")
+        raise UnknownRoleError(f"Unrecognized role: '{role}'.")
 
+    @classmethod
+    def normalize_role_or_none(cls, role: Optional[str]) -> Optional[str]:
+        """Non-security display helper that returns None instead of raising on unknown roles."""
+        try:
+            return cls.normalize_role(role)
+        except UnknownRoleError:
+            return None
 
     @classmethod
     def resolve_scope(cls, current_user: Dict[str, Any]) -> RBACScope:
@@ -104,9 +125,9 @@ class RBACScopeService:
         Resolves the RBACScope object for an authenticated user session.
         """
         if not current_user:
-            return RBACScope()
+            raise UnknownRoleError("User role is missing or empty.")
 
-        raw_role = current_user.get("role") or current_user.get("user_role") or "CO"
+        raw_role = current_user.get("role") or current_user.get("user_role")
         norm_role = cls.normalize_role(raw_role)
 
         u_id = current_user.get("id") or current_user.get("user_id")
@@ -128,14 +149,14 @@ class RBACScopeService:
 
         if norm_role == "CO":
             level = "OFFICER"
-        elif norm_role == "Branch Manager":
+        elif norm_role in ("Branch Manager", "Account Manager"):
             level = "BRANCH"
         elif norm_role == "Area Manager":
             level = "REGION"
-        elif norm_role == "Director":
+        elif norm_role in ("Director", "Admin"):
             level = "INSTITUTION"
         else:
-            level = "INSTITUTION"
+            raise UnknownRoleError(f"Unrecognized normalized role: '{norm_role}'.")
 
         is_dir = (norm_role == "Director")
 

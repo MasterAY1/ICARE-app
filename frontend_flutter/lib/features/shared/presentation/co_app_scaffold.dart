@@ -99,9 +99,72 @@ class CoAppScaffold extends ConsumerWidget {
     }
   }
 
-  void _handleSignOut(BuildContext context, WidgetRef ref) {
+  Future<void> _handleSignOut(BuildContext context, WidgetRef ref) async {
+    final pendingCount = await ref.read(offlineDatabaseServiceProvider).getPendingOutboxCount();
+    await ref.read(pendingOutboxCountProvider.notifier).refresh();
+
+    if (pendingCount > 0 && context.mounted) {
+      final isOnline = ref.read(isOnlineProvider);
+      final choice = await showDialog<String>(
+        context: context,
+        barrierDismissible: true,
+        builder: (dialogCtx) => AlertDialog(
+          title: const Text(
+            'Pending Offline Collections',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
+          ),
+          content: Text(
+            'You have $pendingCount unsynchronized offline transaction(s) queued on this device. Signing out will keep them safely saved for your account, and they will not be posted to the central ledger until you sign back in and sync.',
+            style: const TextStyle(fontSize: 13, color: Color(0xFF334155), height: 1.4),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogCtx).pop('cancel'),
+              child: const Text('Cancel', style: TextStyle(color: Color(0xFF64748B), fontWeight: FontWeight.w600)),
+            ),
+            if (isOnline)
+              OutlinedButton(
+                onPressed: () => Navigator.of(dialogCtx).pop('sync'),
+                child: const Text('Sync Now', style: TextStyle(color: Color(0xFF064E3B), fontWeight: FontWeight.w700)),
+              ),
+            ElevatedButton(
+              onPressed: () => Navigator.of(dialogCtx).pop('sign_out'),
+              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFDC2626), foregroundColor: Colors.white),
+              child: const Text('Sign Out Anyway', style: TextStyle(fontWeight: FontWeight.w700)),
+            ),
+          ],
+        ),
+      );
+
+      if (choice == 'sync') {
+        final res = await ref.read(offlineSyncManagerProvider).syncOutbox();
+        if (res.syncedCount > 0 || res.failedCount > 0) {
+          ref.invalidate(collectionSheetFutureProvider);
+          ref.invalidate(singleClientOptionsProvider);
+          ref.invalidate(collectionsHistoryProvider);
+          ref.invalidate(coDashboardProvider);
+        }
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).hideCurrentSnackBar();
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(res.message, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+              backgroundColor: res.success ? const Color(0xFF065F46) : const Color(0xFFD97706),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+        return;
+      }
+
+      if (choice != 'sign_out') {
+        return;
+      }
+    }
+
     ref.read(activeCoPageProvider.notifier).state = 'Dashboard';
-    ref.read(authControllerProvider.notifier).logout();
+    await ref.read(authControllerProvider.notifier).logout();
+    if (!context.mounted) return;
     Navigator.of(context).pushAndRemoveUntil(
       MaterialPageRoute(builder: (_) => const LoginScreen()),
       (route) => false,
@@ -200,7 +263,7 @@ class CoAppScaffold extends ConsumerWidget {
         if (pendingCount > 0) {
           final syncMgr = ref.read(offlineSyncManagerProvider);
           final res = await syncMgr.syncOutbox();
-          if (res.syncedCount > 0) {
+          if (res.syncedCount > 0 || res.failedCount > 0) {
             ref.invalidate(collectionSheetFutureProvider);
             ref.invalidate(singleClientOptionsProvider);
             ref.invalidate(collectionsHistoryProvider);
@@ -1673,6 +1736,8 @@ class _SyncDialogState extends ConsumerState<_SyncDialog> {
                                             final bId = item['id'] as int?;
                                             if (bId != null) {
                                               await syncMgr.discardOutboxBatch(bId);
+                                              ref.invalidate(collectionSheetFutureProvider);
+                                              ref.invalidate(singleClientOptionsProvider);
                                               if (mounted) {
                                                 setState(() {
                                                   _statusMsg = 'Batch #$bId discarded from outbox.';
@@ -1761,6 +1826,10 @@ class _SyncDialogState extends ConsumerState<_SyncDialog> {
                 ? null
                 : () async {
                     final cleared = await syncMgr.clearAllFailedBatches();
+                    if (cleared > 0) {
+                      ref.invalidate(collectionSheetFutureProvider);
+                      ref.invalidate(singleClientOptionsProvider);
+                    }
                     if (mounted) {
                       setState(() {
                         _statusMsg = cleared > 0 ? 'Cleared $cleared failed transaction(s).' : 'No failed transactions to clear.';
@@ -1784,7 +1853,7 @@ class _SyncDialogState extends ConsumerState<_SyncDialog> {
                     _statusMsg = 'Syncing batches to central ledger...';
                   });
                   final res = await syncMgr.syncOutbox();
-                  if (res.syncedCount > 0) {
+                  if (res.syncedCount > 0 || res.failedCount > 0) {
                     ref.invalidate(collectionSheetFutureProvider);
                     ref.invalidate(singleClientOptionsProvider);
                     ref.invalidate(collectionsHistoryProvider);

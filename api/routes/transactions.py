@@ -67,6 +67,8 @@ def get_transaction_status(
             detail=f"Transaction with key '{clean_key}' was not found. Server has no record of this operation."
         )
 
+    IdempotencyService.assert_transaction_access(current_user, record)
+
     raw_status = record.get("status", "PROCESSING")
     friendly_status = STATUS_MAP.get(raw_status, "Processing")
 

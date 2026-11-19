@@ -1,16 +1,18 @@
 """
 FastAPI dependencies for authentication, database Unit of Work, and RBAC scope resolution.
 """
+import hmac
 from typing import Generator, Optional, List
-from fastapi import Header, HTTPException, Depends, status
+from fastapi import Header, HTTPException, Depends, Request, status
 from database.repositories.unit_of_work import SupabaseUnitOfWork
+from auth.cookies import SESSION_COOKIE_NAME, CSRF_COOKIE_NAME
 from auth.session import validate_session_token
 from auth.session_cache import (
     get_cached_user,
     set_cached_user,
     invalidate_user_session_cache,
 )
-from services.rbac_scope_service import RBACScopeService, RBACScope
+from services.rbac_scope_service import RBACScopeService, RBACScope, UnknownRoleError
 from models.user import CurrentUser
 from auth.authorization import PERMISSIONS
 
@@ -22,26 +24,56 @@ def get_uow() -> Generator[SupabaseUnitOfWork, None, None]:
 
 
 def get_current_user(
+    request: Request = None,
     authorization: Optional[str] = Header(None),
     uow: SupabaseUnitOfWork = Depends(get_uow)
 ) -> CurrentUser:
     """
-    Extracts Bearer token from Authorization header, validates signature and session age,
-    and returns authoritative CurrentUser object directly from database.
-    Fails closed with HTTP 401 on any error.
+    Extracts session token from Authorization Bearer header (mobile/CLI) or
+    HttpOnly session cookie (web), enforces CSRF double-submit verification on
+    cookie-authenticated mutating requests, validates signature and revocation,
+    and returns authoritative CurrentUser object from cache/database.
+    Fails closed with HTTP 401/403 on any error.
     """
-    if not authorization:
+    auth_source = "bearer"
+    if authorization is not None and authorization != "":
+        token = authorization.replace("Bearer ", "").strip()
+        if not token:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Malformed Authorization header."
+            )
+    elif authorization == "":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication token required. Missing Authorization header."
+        )
+    elif request is not None and request.cookies.get(SESSION_COOKIE_NAME):
+        token = str(request.cookies.get(SESSION_COOKIE_NAME) or "").strip()
+        if not token:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Authentication token required. Missing credentials."
+            )
+        auth_source = "cookie"
+    else:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authentication token required. Missing Authorization header."
         )
 
-    token = authorization.replace("Bearer ", "").strip()
-    if not token:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Malformed Authorization header."
-        )
+    if (
+        auth_source == "cookie"
+        and request is not None
+        and request.method.upper() in ("POST", "PUT", "PATCH", "DELETE")
+    ):
+        csrf_cookie = (request.cookies.get(CSRF_COOKIE_NAME) or "").strip()
+        csrf_header = (request.headers.get("x-csrf-token") or "").strip()
+        if not csrf_cookie or not csrf_header or not hmac.compare_digest(csrf_cookie, csrf_header):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="CSRF validation failed. Please refresh your session and retry."
+            )
 
     token_data = validate_session_token(token)
     if not token_data:
@@ -109,16 +141,18 @@ def get_current_user(
 
 
 def get_current_user_optional(
+    request: Request = None,
     authorization: Optional[str] = Header(None),
     uow: SupabaseUnitOfWork = Depends(get_uow)
 ) -> Optional[CurrentUser]:
     """
-    Extracts CurrentUser if Authorization header is present and valid; returns None otherwise.
+    Extracts CurrentUser if Authorization header or session cookie is present and valid; returns None otherwise.
     """
-    if not authorization:
+    has_cookie = bool(request is not None and request.cookies.get(SESSION_COOKIE_NAME))
+    if not authorization and not has_cookie:
         return None
     try:
-        return get_current_user(authorization=authorization, uow=uow)
+        return get_current_user(request=request, authorization=authorization, uow=uow)
     except Exception:
         return None
 
@@ -134,13 +168,25 @@ def get_current_scope(current_user: CurrentUser = Depends(get_current_user)) -> 
         "assigned_branches": getattr(current_user, "assigned_branches", []),
         "assigned_branch_ids": getattr(current_user, "assigned_branch_ids", [])
     }
-    return RBACScopeService.resolve_scope(user_dict)
+    try:
+        return RBACScopeService.resolve_scope(user_dict)
+    except UnknownRoleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Access forbidden: {exc}"
+        )
 
 
 def require_role(allowed_roles: List[str]):
     """Enforces that the authenticated user's role is in allowed_roles."""
     def role_checker(current_user: CurrentUser = Depends(get_current_user)) -> CurrentUser:
-        normalized_role = RBACScopeService.normalize_role(current_user.role)
+        try:
+            normalized_role = RBACScopeService.normalize_role(current_user.role)
+        except UnknownRoleError:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Access forbidden: Role '{current_user.role}' is unrecognized."
+            )
         normalized_allowed = [RBACScopeService.normalize_role(r) for r in allowed_roles]
         if normalized_role not in normalized_allowed:
             raise HTTPException(
@@ -155,11 +201,18 @@ def check_branch_access(current_user: CurrentUser, target_branch_id: Optional[st
     """
     Enforces strict multi-branch authorization:
     - Admin / Super Admin / Director: allowed across all branches
-    - Branch Manager / Credit Officer: target_branch_id must match current_user.branch_id
+    - Branch Manager / Account Manager / Credit Officer: target_branch_id must match current_user.branch_id
     - Area Manager: target_branch_id must be in current_user.assigned_branch_ids
+    - Unrecognized role fails closed with 403 Forbidden
     - Missing target_branch_id fails closed with 400 Bad Request
     """
-    norm_role = RBACScopeService.normalize_role(current_user.role)
+    try:
+        norm_role = RBACScopeService.normalize_role(current_user.role)
+    except UnknownRoleError:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Forbidden: Unrecognized user role."
+        )
     if norm_role in ["Admin", "Director"]:
         return
 
@@ -169,7 +222,7 @@ def check_branch_access(current_user: CurrentUser, target_branch_id: Optional[st
             detail=f"Target record has no valid branch assignment; cannot {action_desc}."
         )
 
-    if norm_role in ["Branch Manager", "CO"]:
+    if norm_role in ["Branch Manager", "Account Manager", "CO"]:
         if target_branch_id != current_user.branch_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,

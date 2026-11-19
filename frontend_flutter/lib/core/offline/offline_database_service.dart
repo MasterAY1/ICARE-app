@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite/sqflite.dart';
+import '../security/local_encryption_service.dart';
 
 final offlineDatabaseServiceProvider = Provider<OfflineDatabaseService>((ref) {
   return OfflineDatabaseService();
@@ -15,6 +16,7 @@ final offlineDatabaseServiceProvider = Provider<OfflineDatabaseService>((ref) {
 class OfflineDatabaseService {
   static Database? _database;
   bool useMemoryStore;
+  final LocalEncryptionService _encryption;
 
   String _scopeUserId = 'anon';
   String _scopeBranchId = 'default';
@@ -23,8 +25,10 @@ class OfflineDatabaseService {
     this.useMemoryStore = false,
     String userId = 'anon',
     String branchId = 'default',
+    LocalEncryptionService? encryptionService,
   })  : _scopeUserId = userId.trim().isEmpty ? 'anon' : userId.trim(),
-        _scopeBranchId = branchId.trim().isEmpty ? 'default' : branchId.trim();
+        _scopeBranchId = branchId.trim().isEmpty ? 'default' : branchId.trim(),
+        _encryption = encryptionService ?? LocalEncryptionService(memoryOnly: useMemoryStore);
 
   String get activeUserId => _scopeUserId;
   String get activeBranchId => _scopeBranchId;
@@ -51,17 +55,17 @@ class OfflineDatabaseService {
     _scopeBranchId = nextBranch;
   }
 
-  /// Wipes all user/branch-scoped offline caches and queued storage on logout,
-  /// sweeps any legacy unscoped keys, and resets scope to anonymous defaults.
-  Future<void> clearSessionStorage({bool clearOutbox = true}) async {
+  /// Wipes all user/branch-scoped offline read caches on logout,
+  /// preserves the user-scoped offline outbox by default (`clearOutbox = false`)
+  /// so unsynchronized field collections survive sign-out,
+  /// sweeps legacy unscoped keys, and resets scope to anonymous defaults.
+  Future<void> clearSessionStorage({bool clearOutbox = false}) async {
     final currentScope = activeScopeKey;
     _webDashboardCache.clear();
     _webApiCache.clear();
     _webGroupsCache.clear();
     _webClientsCache.clear();
-    if (clearOutbox) {
-      _webOutbox.clear();
-    }
+    _webOutbox.clear();
 
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -87,6 +91,7 @@ class OfflineDatabaseService {
 
       if (clearOutbox) {
         await prefs.remove('offline_persisted_outbox_$currentScope');
+        await prefs.remove('offline_persisted_outbox');
       }
 
       // Sweep legacy unscoped pre-isolation keys
@@ -104,7 +109,6 @@ class OfflineDatabaseService {
         await prefs.remove('offline_sheet_$g');
       }
       await prefs.remove('offline_cached_groups');
-      await prefs.remove('offline_persisted_outbox');
     } catch (_) {}
 
     if (!kIsWeb && !useMemoryStore) {
@@ -145,7 +149,7 @@ class OfflineDatabaseService {
 
     return await openDatabase(
       path,
-      version: 3,
+      version: 5,
       onCreate: (db, version) async {
         // 1. Group & schedule cache (user/branch isolated)
         await db.execute('''
@@ -194,7 +198,8 @@ class OfflineDatabaseService {
             retry_count INTEGER DEFAULT 0,
             created_at TEXT NOT NULL,
             synced_at TEXT,
-            error_message TEXT
+            error_message TEXT,
+            optimistic_meta_json TEXT
           )
         ''');
 
@@ -241,6 +246,17 @@ class OfflineDatabaseService {
           await db.delete('offline_clients_cache');
           await db.delete('offline_dashboard_cache');
         }
+        if (oldVersion < 4) {
+          try {
+            await db.execute('ALTER TABLE offline_outbox ADD COLUMN optimistic_meta_json TEXT');
+          } catch (_) {}
+        }
+        if (oldVersion < 5) {
+          // Purge pre-encryption plaintext read caches; preserve outbox rows (readable via legacy fallback)
+          await db.delete('offline_groups_cache');
+          await db.delete('offline_clients_cache');
+          await db.delete('offline_dashboard_cache');
+        }
       },
     );
   }
@@ -249,7 +265,7 @@ class OfflineDatabaseService {
   // 0. DASHBOARD CACHE (OFFLINE FALLBACK)
   // ==========================================
 
-  /// Caches dashboard JSON payload locally scoped by active user & branch
+  /// Caches dashboard JSON payload locally (encrypted at rest) scoped by active user & branch
   Future<void> cacheDashboardData(Map<String, dynamic> data, {String role = 'co'}) async {
     final scope = activeScopeKey;
     final memKey = '$scope::$role';
@@ -257,10 +273,11 @@ class OfflineDatabaseService {
     final jsonStr = jsonEncode(data);
 
     _webDashboardCache[memKey] = jsonStr;
+    final encStr = await _encryption.encryptString(jsonStr);
 
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('offline_dashboard_${scope}_$role', jsonStr);
+      await prefs.setString('offline_dashboard_${scope}_$role', encStr);
       await prefs.setString('offline_dashboard_timestamp_${scope}_$role', nowIso);
       final dashKeys = prefs.getStringList('offline_dashboard_keys_$scope') ?? [];
       if (!dashKeys.contains(role)) {
@@ -279,7 +296,7 @@ class OfflineDatabaseService {
             'scope_key': scope,
             'user_id': _scopeUserId,
             'branch_id': _scopeBranchId,
-            'data_json': jsonStr,
+            'data_json': encStr,
             'updated_at': nowIso,
           },
           conflictAlgorithm: ConflictAlgorithm.replace,
@@ -302,8 +319,11 @@ class OfflineDatabaseService {
       final prefs = await SharedPreferences.getInstance();
       final str = prefs.getString('offline_dashboard_${scope}_$role');
       if (str != null && str.isNotEmpty) {
-        _webDashboardCache[memKey] = str;
-        return jsonDecode(str) as Map<String, dynamic>;
+        final decrypted = await _encryption.decryptString(str);
+        if (decrypted != null) {
+          _webDashboardCache[memKey] = decrypted;
+          return jsonDecode(decrypted) as Map<String, dynamic>;
+        }
       }
     } catch (_) {}
 
@@ -317,9 +337,12 @@ class OfflineDatabaseService {
           limit: 1,
         );
         if (res.isNotEmpty) {
-          final jsonStr = res.first['data_json'] as String;
-          _webDashboardCache[memKey] = jsonStr;
-          return jsonDecode(jsonStr) as Map<String, dynamic>;
+          final stored = res.first['data_json'] as String;
+          final decrypted = await _encryption.decryptString(stored);
+          if (decrypted != null) {
+            _webDashboardCache[memKey] = decrypted;
+            return jsonDecode(decrypted) as Map<String, dynamic>;
+          }
         }
       } catch (_) {}
     }
@@ -331,7 +354,7 @@ class OfflineDatabaseService {
   // 0.1 GENERIC GET API RESPONSE CACHE
   // ==========================================
 
-  /// Caches an API GET response locally scoped to active user & branch
+  /// Caches an API GET response locally (encrypted at rest) scoped to active user & branch
   Future<void> cacheApiResponse(String cacheKey, dynamic data) async {
     final scope = activeScopeKey;
     final memKey = '$scope::$cacheKey';
@@ -339,8 +362,9 @@ class OfflineDatabaseService {
 
     try {
       final jsonStr = jsonEncode(data);
+      final encStr = await _encryption.encryptString(jsonStr);
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('offline_api_${scope}_$cacheKey', jsonStr);
+      await prefs.setString('offline_api_${scope}_$cacheKey', encStr);
 
       final keys = prefs.getStringList('offline_api_cache_keys_$scope') ?? [];
       if (!keys.contains(cacheKey)) {
@@ -362,11 +386,14 @@ class OfflineDatabaseService {
 
     try {
       final prefs = await SharedPreferences.getInstance();
-      final jsonStr = prefs.getString('offline_api_${scope}_$cacheKey');
-      if (jsonStr != null && jsonStr.isNotEmpty) {
-        final decoded = jsonDecode(jsonStr);
-        _webApiCache[memKey] = decoded;
-        return decoded;
+      final stored = prefs.getString('offline_api_${scope}_$cacheKey');
+      if (stored != null && stored.isNotEmpty) {
+        final decrypted = await _encryption.decryptString(stored);
+        if (decrypted != null) {
+          final decoded = jsonDecode(decrypted);
+          _webApiCache[memKey] = decoded;
+          return decoded;
+        }
       }
     } catch (e) {
       debugPrint('Failed to read API cache for $cacheKey: $e');
@@ -396,11 +423,13 @@ class OfflineDatabaseService {
     final scopedCacheKey = '$scope::$cacheKey';
     final scopedBaseKey = '$scope::$groupName';
 
-    // Persist to SharedPreferences across web and native (scoped by user & branch)
+    final encSheetJson = await _encryption.encryptString(jsonStr);
+
+    // Persist encrypted payload to SharedPreferences across web and native (scoped by user & branch)
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('offline_sheet_${scope}_$cacheKey', jsonStr);
-      await prefs.setString('offline_sheet_${scope}_$groupName', jsonStr);
+      await prefs.setString('offline_sheet_${scope}_$cacheKey', encSheetJson);
+      await prefs.setString('offline_sheet_${scope}_$groupName', encSheetJson);
       final sheetKeys = prefs.getStringList('offline_cached_group_keys_$scope') ?? [];
       var keysChanged = false;
       if (!sheetKeys.contains(cacheKey)) {
@@ -473,7 +502,7 @@ class OfflineDatabaseService {
             'user_id': _scopeUserId,
             'branch_id': _scopeBranchId,
             'meeting_day': sheetData['meeting_day'] ?? '',
-            'data_json': jsonStr,
+            'data_json': encSheetJson,
             'updated_at': nowIso,
           },
           conflictAlgorithm: ConflictAlgorithm.replace,
@@ -485,6 +514,7 @@ class OfflineDatabaseService {
         if (c is Map<String, dynamic>) {
           final cid = c['client_id']?.toString() ?? c['id']?.toString() ?? '';
           if (cid.isNotEmpty) {
+            final encClientJson = await _encryption.encryptString(jsonEncode(c));
             batch.insert(
               'offline_clients_cache',
               {
@@ -492,14 +522,14 @@ class OfflineDatabaseService {
                 'scope_key': scope,
                 'user_id': _scopeUserId,
                 'branch_id': _scopeBranchId,
-                'client_code': c['client_code']?.toString() ?? '',
-                'client_name': c['client_name']?.toString() ?? '',
+                'client_code': '',
+                'client_name': '',
                 'group_name': groupName,
-                'loan_id': c['loan_id']?.toString() ?? '',
-                'expected_installment': (c['expected_installment'] as num?)?.toDouble() ?? (c['expected_repayment'] as num?)?.toDouble() ?? 0.0,
-                'loan_balance': (c['loan_balance'] as num?)?.toDouble() ?? (c['remaining_balance'] as num?)?.toDouble() ?? 0.0,
-                'savings_balance': (c['savings_balance'] as num?)?.toDouble() ?? 0.0,
-                'data_json': jsonEncode(c),
+                'loan_id': '',
+                'expected_installment': 0.0,
+                'loan_balance': 0.0,
+                'savings_balance': 0.0,
+                'data_json': encClientJson,
               },
               conflictAlgorithm: ConflictAlgorithm.replace,
             );
@@ -534,7 +564,10 @@ class OfflineDatabaseService {
       for (final key in candidates) {
         final str = prefs.getString('offline_sheet_${scope}_$key');
         if (str != null && str.isNotEmpty) {
-          return jsonDecode(str) as Map<String, dynamic>;
+          final decrypted = await _encryption.decryptString(str);
+          if (decrypted != null) {
+            return jsonDecode(decrypted) as Map<String, dynamic>;
+          }
         }
       }
     } catch (_) {}
@@ -550,8 +583,11 @@ class OfflineDatabaseService {
             limit: 1,
           );
           if (res.isNotEmpty) {
-            final jsonStr = res.first['data_json'] as String;
-            return jsonDecode(jsonStr) as Map<String, dynamic>;
+            final stored = res.first['data_json'] as String;
+            final decrypted = await _encryption.decryptString(stored);
+            if (decrypted != null) {
+              return jsonDecode(decrypted) as Map<String, dynamic>;
+            }
           }
         }
       } catch (_) {}
@@ -609,14 +645,42 @@ class OfflineDatabaseService {
 
   String get _scopedOutboxPrefsKey => 'offline_persisted_outbox_$activeScopeKey';
 
+  Future<Map<String, dynamic>> _decryptOutboxRow(Map<String, dynamic> row) async {
+    final copy = Map<String, dynamic>.from(row);
+    final rawPayload = copy['payload_json']?.toString();
+    if (rawPayload != null && rawPayload.isNotEmpty) {
+      final dec = await _encryption.decryptString(rawPayload, allowLegacyPlaintext: true);
+      if (dec != null) {
+        copy['payload_json'] = dec;
+      }
+    }
+    final rawMeta = copy['optimistic_meta_json']?.toString();
+    if (rawMeta != null && rawMeta.isNotEmpty) {
+      final decMeta = await _encryption.decryptString(rawMeta, allowLegacyPlaintext: true);
+      if (decMeta != null) {
+        copy['optimistic_meta_json'] = decMeta;
+      }
+    }
+    return copy;
+  }
+
   Future<List<Map<String, dynamic>>> _readPrefsOutbox() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final raw = prefs.getString(_scopedOutboxPrefsKey);
       if (raw != null && raw.isNotEmpty) {
-        return (jsonDecode(raw) as List<dynamic>)
+        final dec = await _encryption.decryptString(raw, allowLegacyPlaintext: true);
+        if (dec == null || dec.isEmpty) {
+          return <Map<String, dynamic>>[];
+        }
+        final rows = (jsonDecode(dec) as List<dynamic>)
             .map((e) => Map<String, dynamic>.from(e as Map))
             .toList();
+        final out = <Map<String, dynamic>>[];
+        for (final r in rows) {
+          out.add(await _decryptOutboxRow(r));
+        }
+        return out;
       }
     } catch (_) {}
     return <Map<String, dynamic>>[];
@@ -625,7 +689,8 @@ class OfflineDatabaseService {
   Future<void> _writePrefsOutbox(List<Map<String, dynamic>> list) async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(_scopedOutboxPrefsKey, jsonEncode(list));
+      final enc = await _encryption.encryptString(jsonEncode(list));
+      await prefs.setString(_scopedOutboxPrefsKey, enc);
     } catch (_) {}
   }
 
@@ -654,10 +719,176 @@ class OfflineDatabaseService {
       ..addAll(byKey.values);
   }
 
+  ({String cid, String lid, double repAmt, double savAmt, bool markNotPaid}) _parseOptimisticTx(
+    Map<String, dynamic> tx,
+  ) {
+    final cid = (tx['client_id'] ?? tx['Client ID'] ?? '').toString().trim();
+    final lid = (tx['loan_id'] ?? '').toString().trim();
+    final repAmt = ((tx['loan_repayment_amount'] ??
+                tx['repayment_amount'] ??
+                tx['loan_repayment'] ??
+                0) as num)
+            .toDouble();
+    final savAmt = ((tx['savings_deposit_amount'] ??
+                tx['savings_amount'] ??
+                tx['savings_deposit'] ??
+                0) as num)
+            .toDouble();
+    final markNotPaid =
+        tx['mark_not_paid'] == true || tx['payment_status'] == 'NOT_PAID';
+    return (
+      cid: cid,
+      lid: lid,
+      repAmt: repAmt,
+      savAmt: savAmt,
+      markNotPaid: markNotPaid,
+    );
+  }
+
+  Future<void> _transformCachedSheetStores({
+    required String groupName,
+    required String? collectionDate,
+    required bool hasMemberUpdates,
+    required Map<String, dynamic> Function(Map<String, dynamic> member) transformMember,
+    double groupSavingsDelta = 0.0,
+  }) async {
+    double clampNonNeg(num v) => v.toDouble() < 0.0 ? 0.0 : v.toDouble();
+
+    // 1. Update cached group sheet for `groupName` (date-scoped & base key)
+    if (groupName.isNotEmpty && groupName != 'Ungrouped') {
+      final sheet = await getCachedGroupSheet(groupName, dateStr: collectionDate);
+      if (sheet != null) {
+        final updatedSheet = Map<String, dynamic>.from(sheet);
+        if (updatedSheet['members'] is List) {
+          updatedSheet['members'] = (updatedSheet['members'] as List)
+              .map((m) => m is Map ? transformMember(Map<String, dynamic>.from(m)) : m)
+              .toList();
+        }
+        if (updatedSheet['clients'] is List) {
+          updatedSheet['clients'] = (updatedSheet['clients'] as List)
+              .map((m) => m is Map ? transformMember(Map<String, dynamic>.from(m)) : m)
+              .toList();
+        }
+        if (groupSavingsDelta != 0.0) {
+          final prevGrpSav = ((updatedSheet['group_savings_balance'] ?? 0) as num).toDouble();
+          updatedSheet['group_savings_balance'] = clampNonNeg(prevGrpSav + groupSavingsDelta);
+        }
+        await cacheGroupSheet(groupName, updatedSheet, dateStr: collectionDate);
+      }
+    }
+
+    // 2. Keep cached GET API responses (/single-client-options and /sheet*) synchronized
+    if (hasMemberUpdates || groupSavingsDelta != 0.0) {
+      if (hasMemberUpdates) {
+        final scData = await getCachedApiResponse('/api/v1/co/collections/single-client-options');
+        if (scData is Map && scData['clients'] is List) {
+          final updatedSc = Map<String, dynamic>.from(scData);
+          updatedSc['clients'] = (scData['clients'] as List)
+              .map((c) => c is Map ? transformMember(Map<String, dynamic>.from(c)) : c)
+              .toList();
+          await cacheApiResponse('/api/v1/co/collections/single-client-options', updatedSc);
+        }
+      }
+
+      try {
+        final scope = activeScopeKey;
+        final sheetApiKeys = <String>{};
+        final prefs = await SharedPreferences.getInstance();
+        final prefsKeys = prefs.getStringList('offline_api_cache_keys_$scope') ?? [];
+        for (final k in prefsKeys) {
+          if (k.startsWith('/api/v1/co/collections/sheet')) sheetApiKeys.add(k);
+        }
+        final webPrefix = '$scope::';
+        for (final k in _webApiCache.keys) {
+          if (k.startsWith(webPrefix)) {
+            final ep = k.substring(webPrefix.length);
+            if (ep.startsWith('/api/v1/co/collections/sheet')) sheetApiKeys.add(ep);
+          }
+        }
+        for (final key in sheetApiKeys) {
+          final cachedSheet = await getCachedApiResponse(key);
+          if (cachedSheet is! Map) continue;
+          final cachedGroup = cachedSheet['group_name']?.toString() ?? '';
+          if (groupName.isNotEmpty && cachedGroup == groupName) {
+            final updatedApiSheet = Map<String, dynamic>.from(cachedSheet);
+            if (updatedApiSheet['members'] is List && hasMemberUpdates) {
+              updatedApiSheet['members'] = (updatedApiSheet['members'] as List)
+                  .map((m) => m is Map ? transformMember(Map<String, dynamic>.from(m)) : m)
+                  .toList();
+            }
+            if (groupSavingsDelta != 0.0) {
+              final prevGrpSav = ((updatedApiSheet['group_savings_balance'] ?? 0) as num).toDouble();
+              updatedApiSheet['group_savings_balance'] = clampNonNeg(prevGrpSav + groupSavingsDelta);
+            }
+            await cacheApiResponse(key, updatedApiSheet);
+          }
+        }
+      } catch (_) {}
+    }
+  }
+
+  /// Reads all outbox items for active scope across SQLite / Web / SharedPreferences.
+  Future<List<Map<String, dynamic>>> _loadAllScopedOutboxEntries() async {
+    final scope = activeScopeKey;
+    if (!kIsWeb && !useMemoryStore) {
+      try {
+        final db = await database;
+        final rows = await db.query(
+          'offline_outbox',
+          where: 'scope_key = ?',
+          whereArgs: [scope],
+          orderBy: 'id ASC',
+        );
+        final out = <Map<String, dynamic>>[];
+        for (final r in rows) {
+          out.add(await _decryptOutboxRow(r));
+        }
+        return out;
+      } catch (_) {}
+    }
+    await _hydrateWebOutboxFromPrefs();
+    final combined = <String, Map<String, dynamic>>{};
+    for (final item in await _readPrefsOutbox()) {
+      if ((item['scope_key']?.toString() ?? scope) != scope) continue;
+      final k = item['idempotency_key']?.toString() ?? '${item['id']}';
+      combined[k] = Map<String, dynamic>.from(item);
+    }
+    for (final item in _webOutbox) {
+      if ((item['scope_key']?.toString() ?? scope) != scope) continue;
+      final k = item['idempotency_key']?.toString() ?? '${item['id']}';
+      combined[k] = Map<String, dynamic>.from(item);
+    }
+    return combined.values.toList();
+  }
+
+  Future<Map<String, Map<String, dynamic>>> _findExistingActiveSnapshots() async {
+    final result = <String, Map<String, dynamic>>{};
+    final entries = await _loadAllScopedOutboxEntries();
+    for (final item in entries) {
+      final st = item['status']?.toString();
+      if (st != 'pending' && st != 'failed') continue;
+      final rawMeta = item['optimistic_meta_json']?.toString();
+      if (rawMeta == null || rawMeta.isEmpty) continue;
+      try {
+        final meta = jsonDecode(rawMeta) as Map<String, dynamic>;
+        final clients = meta['clients'];
+        if (clients is Map) {
+          for (final e in clients.entries) {
+            if (e.value is Map) {
+              result.putIfAbsent(e.key.toString(), () => Map<String, dynamic>.from(e.value as Map));
+            }
+          }
+        }
+      } catch (_) {}
+    }
+    return result;
+  }
+
   /// Optimistically updates cached group sheets and single-client options
   /// when a collection is queued into the offline outbox so members reflect
   /// today's recorded status and avoid duplicate submissions.
-  Future<void> applyOptimisticOfflineCollectionToCachedSheet({
+  /// Returns an optimistic rollback snapshot preserving pre-queue status metadata.
+  Future<Map<String, dynamic>> applyOptimisticOfflineCollectionToCachedSheet({
     required String groupName,
     required List<Map<String, dynamic>> collections,
     double groupSavingsDeposit = 0.0,
@@ -676,34 +907,40 @@ class OfflineDatabaseService {
       }
     }
 
+    final existingActiveSnapshots = await _findExistingActiveSnapshots();
+    final Map<String, Map<String, dynamic>> capturedSnapshots = {};
+
     Map<String, dynamic> applyToMemberMap(Map<String, dynamic> member) {
       final cid = (member['client_id'] ?? member['id'] ?? '').toString().trim();
       final lid = (member['loan_id'] ?? '').toString().trim();
-      final tx = (lid.isNotEmpty ? txByClientLoan['$cid::$lid'] : null) ?? txByClient[cid];
+      final clientLoanKey = lid.isNotEmpty ? '$cid::$lid' : cid;
+      final tx = (lid.isNotEmpty ? txByClientLoan[clientLoanKey] : null) ?? txByClient[cid];
       if (tx == null) return member;
 
-      final repAmt = ((tx['loan_repayment_amount'] ??
-                  tx['repayment_amount'] ??
-                  tx['loan_repayment'] ??
-                  0) as num)
-              .toDouble();
-      final savAmt = ((tx['savings_deposit_amount'] ??
-                  tx['savings_amount'] ??
-                  tx['savings_deposit'] ??
-                  0) as num)
-              .toDouble();
-      final markNotPaid =
-          tx['mark_not_paid'] == true || tx['payment_status'] == 'NOT_PAID';
+      capturedSnapshots.putIfAbsent(clientLoanKey, () {
+        if (member['offline_queued'] == true) {
+          final inherited = existingActiveSnapshots[clientLoanKey] ?? existingActiveSnapshots[cid];
+          if (inherited != null) return Map<String, dynamic>.from(inherited);
+          return {'prev_status': 'UNRECORDED', 'prev_collected': false};
+        }
+        return {
+          'prev_status': (member['today_status']?.toString() ?? '').isNotEmpty
+              ? member['today_status'].toString()
+              : 'UNRECORDED',
+          'prev_collected': member['today_collected'] == true,
+        };
+      });
 
+      final parsed = _parseOptimisticTx(tx);
       final prevRep = ((member['today_repayment'] ?? member['today_paid'] ?? 0) as num).toDouble();
       final prevSav = ((member['today_savings'] ?? 0) as num).toDouble();
-      final nextRep = markNotPaid ? prevRep : (prevRep + repAmt);
-      final nextSav = prevSav + savAmt;
+      final nextRep = parsed.markNotPaid ? prevRep : (prevRep + parsed.repAmt);
+      final nextSav = prevSav + parsed.savAmt;
 
       member['today_repayment'] = nextRep;
       member['today_savings'] = nextSav;
       member['today_collected_total'] = nextRep + nextSav;
-      member['today_status'] = markNotPaid
+      member['today_status'] = parsed.markNotPaid
           ? (prevRep > 0 ? 'PAID' : 'NOT_PAID')
           : ((nextRep > 0 || nextSav > 0) ? 'PAID' : (member['today_status'] ?? 'NOT_PAID'));
       member['today_collected'] = true;
@@ -711,64 +948,278 @@ class OfflineDatabaseService {
       return member;
     }
 
-    // 1. Update cached group sheet for `groupName` (date-scoped & base key)
-    if (groupName.isNotEmpty && groupName != 'Ungrouped') {
-      final sheet = await getCachedGroupSheet(groupName, dateStr: collectionDate);
-      if (sheet != null) {
-        final updatedSheet = Map<String, dynamic>.from(sheet);
-        if (updatedSheet['members'] is List) {
-          updatedSheet['members'] = (updatedSheet['members'] as List)
-              .map((m) => m is Map ? applyToMemberMap(Map<String, dynamic>.from(m)) : m)
-              .toList();
-        }
-        if (updatedSheet['clients'] is List) {
-          updatedSheet['clients'] = (updatedSheet['clients'] as List)
-              .map((m) => m is Map ? applyToMemberMap(Map<String, dynamic>.from(m)) : m)
-              .toList();
-        }
-        if (groupSavingsDeposit > 0) {
-          final prevGrpSav = ((updatedSheet['group_savings_balance'] ?? 0) as num).toDouble();
-          updatedSheet['group_savings_balance'] = prevGrpSav + groupSavingsDeposit;
-        }
-        await cacheGroupSheet(groupName, updatedSheet, dateStr: collectionDate);
+    await _transformCachedSheetStores(
+      groupName: groupName,
+      collectionDate: collectionDate,
+      hasMemberUpdates: txByClient.isNotEmpty,
+      transformMember: applyToMemberMap,
+      groupSavingsDelta: groupSavingsDeposit,
+    );
+
+    return {
+      'group_name': groupName,
+      'collection_date': collectionDate,
+      'group_savings_deposit': groupSavingsDeposit,
+      'rolled_back': false,
+      'clients': capturedSnapshots,
+    };
+  }
+
+  /// Reverses optimistic local sheet/cache updates for an outbox batch that was
+  /// permanently rejected by the server or discarded by the user. Idempotent.
+  Future<bool> rollbackOptimisticOfflineCollection(int id) async {
+    final scope = activeScopeKey;
+    final allEntries = await _loadAllScopedOutboxEntries();
+    final prefsList = await _readPrefsOutbox();
+    final targetKey = _resolveIdempotencyKeyForId(id, prefsList);
+
+    Map<String, dynamic>? targetEntry;
+    for (final item in allEntries) {
+      if (item['id'] == id || (targetKey != null && item['idempotency_key'] == targetKey)) {
+        targetEntry = item;
+        break;
       }
     }
+    if (targetEntry == null) return false;
+    if (targetEntry['status'] == 'synced') return false;
 
-    // 2. Keep cached GET API responses (/single-client-options and /sheet) synchronized
-    if (txByClient.isNotEmpty) {
-      final scData = await getCachedApiResponse('/api/v1/co/collections/single-client-options');
-      if (scData is Map && scData['clients'] is List) {
-        final updatedSc = Map<String, dynamic>.from(scData);
-        updatedSc['clients'] = (scData['clients'] as List)
-            .map((c) => c is Map ? applyToMemberMap(Map<String, dynamic>.from(c)) : c)
-            .toList();
-        await cacheApiResponse('/api/v1/co/collections/single-client-options', updatedSc);
-      }
-
+    Map<String, dynamic> meta = {};
+    final rawMeta = targetEntry['optimistic_meta_json']?.toString();
+    if (rawMeta != null && rawMeta.isNotEmpty) {
       try {
-        final prefs = await SharedPreferences.getInstance();
-        final apiKeys = prefs.getStringList('offline_api_cache_keys_$activeScopeKey') ?? [];
-        for (final key in apiKeys) {
-          if (!key.startsWith('/api/v1/co/collections/sheet')) continue;
-          final cachedSheet = await getCachedApiResponse(key);
-          if (cachedSheet is! Map) continue;
-          final cachedGroup = cachedSheet['group_name']?.toString() ?? '';
-          if (groupName.isNotEmpty && cachedGroup == groupName) {
-            final updatedApiSheet = Map<String, dynamic>.from(cachedSheet);
-            if (updatedApiSheet['members'] is List) {
-              updatedApiSheet['members'] = (updatedApiSheet['members'] as List)
-                  .map((m) => m is Map ? applyToMemberMap(Map<String, dynamic>.from(m)) : m)
-                  .toList();
-            }
-            if (groupSavingsDeposit > 0) {
-              final prevGrpSav = ((updatedApiSheet['group_savings_balance'] ?? 0) as num).toDouble();
-              updatedApiSheet['group_savings_balance'] = prevGrpSav + groupSavingsDeposit;
-            }
-            await cacheApiResponse(key, updatedApiSheet);
+        meta = Map<String, dynamic>.from(jsonDecode(rawMeta) as Map);
+      } catch (_) {}
+    }
+    if (meta['rolled_back'] == true) return false;
+
+    Map<String, dynamic> payload = {};
+    try {
+      payload = Map<String, dynamic>.from(jsonDecode(targetEntry['payload_json'].toString()) as Map);
+    } catch (_) {
+      return false;
+    }
+
+    final opType = targetEntry['operation_type']?.toString() ?? 'BATCH_COLLECTION';
+    final List<Map<String, dynamic>> collections;
+    final String targetGroupName;
+    if (opType == 'SINGLE_COLLECTION') {
+      collections = [payload];
+      targetGroupName = (payload['group_name'] ?? meta['group_name'] ?? '').toString().trim();
+    } else {
+      collections = (payload['collections'] as List?)
+              ?.whereType<Map>()
+              .map((e) => Map<String, dynamic>.from(e))
+              .toList() ??
+          <Map<String, dynamic>>[];
+      targetGroupName = (payload['group_name'] ?? targetEntry['group_name'] ?? meta['group_name'] ?? '').toString().trim();
+    }
+    final grpSavDeposit = ((payload['group_savings_deposit'] ?? meta['group_savings_deposit'] ?? 0) as num).toDouble();
+    final collectionDate = (targetEntry['collection_date'] ?? payload['date'] ?? meta['collection_date'])?.toString();
+
+    final targetIdemKey = targetEntry['idempotency_key']?.toString();
+    final Set<String> remainingPendingKeys = {};
+    final Set<String> remainingNotPaidKeys = {};
+    for (final other in allEntries) {
+      if (other['id'] == id || (targetIdemKey != null && other['idempotency_key'] == targetIdemKey)) {
+        continue;
+      }
+      final st = other['status']?.toString();
+      if (st != 'pending' && st != 'failed') continue;
+      try {
+        final otherPayload = jsonDecode(other['payload_json'].toString()) as Map<String, dynamic>;
+        final otherOp = other['operation_type']?.toString() ?? 'BATCH_COLLECTION';
+        final otherCols = otherOp == 'SINGLE_COLLECTION'
+            ? [otherPayload]
+            : ((otherPayload['collections'] as List?)?.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList() ?? []);
+        for (final tx in otherCols) {
+          final p = _parseOptimisticTx(tx);
+          if (p.cid.isEmpty) continue;
+          remainingPendingKeys.add(p.cid);
+          if (p.lid.isNotEmpty) remainingPendingKeys.add('${p.cid}::${p.lid}');
+          if (p.markNotPaid) {
+            remainingNotPaidKeys.add(p.cid);
+            if (p.lid.isNotEmpty) remainingNotPaidKeys.add('${p.cid}::${p.lid}');
           }
         }
       } catch (_) {}
     }
+
+    final Map<String, Map<String, dynamic>> txByClient = {};
+    final Map<String, Map<String, dynamic>> txByClientLoan = {};
+    for (final tx in collections) {
+      final cid = (tx['client_id'] ?? tx['Client ID'] ?? '').toString().trim();
+      final lid = (tx['loan_id'] ?? '').toString().trim();
+      if (cid.isNotEmpty) {
+        txByClient[cid] = tx;
+        if (lid.isNotEmpty) txByClientLoan['$cid::$lid'] = tx;
+      }
+    }
+
+    final rawClientSnaps = meta['clients'] is Map ? (meta['clients'] as Map) : <String, dynamic>{};
+
+    Map<String, dynamic> rollbackMemberMap(Map<String, dynamic> member) {
+      final cid = (member['client_id'] ?? member['id'] ?? '').toString().trim();
+      final lid = (member['loan_id'] ?? '').toString().trim();
+      final clientLoanKey = lid.isNotEmpty ? '$cid::$lid' : cid;
+      final tx = (lid.isNotEmpty ? txByClientLoan[clientLoanKey] : null) ?? txByClient[cid];
+      if (tx == null) return member;
+
+      final parsed = _parseOptimisticTx(tx);
+      final prevRep = ((member['today_repayment'] ?? member['today_paid'] ?? 0) as num).toDouble();
+      final prevSav = ((member['today_savings'] ?? 0) as num).toDouble();
+      final rawNextRep = parsed.markNotPaid ? prevRep : (prevRep - parsed.repAmt);
+      final nextRep = rawNextRep < 0.0 ? 0.0 : rawNextRep;
+      final rawNextSav = prevSav - parsed.savAmt;
+      final nextSav = rawNextSav < 0.0 ? 0.0 : rawNextSav;
+
+      final hasRemainingPending =
+          remainingPendingKeys.contains(clientLoanKey) || remainingPendingKeys.contains(cid);
+      final hasRemainingNotPaid =
+          remainingNotPaidKeys.contains(clientLoanKey) || remainingNotPaidKeys.contains(cid);
+
+      member['today_repayment'] = nextRep;
+      member['today_savings'] = nextSav;
+      member['today_collected_total'] = nextRep + nextSav;
+      member['offline_queued'] = hasRemainingPending;
+
+      if (nextRep > 0 || nextSav > 0) {
+        member['today_status'] = 'PAID';
+        member['today_collected'] = true;
+      } else if (hasRemainingNotPaid) {
+        member['today_status'] = 'NOT_PAID';
+        member['today_collected'] = true;
+      } else {
+        final rawSnap = rawClientSnaps[clientLoanKey] ?? rawClientSnaps[cid];
+        final snap = rawSnap is Map ? rawSnap : null;
+        final prevStatus = snap?['prev_status']?.toString();
+        final restoredStatus = (prevStatus != null && prevStatus.isNotEmpty) ? prevStatus : 'UNRECORDED';
+        member['today_status'] = restoredStatus;
+        member['today_collected'] = snap != null
+            ? (snap['prev_collected'] == true)
+            : (restoredStatus == 'PAID' || restoredStatus == 'NOT_PAID');
+      }
+      return member;
+    }
+
+    await _transformCachedSheetStores(
+      groupName: targetGroupName,
+      collectionDate: collectionDate,
+      hasMemberUpdates: txByClient.isNotEmpty,
+      transformMember: rollbackMemberMap,
+      groupSavingsDelta: -grpSavDeposit,
+    );
+
+    meta['rolled_back'] = true;
+    final metaJson = jsonEncode(meta);
+    bool matches(Map<String, dynamic> item) =>
+        item['id'] == id || (targetIdemKey != null && item['idempotency_key'] == targetIdemKey);
+
+    if (prefsList.isNotEmpty) {
+      for (final item in prefsList) {
+        if (matches(item)) {
+          item['optimistic_meta_json'] = metaJson;
+        }
+      }
+      await _writePrefsOutbox(prefsList);
+    }
+    for (final item in _webOutbox) {
+      if (matches(item)) {
+        item['optimistic_meta_json'] = metaJson;
+      }
+    }
+    if (!kIsWeb && !useMemoryStore) {
+      try {
+        final db = await database;
+        final encMetaJson = await _encryption.encryptString(metaJson);
+        await db.update(
+          'offline_outbox',
+          {'optimistic_meta_json': encMetaJson},
+          where: targetIdemKey != null ? '(id = ? OR idempotency_key = ?) AND scope_key = ?' : 'id = ? AND scope_key = ?',
+          whereArgs: targetIdemKey != null ? [id, targetIdemKey, scope] : [id, scope],
+        );
+      } catch (_) {}
+    }
+
+    return true;
+  }
+
+  /// Clears the temporary `offline_queued` badge on cached sheets after a batch syncs,
+  /// unless another active offline batch still covers that member.
+  Future<void> clearOptimisticFlagOnSyncedBatch(int id) async {
+    final allEntries = await _loadAllScopedOutboxEntries();
+    final prefsList = await _readPrefsOutbox();
+    final targetKey = _resolveIdempotencyKeyForId(id, prefsList);
+
+    Map<String, dynamic>? targetEntry;
+    for (final item in allEntries) {
+      if (item['id'] == id || (targetKey != null && item['idempotency_key'] == targetKey)) {
+        targetEntry = item;
+        break;
+      }
+    }
+    if (targetEntry == null) return;
+
+    Map<String, dynamic> payload = {};
+    try {
+      payload = Map<String, dynamic>.from(jsonDecode(targetEntry['payload_json'].toString()) as Map);
+    } catch (_) {
+      return;
+    }
+
+    final opType = targetEntry['operation_type']?.toString() ?? 'BATCH_COLLECTION';
+    final List<Map<String, dynamic>> collections = opType == 'SINGLE_COLLECTION'
+        ? [payload]
+        : ((payload['collections'] as List?)?.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList() ?? []);
+    final targetGroupName = (payload['group_name'] ?? targetEntry['group_name'] ?? '').toString().trim();
+    final collectionDate = (targetEntry['collection_date'] ?? payload['date'])?.toString();
+
+    final Set<String> affectedCids = {};
+    for (final tx in collections) {
+      final cid = (tx['client_id'] ?? tx['Client ID'] ?? '').toString().trim();
+      final lid = (tx['loan_id'] ?? '').toString().trim();
+      if (cid.isNotEmpty) {
+        affectedCids.add(cid);
+        if (lid.isNotEmpty) affectedCids.add('$cid::$lid');
+      }
+    }
+    if (affectedCids.isEmpty) return;
+
+    final targetIdemKey = targetEntry['idempotency_key']?.toString();
+    final Set<String> remainingPendingKeys = {};
+    for (final other in allEntries) {
+      if (other['id'] == id || (targetIdemKey != null && other['idempotency_key'] == targetIdemKey)) continue;
+      final st = other['status']?.toString();
+      if (st != 'pending' && st != 'failed') continue;
+      try {
+        final otherPayload = jsonDecode(other['payload_json'].toString()) as Map<String, dynamic>;
+        final otherOp = other['operation_type']?.toString() ?? 'BATCH_COLLECTION';
+        final otherCols = otherOp == 'SINGLE_COLLECTION'
+            ? [otherPayload]
+            : ((otherPayload['collections'] as List?)?.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList() ?? []);
+        for (final tx in otherCols) {
+          final p = _parseOptimisticTx(tx);
+          if (p.cid.isEmpty) continue;
+          remainingPendingKeys.add(p.cid);
+          if (p.lid.isNotEmpty) remainingPendingKeys.add('${p.cid}::${p.lid}');
+        }
+      } catch (_) {}
+    }
+
+    await _transformCachedSheetStores(
+      groupName: targetGroupName,
+      collectionDate: collectionDate,
+      hasMemberUpdates: true,
+      transformMember: (member) {
+        final cid = (member['client_id'] ?? member['id'] ?? '').toString().trim();
+        final lid = (member['loan_id'] ?? '').toString().trim();
+        final clientLoanKey = lid.isNotEmpty ? '$cid::$lid' : cid;
+        if (affectedCids.contains(clientLoanKey) || affectedCids.contains(cid)) {
+          member['offline_queued'] =
+              remainingPendingKeys.contains(clientLoanKey) || remainingPendingKeys.contains(cid);
+        }
+        return member;
+      },
+    );
   }
 
   /// Queues an ad-hoc single client collection into the local outbox when offline.
@@ -777,10 +1228,12 @@ class OfflineDatabaseService {
     required String clientName,
     required String collectionDate,
     required Map<String, dynamic> payload,
+    Map<String, dynamic>? optimisticMeta,
   }) async {
     final scope = activeScopeKey;
     final nowIso = DateTime.now().toIso8601String();
     final int recordId = idempotencyKey.hashCode.abs();
+    final metaJson = optimisticMeta != null ? jsonEncode(optimisticMeta) : null;
     final entry = <String, dynamic>{
       'id': recordId,
       'scope_key': scope,
@@ -796,6 +1249,7 @@ class OfflineDatabaseService {
       'created_at': nowIso,
       'synced_at': null,
       'error_message': null,
+      if (metaJson != null) 'optimistic_meta_json': metaJson,
     };
 
     // Persist to SharedPreferences with deduplication and matching id
@@ -811,6 +1265,8 @@ class OfflineDatabaseService {
     }
 
     try {
+      final encPayload = await _encryption.encryptString(jsonEncode(payload));
+      final encMeta = metaJson != null ? await _encryption.encryptString(metaJson) : null;
       final db = await database;
       return await db.insert(
         'offline_outbox',
@@ -823,10 +1279,11 @@ class OfflineDatabaseService {
           'operation_type': 'SINGLE_COLLECTION',
           'group_name': clientName,
           'collection_date': collectionDate,
-          'payload_json': jsonEncode(payload),
+          'payload_json': encPayload,
           'status': 'pending',
           'retry_count': 0,
           'created_at': nowIso,
+          if (encMeta != null) 'optimistic_meta_json': encMeta,
         },
         conflictAlgorithm: ConflictAlgorithm.replace,
       );
@@ -837,6 +1294,7 @@ class OfflineDatabaseService {
         clientName: clientName,
         collectionDate: collectionDate,
         payload: payload,
+        optimisticMeta: optimisticMeta,
       );
     }
   }
@@ -847,10 +1305,12 @@ class OfflineDatabaseService {
     required String groupName,
     required String collectionDate,
     required Map<String, dynamic> payload,
+    Map<String, dynamic>? optimisticMeta,
   }) async {
     final scope = activeScopeKey;
     final nowIso = DateTime.now().toIso8601String();
     final int recordId = idempotencyKey.hashCode.abs();
+    final metaJson = optimisticMeta != null ? jsonEncode(optimisticMeta) : null;
     final entry = <String, dynamic>{
       'id': recordId,
       'scope_key': scope,
@@ -866,6 +1326,7 @@ class OfflineDatabaseService {
       'created_at': nowIso,
       'synced_at': null,
       'error_message': null,
+      if (metaJson != null) 'optimistic_meta_json': metaJson,
     };
 
     // Persist to SharedPreferences with deduplication and matching id
@@ -881,6 +1342,8 @@ class OfflineDatabaseService {
     }
 
     try {
+      final encPayload = await _encryption.encryptString(jsonEncode(payload));
+      final encMeta = metaJson != null ? await _encryption.encryptString(metaJson) : null;
       final db = await database;
       return await db.insert(
         'offline_outbox',
@@ -893,10 +1356,11 @@ class OfflineDatabaseService {
           'operation_type': 'BATCH_COLLECTION',
           'group_name': groupName,
           'collection_date': collectionDate,
-          'payload_json': jsonEncode(payload),
+          'payload_json': encPayload,
           'status': 'pending',
           'retry_count': 0,
           'created_at': nowIso,
+          if (encMeta != null) 'optimistic_meta_json': encMeta,
         },
         conflictAlgorithm: ConflictAlgorithm.replace,
       );
@@ -907,6 +1371,7 @@ class OfflineDatabaseService {
         groupName: groupName,
         collectionDate: collectionDate,
         payload: payload,
+        optimisticMeta: optimisticMeta,
       );
     }
   }
@@ -925,12 +1390,17 @@ class OfflineDatabaseService {
 
     try {
       final db = await database;
-      return await db.query(
+      final rows = await db.query(
         'offline_outbox',
         where: "(status = 'pending' OR status = 'failed') AND scope_key = ?",
         whereArgs: [scope],
         orderBy: 'id ASC',
       );
+      final out = <Map<String, dynamic>>[];
+      for (final r in rows) {
+        out.add(await _decryptOutboxRow(r));
+      }
+      return out;
     } catch (_) {
       useMemoryStore = true;
       return getPendingOutboxBatches();
@@ -1096,13 +1566,18 @@ class OfflineDatabaseService {
 
     try {
       final db = await database;
-      return await db.query(
+      final rows = await db.query(
         'offline_outbox',
         where: "status = 'synced' AND scope_key = ?",
         whereArgs: [scope],
         orderBy: 'synced_at DESC',
         limit: limit,
       );
+      final out = <Map<String, dynamic>>[];
+      for (final r in rows) {
+        out.add(await _decryptOutboxRow(r));
+      }
+      return out;
     } catch (_) {
       useMemoryStore = true;
       return getRecentSyncedBatches(limit: limit);

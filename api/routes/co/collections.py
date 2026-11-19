@@ -10,7 +10,7 @@ import uuid
 from fastapi import APIRouter, Depends, Query, HTTPException, status
 from database.repositories.unit_of_work import SupabaseUnitOfWork
 from api.dependencies import get_uow, get_current_user, require_role, check_branch_access
-from services.rbac_scope_service import RBACScopeService
+from services.rbac_scope_service import RBACScopeService, UnknownRoleError
 from api.schemas.collections import (
     CollectionSheetResponse,
     CollectionSheetMember,
@@ -56,6 +56,28 @@ def _resolve_target_date(uow: SupabaseUnitOfWork, branch_id: Optional[str], date
     except Exception:
         pass
     return date.today()
+
+
+def _resolve_late_entry_authorization(current_user: CurrentUser, is_late_entry: bool) -> bool:
+    """
+    Strict BR-DATE-002 enforcement: closed-date/late-entry overrides require Admin or Super Admin role.
+    Fails closed with HTTP 403 for all non-Admin callers regardless of operational date status.
+    """
+    if not is_late_entry:
+        return False
+    try:
+        norm_role = RBACScopeService.normalize_role(current_user.role)
+    except UnknownRoleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Forbidden: {exc}"
+        )
+    if norm_role != "Admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Forbidden: Only Administrators may submit backdated or closed-date late entries."
+        )
+    return True
 
 
 def _strip_synthetic_client_suffix(cid: Any) -> str:
@@ -692,10 +714,10 @@ def submit_single_client(
             headers={"Retry-After": str(retry_after)}
         )
 
-    # Verify operational open status (offline queued syncs carry is_offline_sync=True or offline* idempotency_key per BR-DATE-002)
-    is_offline_exempt = bool(getattr(payload, "is_offline_sync", False)) or str(payload.idempotency_key or "").strip().lower().startswith("offline")
+    # Enforce strict BR-DATE-002 operational date freeze (no client-controlled offline bypasses)
+    allow_closed = _resolve_late_entry_authorization(current_user, bool(getattr(payload, "is_late_entry", False)))
     is_open, open_reason = BusinessDateService.is_operational_open(uow, current_user.branch_id, target_date)
-    if not is_open and not is_offline_exempt:
+    if not is_open and not allow_closed:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"Cannot submit new collections today ({open_reason}).")
 
     # Verify client exists and user is authorized for client's branch
@@ -704,7 +726,7 @@ def submit_single_client(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Client not found.")
     target_branch_id = res_c.data[0].get("branch_id")
     check_branch_access(current_user, target_branch_id, "submit collections for this client")
-    if target_branch_id and target_branch_id != current_user.branch_id and not is_offline_exempt:
+    if target_branch_id and target_branch_id != current_user.branch_id and not allow_closed:
         b_open, b_reason = BusinessDateService.is_operational_open(uow, target_branch_id, target_date)
         if not b_open:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"Cannot submit new collections today ({b_reason}).")
@@ -719,129 +741,141 @@ def submit_single_client(
         except Exception:
             pass
 
-    if payload.idempotency_key:
-        from services.idempotency_service import IdempotencyService
-        lock_res = IdempotencyService.acquire_lock(uow, payload.idempotency_key, "single_collection", payload)
-        if lock_res.get("action") == "REPLAY":
-            cached = lock_res.get("response_body") or {}
-            return SingleClientSubmitResponse(**cached)
-
-    date_str = target_date.isoformat()
-    sc_batch_id = payload.batch_id or payload.idempotency_key or f"COL-SC-{date_str}-{uuid.uuid4().hex[:6].upper()}"
-
-    is_not_paid = bool(payload.mark_not_paid)
-    rep_amt = 0.0 if is_not_paid else payload.loan_repayment
-    expected_amt = payload.expected_amount if payload.expected_amount > 0 else (payload.loan_repayment if payload.loan_repayment > 0 else 0.0)
-    p_status = "NOT_PAID" if is_not_paid else ("PAID" if rep_amt > 0 else "NOT_PAID")
-    overdue_val = expected_amt if is_not_paid else 0.0
-    note_val = payload.note or ("Marked NOT PAID (Single Client Collection)" if is_not_paid else "Single Client Collection")
-
-    prod_low = str(payload.loan_product or "60 day").lower()
-    rep_12w = rep_24w = rep_60d = rep_120d = rep_mth = 0
-    if not is_not_paid:
-        if "12 week" in prod_low or "12w" in prod_low: rep_12w = rep_amt
-        elif "24 week" in prod_low or "24w" in prod_low: rep_24w = rep_amt
-        elif "60 day" in prod_low or "60-day" in prod_low: rep_60d = rep_amt
-        elif "120 day" in prod_low or "120-day" in prod_low: rep_120d = rep_amt
-        elif "month" in prod_low: rep_mth = rep_amt
-        else: rep_60d = rep_amt
-
-    records_to_insert = []
-    if is_not_paid or payload.savings_deposit > 0 or rep_amt > 0 or payload.app_fee > 0 or payload.passbook_fee > 0 or payload.misc_fee > 0:
-        records_to_insert.append({
-            "batch_id": sc_batch_id,
-            "tx_id": str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{sc_batch_id}_{payload.client_id}_rep")),
-            "savings_tx_id": str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{sc_batch_id}_{payload.client_id}_sav")),
-            "Date": date_str,
-            "Client ID": payload.client_id,
-            "Client Name": payload.client_name,
-            "Group Name": payload.group_name or "Ungrouped",
-            "Group ID": payload.group_id,
-            "group_id": payload.group_id,
-            "Officer": target_officer_username,
-            "Branch": target_branch_name,
-            "client_id": payload.client_id,
-            "id": payload.client_id,
-            "loan_id": payload.loan_id,
-            "Amount Paid": rep_amt,
-            "Transaction Type": "Loan" if (rep_amt > 0 or is_not_paid) else "Individual Savings Deposit",
-            "Note": note_val,
-            "Savings Amount": payload.savings_deposit,
-            "Withdrawal Amount": 0.0,
-            "Loan Repayment Amount": rep_amt,
-            "Repayment 12 Weeks": rep_12w,
-            "Repayment 24 Weeks": rep_24w,
-            "Repayment 60 Days": rep_60d,
-            "Repayment 120 Days": rep_120d,
-            "Monthly": rep_mth,
-            "App Fee": payload.app_fee,
-            "Pass Book Bonus": payload.passbook_fee,
-            "Misc Fees": payload.misc_fee,
-            "Payment Status": p_status,
-            "Expected Amount": expected_amt,
-            "Overdue Amount": overdue_val,
-            "mark_not_paid": is_not_paid
-        })
-
-    if payload.group_savings_deposit > 0 and payload.group_name and payload.group_name != "Ungrouped":
-        records_to_insert.append({
-            "batch_id": sc_batch_id,
-            "tx_id": str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{sc_batch_id}_group_{payload.client_id}_rep")),
-            "savings_tx_id": str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{sc_batch_id}_group_{payload.client_id}_sav")),
-            "Date": date_str,
-            "Client ID": f"GROUP-{payload.group_name}",
-            "Client Name": f"{payload.group_name} (Group Savings from {payload.client_name})",
-            "Officer": target_officer_username,
-            "Branch": target_branch_name,
-            "Amount Paid": 0.0,
-            "Transaction Type": "Group Meeting",
-            "Note": f"Group Savings Deposit from {payload.client_name}",
-            "Savings Amount": payload.group_savings_deposit,
-            "Withdrawal Amount": 0.0,
-            "group_id": payload.group_id,
-            "Group ID": payload.group_id,
-            "Group Savings Deposit": payload.group_savings_deposit,
-            "Group Savings Withdrawal": 0.0,
-            "Payment Status": "PAID"
-        })
-
-    if not records_to_insert:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="No collection amounts provided to submit.")
-
-    from services.collection_batch_service import save_repayments
-    try:
-        receipt = save_repayments(records_to_insert, batch_id=sc_batch_id, allow_closed_date=is_offline_exempt)
-    except TypeError:
-        receipt = save_repayments(records_to_insert, batch_id=sc_batch_id)
-    sc_fees = float(payload.app_fee or 0.0) + float(payload.passbook_fee or 0.0) + float(payload.misc_fee or 0.0)
-    if receipt:
-        receipt["batch_id"] = sc_batch_id
-        if payload.idempotency_key:
-            receipt["idempotency_key"] = payload.idempotency_key
-        receipt["group_name"] = f"Single Client: {payload.client_name} ({payload.group_name})" if payload.group_name != "Ungrouped" else f"Single Client: {payload.client_name}"
-        receipt["officer"] = target_officer_username
-        receipt["branch"] = target_branch_name
-        receipt["date"] = date_str
-        receipt["timestamp"] = datetime.now().strftime("%d %b %Y, %I:%M %p")
-        tot_rep_sc = float(receipt.get("total_repayment", 0.0) or 0.0)
-        tot_sav_sc = float(receipt.get("total_savings", 0.0) or 0.0)
-        tot_fees_sc = float(receipt.get("total_fees", sc_fees) or sc_fees)
-        receipt["total_fees"] = tot_fees_sc
-        receipt["total_cash"] = float(receipt.get("total_cash") or 0.0)
-        if receipt["total_cash"] < (tot_rep_sc + tot_sav_sc + tot_fees_sc):
-            receipt["total_cash"] = tot_rep_sc + tot_sav_sc + tot_fees_sc
-
-    resp = SingleClientSubmitResponse(
-        success=True,
-        receipt=receipt,
-        message=f"Successfully posted single client collection for {payload.client_name}!",
-        idempotency_key=payload.idempotency_key,
-        batch_id=sc_batch_id
+    from services.idempotency_service import IdempotencyService
+    lock_res = IdempotencyService.acquire_lock(
+        uow,
+        payload.idempotency_key,
+        "single_collection",
+        payload,
+        user_id=current_user.id,
+        branch_id=target_branch_id or current_user.branch_id,
     )
-    if payload.idempotency_key:
-        from services.idempotency_service import IdempotencyService
+    if lock_res.get("action") == "REPLAY":
+        cached = lock_res.get("response_body") or {}
+        return SingleClientSubmitResponse(**cached)
+
+    try:
+        date_str = target_date.isoformat()
+        sc_batch_id = payload.batch_id or payload.idempotency_key
+
+        is_not_paid = bool(payload.mark_not_paid)
+        rep_amt = 0.0 if is_not_paid else payload.loan_repayment
+        expected_amt = payload.expected_amount if payload.expected_amount > 0 else (payload.loan_repayment if payload.loan_repayment > 0 else 0.0)
+        p_status = "NOT_PAID" if is_not_paid else ("PAID" if rep_amt > 0 else "NOT_PAID")
+        overdue_val = expected_amt if is_not_paid else 0.0
+        note_val = payload.note or ("Marked NOT PAID (Single Client Collection)" if is_not_paid else "Single Client Collection")
+
+        prod_low = str(payload.loan_product or "60 day").lower()
+        rep_12w = rep_24w = rep_60d = rep_120d = rep_mth = 0
+        if not is_not_paid:
+            if "12 week" in prod_low or "12w" in prod_low: rep_12w = rep_amt
+            elif "24 week" in prod_low or "24w" in prod_low: rep_24w = rep_amt
+            elif "60 day" in prod_low or "60-day" in prod_low: rep_60d = rep_amt
+            elif "120 day" in prod_low or "120-day" in prod_low: rep_120d = rep_amt
+            elif "month" in prod_low: rep_mth = rep_amt
+            else: rep_60d = rep_amt
+
+        records_to_insert = []
+        if is_not_paid or payload.savings_deposit > 0 or rep_amt > 0 or payload.app_fee > 0 or payload.passbook_fee > 0 or payload.misc_fee > 0:
+            records_to_insert.append({
+                "batch_id": sc_batch_id,
+                "tx_id": str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{sc_batch_id}_{payload.client_id}_rep")),
+                "savings_tx_id": str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{sc_batch_id}_{payload.client_id}_sav")),
+                "Date": date_str,
+                "Client ID": payload.client_id,
+                "Client Name": payload.client_name,
+                "Group Name": payload.group_name or "Ungrouped",
+                "Group ID": payload.group_id,
+                "group_id": payload.group_id,
+                "Officer": target_officer_username,
+                "Branch": target_branch_name,
+                "client_id": payload.client_id,
+                "id": payload.client_id,
+                "loan_id": payload.loan_id,
+                "Amount Paid": rep_amt,
+                "Transaction Type": "Loan" if (rep_amt > 0 or is_not_paid) else "Individual Savings Deposit",
+                "Note": note_val,
+                "Savings Amount": payload.savings_deposit,
+                "Withdrawal Amount": 0.0,
+                "Loan Repayment Amount": rep_amt,
+                "Repayment 12 Weeks": rep_12w,
+                "Repayment 24 Weeks": rep_24w,
+                "Repayment 60 Days": rep_60d,
+                "Repayment 120 Days": rep_120d,
+                "Monthly": rep_mth,
+                "App Fee": payload.app_fee,
+                "Pass Book Bonus": payload.passbook_fee,
+                "Misc Fees": payload.misc_fee,
+                "Payment Status": p_status,
+                "Expected Amount": expected_amt,
+                "Overdue Amount": overdue_val,
+                "mark_not_paid": is_not_paid
+            })
+
+        if payload.group_savings_deposit > 0 and payload.group_name and payload.group_name != "Ungrouped":
+            records_to_insert.append({
+                "batch_id": sc_batch_id,
+                "tx_id": str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{sc_batch_id}_group_{payload.client_id}_rep")),
+                "savings_tx_id": str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{sc_batch_id}_group_{payload.client_id}_sav")),
+                "Date": date_str,
+                "Client ID": f"GROUP-{payload.group_name}",
+                "Client Name": f"{payload.group_name} (Group Savings from {payload.client_name})",
+                "Officer": target_officer_username,
+                "Branch": target_branch_name,
+                "Amount Paid": 0.0,
+                "Transaction Type": "Group Meeting",
+                "Note": f"Group Savings Deposit from {payload.client_name}",
+                "Savings Amount": payload.group_savings_deposit,
+                "Withdrawal Amount": 0.0,
+                "group_id": payload.group_id,
+                "Group ID": payload.group_id,
+                "Group Savings Deposit": payload.group_savings_deposit,
+                "Group Savings Withdrawal": 0.0,
+                "Payment Status": "PAID"
+            })
+
+        if not records_to_insert:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="No collection amounts provided to submit.")
+
+        from services.collection_batch_service import save_repayments
+        try:
+            receipt = save_repayments(records_to_insert, batch_id=sc_batch_id, allow_closed_date=allow_closed)
+        except TypeError:
+            receipt = save_repayments(records_to_insert, batch_id=sc_batch_id)
+        sc_fees = float(payload.app_fee or 0.0) + float(payload.passbook_fee or 0.0) + float(payload.misc_fee or 0.0)
+        if receipt:
+            receipt["batch_id"] = sc_batch_id
+            receipt["idempotency_key"] = payload.idempotency_key
+            receipt["group_name"] = f"Single Client: {payload.client_name} ({payload.group_name})" if payload.group_name != "Ungrouped" else f"Single Client: {payload.client_name}"
+            receipt["officer"] = target_officer_username
+            receipt["branch"] = target_branch_name
+            receipt["date"] = date_str
+            receipt["timestamp"] = datetime.now().strftime("%d %b %Y, %I:%M %p")
+            tot_rep_sc = float(receipt.get("total_repayment", 0.0) or 0.0)
+            tot_sav_sc = float(receipt.get("total_savings", 0.0) or 0.0)
+            tot_fees_sc = float(receipt.get("total_fees", sc_fees) or sc_fees)
+            receipt["total_fees"] = tot_fees_sc
+            receipt["total_cash"] = float(receipt.get("total_cash") or 0.0)
+            if receipt["total_cash"] < (tot_rep_sc + tot_sav_sc + tot_fees_sc):
+                receipt["total_cash"] = tot_rep_sc + tot_sav_sc + tot_fees_sc
+
+        resp = SingleClientSubmitResponse(
+            success=True,
+            receipt=receipt,
+            message=f"Successfully posted single client collection for {payload.client_name}!",
+            idempotency_key=payload.idempotency_key,
+            batch_id=sc_batch_id
+        )
         IdempotencyService.commit_result(uow, payload.idempotency_key, 200, resp)
-    return resp
+        return resp
+    except Exception as ex:
+        try:
+            status_c = getattr(ex, "status_code", 400)
+            detail_m = getattr(ex, "detail", str(ex))
+            IdempotencyService.record_failure(uow, payload.idempotency_key, str(detail_m), status_code=status_c)
+        except Exception:
+            pass
+        raise
 
 
 @router.post("/batch-submit", response_model=BatchCollectionResponse)
@@ -939,128 +973,129 @@ def submit_batch_collections(
         except Exception:
             pass
 
+    allow_closed = _resolve_late_entry_authorization(current_user, bool(getattr(payload, "is_late_entry", False)))
     is_open, open_reason = BusinessDateService.is_operational_open(uow, target_branch_id or current_user.branch_id, target_date)
-    is_authorized_override = (
-        bool(getattr(payload, "is_offline_sync", False))
-        or str(payload.idempotency_key or "").strip().lower().startswith("offline")
-        or bool(getattr(payload, 'is_late_entry', False))
-    )
-    if not is_open and not is_authorized_override:
+    if not is_open and not allow_closed:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"Cannot submit new collections today ({open_reason}).")
 
-    if payload.idempotency_key:
-        from services.idempotency_service import IdempotencyService
-        lock_res = IdempotencyService.acquire_lock(uow, payload.idempotency_key, "batch_collection", payload)
-        if lock_res.get("action") == "REPLAY":
-            cached = lock_res.get("response_body") or {}
-            return BatchCollectionResponse(**cached)
-
-    date_str = target_date.isoformat()
-    batch_id = payload.batch_id or payload.idempotency_key or f"COL-{date_str}-{uuid.uuid4().hex[:6].upper()}"
-
-    to_insert = []
-
-    for item in payload.collections:
-        sav = float(item.savings_deposit_amount or 0)
-        sav_wd = float(item.savings_withdrawal_amount or 0)
-        rep = float(item.loan_repayment_amount or 0)
-        app = float(item.app_fee or 0)
-        pb = float(item.passbook_bonus or 0)
-        misc = float(item.misc_fees or 0)
-        asset_cr = float(item.asset_credit_sales or 0)
-        cc = float(item.cash_and_carry or 0)
-        cfd = float(item.credit_form_damage or 0)
-        bon = float(item.bonus or 0)
-        exp_amt = float(item.expected_amount or 0)
-        is_marked_not_paid = bool(item.mark_not_paid)
-
-        cls_res = RepaymentService.classify_repayment(
-            amount_paid=0.0 if is_marked_not_paid else rep,
-            total_due_today=exp_amt,
-            current_installment=exp_amt,
-            has_overdue=False
-        )
-        p_status = "NOT_PAID" if is_marked_not_paid else cls_res["status"]
-        overdue_val = exp_amt if is_marked_not_paid else cls_res["overdue_shortfall"]
-
-        if sav == 0 and sav_wd == 0 and rep == 0 and app == 0 and pb == 0 and misc == 0 and asset_cr == 0 and cc == 0 and cfd == 0 and bon == 0:
-            if not is_marked_not_paid:
-                continue
-
-        prod_low = str(item.loan_product or "60 day").lower()
-        rep_12w = rep_24w = rep_60d = rep_120d = rep_mth = 0
-        if "12 week" in prod_low or "12w" in prod_low: rep_12w = rep
-        elif "24 week" in prod_low or "24w" in prod_low: rep_24w = rep
-        elif "60 day" in prod_low or "60-day" in prod_low: rep_60d = rep
-        elif "120 day" in prod_low or "120-day" in prod_low: rep_120d = rep
-        elif "month" in prod_low: rep_mth = rep
-        else: rep_60d = rep
-
-        to_insert.append({
-            "batch_id": batch_id,
-            "Date": date_str,
-            "Client ID": item.client_id,
-            "Client Name": item.client_name,
-            "loan_id": item.loan_id,
-            "Officer": target_officer_username,
-            "Branch": target_branch_name,
-            "Amount Paid": rep,
-            "Transaction Type": "Loan",
-            "Note": f"Daily Collection - {payload.group_name}" if not is_marked_not_paid else "Marked NOT PAID (₦0 Collection)",
-            "Savings Amount": sav,
-            "Withdrawal Amount": sav_wd,
-            "Loan Repayment Amount": rep,
-            "Repayment 12 Weeks": rep_12w,
-            "Repayment 24 Weeks": rep_24w,
-            "Repayment 60 Days": rep_60d,
-            "Repayment 120 Days": rep_120d,
-            "Monthly": rep_mth,
-            "App Fee": app,
-            "Pass Book Bonus": pb,
-            "Misc Fees": misc,
-            "Asset Credit Sales": asset_cr,
-            "Cash and Carry": cc,
-            "Credit Form Damage": cfd,
-            "Bonus": bon,
-            "Payment Status": p_status,
-            "Expected Amount": exp_amt,
-            "Overdue Amount": overdue_val,
-            "mark_not_paid": is_marked_not_paid
-        })
-
-    g_dep = float(payload.group_savings_deposit or 0)
-    g_wd = float(payload.group_savings_withdrawal or 0)
-    if g_dep > 0 or g_wd > 0:
-        to_insert.append({
-            "batch_id": batch_id,
-            "Date": date_str,
-            "Client ID": f"GROUP-{payload.group_name}",
-            "Client Name": f"{payload.group_name} Meeting",
-            "Officer": target_officer_username,
-            "Branch": target_branch_name,
-            "Amount Paid": g_dep,
-            "Transaction Type": "Group Meeting",
-            "Note": f"Group Savings for {payload.group_name}",
-            "Savings Amount": g_dep,
-            "Withdrawal Amount": g_wd,
-            "Group Savings Deposit": g_dep,
-            "Group Savings Withdrawal": g_wd,
-            "Loan Repayment Amount": 0
-        })
-
-    if not to_insert:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="No collection entries provided to save.")
+    from services.idempotency_service import IdempotencyService
+    lock_res = IdempotencyService.acquire_lock(
+        uow,
+        payload.idempotency_key,
+        "batch_collection",
+        payload,
+        user_id=current_user.id,
+        branch_id=target_branch_id or current_user.branch_id,
+    )
+    if lock_res.get("action") == "REPLAY":
+        cached = lock_res.get("response_body") or {}
+        return BatchCollectionResponse(**cached)
 
     try:
+        date_str = target_date.isoformat()
+        batch_id = payload.batch_id or payload.idempotency_key
+
+        to_insert = []
+
+        for item in payload.collections:
+            sav = float(item.savings_deposit_amount or 0)
+            sav_wd = float(item.savings_withdrawal_amount or 0)
+            rep = float(item.loan_repayment_amount or 0)
+            app = float(item.app_fee or 0)
+            pb = float(item.passbook_bonus or 0)
+            misc = float(item.misc_fees or 0)
+            asset_cr = float(item.asset_credit_sales or 0)
+            cc = float(item.cash_and_carry or 0)
+            cfd = float(item.credit_form_damage or 0)
+            bon = float(item.bonus or 0)
+            exp_amt = float(item.expected_amount or 0)
+            is_marked_not_paid = bool(item.mark_not_paid)
+
+            cls_res = RepaymentService.classify_repayment(
+                amount_paid=0.0 if is_marked_not_paid else rep,
+                total_due_today=exp_amt,
+                current_installment=exp_amt,
+                has_overdue=False
+            )
+            p_status = "NOT_PAID" if is_marked_not_paid else cls_res["status"]
+            overdue_val = exp_amt if is_marked_not_paid else cls_res["overdue_shortfall"]
+
+            if sav == 0 and sav_wd == 0 and rep == 0 and app == 0 and pb == 0 and misc == 0 and asset_cr == 0 and cc == 0 and cfd == 0 and bon == 0:
+                if not is_marked_not_paid:
+                    continue
+
+            prod_low = str(item.loan_product or "60 day").lower()
+            rep_12w = rep_24w = rep_60d = rep_120d = rep_mth = 0
+            if "12 week" in prod_low or "12w" in prod_low: rep_12w = rep
+            elif "24 week" in prod_low or "24w" in prod_low: rep_24w = rep
+            elif "60 day" in prod_low or "60-day" in prod_low: rep_60d = rep
+            elif "120 day" in prod_low or "120-day" in prod_low: rep_120d = rep
+            elif "month" in prod_low: rep_mth = rep
+            else: rep_60d = rep
+
+            to_insert.append({
+                "batch_id": batch_id,
+                "Date": date_str,
+                "Client ID": item.client_id,
+                "Client Name": item.client_name,
+                "loan_id": item.loan_id,
+                "Officer": target_officer_username,
+                "Branch": target_branch_name,
+                "Amount Paid": rep,
+                "Transaction Type": "Loan",
+                "Note": f"Daily Collection - {payload.group_name}" if not is_marked_not_paid else "Marked NOT PAID (₦0 Collection)",
+                "Savings Amount": sav,
+                "Withdrawal Amount": sav_wd,
+                "Loan Repayment Amount": rep,
+                "Repayment 12 Weeks": rep_12w,
+                "Repayment 24 Weeks": rep_24w,
+                "Repayment 60 Days": rep_60d,
+                "Repayment 120 Days": rep_120d,
+                "Monthly": rep_mth,
+                "App Fee": app,
+                "Pass Book Bonus": pb,
+                "Misc Fees": misc,
+                "Asset Credit Sales": asset_cr,
+                "Cash and Carry": cc,
+                "Credit Form Damage": cfd,
+                "Bonus": bon,
+                "Payment Status": p_status,
+                "Expected Amount": exp_amt,
+                "Overdue Amount": overdue_val,
+                "mark_not_paid": is_marked_not_paid
+            })
+
+        g_dep = float(payload.group_savings_deposit or 0)
+        g_wd = float(payload.group_savings_withdrawal or 0)
+        if g_dep > 0 or g_wd > 0:
+            to_insert.append({
+                "batch_id": batch_id,
+                "Date": date_str,
+                "Client ID": f"GROUP-{payload.group_name}",
+                "Client Name": f"{payload.group_name} Meeting",
+                "Officer": target_officer_username,
+                "Branch": target_branch_name,
+                "Amount Paid": g_dep,
+                "Transaction Type": "Group Meeting",
+                "Note": f"Group Savings for {payload.group_name}",
+                "Savings Amount": g_dep,
+                "Withdrawal Amount": g_wd,
+                "Group Savings Deposit": g_dep,
+                "Group Savings Withdrawal": g_wd,
+                "Loan Repayment Amount": 0
+            })
+
+        if not to_insert:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="No collection entries provided to save.")
+
         from services.collection_batch_service import save_repayments
         try:
-            receipt = save_repayments(to_insert, batch_id=batch_id, allow_closed_date=is_authorized_override)
+            receipt = save_repayments(to_insert, batch_id=batch_id, allow_closed_date=allow_closed)
         except TypeError:
             receipt = save_repayments(to_insert, batch_id=batch_id)
         if receipt:
             receipt["batch_id"] = batch_id
-            if payload.idempotency_key:
-                receipt["idempotency_key"] = payload.idempotency_key
+            receipt["idempotency_key"] = payload.idempotency_key
             receipt["group_name"] = payload.group_name
             receipt["officer"] = target_officer_username
             receipt["branch"] = target_branch_name
@@ -1101,19 +1136,15 @@ def submit_batch_collections(
             message=f"Successfully posted {len(to_insert)} collection entries for {payload.group_name}! (Total Cash In: ₦{tot_cash_in:,.2f})",
             receipt=receipt
         )
-        if payload.idempotency_key:
-            from services.idempotency_service import IdempotencyService
-            IdempotencyService.commit_result(uow, payload.idempotency_key, 200, resp)
+        IdempotencyService.commit_result(uow, payload.idempotency_key, 200, resp)
         return resp
     except Exception as ex:
-        if payload.idempotency_key:
-            try:
-                from services.idempotency_service import IdempotencyService
-                status_c = getattr(ex, "status_code", 400)
-                detail_m = getattr(ex, "detail", str(ex))
-                IdempotencyService.record_failure(uow, payload.idempotency_key, str(detail_m), status_code=status_c)
-            except Exception:
-                pass
+        try:
+            status_c = getattr(ex, "status_code", 400)
+            detail_m = getattr(ex, "detail", str(ex))
+            IdempotencyService.record_failure(uow, payload.idempotency_key, str(detail_m), status_code=status_c)
+        except Exception:
+            pass
         raise
 
 
@@ -1131,6 +1162,7 @@ def get_transaction_status(
     record = IdempotencyService.get_transaction_status(uow, idempotency_key)
     if not record:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transaction key not found.")
+    IdempotencyService.assert_transaction_access(current_user, record)
     return {
         "idempotency_key": record.get("key"),
         "scope": record.get("scope"),

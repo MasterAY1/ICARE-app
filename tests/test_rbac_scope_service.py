@@ -4,7 +4,7 @@ Unit tests for RBACScopeService (Phase 8.6.1)
 import unittest
 from unittest.mock import MagicMock
 import pandas as pd
-from services.rbac_scope_service import RBACScopeService, RBACScope
+from services.rbac_scope_service import RBACScopeService, RBACScope, UnknownRoleError
 
 
 class TestRBACScopeService(unittest.TestCase):
@@ -16,8 +16,27 @@ class TestRBACScopeService(unittest.TestCase):
         self.assertEqual(RBACScopeService.normalize_role("Branch Manager"), "Branch Manager")
         self.assertEqual(RBACScopeService.normalize_role("AM"), "Area Manager")
         self.assertEqual(RBACScopeService.normalize_role("Area Manager"), "Area Manager")
+        self.assertEqual(RBACScopeService.normalize_role("Account Manager"), "Account Manager")
+        self.assertEqual(RBACScopeService.normalize_role("Accountant"), "Account Manager")
         self.assertEqual(RBACScopeService.normalize_role("Admin"), "Admin")
         self.assertEqual(RBACScopeService.normalize_role("Director"), "Director")
+
+    def test_normalize_role_rejects_unknown_substrings(self):
+        for bad_role in [
+            "FAKE_ADMIN",
+            "SHADOW_ADMIN_TEST",
+            "NOT_A_BRANCH_USER",
+            "EXTERNAL_MANAGER",
+            "Guest",
+            "",
+            "   ",
+            None,
+        ]:
+            with self.assertRaises(UnknownRoleError):
+                RBACScopeService.normalize_role(bad_role)
+
+        with self.assertRaises(UnknownRoleError):
+            RBACScopeService.resolve_scope({"id": "u-x", "username": "x", "role": "FAKE_ADMIN"})
 
     def test_resolve_scope_co(self):
         user = {"id": "u1", "username": "officer1", "role": "CO", "branch": "Ikeja Main", "branch_id": "b1"}

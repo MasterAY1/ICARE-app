@@ -146,6 +146,8 @@ class TestCanonicalTransactionStatusEndpoint:
             "key": "IDEM-OGI-BATCH-001",
             "scope": "batch_collection",
             "status": "COMMITTED",
+            "user_id": "usr-co-1",
+            "branch_id": "b-ogi-1",
             "response_code": 200,
             "response_body": {
                 "batch_id": "COL-2026-11-03-A1B2",
@@ -184,6 +186,8 @@ class TestCanonicalTransactionStatusEndpoint:
             "key": "IDEM-OGI-BATCH-002",
             "scope": "batch_collection",
             "status": "PROCESSING",
+            "user_id": "usr-co-1",
+            "branch_id": "b-ogi-1",
             "response_code": None,
             "response_body": None,
             "created_at": "2026-11-03T10:05:00Z",

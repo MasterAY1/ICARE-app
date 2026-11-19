@@ -40,10 +40,30 @@ def generate_session_token(user_id: str, username: str) -> str:
     """Generates a tamper-proof HMAC-SHA256 signed session token."""
     secret = get_auth_secret()
     timestamp = int(datetime.now().timestamp())
-    payload_str = f"{user_id}:{username}:{timestamp}"
-    signature = hmac.new(secret.encode('utf-8'), payload_str.encode('utf-8'), hashlib.sha256).hexdigest()
-    raw_token = f"{payload_str}:{signature}"
-    return base64.urlsafe_b64encode(raw_token.encode('utf-8')).decode('utf-8')
+    rev_store = None
+    try:
+        from auth.token_store import get_revocation_store
+        rev_store = get_revocation_store()
+        rev_epoch = rev_store.get_user_revocation_epoch(user_id)
+        if rev_epoch is not None and timestamp <= rev_epoch:
+            timestamp = int(rev_epoch) + 1
+    except Exception:
+        rev_store = None
+
+    candidate = ""
+    for _ in range(10):
+        payload_str = f"{user_id}:{username}:{timestamp}"
+        signature = hmac.new(secret.encode('utf-8'), payload_str.encode('utf-8'), hashlib.sha256).hexdigest()
+        raw_token = f"{payload_str}:{signature}"
+        candidate = base64.urlsafe_b64encode(raw_token.encode('utf-8')).decode('utf-8')
+        try:
+            if rev_store is not None and rev_store.is_token_revoked(candidate):
+                timestamp += 1
+                continue
+        except Exception:
+            pass
+        return candidate
+    return candidate
 
 
 def validate_session_token(token_str: str):
@@ -137,6 +157,10 @@ def validate_password_change_token(token_str: str) -> Optional[dict]:
         exp = int(exp_str)
         now = datetime.now().timestamp()
         if now - ts > exp or now - ts < -300:
+            return None
+
+        from auth.token_store import get_revocation_store
+        if get_revocation_store().is_token_revoked(token_str):
             return None
 
         return {"user_id": user_id, "username": username, "timestamp": ts}

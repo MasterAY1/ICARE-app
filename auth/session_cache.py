@@ -6,17 +6,27 @@ Eliminates redundant PostgREST lookups on every API request.
 Provides eviction and invalidation triggers for user deactivation,
 role changes, or security events.
 """
+import os
 import threading
 import time
 from typing import Dict, Tuple, Optional
 from models.user import CurrentUser
 
 
+def _resolve_default_session_cache_ttl() -> float:
+    raw = os.getenv("ICARE_SESSION_CACHE_TTL_SECONDS", "15").strip()
+    try:
+        parsed = float(raw)
+    except ValueError:
+        return 15.0
+    return max(1.0, min(parsed, 60.0))
+
+
 class UserSessionCache:
     """
     Thread-safe in-memory cache for CurrentUser objects with sliding/fixed TTL.
     """
-    def __init__(self, default_ttl_seconds: float = 90.0):
+    def __init__(self, default_ttl_seconds: float = 15.0):
         self._cache: Dict[str, Tuple[float, CurrentUser]] = {}
         self._lock = threading.Lock()
         self._default_ttl = default_ttl_seconds
@@ -69,8 +79,8 @@ class UserSessionCache:
             return sum(1 for exp, _ in self._cache.values() if now < exp)
 
 
-# Global singleton instance (90-second TTL)
-_GLOBAL_SESSION_CACHE = UserSessionCache(default_ttl_seconds=90.0)
+# Global singleton instance (15-second max TTL; overrides invalidated immediately on mutations)
+_GLOBAL_SESSION_CACHE = UserSessionCache(default_ttl_seconds=_resolve_default_session_cache_ttl())
 
 
 def get_cached_user(user_key: Optional[str]) -> Optional[CurrentUser]:

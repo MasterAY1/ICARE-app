@@ -1,35 +1,45 @@
 import 'dart:io';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:path_provider/path_provider.dart';
 import 'session_storage_base.dart';
 
+/// Hardened native mobile/desktop session storage using platform secure storage
+/// (Android Keystore / iOS Keychain) and purging any legacy plaintext session files.
 class PlatformSessionStorage implements SessionStorage {
-  Future<File> _getFile() async {
-    final dir = await getApplicationDocumentsDirectory();
-    return File('${dir.path}/icare_session.json');
+  static const _tokenKey = 'icare_secure_auth_token';
+  static const _userKey = 'icare_secure_auth_user';
+
+  static const FlutterSecureStorage _secureStorage = FlutterSecureStorage(
+    aOptions: AndroidOptions(),
+  );
+
+  Future<void> _purgeLegacyPlaintextFile() async {
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      final legacyFile = File('${dir.path}/icare_session.json');
+      if (await legacyFile.exists()) {
+        await legacyFile.delete();
+      }
+    } catch (_) {}
   }
 
   @override
   Future<void> saveSession(String token, String userJson) async {
+    await _purgeLegacyPlaintextFile();
     try {
-      final file = await _getFile();
-      await file.writeAsString('$token\n$userJson');
+      await _secureStorage.write(key: _tokenKey, value: token);
+      await _secureStorage.write(key: _userKey, value: userJson);
     } catch (_) {}
   }
 
   @override
   Future<Map<String, String>?> getSession() async {
+    await _purgeLegacyPlaintextFile();
     try {
-      final file = await _getFile();
-      if (await file.exists()) {
-        final content = await file.readAsString();
-        final lines = content.split('\n');
-        if (lines.length >= 2) {
-          final token = lines[0].trim();
-          final userJson = lines.sublist(1).join('\n').trim();
-          if (token.isNotEmpty && userJson.isNotEmpty) {
-            return {'token': token, 'user': userJson};
-          }
-        }
+      final token = (await _secureStorage.read(key: _tokenKey))?.trim();
+      final userJson = (await _secureStorage.read(key: _userKey))?.trim();
+      if (token != null && token.isNotEmpty && userJson != null && userJson.isNotEmpty) {
+        return {'token': token, 'user': userJson};
       }
     } catch (_) {}
     return null;
@@ -37,11 +47,10 @@ class PlatformSessionStorage implements SessionStorage {
 
   @override
   Future<void> clearSession() async {
+    await _purgeLegacyPlaintextFile();
     try {
-      final file = await _getFile();
-      if (await file.exists()) {
-        await file.delete();
-      }
+      await _secureStorage.delete(key: _tokenKey);
+      await _secureStorage.delete(key: _userKey);
     } catch (_) {}
   }
 }

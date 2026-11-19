@@ -2,12 +2,18 @@ import 'dart:convert';
 import 'dart:math';
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../auth/auth_controller.dart';
+import '../auth/auth_state.dart';
 import '../../features/co/data/datasources/co_api_service.dart';
 import 'offline_database_service.dart';
 
 final pendingOutboxCountProvider = StateNotifierProvider<PendingOutboxNotifier, int>((ref) {
   final dbService = ref.watch(offlineDatabaseServiceProvider);
-  return PendingOutboxNotifier(dbService);
+  final notifier = PendingOutboxNotifier(dbService);
+  ref.listen<AuthState>(authControllerProvider, (_, __) {
+    notifier.refresh();
+  });
+  return notifier;
 });
 
 class PendingOutboxNotifier extends StateNotifier<int> {
@@ -136,24 +142,25 @@ class OfflineSyncManager {
     augmentedPayload['batch_id'] = key;
     augmentedPayload['is_offline_sync'] = true;
 
-    final outboxId = await _db.queueBatchCollection(
-      idempotencyKey: key,
-      groupName: groupName,
-      collectionDate: collectionDate,
-      payload: augmentedPayload,
-    );
-
     final rawCols = (payload['collections'] as List?)
             ?.whereType<Map>()
             .map((e) => Map<String, dynamic>.from(e))
             .toList() ??
         <Map<String, dynamic>>[];
     final grpSav = (payload['group_savings_deposit'] as num?)?.toDouble() ?? 0.0;
-    await _db.applyOptimisticOfflineCollectionToCachedSheet(
+    final optimisticMeta = await _db.applyOptimisticOfflineCollectionToCachedSheet(
       groupName: groupName,
       collections: rawCols,
       groupSavingsDeposit: grpSav,
       collectionDate: collectionDate,
+    );
+
+    final outboxId = await _db.queueBatchCollection(
+      idempotencyKey: key,
+      groupName: groupName,
+      collectionDate: collectionDate,
+      payload: augmentedPayload,
+      optimisticMeta: optimisticMeta,
     );
 
     await _outboxNotifier.refresh();
@@ -210,20 +217,21 @@ class OfflineSyncManager {
     augmentedPayload['batch_id'] = key;
     augmentedPayload['is_offline_sync'] = true;
 
+    final grpName = payload['group_name']?.toString().trim() ?? '';
+    final grpSavAmt = (payload['group_savings_deposit'] as num?)?.toDouble() ?? 0.0;
+    final optimisticMeta = await _db.applyOptimisticOfflineCollectionToCachedSheet(
+      groupName: grpName,
+      collections: [Map<String, dynamic>.from(payload)],
+      groupSavingsDeposit: grpSavAmt,
+      collectionDate: collectionDate,
+    );
+
     final outboxId = await _db.queueSingleCollection(
       idempotencyKey: key,
       clientName: clientName,
       collectionDate: collectionDate,
       payload: augmentedPayload,
-    );
-
-    final grpName = payload['group_name']?.toString().trim() ?? '';
-    final grpSavAmt = (payload['group_savings_deposit'] as num?)?.toDouble() ?? 0.0;
-    await _db.applyOptimisticOfflineCollectionToCachedSheet(
-      groupName: grpName,
-      collections: [Map<String, dynamic>.from(payload)],
-      groupSavingsDeposit: grpSavAmt,
-      collectionDate: collectionDate,
+      optimisticMeta: optimisticMeta,
     );
 
     await _outboxNotifier.refresh();
@@ -262,14 +270,25 @@ class OfflineSyncManager {
   // 3. SYNC-UP (FLUSH PENDING OUTBOX TO SERVER)
   // ==========================================
 
-  /// Discards a specific outbox batch and refreshes the pending counter.
+  /// Rolls back any un-reverted optimistic local cache changes, discards the outbox batch,
+  /// and refreshes the pending counter.
   Future<void> discardOutboxBatch(int id) async {
+    await _db.rollbackOptimisticOfflineCollection(id);
     await _db.deleteOutboxBatch(id);
     await _outboxNotifier.refresh();
   }
 
-  /// Clears all failed outbox batches and refreshes the pending counter.
+  /// Rolls back and clears all failed outbox batches and refreshes the pending counter.
   Future<int> clearAllFailedBatches() async {
+    final pendingAndFailed = await _db.getPendingOutboxBatches();
+    for (final item in pendingAndFailed) {
+      if (item['status'] == 'failed') {
+        final bId = item['id'];
+        if (bId is int) {
+          await _db.rollbackOptimisticOfflineCollection(bId);
+        }
+      }
+    }
     final count = await _db.clearFailedOutboxBatches();
     await _outboxNotifier.refresh();
     return count;
@@ -286,6 +305,9 @@ class OfflineSyncManager {
     int syncedCount = 0;
     int failedCount = 0;
     final List<String> errorMessages = [];
+    final Set<String> touchedGroups = {};
+    final Map<String, String?> touchedGroupDates = {};
+    var touchedSingleClients = false;
 
     try {
       final pendingBatches = await _db.getPendingOutboxBatches();
@@ -297,9 +319,15 @@ class OfflineSyncManager {
         final id = item['id'] as int;
         final payloadJson = item['payload_json'] as String;
         final payload = jsonDecode(payloadJson) as Map<String, dynamic>;
+        final opType = (item['operation_type'] as String?) ?? 'BATCH_COLLECTION';
+        final targetGroup = (opType == 'SINGLE_COLLECTION'
+                ? payload['group_name']
+                : (payload['group_name'] ?? item['group_name']))
+            ?.toString()
+            .trim() ?? '';
+        final targetDate = (item['collection_date'] ?? payload['date'])?.toString();
 
         try {
-          final opType = (item['operation_type'] as String?) ?? 'BATCH_COLLECTION';
           String serverBatchId;
           if (opType == 'SINGLE_COLLECTION') {
             final res = await _api.submitSingleCollection(payload);
@@ -310,8 +338,16 @@ class OfflineSyncManager {
             final receipt = res['receipt'] as Map<String, dynamic>?;
             serverBatchId = receipt?['batch_id']?.toString() ?? res['batch_id']?.toString() ?? 'SYNCED-$id';
           }
-          
+
           await _db.markOutboxBatchSynced(id, serverBatchId);
+          await _db.clearOptimisticFlagOnSyncedBatch(id);
+          if (opType == 'SINGLE_COLLECTION') {
+            touchedSingleClients = true;
+          }
+          if (targetGroup.isNotEmpty && targetGroup != 'Ungrouped') {
+            touchedGroups.add(targetGroup);
+            touchedGroupDates[targetGroup] = targetDate;
+          }
           syncedCount++;
         } catch (e) {
           failedCount++;
@@ -346,11 +382,44 @@ class OfflineSyncManager {
 
           errorMessages.add('Batch #$id (${item['group_name']}): $err');
           await _db.markOutboxBatchFailed(id, err, isPermanent: !isTransient);
+          if (!isTransient) {
+            await _db.rollbackOptimisticOfflineCollection(id);
+            if (opType == 'SINGLE_COLLECTION') {
+              touchedSingleClients = true;
+            }
+            if (targetGroup.isNotEmpty && targetGroup != 'Ungrouped') {
+              touchedGroups.add(targetGroup);
+              touchedGroupDates[targetGroup] = targetDate;
+            }
+          }
           // Halt only on transient network, auth expiry, or 5xx outages; skip permanent 4xx poison items
           if (isTransient) {
             break;
           }
           continue;
+        }
+      }
+
+      // Only refresh from server for scopes that have zero remaining pending/failed batches,
+      // so still-pending optimistic offline state is never clobbered.
+      final remainingActive = await _db.getPendingOutboxBatches();
+      final remainingGroups = <String>{};
+      var hasRemainingSingle = false;
+      for (final rem in remainingActive) {
+        try {
+          final remPayload = jsonDecode(rem['payload_json'].toString()) as Map<String, dynamic>;
+          final remOp = (rem['operation_type'] as String?) ?? 'BATCH_COLLECTION';
+          if (remOp == 'SINGLE_COLLECTION') hasRemainingSingle = true;
+          final remGrp = (remPayload['group_name'] ?? rem['group_name'])?.toString().trim() ?? '';
+          if (remGrp.isNotEmpty && remGrp != 'Ungrouped') remainingGroups.add(remGrp);
+        } catch (_) {}
+      }
+      if (touchedSingleClients && !hasRemainingSingle && remainingActive.isEmpty) {
+        await preCacheSingleClients();
+      }
+      for (final grp in touchedGroups) {
+        if (!remainingGroups.contains(grp)) {
+          await _tryPreCacheGroup(grp, touchedGroupDates[grp]);
         }
       }
 

@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:frontend_flutter/core/auth/auth_controller.dart';
+import 'package:frontend_flutter/core/auth/auth_state.dart';
 import 'package:frontend_flutter/core/offline/offline_sync_manager.dart';
 import 'package:frontend_flutter/core/offline/offline_database_service.dart';
 import 'package:frontend_flutter/features/co/data/datasources/co_api_service.dart';
@@ -25,11 +27,13 @@ class _FailingNetworkAdapter implements HttpClientAdapter {
 class _MockResponseAdapter implements HttpClientAdapter {
   final int statusCode;
   final Map<String, dynamic> responseData;
+  final List<RequestOptions> capturedRequests = [];
 
   _MockResponseAdapter({required this.statusCode, required this.responseData});
 
   @override
   Future<ResponseBody> fetch(RequestOptions options, Stream<Uint8List>? requestStream, Future<void>? cancelFuture) async {
+    capturedRequests.add(options);
     final responseBytes = Uint8List.fromList(jsonEncode(responseData).codeUnits);
     return ResponseBody.fromBytes(
       responseBytes,
@@ -38,6 +42,20 @@ class _MockResponseAdapter implements HttpClientAdapter {
         Headers.contentTypeHeader: [Headers.jsonContentType],
       },
     );
+  }
+
+  @override
+  void close({bool force = false}) {}
+}
+
+class _SequencedResponseAdapter implements HttpClientAdapter {
+  final Future<ResponseBody> Function(RequestOptions options) handler;
+
+  _SequencedResponseAdapter(this.handler);
+
+  @override
+  Future<ResponseBody> fetch(RequestOptions options, Stream<Uint8List>? requestStream, Future<void>? cancelFuture) {
+    return handler(options);
   }
 
   @override
@@ -455,7 +473,47 @@ void main() {
       expect(await dbService.getPendingOutboxCount(), 1);
     });
 
-    test('clearSessionStorage wipes active scope caches and outbox without wiping other users', () async {
+    test('clearSessionStorage preserves active user outbox by default across re-login and isolates users', () async {
+      dbService.setSessionScope(userId: 'co-user-a', branchId: 'branch-1');
+      await dbService.cacheDashboardData({'welcome': {'officer_name': 'User A'}}, role: 'co');
+      await dbService.cacheApiResponse('/api/v1/co/cashbook', {'closing_balance': 5000.0});
+      await dbService.cacheGroupSheet('Group A', {'group_name': 'Group A', 'members': []});
+      await syncManager.queueOfflineBatch(
+        groupName: 'Group A',
+        collectionDate: '2026-11-15',
+        payload: {
+          'group_name': 'Group A',
+          'date': '2026-11-15',
+          'collections': [
+            {'client_id': 'c-a', 'loan_repayment_amount': 1500.0, 'savings_deposit_amount': 500.0},
+          ],
+        },
+      );
+
+      // Default logout behavior: clearSessionStorage(clearOutbox: false)
+      await dbService.clearSessionStorage();
+
+      expect(dbService.activeUserId, 'anon');
+      expect(dbService.activeBranchId, 'default');
+      expect(dbService.activeScopeKey, 'anon::default');
+
+      // User B sees nothing from User A's read caches OR outbox.
+      dbService.setSessionScope(userId: 'co-user-b', branchId: 'branch-2');
+      expect(await dbService.getPendingOutboxBatches(), isEmpty);
+      expect(await dbService.getPendingOutboxCount(), 0);
+
+      // When User A logs back in, volatile read caches are cleared, but pending outbox survives.
+      dbService.setSessionScope(userId: 'co-user-a', branchId: 'branch-1');
+      expect(await dbService.getCachedDashboardData(role: 'co'), isNull);
+      expect(await dbService.getCachedApiResponse('/api/v1/co/cashbook'), isNull);
+      expect(await dbService.getCachedGroupSheet('Group A'), isNull);
+      expect(await dbService.getPendingOutboxCount(), 1);
+      final survivingBatches = await dbService.getPendingOutboxBatches();
+      expect(survivingBatches.length, 1);
+      expect(survivingBatches.first['group_name'], 'Group A');
+    });
+
+    test('clearSessionStorage with clearOutbox: true wipes only active scope outbox while preserving other users', () async {
       dbService.setSessionScope(userId: 'co-user-b', branchId: 'branch-2');
       await dbService.cacheDashboardData({'welcome': {'officer_name': 'User B'}}, role: 'co');
       await syncManager.queueOfflineBatch(
@@ -486,16 +544,9 @@ void main() {
         },
       );
 
-      await dbService.clearSessionStorage();
-
-      expect(dbService.activeUserId, 'anon');
-      expect(dbService.activeBranchId, 'default');
-      expect(dbService.activeScopeKey, 'anon::default');
+      await dbService.clearSessionStorage(clearOutbox: true);
 
       dbService.setSessionScope(userId: 'co-user-a', branchId: 'branch-1');
-      expect(await dbService.getCachedDashboardData(role: 'co'), isNull);
-      expect(await dbService.getCachedApiResponse('/api/v1/co/cashbook'), isNull);
-      expect(await dbService.getCachedGroupSheet('Group A'), isNull);
       expect(await dbService.getPendingOutboxBatches(), isEmpty);
       expect(await dbService.getPendingOutboxCount(), 0);
 
@@ -503,6 +554,292 @@ void main() {
       dbService.setSessionScope(userId: 'co-user-b', branchId: 'branch-2');
       expect((await dbService.getCachedDashboardData(role: 'co'))?['welcome']['officer_name'], 'User B');
       expect(await dbService.getPendingOutboxCount(), 1);
+    });
+
+    test('AuthController.logout invokes backend /logout before clearing token and preserves pending outbox', () async {
+      final logoutAdapter = _MockResponseAdapter(
+        statusCode: 200,
+        responseData: {'success': true, 'message': 'Successfully logged out'},
+      );
+      final onlineClient = ApiClient(offlineDb: dbService, adapter: logoutAdapter);
+      final authCtrl = AuthController(onlineClient, dbService);
+
+      // Login first so token and scope are set cleanly
+      final loginAdapter = _SequencedResponseAdapter((options) async {
+        if (options.path.contains('/api/v1/auth/login')) {
+          return ResponseBody.fromBytes(
+            Uint8List.fromList(jsonEncode({
+              'access_token': 'tok-abc-123',
+              'user': {
+                'id': 'u-co-9',
+                'username': 'co9',
+                'full_name': 'Officer Nine',
+                'role': 'CO',
+                'branch': 'Ogijo',
+                'branch_id': 'br-ogijo-1',
+              },
+            }).codeUnits),
+            200,
+            headers: {Headers.contentTypeHeader: [Headers.jsonContentType]},
+          );
+        }
+        logoutAdapter.capturedRequests.add(options);
+        return ResponseBody.fromBytes(
+          Uint8List.fromList(jsonEncode({'success': true}).codeUnits),
+          200,
+          headers: {Headers.contentTypeHeader: [Headers.jsonContentType]},
+        );
+      });
+      final seqClient = ApiClient(offlineDb: dbService, adapter: loginAdapter);
+      final controller = AuthController(seqClient, dbService);
+      await controller.login(username: 'co9', password: 'secret');
+      expect(controller.state, isA<AuthStateAuthenticated>());
+
+      await syncManager.queueOfflineBatch(
+        groupName: 'Ogijo Hope',
+        collectionDate: '2026-11-18',
+        payload: {
+          'group_name': 'Ogijo Hope',
+          'date': '2026-11-18',
+          'collections': [
+            {'client_id': 'cli-99', 'loan_repayment_amount': 3000.0, 'savings_deposit_amount': 0.0},
+          ],
+        },
+      );
+      expect(await dbService.getPendingOutboxCount(), 1);
+
+      await controller.logout();
+      expect(controller.state, isA<AuthStateInitial>());
+      expect(logoutAdapter.capturedRequests.length, 1);
+      expect(logoutAdapter.capturedRequests.first.path, '/api/v1/auth/logout');
+      expect(logoutAdapter.capturedRequests.first.headers['Authorization'], 'Bearer tok-abc-123');
+
+      // Re-scope as same user and verify outbox survived
+      dbService.setSessionScope(userId: 'u-co-9', branchId: 'br-ogijo-1');
+      expect(await dbService.getPendingOutboxCount(), 1);
+
+      // Even when offline (/logout throws connectionError), logout still succeeds and keeps outbox
+      final offlineClient = ApiClient(offlineDb: dbService, adapter: _FailingNetworkAdapter());
+      final offlineAuth = AuthController(offlineClient, dbService);
+      offlineClient.setAuthToken('tok-offline-9');
+      await offlineAuth.logout();
+      expect(offlineAuth.state, isA<AuthStateInitial>());
+      dbService.setSessionScope(userId: 'u-co-9', branchId: 'br-ogijo-1');
+      expect(await dbService.getPendingOutboxCount(), 1);
+
+      // Suppress unused local analyzer hint
+      expect(authCtrl, isNotNull);
+    });
+
+    test('syncOutbox permanent 4xx rejection rolls back optimistic sheet/options updates without double-subtracting on discard', () async {
+      dbService.setSessionScope(userId: 'co-r1', branchId: 'br-ogijo');
+      await dbService.cacheGroupSheet('Alpha Women', {
+        'group_name': 'Alpha Women',
+        'available_groups': ['Alpha Women'],
+        'group_savings_balance': 10000.0,
+        'members': [
+          {
+            'client_id': 'c-201',
+            'client_name': 'Kemi Ade',
+            'expected_repayment': 5000.0,
+            'today_repayment': 0.0,
+            'today_savings': 0.0,
+            'today_collected_total': 0.0,
+            'today_status': 'UNRECORDED',
+            'today_collected': false,
+          },
+        ],
+      }, dateStr: '2026-11-18');
+      await dbService.cacheApiResponse('/api/v1/co/collections/single-client-options', {
+        'clients': [
+          {
+            'client_id': 'c-201',
+            'client_name': 'Kemi Ade',
+            'group_name': 'Alpha Women',
+            'today_repayment': 0.0,
+            'today_savings': 0.0,
+            'today_collected_total': 0.0,
+            'today_status': 'UNRECORDED',
+            'today_collected': false,
+          },
+        ],
+      });
+      await dbService.cacheApiResponse('/api/v1/co/collections/sheet?group_name=Alpha+Women', {
+        'group_name': 'Alpha Women',
+        'group_savings_balance': 10000.0,
+        'members': [
+          {
+            'client_id': 'c-201',
+            'client_name': 'Kemi Ade',
+            'today_repayment': 0.0,
+            'today_savings': 0.0,
+            'today_collected_total': 0.0,
+            'today_status': 'UNRECORDED',
+            'today_collected': false,
+          },
+        ],
+      });
+
+      final queued = await syncManager.queueOfflineBatch(
+        groupName: 'Alpha Women',
+        collectionDate: '2026-11-18',
+        payload: {
+          'group_name': 'Alpha Women',
+          'date': '2026-11-18',
+          'group_savings_deposit': 1500.0,
+          'collections': [
+            {
+              'client_id': 'c-201',
+              'client_name': 'Kemi Ade',
+              'loan_repayment_amount': 5000.0,
+              'savings_deposit_amount': 500.0,
+            },
+          ],
+        },
+      );
+      final outboxId = queued['outbox_id'] as int;
+
+      // Optimistic updates applied immediately
+      final midSheet = await dbService.getCachedGroupSheet('Alpha Women', dateStr: '2026-11-18');
+      expect(midSheet!['group_savings_balance'], 11500.0);
+      expect((midSheet['members'] as List).first['today_status'], 'PAID');
+      expect((midSheet['members'] as List).first['offline_queued'], isTrue);
+
+      // Note: _tryPreCacheGroup runs after permanent rejection; mock GET /sheet with network error so cached sheet rollback is isolated and verified.
+      final rejectingClient = ApiClient(
+        offlineDb: dbService,
+        adapter: _SequencedResponseAdapter((options) async {
+          if (options.path.contains('/api/v1/co/collections/batch-submit')) {
+            return ResponseBody.fromBytes(
+              Uint8List.fromList(jsonEncode({'detail': 'Cannot submit new collections today (Business date closed).'}).codeUnits),
+              403,
+              headers: {Headers.contentTypeHeader: [Headers.jsonContentType]},
+            );
+          }
+          throw DioException.connectionError(
+            requestOptions: options,
+            reason: 'Offline during post-rejection cache refresh',
+          );
+        }),
+      );
+      final failingSyncMgr = OfflineSyncManager(dbService, CoApiService(rejectingClient), notifier);
+      final syncRes = await failingSyncMgr.syncOutbox();
+      expect(syncRes.success, isFalse);
+      expect(syncRes.failedCount, 1);
+
+      // Verify all 3 local caches rolled back cleanly
+      final rolledSheet = await dbService.getCachedGroupSheet('Alpha Women', dateStr: '2026-11-18');
+      expect(rolledSheet!['group_savings_balance'], 10000.0);
+      final mRolled = (rolledSheet['members'] as List).first as Map<String, dynamic>;
+      expect(mRolled['today_repayment'], 0.0);
+      expect(mRolled['today_savings'], 0.0);
+      expect(mRolled['today_collected_total'], 0.0);
+      expect(mRolled['today_status'], 'UNRECORDED');
+      expect(mRolled['today_collected'], isFalse);
+      expect(mRolled['offline_queued'], isFalse);
+
+      final scRolled = await dbService.getCachedApiResponse('/api/v1/co/collections/single-client-options') as Map<String, dynamic>;
+      expect((scRolled['clients'] as List).first['today_status'], 'UNRECORDED');
+      expect((scRolled['clients'] as List).first['offline_queued'], isFalse);
+
+      final apiSheetRolled = await dbService.getCachedApiResponse('/api/v1/co/collections/sheet?group_name=Alpha+Women') as Map<String, dynamic>;
+      expect(apiSheetRolled['group_savings_balance'], 10000.0);
+      expect((apiSheetRolled['members'] as List).first['today_repayment'], 0.0);
+
+      // Discarding afterwards must be idempotent and never push balances negative
+      await syncManager.discardOutboxBatch(outboxId);
+      final afterDiscardSheet = await dbService.getCachedGroupSheet('Alpha Women', dateStr: '2026-11-18');
+      expect(afterDiscardSheet!['group_savings_balance'], 10000.0);
+      expect((afterDiscardSheet['members'] as List).first['today_repayment'], 0.0);
+    });
+
+    test('Multi-batch optimistic rollback reverses only permanently rejected batch and preserves remaining pending batch', () async {
+      dbService.setSessionScope(userId: 'co-r2', branchId: 'br-ogijo');
+      await dbService.cacheGroupSheet('Beta Group', {
+        'group_name': 'Beta Group',
+        'group_savings_balance': 0.0,
+        'members': [
+          {
+            'client_id': 'c-301',
+            'client_name': 'Sadiq Lawal',
+            'today_repayment': 0.0,
+            'today_savings': 0.0,
+            'today_collected_total': 0.0,
+            'today_status': 'UNRECORDED',
+            'today_collected': false,
+          },
+        ],
+      }, dateStr: '2026-11-18');
+
+      final b1 = await syncManager.queueOfflineBatch(
+        groupName: 'Beta Group',
+        collectionDate: '2026-11-18',
+        payload: {
+          'group_name': 'Beta Group',
+          'date': '2026-11-18',
+          'idempotency_key': 'IDEM-BETA-1',
+          'collections': [
+            {'client_id': 'c-301', 'loan_repayment_amount': 2000.0, 'savings_deposit_amount': 500.0},
+          ],
+        },
+      );
+      final b2 = await syncManager.queueOfflineBatch(
+        groupName: 'Beta Group',
+        collectionDate: '2026-11-18',
+        payload: {
+          'group_name': 'Beta Group',
+          'date': '2026-11-18',
+          'idempotency_key': 'IDEM-BETA-2',
+          'collections': [
+            {'client_id': 'c-301', 'loan_repayment_amount': 1000.0, 'savings_deposit_amount': 200.0},
+          ],
+        },
+      );
+
+      // Batch #1 fails permanently (422), Batch #2 hits transient 500 and stays pending
+      int submitCallNum = 0;
+      final mixedClient = ApiClient(
+        offlineDb: dbService,
+        adapter: _SequencedResponseAdapter((options) async {
+          if (options.path.contains('/api/v1/co/collections/batch-submit')) {
+            submitCallNum++;
+            if (submitCallNum == 1) {
+              return ResponseBody.fromBytes(
+                Uint8List.fromList(jsonEncode({'detail': 'Invalid loan reference'}).codeUnits),
+                422,
+                headers: {Headers.contentTypeHeader: [Headers.jsonContentType]},
+              );
+            }
+          }
+          return ResponseBody.fromBytes(
+            Uint8List.fromList(jsonEncode({'detail': 'Temporary outage'}).codeUnits),
+            500,
+            headers: {Headers.contentTypeHeader: [Headers.jsonContentType]},
+          );
+        }),
+      );
+      final mixedSync = OfflineSyncManager(dbService, CoApiService(mixedClient), notifier);
+      final res = await mixedSync.syncOutbox();
+      expect(res.failedCount, 2);
+
+      final sheetMid = await dbService.getCachedGroupSheet('Beta Group', dateStr: '2026-11-18');
+      final mMid = (sheetMid!['members'] as List).first as Map<String, dynamic>;
+      // Only Batch #1 (2000 / 500) was rolled back; Batch #2 (1000 / 200) stays active
+      expect(mMid['today_repayment'], 1000.0);
+      expect(mMid['today_savings'], 200.0);
+      expect(mMid['today_status'], 'PAID');
+      expect(mMid['offline_queued'], isTrue);
+
+      // Discarding Batch #2 afterwards reverts to UNRECORDED cleanly
+      expect(b1['outbox_id'], isNotNull);
+      await syncManager.discardOutboxBatch(b2['outbox_id'] as int);
+      final sheetEnd = await dbService.getCachedGroupSheet('Beta Group', dateStr: '2026-11-18');
+      final mEnd = (sheetEnd!['members'] as List).first as Map<String, dynamic>;
+      expect(mEnd['today_repayment'], 0.0);
+      expect(mEnd['today_savings'], 0.0);
+      expect(mEnd['today_status'], 'UNRECORDED');
+      expect(mEnd['today_collected'], isFalse);
+      expect(mEnd['offline_queued'], isFalse);
     });
   });
 }

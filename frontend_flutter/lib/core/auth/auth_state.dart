@@ -68,6 +68,76 @@ class AuthStateAuthenticated extends AuthState {
   const AuthStateAuthenticated({required this.user, required this.token});
 }
 
+class AuthStateMfaRequired extends AuthState {
+  final String mfaToken;
+  final String username;
+  final String message;
+  final String? errorMessage;
+  final bool isSubmitting;
+
+  const AuthStateMfaRequired({
+    required this.mfaToken,
+    required this.username,
+    this.message = 'Enter the 6-digit code from your authenticator app or a recovery backup code.',
+    this.errorMessage,
+    this.isSubmitting = false,
+  });
+
+  AuthStateMfaRequired copyWith({
+    String? mfaToken,
+    String? username,
+    String? message,
+    String? errorMessage,
+    bool clearError = false,
+    bool? isSubmitting,
+  }) {
+    return AuthStateMfaRequired(
+      mfaToken: mfaToken ?? this.mfaToken,
+      username: username ?? this.username,
+      message: message ?? this.message,
+      errorMessage: clearError ? null : (errorMessage ?? this.errorMessage),
+      isSubmitting: isSubmitting ?? this.isSubmitting,
+    );
+  }
+}
+
+class AuthStatePasswordChangeRequired extends AuthState {
+  final String tempToken;
+  final String username;
+  final AuthUser? user;
+  final String message;
+  final String? errorMessage;
+  final bool isSubmitting;
+
+  const AuthStatePasswordChangeRequired({
+    required this.tempToken,
+    required this.username,
+    this.user,
+    this.message = 'First-time login detected. Set a new password before continuing.',
+    this.errorMessage,
+    this.isSubmitting = false,
+  });
+
+  AuthStatePasswordChangeRequired copyWith({
+    String? tempToken,
+    String? username,
+    AuthUser? user,
+    String? message,
+    String? errorMessage,
+    bool clearError = false,
+    bool? isSubmitting,
+  }) {
+    return AuthStatePasswordChangeRequired(
+      tempToken: tempToken ?? this.tempToken,
+      username: username ?? this.username,
+      user: user ?? this.user,
+      message: message ?? this.message,
+      errorMessage: clearError ? null : (errorMessage ?? this.errorMessage),
+      isSubmitting: isSubmitting ?? this.isSubmitting,
+    );
+  }
+}
+
 class AuthStateError extends AuthState {
   final String message;
   const AuthStateError(this.message);

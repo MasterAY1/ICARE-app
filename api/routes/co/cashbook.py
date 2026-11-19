@@ -122,7 +122,7 @@ def get_co_cashbook(
                 if not isinstance(u, dict):
                     continue
                 u_role = u.get("role")
-                if u_role and RBACScopeService.normalize_role(str(u_role)) != "CO":
+                if u_role and RBACScopeService.normalize_role_or_none(str(u_role)) != "CO":
                     continue
                 u_name = u.get("username", "")
                 f_name = u.get("full_name") or u_name

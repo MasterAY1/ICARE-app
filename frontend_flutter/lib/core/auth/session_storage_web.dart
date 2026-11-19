@@ -2,36 +2,35 @@
 import 'dart:html' as html;
 import 'session_storage_base.dart';
 
+/// Hardened Web session storage implementation.
+/// Browser authentication relies exclusively on server-set HttpOnly cookies
+/// paired with CSRF headers; raw tokens and user profiles are never written to
+/// window.localStorage. Any legacy keys are actively purged.
 class PlatformSessionStorage implements SessionStorage {
-  static const _tokenKey = 'icare_auth_token';
-  static const _userKey = 'icare_auth_user';
+  static const _legacyTokenKey = 'icare_auth_token';
+  static const _legacyUserKey = 'icare_auth_user';
 
-  @override
-  Future<void> saveSession(String token, String userJson) async {
+  void _purgeLegacyLocalStorage() {
     try {
-      html.window.localStorage[_tokenKey] = token;
-      html.window.localStorage[_userKey] = userJson;
+      html.window.localStorage.remove(_legacyTokenKey);
+      html.window.localStorage.remove(_legacyUserKey);
     } catch (_) {}
   }
 
   @override
+  Future<void> saveSession(String token, String userJson) async {
+    _purgeLegacyLocalStorage();
+  }
+
+  @override
   Future<Map<String, String>?> getSession() async {
-    try {
-      final token = html.window.localStorage[_tokenKey];
-      final userJson = html.window.localStorage[_userKey];
-      if (token != null && token.isNotEmpty && userJson != null && userJson.isNotEmpty) {
-        return {'token': token, 'user': userJson};
-      }
-    } catch (_) {}
+    _purgeLegacyLocalStorage();
     return null;
   }
 
   @override
   Future<void> clearSession() async {
-    try {
-      html.window.localStorage.remove(_tokenKey);
-      html.window.localStorage.remove(_userKey);
-    } catch (_) {}
+    _purgeLegacyLocalStorage();
   }
 }
 

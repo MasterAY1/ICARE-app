@@ -1,8 +1,8 @@
 """
 Collections schemas for Phase 2 1:1 Parity.
 """
-from typing import List, Optional, Any, Dict
-from pydantic import BaseModel, Field
+from typing import Annotated, List, Optional, Any, Dict
+from pydantic import BaseModel, Field, StringConstraints
 
 
 class CollectionSheetMember(BaseModel):
@@ -94,9 +94,10 @@ class SingleClientSubmitInput(BaseModel):
     date: Optional[str] = None
     mark_not_paid: bool = False
     expected_amount: float = 0.0
-    idempotency_key: Optional[str] = Field(None, description="Unique client transaction key for offline idempotency")
+    idempotency_key: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=128)] = Field(..., description="Mandatory unique client transaction key for financial idempotency")
     batch_id: Optional[str] = Field(None, description="Deterministic batch identifier")
-    is_offline_sync: bool = Field(False, description="True only when replayed from the offline outbox queue")
+    is_late_entry: bool = Field(False, description="Administrative late-entry override (requires Admin or Super Admin role)")
+    is_offline_sync: bool = Field(False, description="Audit metadata indicating offline outbox replay; does not bypass business-date controls")
 
 
 class SingleClientSubmitResponse(BaseModel):

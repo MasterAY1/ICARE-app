@@ -184,6 +184,8 @@ class TestFinancialTransactionIntegrity(unittest.TestCase):
             "key": committed_key,
             "scope": "single_collection",
             "status": "COMMITTED",
+            "user_id": "usr-12345",
+            "branch_id": "00000000-0000-0000-0000-000000000001",
             "response_code": 200,
             "response_body": {
                 "success": True,

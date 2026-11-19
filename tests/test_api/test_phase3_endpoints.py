@@ -46,6 +46,7 @@ def test_batch_collections_closed_date(setup_dependencies):
     with patch("services.business_date_service.BusinessDateService.is_operational_open", return_value=(False, "Branch Holiday")):
         payload = {
             "group_name": "Market Group",
+            "idempotency_key": "IDEM-PHASE3-CLOSED-001",
             "collections": [
                 {
                     "client_id": "c-1",
@@ -61,9 +62,11 @@ def test_batch_collections_closed_date(setup_dependencies):
 
 def test_batch_collections_empty(setup_dependencies):
     mock_uow, mock_user = setup_dependencies
+    mock_uow.client.rpc.return_value.execute.return_value.data = {"action": "PROCEED", "status": "NEW"}
     with patch("services.business_date_service.BusinessDateService.is_operational_open", return_value=(True, "Working Day")):
         payload = {
             "group_name": "Market Group",
+            "idempotency_key": "IDEM-PHASE3-EMPTY-001",
             "collections": []
         }
         res = client.post("/api/v1/co/collections/batch-submit", json=payload, headers=HEADERS)
@@ -72,6 +75,7 @@ def test_batch_collections_empty(setup_dependencies):
 
 def test_batch_collections_success(setup_dependencies):
     mock_uow, mock_user = setup_dependencies
+    mock_uow.client.rpc.return_value.execute.return_value.data = {"action": "PROCEED", "status": "NEW"}
     with patch("services.business_date_service.BusinessDateService.is_operational_open", return_value=(True, "Working Day")), \
          patch("services.collection_batch_service.save_repayment") as mock_save_rep:
         mock_uow.cashbook._resolve_branch_id.return_value = "b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a22"
@@ -79,6 +83,7 @@ def test_batch_collections_success(setup_dependencies):
 
         payload = {
             "group_name": "Market Group",
+            "idempotency_key": "IDEM-PHASE3-SUCCESS-001",
             "collections": [
                 {
                     "client_id": "c-1",

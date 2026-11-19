@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from database.repositories.unit_of_work import SupabaseUnitOfWork
 from api.dependencies import get_uow, get_current_user, CurrentUser
 from auth.session_cache import invalidate_user_session_cache
+from auth.token_store import get_revocation_store
 from domain.entities.branch_closure import BranchClosure
 from services.user_service import UserService
 from services.schedule_service import ScheduleService
@@ -166,7 +167,11 @@ def toggle_user_status(
             detail=res.get("message", "Failed to update user status.")
         )
 
+    if not payload.activate:
+        get_revocation_store().revoke_user_sessions(user_id)
     invalidate_user_session_cache(user_id)
+    if res.get("username"):
+        invalidate_user_session_cache(str(res["username"]))
     return GenericActionResponse(success=True, message=res["message"])
 
 
@@ -188,7 +193,10 @@ def delete_user(
             detail=res.get("message", "Failed to delete user.")
         )
 
+    get_revocation_store().revoke_user_sessions(user_id)
     invalidate_user_session_cache(user_id)
+    if res.get("username"):
+        invalidate_user_session_cache(str(res["username"]))
     return GenericActionResponse(success=True, message=res["message"])
 
 
@@ -198,13 +206,15 @@ def delete_user(
 @router.post("/password-reset", response_model=GenericActionResponse)
 def reset_password(
     payload: PasswordResetRequest,
+    uow: SupabaseUnitOfWork = Depends(get_uow),
     current_user: CurrentUser = Depends(get_current_user),
 ):
     """Reset user password (app.py L14006–14024)."""
     _check_not_co(current_user)
 
+    clean_username = payload.username.strip()
     res = UserService.reset_password(
-        username=payload.username.strip(),
+        username=clean_username,
         new_password=payload.new_password,
         requesting_user=current_user,
     )
@@ -214,7 +224,18 @@ def reset_password(
             detail=res.get("message", "Failed to reset password.")
         )
 
-    invalidate_user_session_cache(payload.username.strip())
+    target_uid = res.get("user_id")
+    if not target_uid and uow is not None:
+        try:
+            target_rec = uow.users.find_by_username(clean_username)
+            if target_rec:
+                target_uid = target_rec.id
+        except Exception:
+            pass
+    if target_uid:
+        get_revocation_store().revoke_user_sessions(str(target_uid))
+        invalidate_user_session_cache(str(target_uid))
+    invalidate_user_session_cache(clean_username)
     return GenericActionResponse(success=True, message=res["message"])
 
 
@@ -244,6 +265,9 @@ def update_officer_turnover(
             detail=res.get("message", "Failed to update officer name.")
         )
 
+    invalidate_user_session_cache(payload.username.strip())
+    if res.get("user_id"):
+        invalidate_user_session_cache(str(res["user_id"]))
     return GenericActionResponse(success=True, message=res["message"])
 
 
@@ -336,6 +360,8 @@ def assign_products_to_officer(
         extra_fields["allowed_products"] = payload.allowed_products
 
         uow.client.table("app_users").update({"extra_fields": extra_fields}).eq("id", target_user.id).execute()
+        invalidate_user_session_cache(target_user.id)
+        invalidate_user_session_cache(target_user.username)
         return GenericActionResponse(
             success=True,
             message=f"Successfully updated allowed products for {target_uname}."
@@ -417,6 +443,9 @@ def save_am_assignments(
             detail=res.get("message", "Failed to assign branches.")
         )
 
+    invalidate_user_session_cache(payload.am_id)
+    if res.get("username"):
+        invalidate_user_session_cache(str(res["username"]))
     return GenericActionResponse(success=True, message=res["message"])
 
 

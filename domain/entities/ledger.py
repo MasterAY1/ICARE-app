@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 from datetime import date, datetime
+from decimal import Decimal
 from typing import Optional
+from core.money import to_decimal
 
 @dataclass
 class FinancialTransaction:
@@ -23,7 +25,10 @@ class LedgerEntry:
     branch_id: str
     account_code: str
     side: str  # Debit, Credit
-    amount: float
+    amount: Decimal
     aggregate_type: str
     aggregate_id: str
     created_at: Optional[datetime] = None
+
+    def __post_init__(self):
+        self.amount = to_decimal(self.amount, quantize=True)

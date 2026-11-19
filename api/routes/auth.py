@@ -5,13 +5,14 @@ Complies with Strict Zero-Emoji Governance.
 """
 from datetime import datetime
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, Header, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Header, Request, Response, status
 
 from database.repositories.unit_of_work import SupabaseUnitOfWork
 from api.dependencies import get_uow, get_current_user, CurrentUser
 from api.schemas.auth import (
     LoginRequest,
     LoginResponse,
+    SessionMeResponse,
     UserInfo,
     MFASetupResponse,
     MFAActivateRequest,
@@ -22,6 +23,13 @@ from api.schemas.auth import (
     GenericMFAActionResponse,
     ChangeInitialPasswordRequest,
 )
+from auth.cookies import (
+    SESSION_COOKIE_NAME,
+    is_cookie_auth_mode,
+    set_auth_cookies,
+    ensure_csrf_cookie,
+    clear_auth_cookies,
+)
 from auth.password import verify_password, hash_password
 from auth.session import (
     generate_session_token,
@@ -31,7 +39,7 @@ from auth.session import (
 from auth.session_cache import invalidate_user_session_cache
 from auth.token_store import get_revocation_store
 from services.rate_limiter import get_auth_rate_limiter, extract_client_ip
-from services.rbac_scope_service import RBACScopeService
+from services.rbac_scope_service import RBACScopeService, UnknownRoleError
 from auth.mfa import (
     generate_totp_secret,
     verify_totp_code,
@@ -79,7 +87,7 @@ def _build_user_info(user, uow: SupabaseUnitOfWork) -> UserInfo:
 
 
 @router.post("/login", response_model=LoginResponse)
-def login(payload: LoginRequest, request: Request, uow: SupabaseUnitOfWork = Depends(get_uow)):
+def login(payload: LoginRequest, request: Request, response: Response, uow: SupabaseUnitOfWork = Depends(get_uow)):
     """
     Authenticates user against app_users.
     If MFA is enabled for the user, issues a short-lived MFA challenge token.
@@ -136,7 +144,13 @@ def login(payload: LoginRequest, request: Request, uow: SupabaseUnitOfWork = Dep
 
     # Check for first-time password rotation requirement for Management roles
     # (Admin, Super Admin, Area Manager, Branch Manager)
-    normalized_role = RBACScopeService.normalize_role(user.role)
+    try:
+        normalized_role = RBACScopeService.normalize_role(user.role)
+    except UnknownRoleError:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Account role is unrecognized. Contact administrator."
+        )
     is_management = normalized_role in ["Admin", "Area Manager", "Branch Manager"]
     if is_management and extra.get("must_change_password") is True:
         temp_token = generate_password_change_token(user.id, user.username)
@@ -175,14 +189,16 @@ def login(payload: LoginRequest, request: Request, uow: SupabaseUnitOfWork = Dep
 
     AuditLogService.log_login(username, "SUCCESS", "User authenticated successfully")
     token = generate_session_token(user.id, user.username)
+    csrf_token = set_auth_cookies(response, request, token)
     user_info = _build_user_info(user, uow)
 
     return LoginResponse(
-        access_token=token,
+        access_token=None if is_cookie_auth_mode(request) else token,
         token_type="Bearer",
         user=user_info,
         mfa_required=False,
         mfa_token=None,
+        csrf_token=csrf_token,
     )
 
 
@@ -190,6 +206,7 @@ def login(payload: LoginRequest, request: Request, uow: SupabaseUnitOfWork = Dep
 def mfa_challenge(
     payload: MFAChallengeRequest,
     request: Request,
+    response: Response,
     uow: SupabaseUnitOfWork = Depends(get_uow)
 ):
     """
@@ -274,9 +291,10 @@ def mfa_challenge(
             detail="Invalid MFA verification code. Check your authenticator app or backup code."
         )
 
-    # Success: reset limiter
+    # Success: reset limiter and consume MFA challenge token (single-use)
     limiter.reset(client_ip)
     limiter.reset(user_id)
+    get_revocation_store().revoke_token(payload.mfa_token, ttl_seconds=300.0, user_id=user.id)
 
     try:
         uow.users.update_last_login(user.id)
@@ -285,31 +303,70 @@ def mfa_challenge(
 
     AuditLogService.log_login(user.username, "SUCCESS", "User completed MFA authentication successfully")
     token = generate_session_token(user.id, user.username)
+    csrf_token = set_auth_cookies(response, request, token)
     user_info = _build_user_info(user, uow)
 
     return LoginResponse(
-        access_token=token,
+        access_token=None if is_cookie_auth_mode(request) else token,
         token_type="Bearer",
         user=user_info,
         mfa_required=False,
         mfa_token=None,
+        csrf_token=csrf_token,
+    )
+
+
+@router.get("/me", response_model=SessionMeResponse)
+def get_current_session(
+    request: Request,
+    response: Response,
+    current_user: CurrentUser = Depends(get_current_user),
+):
+    """
+    Validates active HttpOnly session cookie (or Bearer token) and returns
+    the authoritative current user profile and CSRF token for session restoration.
+    """
+    user_info = UserInfo(
+        id=current_user.id,
+        username=current_user.username,
+        full_name=current_user.full_name or current_user.username,
+        role=current_user.role,
+        branch=current_user.branch or "Unknown",
+        branch_id=current_user.branch_id or "",
+        assigned_branches=list(getattr(current_user, "assigned_branches", []) or []),
+        assigned_branch_ids=list(getattr(current_user, "assigned_branch_ids", []) or []),
+        allowed_products=list(getattr(current_user, "allowed_products", []) or []),
+    )
+    csrf_token = ensure_csrf_cookie(response, request)
+    return SessionMeResponse(
+        authenticated=True,
+        user=user_info,
+        csrf_token=csrf_token,
     )
 
 
 @router.post("/logout")
 def logout(
+    request: Request,
+    response: Response,
     authorization: Optional[str] = Header(None),
     current_user: CurrentUser = Depends(get_current_user),
 ):
     """
-    Explicitly revokes the caller's active session token and purges the user session cache.
+    Explicitly revokes the caller's active session token (Bearer or HttpOnly cookie),
+    clears auth cookies, and purges the user session cache.
     Complies with Strict Zero-Emoji Governance.
     """
+    token = ""
     if authorization:
         token = authorization.replace("Bearer ", "").strip()
-        if token:
-            get_revocation_store().revoke_token(token)
+    elif request is not None and request.cookies.get(SESSION_COOKIE_NAME):
+        token = str(request.cookies.get(SESSION_COOKIE_NAME) or "").strip()
 
+    if token:
+        get_revocation_store().revoke_token(token, user_id=current_user.id)
+
+    clear_auth_cookies(response, request)
     invalidate_user_session_cache(current_user.id)
     invalidate_user_session_cache(current_user.username)
 
@@ -325,6 +382,8 @@ def logout(
 @router.post("/change-initial-password", response_model=LoginResponse)
 def change_initial_password(
     payload: ChangeInitialPasswordRequest,
+    request: Request,
+    response: Response,
     uow: SupabaseUnitOfWork = Depends(get_uow)
 ):
     """
@@ -348,7 +407,13 @@ def change_initial_password(
         )
 
     # Enforce role restriction: only Admin, AM, and BM can self-service rotate initial password
-    normalized_role = RBACScopeService.normalize_role(user.role)
+    try:
+        normalized_role = RBACScopeService.normalize_role(user.role)
+    except UnknownRoleError:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Account role is unrecognized. Contact administrator."
+        )
     if normalized_role not in ["Admin", "Area Manager", "Branch Manager"]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -389,6 +454,8 @@ def change_initial_password(
     except Exception:
         pass
 
+    get_revocation_store().revoke_user_sessions(user.id)
+    get_revocation_store().revoke_token(payload.temp_token, ttl_seconds=900.0, user_id=user.id)
     invalidate_user_session_cache(user.id)
     invalidate_user_session_cache(user.username)
 
@@ -399,18 +466,33 @@ def change_initial_password(
         new={"must_change_password": False}
     )
 
+    if extra.get("mfa_enabled") is True:
+        mfa_token = generate_mfa_challenge_token(user.id, user.username)
+        return LoginResponse(
+            access_token=None,
+            token_type="Bearer",
+            user=None,
+            mfa_required=True,
+            mfa_token=mfa_token,
+            password_change_required=False,
+            temp_token=None,
+            message="Password updated. Enter your authentication code to complete sign in."
+        )
+
     # Issue authoritative session token
     token = generate_session_token(user.id, user.username)
+    csrf_token = set_auth_cookies(response, request, token)
     user_info = _build_user_info(user, uow)
 
     return LoginResponse(
-        access_token=token,
+        access_token=None if is_cookie_auth_mode(request) else token,
         token_type="Bearer",
         user=user_info,
         mfa_required=False,
         mfa_token=None,
         password_change_required=False,
         temp_token=None,
+        csrf_token=csrf_token,
         message="Password updated successfully. Session activated."
     )
 
