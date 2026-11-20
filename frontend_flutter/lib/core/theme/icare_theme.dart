@@ -1,3 +1,5 @@
+import 'package:animations/animations.dart';
+import 'package:flutter/cupertino.dart' show CupertinoPageTransitionsBuilder;
 import 'package:flutter/material.dart';
 import 'icare_spacing.dart';
 import 'icare_theme_tokens.dart';
@@ -48,6 +50,16 @@ class IcareTheme {
       brightness: brightness,
       visualDensity:
           compactDensity ? VisualDensity.compact : VisualDensity.standard,
+      pageTransitionsTheme: const PageTransitionsTheme(
+        builders: {
+          TargetPlatform.android: FadeThroughPageTransitionsBuilder(),
+          TargetPlatform.windows: FadeThroughPageTransitionsBuilder(),
+          TargetPlatform.linux: FadeThroughPageTransitionsBuilder(),
+          TargetPlatform.fuchsia: FadeThroughPageTransitionsBuilder(),
+          TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+          TargetPlatform.macOS: CupertinoPageTransitionsBuilder(),
+        },
+      ),
       scaffoldBackgroundColor: tokens.canvas,
       canvasColor: tokens.surface,
       colorScheme: colorScheme,

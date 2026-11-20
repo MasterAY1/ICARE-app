@@ -4,6 +4,7 @@ import '../../../../core/theme/icare_theme_tokens.dart';
 import '../../../../core/utils/currency_formatter.dart';
 import '../../data/models/admin_dashboard_models.dart';
 import 'admin_responsive.dart';
+import 'package:frontend_flutter/core/theme/icare_motion.dart';
 
 /// Shows a confirmation dialog before approving or declining a reversal or loan.
 /// Returns `true` only when the administrator explicitly confirms.
@@ -16,7 +17,7 @@ Future<bool> showAdminApprovalConfirmDialog({
   required String confirmLabel,
   required bool isPositiveAction,
 }) async {
-  final result = await showDialog<bool>(
+  final result = await showIcareDialog<bool>(
     context: context,
     barrierDismissible: true,
     builder: (ctx) {

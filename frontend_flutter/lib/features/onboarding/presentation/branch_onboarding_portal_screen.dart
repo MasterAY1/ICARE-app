@@ -13,6 +13,7 @@ import '../../../../core/auth/auth_state.dart';
 import '../../../../core/utils/app_url_helper.dart';
 import '../data/onboarding_api_service.dart';
 import 'credit_officer_portal_screen.dart';
+import 'package:frontend_flutter/core/theme/icare_motion.dart';
 
 class BranchOnboardingPortalScreen extends ConsumerStatefulWidget {
   final String token;
@@ -328,7 +329,7 @@ class _BranchOnboardingPortalScreenState
       return;
     }
 
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showIcareDialog<bool>(
       context: context,
       builder: (ctx) {
         final tokens = IcareSurfaceTokens.of(ctx);
@@ -458,7 +459,7 @@ class _BranchOnboardingPortalScreenState
         ? '\n\nNote: $unsubmitted credit officer(s) have not yet marked their rosters as submitted to BM.'
         : '';
 
-    final confirm = await showDialog<bool>(
+    final confirm = await showIcareDialog<bool>(
       context: context,
       builder: (ctx) {
         final tokens = IcareSurfaceTokens.of(ctx);
@@ -521,7 +522,7 @@ class _BranchOnboardingPortalScreenState
 
   Future<void> _amApprovePackage() async {
     final notesCtrl = TextEditingController();
-    final confirm = await showDialog<bool>(
+    final confirm = await showIcareDialog<bool>(
       context: context,
       builder: (ctx) {
         final tokens = IcareSurfaceTokens.of(ctx);
@@ -664,7 +665,7 @@ class _BranchOnboardingPortalScreenState
 
     final formKey = GlobalKey<FormState>();
 
-    showDialog(
+    showIcareDialog(
       context: context,
       barrierDismissible: false,
       builder: (ctx) {
@@ -1218,7 +1219,7 @@ class _BranchOnboardingPortalScreenState
   void _showMemberModal({Map<String, dynamic>? memberToEdit}) {
     final availableGroups = _scopedGroups;
     if (availableGroups.isEmpty) {
-      showDialog(
+      showIcareDialog(
         context: context,
         builder: (ctx) {
           final tokens = IcareSurfaceTokens.of(ctx);
@@ -1325,7 +1326,7 @@ class _BranchOnboardingPortalScreenState
 
     final formKey = GlobalKey<FormState>();
 
-    showDialog(
+    showIcareDialog(
       context: context,
       barrierDismissible: false,
       builder: (ctx) {
@@ -1977,7 +1978,7 @@ class _BranchOnboardingPortalScreenState
     final name = m['full_name'] ?? 'Client';
     final refCode = m['member_reference'] ?? '';
 
-    showDialog(
+    showIcareDialog(
       context: context,
       builder: (ctx) {
         final tokens = IcareSurfaceTokens.of(ctx);
@@ -2028,7 +2029,7 @@ class _BranchOnboardingPortalScreenState
     final gName = g['group_name'] ?? 'Group';
     final memberCount = _members.where((m) => m['group_reference'] == gRef).length;
 
-    showDialog(
+    showIcareDialog(
       context: context,
       builder: (ctx) {
         final tokens = IcareSurfaceTokens.of(ctx);
@@ -4432,7 +4433,7 @@ class _BranchOnboardingPortalScreenState
     final ctrl = TextEditingController(text: currentVal > 0 ? currentVal.toStringAsFixed(2) : '');
     final formKey = GlobalKey<FormState>();
 
-    showDialog(
+    showIcareDialog(
       context: context,
       builder: (ctx) {
         final tokens = IcareSurfaceTokens.of(ctx);
@@ -4503,7 +4504,7 @@ class _BranchOnboardingPortalScreenState
 
     final formKey = GlobalKey<FormState>();
 
-    showDialog(
+    showIcareDialog(
       context: context,
       builder: (ctx) {
         final tokens = IcareSurfaceTokens.of(ctx);
@@ -4658,7 +4659,7 @@ class _BranchOnboardingPortalScreenState
   }
 
   void _showOfficerLinkModal(String name, String coUrl) {
-    showDialog(
+    showIcareDialog(
       context: context,
       builder: (ctx) {
         final tokens = IcareSurfaceTokens.of(ctx);
@@ -4745,7 +4746,7 @@ class _BranchOnboardingPortalScreenState
 
   void _confirmDeleteOfficer(Map<String, dynamic> officer) {
     final name = (officer['name'] ?? officer['officer_name'] ?? 'Officer').toString();
-    showDialog(
+    showIcareDialog(
       context: context,
       builder: (ctx) {
         final tokens = IcareSurfaceTokens.of(ctx);

@@ -18,6 +18,7 @@ import 'widgets/device_session_activity_card.dart';
 import 'widgets/profile_identity_hero_card.dart';
 import 'widgets/profile_personal_details_card.dart';
 import 'widgets/security_mfa_password_card.dart';
+import 'package:frontend_flutter/core/theme/icare_motion.dart';
 
 enum _ProfileSectionTab {
   all('All', Icons.grid_view_rounded),
@@ -208,7 +209,7 @@ class _SettingsProfileScreenState extends ConsumerState<SettingsProfileScreen> {
   }
 
   Future<void> _handleRemoveAvatar() async {
-    final confirm = await showDialog<bool>(
+    final confirm = await showIcareDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Remove Profile Photo'),
@@ -399,7 +400,7 @@ class _SettingsProfileScreenState extends ConsumerState<SettingsProfileScreen> {
   }
 
   Future<void> _handleClearReadCache() async {
-    final confirm = await showDialog<bool>(
+    final confirm = await showIcareDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Clear Offline Read Cache'),

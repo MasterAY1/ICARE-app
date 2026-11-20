@@ -11,6 +11,7 @@ import '../../../core/widgets/icare_skeleton_loader.dart';
 import '../../../core/auth/auth_controller.dart';
 import '../../../core/auth/auth_state.dart';
 import '../../shared/presentation/co_app_scaffold.dart';
+import 'package:frontend_flutter/core/theme/icare_motion.dart';
 
 /// Target branch filter passed from external navigation (AM Dashboard, Handover modal, etc.)
 final masterCashbookTargetBranchProvider = StateProvider<String?>((ref) => null);
@@ -285,7 +286,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
 
   Future<void> _handleApproveReversal(MasterPendingReversalData req) async {
     final amtStr = CurrencyFormatter.format(req.amount);
-    final confirm = await showDialog<bool>(
+    final confirm = await showIcareDialog<bool>(
       context: context,
       builder: (ctx) {
         final tokens = IcareSurfaceTokens.of(ctx);
@@ -361,7 +362,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
   }
 
   Future<void> _handleRejectReversal(MasterPendingReversalData req) async {
-    final confirm = await showDialog<bool>(
+    final confirm = await showIcareDialog<bool>(
       context: context,
       builder: (ctx) {
         final tokens = IcareSurfaceTokens.of(ctx);
@@ -3668,7 +3669,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                 'Other reason'
               ]);
 
-    showDialog(
+    showIcareDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDlgState) {

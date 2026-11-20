@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../../core/theme/icare_theme_tokens.dart';
+import 'package:frontend_flutter/core/theme/icare_motion.dart';
 
 /// Modal dialog with smooth entry animations confirming successful deletion of an onboarding package.
 class SuccessfulDeleteAnimationDialog extends StatefulWidget {
@@ -18,7 +19,7 @@ class SuccessfulDeleteAnimationDialog extends StatefulWidget {
     required String branchName,
     required String branchCode,
   }) {
-    return showDialog<void>(
+    return showIcareDialog<void>(
       context: context,
       barrierDismissible: true,
       builder: (_) => SuccessfulDeleteAnimationDialog(

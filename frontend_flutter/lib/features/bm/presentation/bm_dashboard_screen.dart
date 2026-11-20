@@ -13,6 +13,7 @@ import '../data/models/bm_dashboard_models.dart';
 import '../../shared/presentation/co_app_scaffold.dart';
 import 'master_cashbook_screen.dart';
 import '../../co/presentation/withdrawal_operations_screen.dart';
+import 'package:frontend_flutter/core/theme/icare_motion.dart';
 
 final bmDashboardDataProvider = FutureProvider.autoDispose<BmDashboardDataModel>((ref) async {
   // Retain data in memory for 60 seconds after unmount to prevent tab-switching refetches
@@ -3253,7 +3254,7 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
 
   Future<void> _promptRejectWithdrawal(String id, String clientName) async {
     final reasonCtrl = TextEditingController();
-    final shouldReject = await showDialog<bool>(
+    final shouldReject = await showIcareDialog<bool>(
       context: context,
       builder: (ctx) {
         final tokens = IcareSurfaceTokens.of(ctx);
@@ -3319,7 +3320,7 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
 
   Future<void> _approveSingleCorrection(PendingCorrectionApprovalModel corr) async {
     final amtStr = CurrencyFormatter.format(corr.amount);
-    final confirm = await showDialog<bool>(
+    final confirm = await showIcareDialog<bool>(
       context: context,
       builder: (ctx) {
         final tokens = IcareSurfaceTokens.of(ctx);
@@ -3392,7 +3393,7 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
 
   Future<void> _rejectSingleCorrection(PendingCorrectionApprovalModel corr) async {
     final reasonCtrl = TextEditingController();
-    final confirm = await showDialog<bool>(
+    final confirm = await showIcareDialog<bool>(
       context: context,
       builder: (ctx) {
         final tokens = IcareSurfaceTokens.of(ctx);
@@ -3453,7 +3454,7 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
     final totalAmount = selectedCorrs.fold<double>(0.0, (sum, c) => sum + c.amount);
     final amtStr = CurrencyFormatter.format(totalAmount);
 
-    final confirm = await showDialog<bool>(
+    final confirm = await showIcareDialog<bool>(
       context: context,
       builder: (ctx) {
         final tokens = IcareSurfaceTokens.of(ctx);

@@ -1,12 +1,14 @@
-import 'package:flutter/services.dart';
+import 'package:animations/animations.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import 'package:motor/motor.dart';
 import '../../../core/auth/auth_controller.dart';
 import '../../../core/auth/auth_state.dart';
 import '../../../core/offline/connectivity_service.dart';
 import '../../../core/offline/offline_sync_manager.dart';
 import '../../../core/offline/offline_database_service.dart';
+import '../../../core/theme/icare_motion.dart';
 import '../../../core/theme/icare_theme_tokens.dart';
 import '../../../core/theme/theme_controller.dart';
 import '../../profile/presentation/settings_profile_screen.dart';
@@ -42,6 +44,39 @@ final selectedCollectionGroupProvider = StateProvider<String?>((ref) => null);
 /// Main Application Shell for Credit Officer (1:1 replica of app.py L1925-2000 & media_1788063430479.png)
 class CoAppScaffold extends ConsumerWidget {
   const CoAppScaffold({super.key});
+
+  void _selectPage(WidgetRef ref, String nextPage) {
+    final current = ref.read(activeCoPageProvider);
+    if (current == nextPage) return;
+    final haptics = ref.read(themeControllerProvider).hapticsEnabled;
+    IcareFluidMotion.selectionHaptic(haptics);
+    ref.read(activeCoPageProvider.notifier).state = nextPage;
+  }
+
+  Widget _buildTransitionedActiveView(
+    BuildContext context,
+    WidgetRef ref,
+    String activePage,
+    bool isBm,
+    bool isAm,
+    bool isAdmin,
+  ) {
+    return PageTransitionSwitcher(
+      duration: IcareFluidMotion.resolveDuration(context, IcareFluidMotion.tabDuration),
+      transitionBuilder: (child, primaryAnimation, secondaryAnimation) {
+        return FadeThroughTransition(
+          animation: primaryAnimation,
+          secondaryAnimation: secondaryAnimation,
+          fillColor: Colors.transparent,
+          child: child,
+        );
+      },
+      child: KeyedSubtree(
+        key: ValueKey<String>(activePage),
+        child: _buildActiveView(context, ref, activePage, isBm, isAm, isAdmin),
+      ),
+    );
+  }
 
   Future<void> _triggerPageRefresh(WidgetRef ref, String activePage, bool isBm, bool isAm, {bool isAdmin = false}) async {
     try {
@@ -109,7 +144,7 @@ class CoAppScaffold extends ConsumerWidget {
 
     if (pendingCount > 0 && context.mounted) {
       final isOnline = ref.read(isOnlineProvider);
-      final choice = await showDialog<String>(
+      final choice = await showIcareDialog<String>(
         context: context,
         barrierDismissible: true,
         builder: (dialogCtx) => AlertDialog(
@@ -458,7 +493,9 @@ class CoAppScaffold extends ConsumerWidget {
                     padding: const EdgeInsets.symmetric(horizontal: 4),
                   ),
                   onPressed: () async {
-                    HapticFeedback.lightImpact();
+                    IcareFluidMotion.lightImpactHaptic(
+                      ref.read(themeControllerProvider).hapticsEnabled,
+                    );
                     await _triggerPageRefresh(ref, activePage, isBm, isAm, isAdmin: isAdmin);
                     if (context.mounted) {
                       ScaffoldMessenger.of(context).hideCurrentSnackBar();
@@ -580,7 +617,9 @@ class CoAppScaffold extends ConsumerWidget {
                           backgroundColor: tokens.surfaceElevated,
                           displacement: 30,
                           onRefresh: () async {
-                            HapticFeedback.lightImpact();
+                            IcareFluidMotion.lightImpactHaptic(
+                              ref.read(themeControllerProvider).hapticsEnabled,
+                            );
                             await _triggerPageRefresh(ref, activePage, isBm, isAm, isAdmin: isAdmin);
                           },
                           child: SingleChildScrollView(
@@ -595,7 +634,7 @@ class CoAppScaffold extends ConsumerWidget {
                                 ],
 
                                 // Active View Dispatcher
-                                _buildActiveView(context, ref, activePage, isBm, isAm, isAdmin),
+                                _buildTransitionedActiveView(context, ref, activePage, isBm, isAm, isAdmin),
                               ],
                             ),
                           ),
@@ -608,7 +647,9 @@ class CoAppScaffold extends ConsumerWidget {
                     backgroundColor: tokens.surfaceElevated,
                     displacement: 30,
                     onRefresh: () async {
-                      HapticFeedback.lightImpact();
+                      IcareFluidMotion.lightImpactHaptic(
+                        ref.read(themeControllerProvider).hapticsEnabled,
+                      );
                       await _triggerPageRefresh(ref, activePage, isBm, isAm, isAdmin: isAdmin);
                     },
                     child: SingleChildScrollView(
@@ -624,7 +665,7 @@ class CoAppScaffold extends ConsumerWidget {
                           ],
 
                           // Active View Dispatcher
-                          _buildActiveView(context, ref, activePage, isBm, isAm, isAdmin),
+                          _buildTransitionedActiveView(context, ref, activePage, isBm, isAm, isAdmin),
                         ],
                       ),
                     ),
@@ -709,11 +750,11 @@ class CoAppScaffold extends ConsumerWidget {
               final isSelected = activePage == dest.key;
               return Expanded(
                 child: InkWell(
-                  onTap: () {
-                    ref.read(activeCoPageProvider.notifier).state = dest.key;
-                  },
+                  onTap: () => _selectPage(ref, dest.key),
                   borderRadius: BorderRadius.circular(10),
-                  child: Container(
+                  child: AnimatedContainer(
+                    duration: IcareFluidMotion.resolveDuration(context, IcareFluidMotion.microDuration),
+                    curve: IcareFluidMotion.standardCurve,
                     padding: const EdgeInsets.symmetric(vertical: 5),
                     decoration: BoxDecoration(
                       color: isSelected ? activeBgColor : Colors.transparent,
@@ -722,10 +763,18 @@ class CoAppScaffold extends ConsumerWidget {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(
-                          isSelected ? dest.activeIcon : dest.icon,
-                          size: 22,
-                          color: isSelected ? activeThemeColor : tokens.textMuted,
+                        SingleMotionBuilder(
+                          value: isSelected ? 1.0 : 0.94,
+                          motion: IcareFluidMotion.resolve(context, IcareFluidMotion.snappySpring),
+                          builder: (_, scale, iconChild) => Transform.scale(
+                            scale: scale,
+                            child: iconChild,
+                          ),
+                          child: Icon(
+                            isSelected ? dest.activeIcon : dest.icon,
+                            size: 22,
+                            color: isSelected ? activeThemeColor : tokens.textMuted,
+                          ),
                         ),
                         const SizedBox(height: 3),
                         Text(
@@ -890,7 +939,7 @@ class CoAppScaffold extends ConsumerWidget {
                   label: item,
                   isSelected: isSelected,
                   onTap: () {
-                    ref.read(activeCoPageProvider.notifier).state = item;
+                    _selectPage(ref, item);
                     Navigator.of(context).pop();
                   },
                 );
@@ -915,7 +964,7 @@ class CoAppScaffold extends ConsumerWidget {
                 label: 'Settings & Profile',
                 isSelected: activePage == 'Settings & Profile',
                 onTap: () {
-                  ref.read(activeCoPageProvider.notifier).state = 'Settings & Profile';
+                  _selectPage(ref, 'Settings & Profile');
                   Navigator.of(context).pop();
                 },
               ),
@@ -984,7 +1033,9 @@ class CoAppScaffold extends ConsumerWidget {
         return InkWell(
           borderRadius: BorderRadius.circular(12),
           onTap: () async {
-            HapticFeedback.lightImpact();
+            IcareFluidMotion.lightImpactHaptic(
+              ref.read(themeControllerProvider).hapticsEnabled,
+            );
             final connected = await ref.read(isOnlineProvider.notifier).refresh();
             if (context.mounted) {
               ScaffoldMessenger.of(context).hideCurrentSnackBar();
@@ -1300,9 +1351,7 @@ class CoAppScaffold extends ConsumerWidget {
                   context: context,
                   label: item,
                   isSelected: isSelected,
-                  onTap: () {
-                    ref.read(activeCoPageProvider.notifier).state = item;
-                  },
+                  onTap: () => _selectPage(ref, item),
                 );
               }).toList(),
             ),
@@ -1321,9 +1370,7 @@ class CoAppScaffold extends ConsumerWidget {
               context: context,
               label: 'Settings & Profile',
               isSelected: activePage == 'Settings & Profile',
-              onTap: () {
-                ref.read(activeCoPageProvider.notifier).state = 'Settings & Profile';
-              },
+              onTap: () => _selectPage(ref, 'Settings & Profile'),
             ),
             const SizedBox(height: 8),
             SizedBox(
@@ -1368,20 +1415,25 @@ class CoAppScaffold extends ConsumerWidget {
         child: InkWell(
           onTap: onTap,
           borderRadius: BorderRadius.circular(8),
-          child: Container(
+          child: AnimatedContainer(
+            duration: IcareFluidMotion.resolveDuration(context, IcareFluidMotion.microDuration),
+            curve: IcareFluidMotion.standardCurve,
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
             decoration: BoxDecoration(
               color: isSelected ? tokens.brandSoftBg : Colors.transparent,
               borderRadius: BorderRadius.circular(8),
-              border: isSelected
-                  ? Border.all(color: tokens.brandSoftBorder, width: 0.9)
-                  : null,
+              border: Border.all(
+                color: isSelected ? tokens.brandSoftBorder : Colors.transparent,
+                width: 0.9,
+              ),
             ),
             child: Row(
               children: [
-                Container(
+                AnimatedContainer(
+                  duration: IcareFluidMotion.resolveDuration(context, IcareFluidMotion.microDuration),
+                  curve: IcareFluidMotion.standardCurve,
                   width: 3.5,
-                  height: 16,
+                  height: isSelected ? 16 : 0,
                   decoration: BoxDecoration(
                     color: isSelected ? tokens.brandPrimary : Colors.transparent,
                     borderRadius: BorderRadius.circular(2),
@@ -1607,7 +1659,7 @@ class CoAppScaffold extends ConsumerWidget {
   }
 
   void _showSyncDialog(BuildContext context, WidgetRef ref) {
-    showDialog(
+    showIcareDialog(
       context: context,
       barrierDismissible: false,
       builder: (ctx) => const _SyncDialog(),

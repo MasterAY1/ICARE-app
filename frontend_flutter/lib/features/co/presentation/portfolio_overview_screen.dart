@@ -14,6 +14,7 @@ import '../../../core/auth/auth_state.dart';
 
 import '../../../core/widgets/icare_skeleton_loader.dart';
 
+import '../../../core/theme/icare_motion.dart';
 import '../../../core/theme/icare_theme_tokens.dart';
 
 import '../../../core/errors/app_error_formatter.dart';
@@ -803,12 +804,10 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
     required ValueChanged<String> onSelected,
   }) {
     final tokens = IcareSurfaceTokens.of(context);
-    showModalBottomSheet(
+    showIcareModalSheet<void>(
       context: context,
       backgroundColor: tokens.surfaceElevated,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
       builder: (ctx) {
         return SafeArea(
           child: Column(
@@ -5771,7 +5770,7 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
     String? selectedOfficerId;
     String? selectedGroupId;
 
-    await showDialog(
+    await showIcareDialog(
       context: context,
       barrierDismissible: false,
       builder: (ctx) => StatefulBuilder(
@@ -6295,7 +6294,7 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
     String? selectedOfficerId;
     String? selectedGroupId;
 
-    await showDialog(
+    await showIcareDialog(
       context: context,
       barrierDismissible: false,
       builder: (ctx) => StatefulBuilder(

@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import '../theme/icare_motion.dart';
 import '../theme/icare_theme_tokens.dart';
 
 class PickedAvatarImage {
@@ -24,8 +25,11 @@ class IcareAvatarPicker {
     ImageSource source = ImageSource.gallery;
 
     if (!kIsWeb) {
-      final chosenSource = await showModalBottomSheet<ImageSource>(
+      final outerTokens = IcareSurfaceTokens.of(context);
+      final chosenSource = await showIcareModalSheet<ImageSource>(
         context: context,
+        backgroundColor: outerTokens.surfaceElevated,
+        useScrollSync: false,
         builder: (sheetCtx) {
           final tokens = IcareSurfaceTokens.of(sheetCtx);
           return SafeArea(

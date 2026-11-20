@@ -8,6 +8,7 @@ import '../../../../core/utils/currency_formatter.dart';
 import '../../auth/presentation/login_screen.dart';
 import '../data/onboarding_api_service.dart';
 import 'branch_onboarding_portal_screen.dart';
+import 'package:frontend_flutter/core/theme/icare_motion.dart';
 
 /// Dedicated, cryptographically isolated onboarding workspace for Credit Officers.
 /// Enforces 100% data privacy: Credit Officers can only view and manage their
@@ -188,7 +189,7 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
       return;
     }
 
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showIcareDialog<bool>(
       context: context,
       builder: (ctx) {
         final dialogTokens = IcareSurfaceTokens.of(ctx);
@@ -346,7 +347,7 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
     final savingsCtrl = TextEditingController(text: existingGroupSavings > 0 ? existingGroupSavings.toStringAsFixed(2) : '');
     String selectedDay = groupToEdit?['meeting_day'] ?? _meetingDays.first;
 
-    showDialog(
+    showIcareDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) {
@@ -482,7 +483,7 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
     final gRef = (group['group_reference'] ?? '').toString();
     final memberCount = _members.where((m) => (m['group_reference'] ?? '').toString().toUpperCase() == gRef.toUpperCase()).length;
 
-    showDialog(
+    showIcareDialog(
       context: context,
       builder: (ctx) {
         final dialogTokens = IcareSurfaceTokens.of(ctx);
@@ -555,7 +556,7 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
       selectedLoanProduct = _loanProducts.first['name'];
     }
 
-    showDialog(
+    showIcareDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) {
@@ -726,7 +727,7 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
   void _confirmDeleteMember(Map<String, dynamic> member) {
     if (_isLocked) return;
 
-    showDialog(
+    showIcareDialog(
       context: context,
       builder: (ctx) {
         final dialogTokens = IcareSurfaceTokens.of(ctx);

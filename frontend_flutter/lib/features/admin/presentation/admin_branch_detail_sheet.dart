@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/errors/app_error_formatter.dart';
+import '../../../core/theme/icare_motion.dart';
 import '../../../core/theme/icare_theme_tokens.dart';
 import '../../../core/utils/currency_formatter.dart';
 import '../../../core/widgets/icare_skeleton_loader.dart';
@@ -20,30 +21,16 @@ class AdminBranchDetailSheet extends ConsumerWidget {
   });
 
   static Future<void> show(BuildContext context, {required String branchId, String? branchName}) {
-    final isMobile = MediaQuery.of(context).size.width < 768;
-    if (isMobile) {
-      return showModalBottomSheet(
-        context: context,
-        isScrollControlled: true,
-        backgroundColor: Colors.transparent,
-        builder: (ctx) => FractionallySizedBox(
-          heightFactor: 0.88,
-          child: AdminBranchDetailSheet(branchId: branchId, initialBranchName: branchName),
-        ),
-      );
-    } else {
-      return showDialog(
-        context: context,
-        builder: (ctx) => Dialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          insetPadding: const EdgeInsets.symmetric(horizontal: 40, vertical: 24),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 680, maxHeight: 720),
-            child: AdminBranchDetailSheet(branchId: branchId, initialBranchName: branchName),
-          ),
-        ),
-      );
-    }
+    return showIcareAdaptiveSheet<void>(
+      context: context,
+      mobileHeightFactor: 0.88,
+      peekHeightFactor: 0.56,
+      desktopConstraints: const BoxConstraints(maxWidth: 680, maxHeight: 720),
+      builder: (_, __) => AdminBranchDetailSheet(
+        branchId: branchId,
+        initialBranchName: branchName,
+      ),
+    );
   }
 
   @override

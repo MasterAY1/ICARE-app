@@ -8,6 +8,7 @@ import '../../../core/theme/icare_theme_tokens.dart';
 import '../data/datasources/user_management_api_service.dart';
 import '../data/models/user_management_models.dart';
 import '../../../core/widgets/icare_skeleton_loader.dart';
+import 'package:frontend_flutter/core/theme/icare_motion.dart';
 
 class UserManagementScreen extends ConsumerStatefulWidget {
   const UserManagementScreen({super.key});
@@ -2373,7 +2374,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
   }
 
   Future<void> _handleDeleteClosure(String closureId) async {
-    final confirm = await showDialog<bool>(
+    final confirm = await showIcareDialog<bool>(
       context: context,
       builder: (ctx) {
         final dTokens = IcareSurfaceTokens.of(ctx);

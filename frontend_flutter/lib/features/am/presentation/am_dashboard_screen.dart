@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
 import '../../../../core/utils/currency_formatter.dart';
+import '../../../core/theme/icare_motion.dart';
 import '../../../core/theme/icare_theme_tokens.dart';
 import '../../../core/widgets/icare_skeleton_loader.dart';
 import '../../../core/offline/connectivity_service.dart';
@@ -92,7 +93,7 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
 
   Future<void> _handleConfirmBranchEod(String branchId, String branchName, String closureDate) async {
     final notesController = TextEditingController();
-    final confirm = await showDialog<bool>(
+    final confirm = await showIcareDialog<bool>(
       context: context,
       builder: (ctx) {
         final tokens = IcareSurfaceTokens.of(ctx);
@@ -153,7 +154,7 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
     final reasonController = TextEditingController();
     String? validationError;
 
-    final confirm = await showDialog<bool>(
+    final confirm = await showIcareDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) {
@@ -225,7 +226,7 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
 
   Future<void> _handleAmEndorseSubmission(MonthlyWorkflowPendingBranchModel b) async {
     final notesController = TextEditingController();
-    final confirm = await showDialog<bool>(
+    final confirm = await showIcareDialog<bool>(
       context: context,
       builder: (ctx) {
         final tokens = IcareSurfaceTokens.of(ctx);
@@ -285,7 +286,7 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
 
   Future<void> _handleAmReturnSubmission(MonthlyWorkflowPendingBranchModel b) async {
     final queryController = TextEditingController();
-    final confirm = await showDialog<bool>(
+    final confirm = await showIcareDialog<bool>(
       context: context,
       builder: (ctx) {
         final tokens = IcareSurfaceTokens.of(ctx);
@@ -349,7 +350,7 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
   Future<void> _handleSealAreaMonthlyPackage(String areaName) async {
     final selectedDate = ref.read(amSelectedDateProvider);
     final notesController = TextEditingController();
-    final confirm = await showDialog<bool>(
+    final confirm = await showIcareDialog<bool>(
       context: context,
       builder: (ctx) {
         final tokens = IcareSurfaceTokens.of(ctx);
@@ -408,7 +409,7 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
   }
 
   Future<void> _handleConfirmAreaClosure(String areaName, String closureDate) async {
-    final confirm = await showDialog<bool>(
+    final confirm = await showIcareDialog<bool>(
       context: context,
       builder: (ctx) {
         final tokens = IcareSurfaceTokens.of(ctx);
@@ -448,7 +449,7 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
 
   Future<void> _handleApproveHighValueLoan(String loanId, String clientName, double amount) async {
     DateTime disbursementDate = DateTime.now();
-    final confirm = await showDialog<bool>(
+    final confirm = await showIcareDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDlgState) {
@@ -516,7 +517,7 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
 
   Future<void> _handleRejectHighValueLoan(String loanId, String clientName) async {
     final reasonController = TextEditingController();
-    final confirm = await showDialog<bool>(
+    final confirm = await showIcareDialog<bool>(
       context: context,
       builder: (ctx) {
         final tokens = IcareSurfaceTokens.of(ctx);
@@ -570,7 +571,7 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
   }
 
   Future<void> _handleSignOffTransfer(String transferId, String clientName) async {
-    final confirm = await showDialog<bool>(
+    final confirm = await showIcareDialog<bool>(
       context: context,
       builder: (ctx) {
         final tokens = IcareSurfaceTokens.of(ctx);
@@ -718,10 +719,8 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
 
   void _showBranchHandoverModal(String branchId, String branchName) {
     final dateStr = DateFormat('yyyy-MM-dd').format(ref.read(amSelectedDateProvider));
-    showModalBottomSheet(
+    showIcareModalSheet<void>(
       context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
       builder: (ctx) => _BranchHandoverSheet(
         branchId: branchId,
         branchName: branchName,
@@ -1293,7 +1292,7 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
       return;
     }
 
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showIcareDialog<bool>(
       context: context,
       builder: (ctx) {
         final tokens = IcareSurfaceTokens.of(ctx);
@@ -1369,7 +1368,7 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
     final sessionId = session['id']?.toString() ?? '';
     final notesCtrl = TextEditingController();
 
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showIcareDialog<bool>(
       context: context,
       builder: (ctx) {
         final tokens = IcareSurfaceTokens.of(ctx);
@@ -3482,6 +3481,7 @@ class _BranchHandoverSheetState extends ConsumerState<_BranchHandoverSheet> {
     final maxH = MediaQuery.of(context).size.height * 0.85;
     return SafeArea(
       child: Center(
+        heightFactor: 1.0,
         child: Container(
           constraints: BoxConstraints(maxWidth: 680, maxHeight: maxH),
           decoration: BoxDecoration(

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../theme/icare_motion.dart';
 import '../theme/icare_spacing.dart';
 import '../theme/icare_theme_tokens.dart';
 
@@ -62,12 +63,14 @@ class IcareCard extends StatelessWidget {
     );
 
     if (onTap != null) {
-      return Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: IcareSpacing.roundedMd,
-          child: cardBody,
+      return IcareTactileScale(
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: IcareSpacing.roundedMd,
+            child: cardBody,
+          ),
         ),
       );
     }

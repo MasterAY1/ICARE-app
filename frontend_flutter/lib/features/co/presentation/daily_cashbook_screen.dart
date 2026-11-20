@@ -11,6 +11,7 @@ import '../../../core/errors/app_error_formatter.dart';
 import '../../../core/utils/currency_formatter.dart';
 import '../data/datasources/co_api_service.dart';
 import '../../shared/presentation/co_app_scaffold.dart';
+import 'package:frontend_flutter/core/theme/icare_motion.dart';
 
 /// Riverpod family provider using composite String key "$dateStr||$officer" to guarantee value equality and eliminate infinite refetches
 final coCashbookDataProvider = FutureProvider.family<Map<String, dynamic>, String>((ref, key) async {
@@ -278,7 +279,7 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
     List<dynamic> clientsList = [];
     bool isLoadingClients = true;
 
-    showDialog(
+    showIcareDialog(
       context: context,
       builder: (dialogCtx) {
         String selectedFeeType = 'Credit Form / App Fee';

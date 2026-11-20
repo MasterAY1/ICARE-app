@@ -13,6 +13,7 @@ import '../data/models/report_models.dart';
 import '../../shared/utils/file_download_helper.dart';
 import '../../../core/widgets/icare_skeleton_loader.dart';
 import 'widgets/bank_reconciliation_form_widget.dart';
+import 'package:frontend_flutter/core/theme/icare_motion.dart';
 
 /// Target branch filter passed from external navigation (AM Dashboard, AM Portfolio, etc.)
 final reportsTargetBranchProvider = StateProvider<String?>((ref) => null);
@@ -4997,7 +4998,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
 
   Future<void> _showBmSubmitDialog(MonthlyWorkflowStatusModel st) async {
     final notesController = TextEditingController();
-    final confirm = await showDialog<bool>(
+    final confirm = await showIcareDialog<bool>(
       context: context,
       builder: (ctx) {
         final dTokens = IcareSurfaceTokens.of(ctx);
@@ -5140,7 +5141,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
 
   Future<void> _showAmEndorseDialog(MonthlyWorkflowStatusModel st) async {
     final notesController = TextEditingController();
-    final confirm = await showDialog<bool>(
+    final confirm = await showIcareDialog<bool>(
       context: context,
       builder: (ctx) {
         final dTokens = IcareSurfaceTokens.of(ctx);
@@ -5259,7 +5260,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
 
   Future<void> _showAmReturnDialog(MonthlyWorkflowStatusModel st) async {
     final queryController = TextEditingController();
-    final confirm = await showDialog<bool>(
+    final confirm = await showIcareDialog<bool>(
       context: context,
       builder: (ctx) {
         final dTokens = IcareSurfaceTokens.of(ctx);
@@ -5355,7 +5356,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
 
   Future<void> _showAdminLockDialog(MonthlyWorkflowStatusModel st) async {
     final notesController = TextEditingController();
-    final confirm = await showDialog<bool>(
+    final confirm = await showIcareDialog<bool>(
       context: context,
       builder: (ctx) {
         final dTokens = IcareSurfaceTokens.of(ctx);

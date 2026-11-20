@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:skeletonizer/skeletonizer.dart';
+import '../theme/icare_motion.dart';
 import '../theme/icare_spacing.dart';
 import '../theme/icare_theme_tokens.dart';
 
-/// Clean loading skeleton for cards and metrics with smooth curved shimmer animation
-class IcareSkeletonLoader extends StatefulWidget {
+/// Clean loading skeleton for cards and metrics with smooth shimmer and reduced-motion fallback.
+class IcareSkeletonLoader extends StatelessWidget {
   final double height;
   final double? width;
   final BorderRadius? borderRadius;
@@ -16,63 +18,69 @@ class IcareSkeletonLoader extends StatefulWidget {
   });
 
   @override
-  State<IcareSkeletonLoader> createState() => _IcareSkeletonLoaderState();
-}
+  Widget build(BuildContext context) {
+    final tokens = IcareSurfaceTokens.of(context);
+    final reduced = IcareFluidMotion.isReduced(context);
+    final baseColor =
+        tokens.isDark ? tokens.surfaceElevated : const Color(0xFFE2E8F0);
+    final highlightColor =
+        tokens.isDark ? tokens.surfaceHover : const Color(0xFFF1F5F9);
 
-class _IcareSkeletonLoaderState extends State<IcareSkeletonLoader>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-  late Animation<double> _animation;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final effectiveWidth = width ??
+            (constraints.hasBoundedWidth ? constraints.maxWidth : 120.0);
 
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1200),
-    )..repeat(reverse: true);
-    _animation = Tween<double>(begin: 0.4, end: 0.9).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
+        return Skeletonizer.zone(
+          effect: reduced
+              ? SolidColorEffect(color: baseColor)
+              : ShimmerEffect(
+                  baseColor: baseColor,
+                  highlightColor: highlightColor,
+                  duration: const Duration(milliseconds: 1400),
+                ),
+          child: Bone(
+            width: effectiveWidth,
+            height: height,
+            borderRadius: borderRadius ?? IcareSpacing.roundedMd,
+          ),
+        );
+      },
     );
   }
+}
 
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    if (MediaQuery.disableAnimationsOf(context)) {
-      _controller.stop();
-      _controller.value = 0.65;
-    } else if (!_controller.isAnimating) {
-      _controller.repeat(reverse: true);
-    }
-  }
+/// Wraps any live ICARE widget or card list in a layout-matched shimmer overlay while loading.
+class IcareSkeletonWrapper extends StatelessWidget {
+  final bool enabled;
+  final Widget child;
 
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
+  const IcareSkeletonWrapper({
+    super.key,
+    required this.enabled,
+    required this.child,
+  });
 
   @override
   Widget build(BuildContext context) {
     final tokens = IcareSurfaceTokens.of(context);
-    final fillColor = tokens.isDark ? tokens.surfaceHover : const Color(0xFFE2E8F0);
-    return AnimatedBuilder(
-      animation: _animation,
-      builder: (context, child) {
-        return Opacity(
-          opacity: MediaQuery.disableAnimationsOf(context) ? 0.65 : _animation.value,
-          child: Container(
-            height: widget.height,
-            width: widget.width ?? double.infinity,
-            decoration: BoxDecoration(
-              color: fillColor,
-              borderRadius: widget.borderRadius ?? IcareSpacing.roundedMd,
-              border: Border.all(color: tokens.borderSubtle),
+    final reduced = IcareFluidMotion.isReduced(context);
+    final baseColor =
+        tokens.isDark ? tokens.surfaceElevated : const Color(0xFFE2E8F0);
+    final highlightColor =
+        tokens.isDark ? tokens.surfaceHover : const Color(0xFFF1F5F9);
+
+    return Skeletonizer(
+      enabled: enabled,
+      enableSwitchAnimation: !reduced,
+      effect: reduced
+          ? SolidColorEffect(color: baseColor)
+          : ShimmerEffect(
+              baseColor: baseColor,
+              highlightColor: highlightColor,
+              duration: const Duration(milliseconds: 1400),
             ),
-          ),
-        );
-      },
+      child: child,
     );
   }
 }

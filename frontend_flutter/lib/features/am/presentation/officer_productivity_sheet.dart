@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import '../../../../core/theme/icare_motion.dart';
 import '../../../../core/theme/icare_theme_tokens.dart';
 import '../../../../core/utils/currency_formatter.dart';
 import '../data/datasources/am_api_service.dart';
@@ -33,41 +34,20 @@ void showOfficerProductivitySheet({
   (String, String)? dates,
 }) {
   final resolvedDates = dates ?? getPeriodDates(period);
-  final screenWidth = MediaQuery.of(context).size.width;
-  if (screenWidth >= 600) {
-    showDialog(
-      context: context,
-      builder: (ctx) => Dialog(
-        backgroundColor: Colors.transparent,
-        insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 680, maxHeight: 720),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(16),
-            child: OfficerProductivityModalSheet(
-              branchId: branchId,
-              branchName: branchName,
-              period: period,
-              dates: resolvedDates,
-              isDialog: true,
-            ),
-          ),
-        ),
-      ),
-    );
-  } else {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => OfficerProductivityModalSheet(
-        branchId: branchId,
-        branchName: branchName,
-        period: period,
-        dates: resolvedDates,
-      ),
-    );
-  }
+  showIcareAdaptiveSheet<void>(
+    context: context,
+    mobileBreakpoint: 600,
+    fitContent: true,
+    desktopConstraints: const BoxConstraints(maxWidth: 680, maxHeight: 720),
+    desktopInsetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+    builder: (_, isDialog) => OfficerProductivityModalSheet(
+      branchId: branchId,
+      branchName: branchName,
+      period: period,
+      dates: resolvedDates,
+      isDialog: isDialog,
+    ),
+  );
 }
 
 /// Officer Productivity Modal Sheet Component

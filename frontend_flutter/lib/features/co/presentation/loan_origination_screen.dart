@@ -10,6 +10,7 @@ import '../../../core/widgets/icare_skeleton_loader.dart';
 import '../../../core/theme/icare_theme_tokens.dart';
 import '../../../core/errors/app_error_formatter.dart';
 import '../data/datasources/co_api_service.dart';
+import 'package:frontend_flutter/core/theme/icare_motion.dart';
 
 final loanOriginationTabProvider = StateProvider<String>((ref) => 'Client Registration');
 
@@ -760,7 +761,7 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
 
       final statusStr = res['status']?.toString();
       if (statusStr == 'PENDING_APPROVAL') {
-        showDialog(
+        showIcareDialog(
           context: context,
           builder: (ctx) {
             final dialogTokens = IcareSurfaceTokens.of(ctx);

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/theme/icare_motion.dart';
 import '../../../core/theme/icare_theme_tokens.dart';
 import '../../../core/widgets/icare_skeleton_loader.dart';
 import '../../reports/data/datasources/reports_api_service.dart';
@@ -33,40 +34,19 @@ class AdminBranchReconciliationSheet extends ConsumerStatefulWidget {
     int? initialYear,
     int? initialMonth,
   }) {
-    final isMobile = MediaQuery.of(context).size.width < 768;
-    if (isMobile) {
-      return showModalBottomSheet(
-        context: context,
-        isScrollControlled: true,
-        backgroundColor: Colors.transparent,
-        builder: (ctx) => FractionallySizedBox(
-          heightFactor: 0.92,
-          child: AdminBranchReconciliationSheet(
-            initialBranchId: branchId,
-            initialBranchName: branchName,
-            initialYear: initialYear,
-            initialMonth: initialMonth,
-          ),
-        ),
-      );
-    } else {
-      return showDialog(
-        context: context,
-        builder: (ctx) => Dialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          insetPadding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 860, maxHeight: 820),
-            child: AdminBranchReconciliationSheet(
-              initialBranchId: branchId,
-              initialBranchName: branchName,
-              initialYear: initialYear,
-              initialMonth: initialMonth,
-            ),
-          ),
-        ),
-      );
-    }
+    return showIcareAdaptiveSheet<void>(
+      context: context,
+      mobileHeightFactor: 0.92,
+      enablePeekSnap: false,
+      desktopConstraints: const BoxConstraints(maxWidth: 860, maxHeight: 820),
+      desktopInsetPadding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
+      builder: (_, __) => AdminBranchReconciliationSheet(
+        initialBranchId: branchId,
+        initialBranchName: branchName,
+        initialYear: initialYear,
+        initialMonth: initialMonth,
+      ),
+    );
   }
 
   @override

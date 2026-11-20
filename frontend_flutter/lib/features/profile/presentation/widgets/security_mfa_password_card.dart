@@ -6,6 +6,7 @@ import '../../../../core/widgets/icare_card.dart';
 import '../../../auth/presentation/widgets/auth_entry_components.dart';
 import '../../../shared/utils/file_download_helper.dart';
 import '../../data/models/profile_models.dart';
+import 'package:frontend_flutter/core/theme/icare_motion.dart';
 
 class SecurityMfaPasswordCard extends StatefulWidget {
   final bool mfaEnabled;
@@ -98,7 +99,7 @@ class _SecurityMfaPasswordCardState extends State<SecurityMfaPasswordCard> {
   Future<void> _promptDisableMfa() async {
     final ctrl = TextEditingController();
     bool obscure = true;
-    final confirmedPassword = await showDialog<String>(
+    final confirmedPassword = await showIcareDialog<String>(
       context: context,
       builder: (dialogCtx) => StatefulBuilder(
         builder: (ctx, setDialogState) {

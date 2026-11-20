@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:frontend_flutter/core/theme/icare_motion.dart';
 
 /// Structured error model representing enterprise ICARE core errors.
 class AppErrorDetails {
@@ -139,7 +140,7 @@ class AppErrorFormatter {
   static Future<void> showErrorDialog(BuildContext context, dynamic error) {
     final details = AppErrorDetails.from(error);
 
-    return showDialog<void>(
+    return showIcareDialog<void>(
       context: context,
       barrierDismissible: true,
       builder: (BuildContext ctx) {

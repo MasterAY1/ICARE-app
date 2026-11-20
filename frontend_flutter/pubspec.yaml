@@ -20,6 +20,10 @@ dependencies:
   flutter_secure_storage: ^9.2.2
   cryptography: ^2.7.0
   image_picker: ^1.2.2
+  animations: ^2.2.0
+  motor: ^1.1.0
+  smooth_sheets: ^1.2.1
+  skeletonizer: ^3.0.0
 
 dev_dependencies:
   flutter_test:

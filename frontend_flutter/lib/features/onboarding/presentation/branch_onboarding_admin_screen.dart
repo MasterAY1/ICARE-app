@@ -12,6 +12,7 @@ import '../../../../core/auth/auth_state.dart';
 import '../data/onboarding_api_service.dart';
 import 'branch_onboarding_portal_screen.dart';
 import 'widgets/successful_delete_dialog.dart';
+import 'package:frontend_flutter/core/theme/icare_motion.dart';
 
 /// Modal dialog allowing Admins, Directors, and Area Managers to generate
 /// a cryptographically secure 14-day branch onboarding link.
@@ -32,7 +33,7 @@ Future<void> showGenerateOnboardingLinkDialog(
   String? errorMessage;
   bool isCopied = false;
 
-  await showDialog<void>(
+  await showIcareDialog<void>(
     context: context,
     barrierDismissible: false,
     builder: (ctx) {
@@ -484,7 +485,7 @@ class _BranchOnboardingAdminScreenState extends ConsumerState<BranchOnboardingAd
     final sessionId = session['id']?.toString() ?? '';
     final notesCtrl = TextEditingController();
 
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showIcareDialog<bool>(
       context: context,
       builder: (ctx) {
         final dialogTokens = IcareSurfaceTokens.of(ctx);
@@ -565,7 +566,7 @@ class _BranchOnboardingAdminScreenState extends ConsumerState<BranchOnboardingAd
       return;
     }
 
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showIcareDialog<bool>(
       context: context,
       builder: (ctx) {
         final dialogTokens = IcareSurfaceTokens.of(ctx);
