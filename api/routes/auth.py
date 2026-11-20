@@ -4,8 +4,11 @@ Reuses SupabaseUnitOfWork, RBACScopeService, and RFC 6238 MFA Service.
 Complies with Strict Zero-Emoji Governance.
 """
 from datetime import datetime
-from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, Header, Request, Response, status
+import io
+import re
+from typing import Any, Dict, List, Optional
+from fastapi import APIRouter, Depends, File, HTTPException, Header, Request, Response, UploadFile, status
+from PIL import Image, ImageOps
 
 from database.repositories.unit_of_work import SupabaseUnitOfWork
 from api.dependencies import get_uow, get_current_user, CurrentUser
@@ -22,6 +25,13 @@ from api.schemas.auth import (
     MFAStatusResponse,
     GenericMFAActionResponse,
     ChangeInitialPasswordRequest,
+    ProfileUpdateRequest,
+    ProfileLoginActivityItem,
+    ProfileResponse,
+    ProfileUpdateResponse,
+    AvatarUploadResponse,
+    ChangeOwnPasswordRequest,
+    ChangeOwnPasswordResponse,
 )
 from auth.cookies import (
     SESSION_COOKIE_NAME,
@@ -57,7 +67,7 @@ router = APIRouter(prefix="/api/v1/auth", tags=["Authentication"])
 
 
 def _build_user_info(user, uow: SupabaseUnitOfWork) -> UserInfo:
-    """Extracts authoritative UserInfo with AM branch assignments and allowed products."""
+    """Extracts authoritative UserInfo with AM branch assignments, allowed products, and personal profile fields."""
     assigned_branches = []
     assigned_branch_ids = []
     if user.role in ["Area Manager", "AM", "AREA_MANAGER"]:
@@ -69,9 +79,14 @@ def _build_user_info(user, uow: SupabaseUnitOfWork) -> UserInfo:
             assigned_branches = []
             assigned_branch_ids = []
 
-    allowed_prods = []
-    if getattr(user, "extra_fields", None) and isinstance(user.extra_fields, dict):
-        allowed_prods = user.extra_fields.get("allowed_products", []) or []
+    extra = getattr(user, "extra_fields", None)
+    if not isinstance(extra, dict):
+        extra = {}
+
+    allowed_prods = extra.get("allowed_products", []) or []
+    prefs = extra.get("preferences")
+    if not isinstance(prefs, dict):
+        prefs = {}
 
     return UserInfo(
         id=user.id,
@@ -83,6 +98,15 @@ def _build_user_info(user, uow: SupabaseUnitOfWork) -> UserInfo:
         assigned_branches=assigned_branches,
         assigned_branch_ids=assigned_branch_ids,
         allowed_products=allowed_prods,
+        phone=str(extra.get("phone") or ""),
+        email=str(extra.get("email") or ""),
+        avatar_url=str(extra.get("avatar_url") or ""),
+        bio=str(extra.get("bio") or ""),
+        mfa_enabled=bool(extra.get("mfa_enabled", False)),
+        is_misc_savings_manager=bool(extra.get("is_misc_savings_manager", False)),
+        created_at=user.created_at.isoformat() if getattr(user, "created_at", None) else None,
+        last_login=user.last_login.isoformat() if getattr(user, "last_login", None) else None,
+        preferences=prefs,
     )
 
 
@@ -336,6 +360,15 @@ def get_current_session(
         assigned_branches=list(getattr(current_user, "assigned_branches", []) or []),
         assigned_branch_ids=list(getattr(current_user, "assigned_branch_ids", []) or []),
         allowed_products=list(getattr(current_user, "allowed_products", []) or []),
+        phone=str(getattr(current_user, "phone", "") or ""),
+        email=str(getattr(current_user, "email", "") or ""),
+        avatar_url=str(getattr(current_user, "avatar_url", "") or ""),
+        bio=str(getattr(current_user, "bio", "") or ""),
+        mfa_enabled=bool(getattr(current_user, "mfa_enabled", False)),
+        is_misc_savings_manager=bool(getattr(current_user, "is_misc_savings_manager", False)),
+        created_at=getattr(current_user, "created_at", None),
+        last_login=getattr(current_user, "last_login", None),
+        preferences=dict(getattr(current_user, "preferences", {}) or {}),
     )
     csrf_token = ensure_csrf_cookie(response, request)
     return SessionMeResponse(
@@ -696,4 +729,397 @@ def admin_reset_mfa(
     return GenericMFAActionResponse(
         success=True,
         message=f"MFA credentials reset successfully for user {target_user.username}."
+    )
+
+
+# -----------------------------------------------------------------------------
+# Self-Service Profile, Avatar, Appearance Preferences & Password Rotation
+# -----------------------------------------------------------------------------
+
+_ALLOWED_AVATAR_EXTENSIONS = {"jpg", "jpeg", "png", "webp"}
+_MAX_AVATAR_BYTES = 5 * 1024 * 1024  # 5 MB
+_AVATAR_BUCKET = "user-avatars"
+_ALLOWED_THEME_MODES = {"system", "light", "dark"}
+_ALLOWED_ACCENT_PRESETS = {"emerald", "sapphire", "teal", "indigo"}
+_EMAIL_REGEX = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+_PHONE_REGEX = re.compile(r"^[0-9+\-\s()]{7,25}$")
+
+
+def _sanitize_preferences(raw_prefs: Optional[Dict[str, Any]], existing_prefs: Dict[str, Any]) -> Dict[str, Any]:
+    """Merges and validates self-service UI preferences safely."""
+    merged = dict(existing_prefs or {})
+    if not isinstance(raw_prefs, dict):
+        return merged
+
+    if "theme_mode" in raw_prefs and raw_prefs["theme_mode"] is not None:
+        tm = str(raw_prefs["theme_mode"]).strip().lower()
+        if tm not in _ALLOWED_THEME_MODES:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Theme mode must be 'system', 'light', or 'dark'."
+            )
+        merged["theme_mode"] = tm
+
+    if "accent_preset" in raw_prefs and raw_prefs["accent_preset"] is not None:
+        ap = str(raw_prefs["accent_preset"]).strip().lower()
+        if ap not in _ALLOWED_ACCENT_PRESETS:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Accent preset must be 'emerald', 'sapphire', 'teal', or 'indigo'."
+            )
+        merged["accent_preset"] = ap
+
+    for bool_key in ("compact_density", "reduce_motion", "haptics_enabled"):
+        if bool_key in raw_prefs and raw_prefs[bool_key] is not None:
+            merged[bool_key] = bool(raw_prefs[bool_key])
+
+    return merged
+
+
+@router.get("/profile", response_model=ProfileResponse)
+def get_my_profile(
+    current_user: CurrentUser = Depends(get_current_user),
+    uow: SupabaseUnitOfWork = Depends(get_uow),
+):
+    """
+    Returns complete self-service profile, security posture, preferences, and recent logins
+    for the authenticated staff member across all roles.
+    """
+    user = uow.users.find_by_id(current_user.id)
+    if not user or not user.is_active:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User account not found.")
+
+    extra = dict(user.extra_fields or {})
+    user_info = _build_user_info(user, uow)
+
+    try:
+        normalized_role = RBACScopeService.normalize_role(user.role)
+        can_change_pw = normalized_role != "CO"
+    except UnknownRoleError:
+        can_change_pw = False
+
+    recent_items: List[ProfileLoginActivityItem] = []
+    try:
+        rows = uow.login_history.find_by_user(user.id, limit=5)
+        for r in (rows or []):
+            recent_items.append(
+                ProfileLoginActivityItem(
+                    login_time=str(r.get("login_time") or ""),
+                    status=str(r.get("status") or "SUCCESS"),
+                    device_name=r.get("device_name"),
+                    browser=r.get("browser"),
+                    operating_system=r.get("operating_system"),
+                )
+            )
+    except Exception:
+        recent_items = []
+
+    return ProfileResponse(
+        user=user_info,
+        emergency_contact=str(extra.get("emergency_contact") or ""),
+        can_self_change_password=can_change_pw,
+        remaining_backup_codes=len(extra.get("mfa_backup_codes", []) or []),
+        mfa_enrolled_at=extra.get("mfa_enrolled_at"),
+        recent_activity=recent_items,
+    )
+
+
+@router.patch("/profile", response_model=ProfileUpdateResponse)
+def update_my_profile(
+    payload: ProfileUpdateRequest,
+    current_user: CurrentUser = Depends(get_current_user),
+    uow: SupabaseUnitOfWork = Depends(get_uow),
+):
+    """
+    Updates personal contact details and UI preferences in app_users.extra_fields.
+    Role, branch scope, username, display full name, and MFA state are strictly read-only here.
+    """
+    user = uow.users.find_by_id(current_user.id)
+    if not user or not user.is_active:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User account not found.")
+
+    extra = dict(user.extra_fields or {})
+
+    if payload.phone is not None:
+        clean_phone = payload.phone.strip()
+        if clean_phone and not _PHONE_REGEX.match(clean_phone):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Enter a valid contact phone number (7-25 digits/characters)."
+            )
+        extra["phone"] = clean_phone
+
+    if payload.email is not None:
+        clean_email = payload.email.strip()
+        if clean_email and not _EMAIL_REGEX.match(clean_email):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Enter a valid email address."
+            )
+        extra["email"] = clean_email
+
+    if payload.bio is not None:
+        extra["bio"] = payload.bio.strip()[:280]
+
+    if payload.emergency_contact is not None:
+        extra["emergency_contact"] = payload.emergency_contact.strip()[:120]
+
+    if payload.preferences is not None:
+        existing_prefs = extra.get("preferences") if isinstance(extra.get("preferences"), dict) else {}
+        extra["preferences"] = _sanitize_preferences(payload.preferences.model_dump(), existing_prefs)
+
+    extra["profile_updated_at"] = datetime.now().isoformat()
+    uow.users.update_extra_fields(user.id, extra)
+    user.extra_fields = extra
+
+    invalidate_user_session_cache(user.id)
+    invalidate_user_session_cache(user.username)
+
+    AuditLogService.log_user_action(
+        action="USER_PROFILE_UPDATED",
+        target_user_id=user.id,
+        display_name=user.username,
+        new={"updated_fields": [k for k, v in payload.model_dump(exclude_none=True).items()]},
+    )
+
+    return ProfileUpdateResponse(
+        success=True,
+        message="Profile and preferences saved.",
+        user=_build_user_info(user, uow),
+        emergency_contact=str(extra.get("emergency_contact") or ""),
+    )
+
+
+@router.post("/profile/avatar", response_model=AvatarUploadResponse)
+async def upload_profile_avatar(
+    file: UploadFile = File(...),
+    current_user: CurrentUser = Depends(get_current_user),
+    uow: SupabaseUnitOfWork = Depends(get_uow),
+):
+    """
+    Uploads, EXIF-strips, downscales (max 512px), and stores the authenticated user's
+    profile photograph in Supabase Storage (`user-avatars`).
+    """
+    user = uow.users.find_by_id(current_user.id)
+    if not user or not user.is_active:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User account not found.")
+
+    raw_bytes = await file.read()
+    if not raw_bytes:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Selected image file is empty.")
+    if len(raw_bytes) > _MAX_AVATAR_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="Profile photo exceeds the 5 MB maximum upload limit."
+        )
+
+    filename = file.filename or "avatar.jpg"
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    if ext and ext not in _ALLOWED_AVATAR_EXTENSIONS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Unsupported image format. Allowed formats: JPG, JPEG, PNG, WEBP."
+        )
+
+    try:
+        img = Image.open(io.BytesIO(raw_bytes))
+        try:
+            img = ImageOps.exif_transpose(img)
+        except Exception:
+            pass
+        if img.mode in ("RGBA", "P", "LA"):
+            bg = Image.new("RGB", img.size, (255, 255, 255))
+            if img.mode == "RGBA":
+                bg.paste(img, mask=img.split()[3])
+            else:
+                bg.paste(img)
+            img = bg
+        elif img.mode != "RGB":
+            img = img.convert("RGB")
+
+        img.thumbnail((512, 512), Image.Resampling.LANCZOS)
+        out_buf = io.BytesIO()
+        # Re-saving via Pillow strips GPS/EXIF metadata while optimizing size
+        img.save(out_buf, format="JPEG", quality=82, optimize=True)
+        target_bytes = out_buf.getvalue()
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Could not decode image file. Please select a valid JPG, PNG, or WEBP photo."
+        )
+
+    try:
+        buckets = uow.client.storage.list_buckets()
+        bucket_names = [b.name for b in (buckets or [])]
+        if _AVATAR_BUCKET not in bucket_names:
+            uow.client.storage.create_bucket(_AVATAR_BUCKET, options={"public": True})
+    except Exception:
+        pass
+
+    extra = dict(user.extra_fields or {})
+    old_path = extra.get("avatar_storage_path")
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    storage_path = f"{user.id}/avatar_{timestamp}.jpg"
+
+    try:
+        uow.client.storage.from_(_AVATAR_BUCKET).upload(
+            path=storage_path,
+            file=target_bytes,
+            file_options={"content-type": "image/jpeg"}
+        )
+    except Exception as upload_err:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to store profile photograph: {upload_err}"
+        )
+
+    if old_path and old_path != storage_path:
+        try:
+            uow.client.storage.from_(_AVATAR_BUCKET).remove([old_path])
+        except Exception:
+            pass
+
+    public_url = uow.client.storage.from_(_AVATAR_BUCKET).get_public_url(storage_path)
+    extra["avatar_url"] = public_url
+    extra["avatar_storage_path"] = storage_path
+    extra["avatar_updated_at"] = datetime.now().isoformat()
+
+    uow.users.update_extra_fields(user.id, extra)
+    invalidate_user_session_cache(user.id)
+    invalidate_user_session_cache(user.username)
+
+    AuditLogService.log_user_action(
+        action="USER_AVATAR_UPDATED",
+        target_user_id=user.id,
+        display_name=user.username,
+    )
+
+    return AvatarUploadResponse(
+        success=True,
+        message="Profile photograph updated successfully.",
+        avatar_url=public_url,
+        size_kb=round(len(target_bytes) / 1024.0, 1),
+    )
+
+
+@router.delete("/profile/avatar", response_model=ProfileUpdateResponse)
+def remove_profile_avatar(
+    current_user: CurrentUser = Depends(get_current_user),
+    uow: SupabaseUnitOfWork = Depends(get_uow),
+):
+    """Removes the authenticated user's profile photograph and clears avatar metadata."""
+    user = uow.users.find_by_id(current_user.id)
+    if not user or not user.is_active:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User account not found.")
+
+    extra = dict(user.extra_fields or {})
+    old_path = extra.pop("avatar_storage_path", None)
+    extra.pop("avatar_url", None)
+    extra["avatar_updated_at"] = datetime.now().isoformat()
+
+    if old_path:
+        try:
+            uow.client.storage.from_(_AVATAR_BUCKET).remove([old_path])
+        except Exception:
+            pass
+
+    uow.users.update_extra_fields(user.id, extra)
+    user.extra_fields = extra
+    invalidate_user_session_cache(user.id)
+    invalidate_user_session_cache(user.username)
+
+    AuditLogService.log_user_action(
+        action="USER_AVATAR_REMOVED",
+        target_user_id=user.id,
+        display_name=user.username,
+    )
+
+    return ProfileUpdateResponse(
+        success=True,
+        message="Profile photograph removed.",
+        user=_build_user_info(user, uow),
+        emergency_contact=str(extra.get("emergency_contact") or ""),
+    )
+
+
+@router.post("/change-password", response_model=ChangeOwnPasswordResponse)
+def change_own_password(
+    payload: ChangeOwnPasswordRequest,
+    request: Request,
+    response: Response,
+    current_user: CurrentUser = Depends(get_current_user),
+    uow: SupabaseUnitOfWork = Depends(get_uow),
+):
+    """
+    Allows authenticated management & administrative roles to rotate their own password.
+    Credit Officer credentials remain centrally managed by Branch/Area Managers.
+    Issues a fresh session token so the active session remains uninterrupted.
+    """
+    user = uow.users.find_by_id(current_user.id)
+    if not user or not user.is_active:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User account not found.")
+
+    try:
+        normalized_role = RBACScopeService.normalize_role(user.role)
+    except UnknownRoleError:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Account role is unrecognized. Contact administrator."
+        )
+
+    if normalized_role == "CO":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Credit Officer passwords must be configured and managed by your supervising Branch Manager or Area Manager."
+        )
+
+    if not verify_password(payload.current_password, user.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Current password is incorrect."
+        )
+
+    new_pw = payload.new_password.strip()
+    if len(new_pw) < 8:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="New password must be at least 8 characters long."
+        )
+
+    if verify_password(new_pw, user.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="New password must be different from your current password."
+        )
+
+    new_hash = hash_password(new_pw)
+    uow.users.update_password(user.username, new_hash)
+
+    extra = dict(user.extra_fields or {})
+    extra["must_change_password"] = False
+    extra["password_changed_at"] = datetime.now().isoformat()
+    try:
+        uow.users.update_extra_fields(user.id, extra)
+    except Exception:
+        pass
+
+    get_revocation_store().revoke_user_sessions(user.id)
+    invalidate_user_session_cache(user.id)
+    invalidate_user_session_cache(user.username)
+
+    AuditLogService.log_user_action(
+        action="USER_PASSWORD_CHANGED",
+        target_user_id=user.id,
+        display_name=user.username,
+    )
+
+    # Issue a fresh replacement session token for the active caller after revoking prior sessions
+    new_token = generate_session_token(user.id, user.username)
+    csrf_token = set_auth_cookies(response, request, new_token)
+
+    return ChangeOwnPasswordResponse(
+        success=True,
+        message="Password updated successfully. Active session refreshed.",
+        access_token=None if is_cookie_auth_mode(request) else new_token,
+        csrf_token=csrf_token,
     )

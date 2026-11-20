@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/theme/icare_theme_tokens.dart';
 import '../../../../core/utils/currency_formatter.dart';
 import '../../data/models/admin_dashboard_models.dart';
 import 'admin_responsive.dart';
@@ -19,19 +20,26 @@ Future<bool> showAdminApprovalConfirmDialog({
     context: context,
     barrierDismissible: true,
     builder: (ctx) {
+      final tokens = IcareSurfaceTokens.of(ctx);
       final accentColor = isPositiveAction
+          ? tokens.successDot
+          : tokens.dangerDot;
+      final solidActionBg = isPositiveAction
           ? const Color(0xFF059669)
           : const Color(0xFFDC2626);
       final bgTint = isPositiveAction
-          ? const Color(0xFFF0FDF4)
-          : const Color(0xFFFEF2F2);
+          ? tokens.successBg
+          : tokens.dangerBg;
       final borderTint = isPositiveAction
-          ? const Color(0xFFBBF7D0)
-          : const Color(0xFFFECACA);
+          ? tokens.successBorder
+          : tokens.dangerBorder;
 
       return AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: BorderSide(color: tokens.borderSubtle),
+        ),
+        backgroundColor: tokens.surface,
         titlePadding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
         contentPadding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
         actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
@@ -56,10 +64,10 @@ Future<bool> showAdminApprovalConfirmDialog({
             Expanded(
               child: Text(
                 title,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 15,
                   fontWeight: FontWeight.w800,
-                  color: Color(0xFF0F172A),
+                  color: tokens.textPrimary,
                 ),
               ),
             ),
@@ -75,28 +83,28 @@ Future<bool> showAdminApprovalConfirmDialog({
                 width: double.infinity,
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF8FAFC),
+                  color: tokens.surfaceSubtle,
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                  border: Border.all(color: tokens.borderSubtle),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
                       branchName,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w700,
-                        color: Color(0xFF475569),
+                        color: tokens.textSecondary,
                       ),
                     ),
                     const SizedBox(height: 4),
                     Text(
                       summaryLine,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 13.5,
                         fontWeight: FontWeight.w700,
-                        color: Color(0xFF0F172A),
+                        color: tokens.textPrimary,
                       ),
                     ),
                   ],
@@ -105,10 +113,10 @@ Future<bool> showAdminApprovalConfirmDialog({
               const SizedBox(height: 12),
               Text(
                 consequenceText,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 12.5,
                   height: 1.45,
-                  color: Color(0xFF475569),
+                  color: tokens.textSecondary,
                 ),
               ),
             ],
@@ -118,7 +126,7 @@ Future<bool> showAdminApprovalConfirmDialog({
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
             style: TextButton.styleFrom(
-              foregroundColor: const Color(0xFF475569),
+              foregroundColor: tokens.textMuted,
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             ),
             child: const Text(
@@ -129,7 +137,7 @@ Future<bool> showAdminApprovalConfirmDialog({
           ElevatedButton(
             onPressed: () => Navigator.of(ctx).pop(true),
             style: ElevatedButton.styleFrom(
-              backgroundColor: accentColor,
+              backgroundColor: solidActionBg,
               foregroundColor: Colors.white,
               elevation: 0,
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
@@ -246,16 +254,15 @@ class _AdminApprovalsActionCenterState
     final highLoans = widget.data.pendingHighLoans;
     final totalWaiting = reversals.length + highLoans.length;
     final isCompact = widget.size.isCompact;
+    final tokens = IcareSurfaceTokens.of(context);
 
     return Container(
       padding: EdgeInsets.all(isCompact ? 14 : 18),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: tokens.surface,
         borderRadius: BorderRadius.circular(10),
         border: Border.all(
-          color: totalWaiting > 0
-              ? const Color(0xFFFECACA)
-              : const Color(0xFFE2E8F0),
+          color: totalWaiting > 0 ? tokens.dangerBorder : tokens.borderSubtle,
         ),
       ),
       child: Column(
@@ -265,7 +272,7 @@ class _AdminApprovalsActionCenterState
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Expanded(
+              Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -274,13 +281,13 @@ class _AdminApprovalsActionCenterState
                       style: TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w700,
-                        color: Color(0xFF0F172A),
+                        color: tokens.textPrimary,
                       ),
                     ),
-                    SizedBox(height: 2),
+                    const SizedBox(height: 2),
                     Text(
                       'Review and decide on error corrections and large loans',
-                      style: TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                      style: TextStyle(fontSize: 11, color: tokens.textMuted),
                     ),
                   ],
                 ),
@@ -289,9 +296,7 @@ class _AdminApprovalsActionCenterState
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
-                  color: totalWaiting > 0
-                      ? const Color(0xFFFEF2F2)
-                      : const Color(0xFFF1F5F9),
+                  color: totalWaiting > 0 ? tokens.dangerBg : tokens.surfaceSubtle,
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Text(
@@ -299,9 +304,7 @@ class _AdminApprovalsActionCenterState
                   style: TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w700,
-                    color: totalWaiting > 0
-                        ? const Color(0xFFDC2626)
-                        : const Color(0xFF64748B),
+                    color: totalWaiting > 0 ? tokens.dangerText : tokens.textMuted,
                   ),
                 ),
               ),
@@ -313,25 +316,25 @@ class _AdminApprovalsActionCenterState
               width: double.infinity,
               padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 12),
               decoration: BoxDecoration(
-                color: const Color(0xFFF8FAFC),
+                color: tokens.surfaceSubtle,
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: const Color(0xFFF1F5F9)),
+                border: Border.all(color: tokens.borderSubtle),
               ),
-              child: const Column(
+              child: Column(
                 children: [
                   Icon(
                     Icons.check_circle_outline,
                     size: 22,
-                    color: Color(0xFF059669),
+                    color: tokens.successDot,
                   ),
-                  SizedBox(height: 6),
+                  const SizedBox(height: 6),
                   Text(
                     'No pending requests. Everything is up to date.',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
-                      color: Color(0xFF64748B),
+                      color: tokens.textMuted,
                     ),
                   ),
                 ],
@@ -339,29 +342,29 @@ class _AdminApprovalsActionCenterState
             )
           else ...[
             if (reversals.isNotEmpty) ...[
-              const Text(
+              Text(
                 'Correction Requests Waiting for Approval',
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w700,
-                  color: Color(0xFF334155),
+                  color: tokens.textSecondary,
                 ),
               ),
               const SizedBox(height: 6),
-              ...reversals.map((r) => _buildReversalRow(r, isCompact)),
+              ...reversals.map((r) => _buildReversalRow(tokens, r, isCompact)),
               if (highLoans.isNotEmpty) const SizedBox(height: 12),
             ],
             if (highLoans.isNotEmpty) ...[
-              const Text(
+              Text(
                 'Large Loan Requests (Over ₦300,000)',
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w700,
-                  color: Color(0xFF334155),
+                  color: tokens.textSecondary,
                 ),
               ),
               const SizedBox(height: 6),
-              ...highLoans.map((l) => _buildHighLoanRow(l, isCompact)),
+              ...highLoans.map((l) => _buildHighLoanRow(tokens, l, isCompact)),
             ],
           ],
         ],
@@ -369,7 +372,8 @@ class _AdminApprovalsActionCenterState
     );
   }
 
-  Widget _buildReversalRow(PendingReversalItemModel r, bool stackButtons) {
+  Widget _buildReversalRow(
+      IcareSurfaceTokens tokens, PendingReversalItemModel r, bool stackButtons) {
     final isBusy = _inFlightIds.contains('rev_${r.requestId}');
 
     final infoColumn = Column(
@@ -377,20 +381,20 @@ class _AdminApprovalsActionCenterState
       children: [
         Text(
           '${r.branchName} • ${r.recordType}',
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 12.5,
             fontWeight: FontWeight.w700,
-            color: Color(0xFF0F172A),
+            color: tokens.textPrimary,
           ),
         ),
         const SizedBox(height: 2),
         Text(
           'Reason: ${r.reason}',
-          style: const TextStyle(fontSize: 11.5, color: Color(0xFF475569)),
+          style: TextStyle(fontSize: 11.5, color: tokens.textSecondary),
         ),
         Text(
           'Requested by: ${r.requestedBy}',
-          style: const TextStyle(fontSize: 10.5, color: Color(0xFF94A3B8)),
+          style: TextStyle(fontSize: 10.5, color: tokens.textLight),
         ),
       ],
     );
@@ -400,7 +404,7 @@ class _AdminApprovalsActionCenterState
       style: ElevatedButton.styleFrom(
         backgroundColor: const Color(0xFF059669),
         foregroundColor: Colors.white,
-        disabledBackgroundColor: const Color(0xFF94A3B8),
+        disabledBackgroundColor: tokens.borderStrong,
         disabledForegroundColor: Colors.white,
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         minimumSize: Size(stackButtons ? 0 : 72, stackButtons ? 38 : 32),
@@ -425,9 +429,9 @@ class _AdminApprovalsActionCenterState
     final rejectBtn = OutlinedButton(
       onPressed: isBusy ? null : () => _confirmAndRunReversal(r, false),
       style: OutlinedButton.styleFrom(
-        foregroundColor: const Color(0xFFDC2626),
-        side: const BorderSide(color: Color(0xFFFCA5A5)),
-        backgroundColor: const Color(0xFFFEF2F2),
+        foregroundColor: tokens.dangerText,
+        side: BorderSide(color: tokens.dangerBorder),
+        backgroundColor: tokens.dangerBg,
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         minimumSize: Size(stackButtons ? 0 : 68, stackButtons ? 38 : 32),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
@@ -442,9 +446,9 @@ class _AdminApprovalsActionCenterState
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
+        color: tokens.surfaceSubtle,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: tokens.borderSubtle),
       ),
       child: stackButtons
           ? Column(
@@ -473,7 +477,8 @@ class _AdminApprovalsActionCenterState
     );
   }
 
-  Widget _buildHighLoanRow(PendingHighLoanItemModel l, bool stackButtons) {
+  Widget _buildHighLoanRow(
+      IcareSurfaceTokens tokens, PendingHighLoanItemModel l, bool stackButtons) {
     final isBusy = _inFlightIds.contains('loan_${l.loanId}');
 
     final infoColumn = Column(
@@ -481,16 +486,16 @@ class _AdminApprovalsActionCenterState
       children: [
         Text(
           '${l.branchName} • ${CurrencyFormatter.format(l.loanAmount)}',
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 12.5,
             fontWeight: FontWeight.w700,
-            color: Color(0xFF0F172A),
+            color: tokens.textPrimary,
           ),
         ),
         const SizedBox(height: 2),
         Text(
           'Borrower current loan: ${CurrencyFormatter.format(l.activeCredit)}',
-          style: const TextStyle(fontSize: 11.5, color: Color(0xFF475569)),
+          style: TextStyle(fontSize: 11.5, color: tokens.textSecondary),
         ),
       ],
     );
@@ -500,7 +505,7 @@ class _AdminApprovalsActionCenterState
       style: ElevatedButton.styleFrom(
         backgroundColor: const Color(0xFF059669),
         foregroundColor: Colors.white,
-        disabledBackgroundColor: const Color(0xFF94A3B8),
+        disabledBackgroundColor: tokens.borderStrong,
         disabledForegroundColor: Colors.white,
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         minimumSize: Size(stackButtons ? 0 : 84, stackButtons ? 38 : 32),
@@ -525,9 +530,9 @@ class _AdminApprovalsActionCenterState
     final declineBtn = OutlinedButton(
       onPressed: isBusy ? null : () => _confirmAndRunLoan(l, false),
       style: OutlinedButton.styleFrom(
-        foregroundColor: const Color(0xFFDC2626),
-        side: const BorderSide(color: Color(0xFFFCA5A5)),
-        backgroundColor: const Color(0xFFFEF2F2),
+        foregroundColor: tokens.dangerText,
+        side: BorderSide(color: tokens.dangerBorder),
+        backgroundColor: tokens.dangerBg,
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         minimumSize: Size(stackButtons ? 0 : 68, stackButtons ? 38 : 32),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
@@ -542,9 +547,9 @@ class _AdminApprovalsActionCenterState
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
+        color: tokens.surfaceSubtle,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: tokens.borderSubtle),
       ),
       child: stackButtons
           ? Column(

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import '../theme/icare_colors.dart';
 import '../theme/icare_typography.dart';
 import '../theme/icare_spacing.dart';
+import '../theme/icare_theme_tokens.dart';
 import 'icare_card.dart';
 
 /// Standard Institutional Banking KPI / Metric Card
@@ -33,11 +33,15 @@ class IcareMetricCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isMobile = IcareSpacing.isMobile(context);
+    final tokens = IcareSurfaceTokens.of(context);
 
     if (isFullEmerald) {
       return IcareCard(
-        backgroundColor: IcareColors.primary,
-        border: Border.all(color: IcareColors.primaryDark, width: 1),
+        backgroundColor: tokens.isDark ? tokens.brandPrimaryDark : tokens.brandPrimary,
+        border: Border.all(
+          color: tokens.isDark ? tokens.brandSoftBorder : tokens.brandPrimaryDark,
+          width: 1,
+        ),
         padding: EdgeInsets.symmetric(
           horizontal: isMobile ? 12 : 16,
           vertical: isMobile ? 12 : 14,
@@ -103,7 +107,7 @@ class IcareMetricCard extends StatelessWidget {
       );
     }
 
-    final valueColor = statusTextColor ?? IcareColors.textPrimary;
+    final valueColor = statusTextColor ?? tokens.textPrimary;
 
     return IcareCard(
       topAccentColor: topBorderColor,
@@ -122,14 +126,14 @@ class IcareMetricCard extends StatelessWidget {
               Expanded(
                 child: Text(
                   label.toUpperCase(),
-                  style: IcareTypography.cardLabel,
+                  style: IcareTypography.cardLabel.copyWith(color: tokens.textMuted),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
               if (icon != null) ...[
                 const SizedBox(width: 6),
-                Icon(icon, size: 15, color: IcareColors.textMuted),
+                Icon(icon, size: 15, color: tokens.textMuted),
               ],
             ],
           ),
@@ -154,7 +158,7 @@ class IcareMetricCard extends StatelessWidget {
               style: TextStyle(
                 fontSize: 11,
                 fontWeight: FontWeight.w500,
-                color: isInverseDelta ? const Color(0xFFB91C1C) : IcareColors.textMuted,
+                color: isInverseDelta ? tokens.dangerText : tokens.textMuted,
               ),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,

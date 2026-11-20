@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
 import '../../../../core/utils/currency_formatter.dart';
+import '../../../core/theme/icare_theme_tokens.dart';
 import '../../../core/widgets/icare_skeleton_loader.dart';
 import '../../../core/offline/connectivity_service.dart';
 import '../../../core/offline/offline_database_service.dart';
@@ -93,36 +94,40 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
     final notesController = TextEditingController();
     final confirm = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('Confirm EOD — $branchName', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Are you sure you want to sign off on the daily EOD reconciliation for $branchName on $closureDate?',
-                style: const TextStyle(fontSize: 13, color: Color(0xFF475569))),
-            const SizedBox(height: 12),
-            TextField(
-              controller: notesController,
-              decoration: const InputDecoration(
-                labelText: 'Supervisory Notes (Optional)',
-                hintText: 'e.g. Vault cash reconciled with zero variance.',
-                border: OutlineInputBorder(),
-                isDense: true,
+      builder: (ctx) {
+        final tokens = IcareSurfaceTokens.of(ctx);
+        return AlertDialog(
+          backgroundColor: tokens.surfaceElevated,
+          title: Text('Confirm EOD — $branchName', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: tokens.textPrimary)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Are you sure you want to sign off on the daily EOD reconciliation for $branchName on $closureDate?',
+                  style: TextStyle(fontSize: 13, color: tokens.textSecondary)),
+              const SizedBox(height: 12),
+              TextField(
+                controller: notesController,
+                decoration: const InputDecoration(
+                  labelText: 'Supervisory Notes (Optional)',
+                  hintText: 'e.g. Vault cash reconciled with zero variance.',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+                maxLines: 2,
               ),
-              maxLines: 2,
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              style: ElevatedButton.styleFrom(backgroundColor: tokens.brandPrimaryDark, foregroundColor: Colors.white),
+              child: const Text('Confirm EOD', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
             ),
           ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF065F46)),
-            child: const Text('Confirm EOD', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-          ),
-        ],
-      ),
+        );
+      },
     );
 
     if (confirm != true) return;
@@ -151,47 +156,51 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) => AlertDialog(
-          title: Text('Return EOD — $branchName', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Return the EOD submission for $branchName on $closureDate back to the Branch Manager for correction?',
-                style: const TextStyle(fontSize: 13, color: Color(0xFF475569)),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: reasonController,
-                decoration: InputDecoration(
-                  labelText: 'Reason for Returning (Required)',
-                  hintText: 'e.g. Please clarify cash variance or update bank deposit slips.',
-                  border: const OutlineInputBorder(),
-                  isDense: true,
-                  errorText: validationError,
+        builder: (ctx, setDialogState) {
+          final tokens = IcareSurfaceTokens.of(ctx);
+          return AlertDialog(
+            backgroundColor: tokens.surfaceElevated,
+            title: Text('Return EOD — $branchName', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: tokens.textPrimary)),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Return the EOD submission for $branchName on $closureDate back to the Branch Manager for correction?',
+                  style: TextStyle(fontSize: 13, color: tokens.textSecondary),
                 ),
-                maxLines: 2,
+                const SizedBox(height: 12),
+                TextField(
+                  controller: reasonController,
+                  decoration: InputDecoration(
+                    labelText: 'Reason for Returning (Required)',
+                    hintText: 'e.g. Please clarify cash variance or update bank deposit slips.',
+                    border: const OutlineInputBorder(),
+                    isDense: true,
+                    errorText: validationError,
+                  ),
+                  maxLines: 2,
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+              ElevatedButton(
+                onPressed: () {
+                  if (reasonController.text.trim().isEmpty) {
+                    setDialogState(() {
+                      validationError = 'Please state a reason for returning this EOD.';
+                    });
+                    return;
+                  }
+                  Navigator.pop(ctx, true);
+                },
+                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFDC2626), foregroundColor: Colors.white),
+                child: const Text('Return to BM', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
               ),
             ],
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-            ElevatedButton(
-              onPressed: () {
-                if (reasonController.text.trim().isEmpty) {
-                  setDialogState(() {
-                    validationError = 'Please state a reason for returning this EOD.';
-                  });
-                  return;
-                }
-                Navigator.pop(ctx, true);
-              },
-              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFDC2626)),
-              child: const Text('Return to BM', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-            ),
-          ],
-        ),
+          );
+        },
       ),
     );
 
@@ -218,36 +227,40 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
     final notesController = TextEditingController();
     final confirm = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('Endorse Monthly Report — ${b.branchName}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Confirm and sign off on monthly books for ${b.branchName} (${b.year}-${b.month.toString().padLeft(2, '0')})?',
-                style: const TextStyle(fontSize: 13, color: Color(0xFF475569))),
-            const SizedBox(height: 12),
-            TextField(
-              controller: notesController,
-              decoration: const InputDecoration(
-                labelText: 'Supervisory Remarks (Optional)',
-                hintText: 'e.g. Month-end figures inspected and reconciled.',
-                border: OutlineInputBorder(),
-                isDense: true,
+      builder: (ctx) {
+        final tokens = IcareSurfaceTokens.of(ctx);
+        return AlertDialog(
+          backgroundColor: tokens.surfaceElevated,
+          title: Text('Endorse Monthly Report — ${b.branchName}', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: tokens.textPrimary)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Confirm and sign off on monthly books for ${b.branchName} (${b.year}-${b.month.toString().padLeft(2, '0')})?',
+                  style: TextStyle(fontSize: 13, color: tokens.textSecondary)),
+              const SizedBox(height: 12),
+              TextField(
+                controller: notesController,
+                decoration: const InputDecoration(
+                  labelText: 'Supervisory Remarks (Optional)',
+                  hintText: 'e.g. Month-end figures inspected and reconciled.',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+                maxLines: 2,
               ),
-              maxLines: 2,
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              style: ElevatedButton.styleFrom(backgroundColor: tokens.brandPrimaryDark, foregroundColor: Colors.white),
+              child: const Text('Endorse Report', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
             ),
           ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF065F46)),
-            child: const Text('Endorse Report', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-          ),
-        ],
-      ),
+        );
+      },
     );
 
     if (confirm != true) return;
@@ -274,39 +287,43 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
     final queryController = TextEditingController();
     final confirm = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('Return Report for Correction — ${b.branchName}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Specify required adjustments or query for ${b.bmName ?? "Branch Manager"}:',
-                style: const TextStyle(fontSize: 13, color: Color(0xFF475569))),
-            const SizedBox(height: 12),
-            TextField(
-              controller: queryController,
-              decoration: const InputDecoration(
-                labelText: 'Supervisory Query Notes (Required)',
-                hintText: 'e.g. Reconcile vault cash variance before final sign-off.',
-                border: OutlineInputBorder(),
-                isDense: true,
+      builder: (ctx) {
+        final tokens = IcareSurfaceTokens.of(ctx);
+        return AlertDialog(
+          backgroundColor: tokens.surfaceElevated,
+          title: Text('Return Report for Correction — ${b.branchName}', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: tokens.textPrimary)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Specify required adjustments or query for ${b.bmName ?? "Branch Manager"}:',
+                  style: TextStyle(fontSize: 13, color: tokens.textSecondary)),
+              const SizedBox(height: 12),
+              TextField(
+                controller: queryController,
+                decoration: const InputDecoration(
+                  labelText: 'Supervisory Query Notes (Required)',
+                  hintText: 'e.g. Reconcile vault cash variance before final sign-off.',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+                maxLines: 3,
               ),
-              maxLines: 3,
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+            ElevatedButton(
+              onPressed: () {
+                if (queryController.text.trim().isEmpty) return;
+                Navigator.pop(ctx, true);
+              },
+              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFDC2626), foregroundColor: Colors.white),
+              child: const Text('Return Report', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
             ),
           ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          ElevatedButton(
-            onPressed: () {
-              if (queryController.text.trim().isEmpty) return;
-              Navigator.pop(ctx, true);
-            },
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFDC2626)),
-            child: const Text('Return Report', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-          ),
-        ],
-      ),
+        );
+      },
     );
 
     if (confirm != true || queryController.text.trim().isEmpty) return;
@@ -334,36 +351,40 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
     final notesController = TextEditingController();
     final confirm = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('Seal $areaName Month-End Regional Package', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Seal and lock the consolidated monthly package for $areaName (${selectedDate.year}-${selectedDate.month.toString().padLeft(2, '0')})?\n\nAll supervised branches are certified and endorsed. Once sealed, the package will be transmitted to Executive Admin for final institutional lock.',
-                style: const TextStyle(fontSize: 13, color: Color(0xFF475569))),
-            const SizedBox(height: 12),
-            TextField(
-              controller: notesController,
-              decoration: const InputDecoration(
-                labelText: 'Regional Package Notes (Optional)',
-                hintText: 'e.g. All branch accounts verified with zero unresolved queries.',
-                border: OutlineInputBorder(),
-                isDense: true,
+      builder: (ctx) {
+        final tokens = IcareSurfaceTokens.of(ctx);
+        return AlertDialog(
+          backgroundColor: tokens.surfaceElevated,
+          title: Text('Seal $areaName Month-End Regional Package', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: tokens.textPrimary)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Seal and lock the consolidated monthly package for $areaName (${selectedDate.year}-${selectedDate.month.toString().padLeft(2, '0')})?\n\nAll supervised branches are certified and endorsed. Once sealed, the package will be transmitted to Executive Admin for final institutional lock.',
+                  style: TextStyle(fontSize: 13, color: tokens.textSecondary)),
+              const SizedBox(height: 12),
+              TextField(
+                controller: notesController,
+                decoration: const InputDecoration(
+                  labelText: 'Regional Package Notes (Optional)',
+                  hintText: 'e.g. All branch accounts verified with zero unresolved queries.',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+                maxLines: 2,
               ),
-              maxLines: 2,
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              style: ElevatedButton.styleFrom(backgroundColor: tokens.brandPrimaryDark, foregroundColor: Colors.white),
+              child: const Text('Seal Area Package', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
             ),
           ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF064E3B)),
-            child: const Text('Seal Area Package', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-          ),
-        ],
-      ),
+        );
+      },
     );
 
     if (confirm != true) return;
@@ -389,21 +410,25 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
   Future<void> _handleConfirmAreaClosure(String areaName, String closureDate) async {
     final confirm = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('Lock & Seal Daily Closure — $areaName', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-        content: Text(
-          'All operational branches in $areaName have been confirmed with zero variance.\n\nDo you want to finalize and lock the daily regional operations for $closureDate?',
-          style: const TextStyle(fontSize: 13, color: Color(0xFF475569)),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF064E3B)),
-            child: Text('Lock & Seal $areaName', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+      builder: (ctx) {
+        final tokens = IcareSurfaceTokens.of(ctx);
+        return AlertDialog(
+          backgroundColor: tokens.surfaceElevated,
+          title: Text('Lock & Seal Daily Closure — $areaName', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: tokens.textPrimary)),
+          content: Text(
+            'All operational branches in $areaName have been confirmed with zero variance.\n\nDo you want to finalize and lock the daily regional operations for $closureDate?',
+            style: TextStyle(fontSize: 13, color: tokens.textSecondary),
           ),
-        ],
-      ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              style: ElevatedButton.styleFrom(backgroundColor: tokens.brandPrimaryDark, foregroundColor: Colors.white),
+              child: Text('Lock & Seal $areaName', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            ),
+          ],
+        );
+      },
     );
 
     if (confirm != true) return;
@@ -426,44 +451,48 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDlgState) => AlertDialog(
-          title: const Text('Confirm High-Value Loan', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('Client: $clientName', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
-              const SizedBox(height: 4),
-              Text('Amount: ${CurrencyFormatter.format(amount)}', style: const TextStyle(fontSize: 14, color: Color(0xFF2563EB), fontWeight: FontWeight.bold)),
-              const SizedBox(height: 12),
-              const Text('Disbursement Operational Date:', style: TextStyle(fontSize: 12, color: Color(0xFF64748B))),
-              const SizedBox(height: 6),
-              OutlinedButton.icon(
-                onPressed: () async {
-                  final picked = await showDatePicker(
-                    context: context,
-                    initialDate: disbursementDate,
-                    firstDate: DateTime(2025),
-                    lastDate: DateTime(2027),
-                  );
-                  if (picked != null) {
-                    setDlgState(() => disbursementDate = picked);
-                  }
-                },
-                icon: const Icon(Icons.calendar_today, size: 16),
-                label: Text(DateFormat('yyyy-MM-dd').format(disbursementDate)),
+        builder: (ctx, setDlgState) {
+          final tokens = IcareSurfaceTokens.of(ctx);
+          return AlertDialog(
+            backgroundColor: tokens.surfaceElevated,
+            title: Text('Confirm High-Value Loan', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: tokens.textPrimary)),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Client: $clientName', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: tokens.textPrimary)),
+                const SizedBox(height: 4),
+                Text('Amount: ${CurrencyFormatter.format(amount)}', style: TextStyle(fontSize: 14, color: tokens.infoText, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 12),
+                Text('Disbursement Operational Date:', style: TextStyle(fontSize: 12, color: tokens.textMuted)),
+                const SizedBox(height: 6),
+                OutlinedButton.icon(
+                  onPressed: () async {
+                    final picked = await showDatePicker(
+                      context: context,
+                      initialDate: disbursementDate,
+                      firstDate: DateTime(2025),
+                      lastDate: DateTime(2027),
+                    );
+                    if (picked != null) {
+                      setDlgState(() => disbursementDate = picked);
+                    }
+                  },
+                  icon: const Icon(Icons.calendar_today, size: 16),
+                  label: Text(DateFormat('yyyy-MM-dd').format(disbursementDate)),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1D4ED8), foregroundColor: Colors.white),
+                child: const Text('Approve & Disburse', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
               ),
             ],
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-            ElevatedButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF2563EB)),
-              child: const Text('Approve & Disburse', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-            ),
-          ],
-        ),
+          );
+        },
       ),
     );
 
@@ -489,33 +518,37 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
     final reasonController = TextEditingController();
     final confirm = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('Reject Loan — $clientName', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text('Please provide the justification reason for rejection:', style: TextStyle(fontSize: 13, color: Color(0xFF64748B))),
-            const SizedBox(height: 10),
-            TextField(
-              controller: reasonController,
-              decoration: const InputDecoration(
-                labelText: 'Rejection Reason',
-                border: OutlineInputBorder(),
-                isDense: true,
+      builder: (ctx) {
+        final tokens = IcareSurfaceTokens.of(ctx);
+        return AlertDialog(
+          backgroundColor: tokens.surfaceElevated,
+          title: Text('Reject Loan — $clientName', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: tokens.textPrimary)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('Please provide the justification reason for rejection:', style: TextStyle(fontSize: 13, color: tokens.textMuted)),
+              const SizedBox(height: 10),
+              TextField(
+                controller: reasonController,
+                decoration: const InputDecoration(
+                  labelText: 'Rejection Reason',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+                maxLines: 2,
               ),
-              maxLines: 2,
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFDC2626), foregroundColor: Colors.white),
+              child: const Text('Confirm Rejection', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
             ),
           ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFDC2626)),
-            child: const Text('Confirm Rejection', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-          ),
-        ],
-      ),
+        );
+      },
     );
 
     if (confirm != true) return;
@@ -539,19 +572,23 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
   Future<void> _handleSignOffTransfer(String transferId, String clientName) async {
     final confirm = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Sign Off Client Transfer', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-        content: Text('Confirm and approve inter-branch client transfer for $clientName?\n\nClient loan balance and savings ledger will be transferred to the destination branch.',
-            style: const TextStyle(fontSize: 13, color: Color(0xFF475569))),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF065F46)),
-            child: const Text('Sign Off Transfer', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-          ),
-        ],
-      ),
+      builder: (ctx) {
+        final tokens = IcareSurfaceTokens.of(ctx);
+        return AlertDialog(
+          backgroundColor: tokens.surfaceElevated,
+          title: Text('Sign Off Client Transfer', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: tokens.textPrimary)),
+          content: Text('Confirm and approve inter-branch client transfer for $clientName?\n\nClient loan balance and savings ledger will be transferred to the destination branch.',
+              style: TextStyle(fontSize: 13, color: tokens.textSecondary)),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              style: ElevatedButton.styleFrom(backgroundColor: tokens.brandPrimaryDark, foregroundColor: Colors.white),
+              child: const Text('Sign Off Transfer', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            ),
+          ],
+        );
+      },
     );
 
     if (confirm != true) return;
@@ -734,6 +771,7 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
   Widget build(BuildContext context) {
     final dashboardAsync = ref.watch(amDashboardDataProvider);
     final selectedDate = ref.watch(amSelectedDateProvider);
+    final tokens = IcareSurfaceTokens.of(context);
 
     return dashboardAsync.when(
       loading: () => const IcareDashboardSkeleton(),
@@ -743,18 +781,18 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
           margin: const EdgeInsets.all(24),
           padding: const EdgeInsets.all(24),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: tokens.surface,
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: const Color(0xFFFCA5A5)),
+            border: Border.all(color: tokens.dangerBorder),
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.error_outline, color: Color(0xFFDC2626), size: 48),
+              Icon(Icons.error_outline, color: tokens.dangerDot, size: 48),
               const SizedBox(height: 16),
-              const Text('Failed to Load Area Manager Console', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF991B1B))),
+              Text('Failed to Load Area Manager Console', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: tokens.dangerText)),
               const SizedBox(height: 8),
-              Text(err.toString(), textAlign: TextAlign.center, style: const TextStyle(fontSize: 12.5, color: Color(0xFF64748B))),
+              Text(err.toString(), textAlign: TextAlign.center, style: TextStyle(fontSize: 12.5, color: tokens.textMuted)),
               const SizedBox(height: 20),
               ElevatedButton.icon(
                 onPressed: () => ref.invalidate(amDashboardDataProvider),
@@ -777,19 +815,19 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                   width: double.infinity,
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFEFF6FF),
+                    color: tokens.infoBg,
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: const Color(0xFF93C5FD)),
+                    border: Border.all(color: tokens.infoBorder),
                   ),
                   child: Row(
                     children: [
-                      const Icon(Icons.info_outline, size: 18, color: Color(0xFF1D4ED8)),
+                      Icon(Icons.info_outline, size: 18, color: tokens.infoDot),
                       const SizedBox(width: 10),
                       Expanded(
-                        child: Text(_flashMessage!, style: const TextStyle(fontSize: 12.5, color: Color(0xFF1E40AF))),
+                        child: Text(_flashMessage!, style: TextStyle(fontSize: 12.5, color: tokens.infoText)),
                       ),
                       IconButton(
-                        icon: const Icon(Icons.close, size: 16, color: Color(0xFF1E40AF)),
+                        icon: Icon(Icons.close, size: 16, color: tokens.infoText),
                         onPressed: _clearFlash,
                         padding: EdgeInsets.zero,
                         constraints: const BoxConstraints(),
@@ -837,14 +875,15 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
   // HEADER ROW
   // =========================================================================
   Widget _buildHeaderRow(RegionalSummaryModel reg, DateTime selectedDate, bool isMobile) {
+    final tokens = IcareSurfaceTokens.of(context);
     if (isMobile) {
       return Container(
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: tokens.surface,
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: const Color(0xFFE2E8F0)),
-          boxShadow: const [BoxShadow(color: Color(0x040F172A), blurRadius: 4, offset: Offset(0, 1))],
+          border: Border.all(color: tokens.borderSubtle),
+          boxShadow: tokens.isDark ? null : const [BoxShadow(color: Color(0x040F172A), blurRadius: 4, offset: Offset(0, 1))],
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -858,15 +897,15 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
                       decoration: BoxDecoration(
-                        color: const Color(0xFF0F766E),
+                        color: tokens.brandPrimaryDark,
                         borderRadius: BorderRadius.circular(6),
                       ),
                       child: Text(reg.areaName.toUpperCase(), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 10, letterSpacing: 0.5)),
                     ),
                     const SizedBox(width: 8),
-                    const Text(
+                    Text(
                       'Regional Console',
-                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
+                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: tokens.textPrimary),
                     ),
                   ],
                 ),
@@ -889,18 +928,18 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
                         decoration: BoxDecoration(
-                          color: const Color(0xFFF1F5F9),
+                          color: tokens.surfaceHover,
                           borderRadius: BorderRadius.circular(6),
-                          border: Border.all(color: const Color(0xFFCBD5E1)),
+                          border: Border.all(color: tokens.borderStrong),
                         ),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            const Icon(Icons.calendar_today, size: 12, color: Color(0xFF475569)),
+                            Icon(Icons.calendar_today, size: 12, color: tokens.textSecondary),
                             const SizedBox(width: 4),
                             Text(
                               DateFormat('MMM dd').format(selectedDate),
-                              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFF334155)),
+                              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: tokens.textPrimary),
                             ),
                           ],
                         ),
@@ -908,7 +947,7 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                     ),
                     const SizedBox(width: 4),
                     IconButton(
-                      icon: const Icon(Icons.domain_add, size: 18, color: Color(0xFF0F766E)),
+                      icon: Icon(Icons.domain_add, size: 18, color: tokens.brandPrimary),
                       tooltip: 'Branch Onboarding',
                       padding: const EdgeInsets.all(6),
                       constraints: const BoxConstraints(),
@@ -918,7 +957,7 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                     ),
                     const SizedBox(width: 4),
                     IconButton(
-                      icon: const Icon(Icons.download, size: 18, color: Color(0xFF065F46)),
+                      icon: Icon(Icons.download, size: 18, color: tokens.brandPrimary),
                       tooltip: 'Download Regional Report',
                       padding: const EdgeInsets.all(6),
                       constraints: const BoxConstraints(),
@@ -931,7 +970,7 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
             const SizedBox(height: 8),
             Text(
               'Supervising: ${reg.assignedBranches.join(' • ')}',
-              style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w500, color: Color(0xFF64748B)),
+              style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w500, color: tokens.textMuted),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
@@ -943,10 +982,10 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: tokens.surface,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-        boxShadow: const [BoxShadow(color: Color(0x040F172A), blurRadius: 4, offset: Offset(0, 1))],
+        border: Border.all(color: tokens.borderSubtle),
+        boxShadow: tokens.isDark ? null : const [BoxShadow(color: Color(0x040F172A), blurRadius: 4, offset: Offset(0, 1))],
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -959,14 +998,14 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                   children: [
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                      decoration: BoxDecoration(color: const Color(0xFF0F766E), borderRadius: BorderRadius.circular(6)),
+                      decoration: BoxDecoration(color: tokens.brandPrimaryDark, borderRadius: BorderRadius.circular(6)),
                       child: Text('${reg.areaName} Supervision', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11)),
                     ),
                     const SizedBox(width: 8),
-                    const Flexible(
+                    Flexible(
                       child: Text(
                         'Regional Operations Console',
-                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
+                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: tokens.textPrimary),
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
@@ -975,7 +1014,7 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                 const SizedBox(height: 4),
                 Text(
                   'Supervised Branches: ${reg.assignedBranches.join(', ')}',
-                  style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                  style: TextStyle(fontSize: 12, color: tokens.textMuted),
                   overflow: TextOverflow.ellipsis,
                 ),
               ],
@@ -1004,10 +1043,10 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                 onPressed: () {
                   ref.read(activeCoPageProvider.notifier).state = 'Branch Onboarding';
                 },
-                icon: const Icon(Icons.domain_add, size: 14, color: Color(0xFF0F766E)),
-                label: const Text('Branch Onboarding', style: TextStyle(color: Color(0xFF0F766E), fontSize: 12, fontWeight: FontWeight.bold)),
+                icon: Icon(Icons.domain_add, size: 14, color: tokens.brandPrimary),
+                label: Text('Branch Onboarding', style: TextStyle(color: tokens.brandPrimary, fontSize: 12, fontWeight: FontWeight.bold)),
                 style: OutlinedButton.styleFrom(
-                  side: const BorderSide(color: Color(0xFF0F766E)),
+                  side: BorderSide(color: tokens.brandPrimary),
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                 ),
               ),
@@ -1016,7 +1055,7 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                 onPressed: _isProcessing ? null : _handleDownloadAreaExcel,
                 icon: const Icon(Icons.download, size: 15, color: Colors.white),
                 label: const Text('Regional Report (.xlsx)', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
-                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF064E3B), padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10)),
+                style: ElevatedButton.styleFrom(backgroundColor: tokens.brandPrimaryDark, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10)),
               ),
             ],
           ),
@@ -1029,6 +1068,7 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
   // MOBILE SECTION SWITCHER
   // =========================================================================
   Widget _buildMobileSectionSwitcher(AreaApprovalsHubModel approvals, int branchCount) {
+    final tokens = IcareSurfaceTokens.of(context);
     final pendingCount = approvals.pendingBranchEods.length + approvals.pendingHighValueLoans.length + approvals.pendingBranchTransfers.length;
     final sections = [
       (label: 'Overview', badge: null),
@@ -1037,7 +1077,7 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
     ];
     return Container(
       decoration: BoxDecoration(
-        color: const Color(0xFFE2E8F0),
+        color: tokens.surfaceHover,
         borderRadius: BorderRadius.circular(10),
       ),
       padding: const EdgeInsets.all(3),
@@ -1051,9 +1091,9 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
               child: Container(
                 padding: const EdgeInsets.symmetric(vertical: 8),
                 decoration: BoxDecoration(
-                  color: isSel ? Colors.white : Colors.transparent,
+                  color: isSel ? tokens.surface : Colors.transparent,
                   borderRadius: BorderRadius.circular(8),
-                  boxShadow: isSel ? const [BoxShadow(color: Color(0x10000000), blurRadius: 4, offset: Offset(0, 1))] : null,
+                  boxShadow: (isSel && !tokens.isDark) ? const [BoxShadow(color: Color(0x10000000), blurRadius: 4, offset: Offset(0, 1))] : null,
                 ),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
@@ -1063,7 +1103,7 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                       style: TextStyle(
                         fontSize: 12.5,
                         fontWeight: isSel ? FontWeight.w800 : FontWeight.w600,
-                        color: isSel ? const Color(0xFF0F172A) : const Color(0xFF64748B),
+                        color: isSel ? tokens.textPrimary : tokens.textMuted,
                       ),
                     ),
                     if (s.badge != null) ...[
@@ -1071,7 +1111,7 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
                         decoration: BoxDecoration(
-                          color: isSel ? const Color(0xFF0F766E) : const Color(0xFF64748B),
+                          color: isSel ? tokens.brandPrimaryDark : tokens.textMuted,
                           borderRadius: BorderRadius.circular(10),
                         ),
                         child: Text(
@@ -1094,6 +1134,10 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
   // SECTION 1: REGIONAL EXECUTIVE KPI ROW
   // =========================================================================
   Widget _buildRegionalExecutiveKpiRow(RegionalSummaryModel reg) {
+    final tokens = IcareSurfaceTokens.of(context);
+    final borrowerColor = tokens.isDark ? const Color(0xFFA78BFA) : const Color(0xFF7C3AED);
+    final borrowerBg = borrowerColor.withValues(alpha: tokens.isDark ? 0.18 : 0.09);
+
     return LayoutBuilder(
       builder: (context, constraints) {
         final w = constraints.maxWidth;
@@ -1111,8 +1155,8 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                       value: CurrencyFormatter.format(reg.activeCredit),
                       subtitle: 'Total Gross Credit',
                       icon: Icons.pie_chart_outline,
-                      iconColor: const Color(0xFF0F766E),
-                      iconBg: const Color(0xFFF0FDFA),
+                      iconColor: tokens.brandPrimary,
+                      iconBg: tokens.brandSoftBg,
                     ),
                   ),
                   const SizedBox(width: 10),
@@ -1122,8 +1166,8 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                       value: CurrencyFormatter.format(reg.vaultCashAcct1000),
                       subtitle: 'Ledger Cash Position',
                       icon: Icons.account_balance_wallet_outlined,
-                      iconColor: const Color(0xFF2563EB),
-                      iconBg: const Color(0xFFEFF6FF),
+                      iconColor: tokens.infoDot,
+                      iconBg: tokens.infoBg,
                     ),
                   ),
                 ],
@@ -1137,8 +1181,8 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                       value: '${reg.activeClients} Clients',
                       subtitle: 'People on Loan',
                       icon: Icons.people_outline,
-                      iconColor: const Color(0xFF7C3AED),
-                      iconBg: const Color(0xFFF5F3FF),
+                      iconColor: borrowerColor,
+                      iconBg: borrowerBg,
                     ),
                   ),
                   const SizedBox(width: 10),
@@ -1148,8 +1192,8 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                       value: reg.par,
                       subtitle: '${reg.defaultersCount} Defaulters',
                       icon: Icons.warning_amber_rounded,
-                      iconColor: const Color(0xFFDC2626),
-                      iconBg: const Color(0xFFFEF2F2),
+                      iconColor: tokens.dangerDot,
+                      iconBg: tokens.dangerBg,
                       isAlert: reg.defaultersCount > 0,
                     ),
                   ),
@@ -1165,48 +1209,48 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
           value: '${reg.openBranchesCount} / ${reg.branchesCount}',
           subtitle: 'Operational Status',
           icon: Icons.storefront_outlined,
-          iconColor: const Color(0xFF2563EB),
-          iconBg: const Color(0xFFEFF6FF),
+          iconColor: tokens.infoDot,
+          iconBg: tokens.infoBg,
         );
         final c2 = _buildModernMetricCard(
           title: 'Regional Borrowers',
           value: '${reg.activeClients} Clients',
           subtitle: 'Active Loan Borrowers',
           icon: Icons.people_alt_outlined,
-          iconColor: const Color(0xFF7C3AED),
-          iconBg: const Color(0xFFF5F3FF),
+          iconColor: borrowerColor,
+          iconBg: borrowerBg,
         );
         final c3 = _buildModernMetricCard(
           title: 'Active Portfolio',
           value: CurrencyFormatter.format(reg.activeCredit),
           subtitle: 'Gross Active Credit',
           icon: Icons.account_balance_outlined,
-          iconColor: const Color(0xFF0F766E),
-          iconBg: const Color(0xFFF0FDFA),
+          iconColor: tokens.brandPrimary,
+          iconBg: tokens.brandSoftBg,
         );
         final c4 = _buildModernMetricCard(
           title: 'Today\'s Collections',
           value: CurrencyFormatter.format(reg.todayCollected),
           subtitle: '${reg.compliancePct.toStringAsFixed(1)}% Compliance',
           icon: Icons.payments_outlined,
-          iconColor: const Color(0xFF10B981),
-          iconBg: const Color(0xFFECFDF5),
+          iconColor: tokens.successDot,
+          iconBg: tokens.successBg,
         );
         final c5 = _buildModernMetricCard(
           title: 'Vault Cash Reserve',
           value: CurrencyFormatter.format(reg.vaultCashAcct1000),
           subtitle: '${reg.areaName} Cash Position',
           icon: Icons.account_balance_wallet_outlined,
-          iconColor: const Color(0xFFD97706),
-          iconBg: const Color(0xFFFFFBEB),
+          iconColor: tokens.warningDot,
+          iconBg: tokens.warningBg,
         );
         final c6 = _buildModernMetricCard(
           title: 'Regional PAR > 30d',
           value: reg.par,
           subtitle: '${reg.defaultersCount} Defaulters',
           icon: Icons.warning_amber_rounded,
-          iconColor: const Color(0xFFDC2626),
-          iconBg: const Color(0xFFFEF2F2),
+          iconColor: tokens.dangerDot,
+          iconBg: tokens.dangerBg,
           isAlert: reg.defaultersCount > 0,
         );
 
@@ -1251,39 +1295,43 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
 
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('Delete $branchName ($branchCode)'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Are you sure you want to permanently delete the onboarding session for $branchName ($branchCode)?',
-              style: const TextStyle(fontSize: 13, height: 1.4, fontWeight: FontWeight.w600),
+      builder: (ctx) {
+        final tokens = IcareSurfaceTokens.of(ctx);
+        return AlertDialog(
+          backgroundColor: tokens.surfaceElevated,
+          title: Text('Delete $branchName ($branchCode)', style: TextStyle(color: tokens.textPrimary)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Are you sure you want to permanently delete the onboarding session for $branchName ($branchCode)?',
+                style: TextStyle(fontSize: 13, height: 1.4, fontWeight: FontWeight.w600, color: tokens.textPrimary),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'All draft groups, credit officer rosters, and unposted member records will be permanently removed. This action cannot be undone.',
+                style: TextStyle(fontSize: 12.5, color: tokens.textMuted, height: 1.4),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Cancel'),
             ),
-            const SizedBox(height: 12),
-            const Text(
-              'All draft groups, credit officer rosters, and unposted member records will be permanently removed. This action cannot be undone.',
-              style: TextStyle(fontSize: 12.5, color: Color(0xFF64748B), height: 1.4),
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFDC2626),
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () => Navigator.of(ctx).pop(true),
+              icon: const Icon(Icons.delete_outline, size: 16),
+              label: const Text('Delete Session'),
             ),
           ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton.icon(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFFDC2626),
-              foregroundColor: Colors.white,
-            ),
-            onPressed: () => Navigator.of(ctx).pop(true),
-            icon: const Icon(Icons.delete_outline, size: 16),
-            label: const Text('Delete Session'),
-          ),
-        ],
-      ),
+        );
+      },
     );
 
     if (confirmed != true) return;
@@ -1323,44 +1371,48 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
 
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('Approve & Commit $branchName ($branchCode)'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Are you sure you want to approve and commit all draft groups, client records, and credit officer portfolios for $branchName ($branchCode) directly into the live core database?',
-              style: const TextStyle(fontSize: 13, height: 1.4, fontWeight: FontWeight.w600),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: notesCtrl,
-              decoration: const InputDecoration(
-                labelText: 'Approval Notes (Optional)',
-                hintText: 'e.g. Verified by Area Manager',
-                border: OutlineInputBorder(),
+      builder: (ctx) {
+        final tokens = IcareSurfaceTokens.of(ctx);
+        return AlertDialog(
+          backgroundColor: tokens.surfaceElevated,
+          title: Text('Approve & Commit $branchName ($branchCode)', style: TextStyle(color: tokens.textPrimary)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Are you sure you want to approve and commit all draft groups, client records, and credit officer portfolios for $branchName ($branchCode) directly into the live core database?',
+                style: TextStyle(fontSize: 13, height: 1.4, fontWeight: FontWeight.w600, color: tokens.textPrimary),
               ),
-              style: const TextStyle(fontSize: 12.5),
+              const SizedBox(height: 12),
+              TextField(
+                controller: notesCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Approval Notes (Optional)',
+                  hintText: 'e.g. Verified by Area Manager',
+                  border: OutlineInputBorder(),
+                ),
+                style: const TextStyle(fontSize: 12.5),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: tokens.brandPrimaryDark,
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () => Navigator.of(ctx).pop(true),
+              icon: const Icon(Icons.check_circle_outline, size: 16),
+              label: const Text('Approve & Commit'),
             ),
           ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton.icon(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF059669),
-              foregroundColor: Colors.white,
-            ),
-            onPressed: () => Navigator.of(ctx).pop(true),
-            icon: const Icon(Icons.check_circle_outline, size: 16),
-            label: const Text('Approve & Commit'),
-          ),
-        ],
-      ),
+        );
+      },
     );
 
     if (confirmed != true) return;
@@ -1386,14 +1438,15 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
   // =========================================================================
   Widget _buildOnboardingQuickActionCard(BuildContext context, WidgetRef ref, bool isMobile) {
     final sessionsAsync = ref.watch(adminOnboardingSessionsProvider);
+    final tokens = IcareSurfaceTokens.of(context);
 
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: tokens.surface,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-        boxShadow: const [BoxShadow(color: Color(0x040F172A), blurRadius: 4, offset: Offset(0, 1))],
+        border: Border.all(color: tokens.borderSubtle),
+        boxShadow: tokens.isDark ? null : const [BoxShadow(color: Color(0x040F172A), blurRadius: 4, offset: Offset(0, 1))],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1404,25 +1457,25 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
               Container(
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF0FDFA),
+                  color: tokens.brandSoftBg,
                   borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: const Color(0xFFCCFBF1)),
+                  border: Border.all(color: tokens.brandSoftBorder),
                 ),
-                child: const Icon(Icons.domain_add, color: Color(0xFF0F766E), size: 22),
+                child: Icon(Icons.domain_add, color: tokens.brandPrimary, size: 22),
               ),
               const SizedBox(width: 12),
-              const Expanded(
+              Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
                       'Branch Digital Onboarding & Migration Console',
-                      style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
+                      style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w800, color: tokens.textPrimary),
                     ),
-                    SizedBox(height: 2),
+                    const SizedBox(height: 2),
                     Text(
                       'Issue 14-day links, monitor draft/submitted packages, and manage branch activation.',
-                      style: TextStyle(fontSize: 11.5, color: Color(0xFF64748B)),
+                      style: TextStyle(fontSize: 11.5, color: tokens.textMuted),
                     ),
                   ],
                 ),
@@ -1432,10 +1485,10 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                   onPressed: () {
                     ref.read(activeCoPageProvider.notifier).state = 'Branch Onboarding';
                   },
-                  icon: const Icon(Icons.tune, size: 14, color: Color(0xFF0F766E)),
-                  label: const Text('Full Console', style: TextStyle(color: Color(0xFF0F766E), fontSize: 11.5, fontWeight: FontWeight.bold)),
+                  icon: Icon(Icons.tune, size: 14, color: tokens.brandPrimary),
+                  label: Text('Full Console', style: TextStyle(color: tokens.brandPrimary, fontSize: 11.5, fontWeight: FontWeight.bold)),
                   style: OutlinedButton.styleFrom(
-                    side: const BorderSide(color: Color(0xFF0F766E)),
+                    side: BorderSide(color: tokens.brandPrimary),
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   ),
                 ),
@@ -1447,7 +1500,8 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                   icon: const Icon(Icons.add_link, size: 14, color: Colors.white),
                   label: const Text('+ Generate Link', style: TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.bold)),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF0F766E),
+                    backgroundColor: tokens.brandPrimaryDark,
+                    foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                   ),
                 ),
@@ -1464,10 +1518,10 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                     onPressed: () {
                       ref.read(activeCoPageProvider.notifier).state = 'Branch Onboarding';
                     },
-                    icon: const Icon(Icons.tune, size: 14, color: Color(0xFF0F766E)),
-                    label: const Text('Full Console', style: TextStyle(color: Color(0xFF0F766E), fontSize: 11.5, fontWeight: FontWeight.bold)),
+                    icon: Icon(Icons.tune, size: 14, color: tokens.brandPrimary),
+                    label: Text('Full Console', style: TextStyle(color: tokens.brandPrimary, fontSize: 11.5, fontWeight: FontWeight.bold)),
                     style: OutlinedButton.styleFrom(
-                      side: const BorderSide(color: Color(0xFF0F766E)),
+                      side: BorderSide(color: tokens.brandPrimary),
                       padding: const EdgeInsets.symmetric(vertical: 8),
                     ),
                   ),
@@ -1481,7 +1535,8 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                     icon: const Icon(Icons.add_link, size: 14, color: Colors.white),
                     label: const Text('+ Generate Link', style: TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.bold)),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF0F766E),
+                      backgroundColor: tokens.brandPrimaryDark,
+                      foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(vertical: 8),
                     ),
                   ),
@@ -1491,7 +1546,7 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
           ],
 
           const SizedBox(height: 14),
-          const Divider(height: 1, color: Color(0xFFF1F5F9)),
+          Divider(height: 1, color: tokens.borderSubtle),
           const SizedBox(height: 12),
 
           // Active Onboarding Packages Listing (Draft & Submitted)
@@ -1502,7 +1557,7 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
             ),
             error: (err, _) => Padding(
               padding: const EdgeInsets.symmetric(vertical: 8),
-              child: Text('Unable to load onboarding sessions: $err', style: const TextStyle(fontSize: 12, color: Color(0xFFDC2626))),
+              child: Text('Unable to load onboarding sessions: $err', style: TextStyle(fontSize: 12, color: tokens.dangerText)),
             ),
             data: (allSessions) {
               final unapproved = allSessions.where((s) => (s['status'] ?? '').toString().toLowerCase() != 'approved').toList();
@@ -1511,18 +1566,18 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                 return Container(
                   padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 12),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFF8FAFC),
+                    color: tokens.surfaceSubtle,
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: const Row(
+                  child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Icon(Icons.check_circle_outline, size: 16, color: Color(0xFF059669)),
-                      SizedBox(width: 8),
+                      Icon(Icons.check_circle_outline, size: 16, color: tokens.successDot),
+                      const SizedBox(width: 8),
                       Expanded(
                         child: Text(
                           'Zero pending or draft onboarding sessions. All branches are fully activated.',
-                          style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                          style: TextStyle(fontSize: 12, color: tokens.textMuted),
                           softWrap: true,
                         ),
                       ),
@@ -1539,19 +1594,19 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                     children: [
                       Text(
                         'Active Draft & Submitted Packages (${unapproved.length})',
-                        style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: Color(0xFF334155)),
+                        style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: tokens.textSecondary),
                       ),
                       InkWell(
                         onTap: () => ref.invalidate(adminOnboardingSessionsProvider),
                         borderRadius: BorderRadius.circular(4),
-                        child: const Padding(
-                          padding: EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Icon(Icons.refresh, size: 13, color: Color(0xFF64748B)),
-                              SizedBox(width: 3),
-                              Text('Refresh', style: TextStyle(fontSize: 11, color: Color(0xFF64748B))),
+                              Icon(Icons.refresh, size: 13, color: tokens.textMuted),
+                              const SizedBox(width: 3),
+                              Text('Refresh', style: TextStyle(fontSize: 11, color: tokens.textMuted)),
                             ],
                           ),
                         ),
@@ -1570,6 +1625,7 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
   }
 
   Widget _buildDashboardSessionRow(BuildContext context, WidgetRef ref, Map<String, dynamic> s, bool isMobile) {
+    final tokens = IcareSurfaceTokens.of(context);
     final branchName = s['branch_name'] ?? 'Branch';
     final branchCode = s['branch_code'] ?? 'BR';
     final token = s['token'] ?? '';
@@ -1580,8 +1636,9 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
     final balance = double.tryParse(s['total_current_balance']?.toString() ?? '0') ?? 0.0;
 
     final isSubmitted = status == 'submitted';
-    final badgeBg = isSubmitted ? const Color(0xFFEFF6FF) : const Color(0xFFFFFBEB);
-    final badgeText = isSubmitted ? const Color(0xFF1D4ED8) : const Color(0xFFB45309);
+    final badgeBg = isSubmitted ? tokens.infoBg : tokens.warningBg;
+    final badgeText = isSubmitted ? tokens.infoText : tokens.warningText;
+    final codeBadgeBg = tokens.isDark ? const Color(0xFF1E293B) : const Color(0xFF0F2744);
     final sessionId = (s['session_id'] ?? s['id'] ?? '').toString();
     final isDeletingThis = _deletingSessionIds.contains(sessionId);
 
@@ -1594,9 +1651,9 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
+        color: tokens.surfaceSubtle,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: isSubmitted ? const Color(0xFFBFDBFE) : const Color(0xFFE2E8F0)),
+        border: Border.all(color: isSubmitted ? tokens.infoBorder : tokens.borderSubtle),
       ),
       child: isMobile
           ? Column(
@@ -1606,12 +1663,12 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                   children: [
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(color: const Color(0xFF0F2744), borderRadius: BorderRadius.circular(4)),
+                      decoration: BoxDecoration(color: codeBadgeBg, borderRadius: BorderRadius.circular(4)),
                       child: Text(branchCode, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.white)),
                     ),
                     const SizedBox(width: 8),
                     Expanded(
-                      child: Text(branchName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF0F172A))),
+                      child: Text(branchName, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: tokens.textPrimary)),
                     ),
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -1623,7 +1680,7 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                 const SizedBox(height: 6),
                 Text(
                   'Groups: $groupsCount • Members: $membersCount • Savings: ${CurrencyFormatter.formatNaira(savings)} • Balance: ${CurrencyFormatter.formatNaira(balance)}',
-                  style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                  style: TextStyle(fontSize: 11, color: tokens.textMuted),
                 ),
                 const SizedBox(height: 10),
                 Wrap(
@@ -1648,28 +1705,28 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                     if (status.toLowerCase() == 'submitted') ...[
                       OutlinedButton.icon(
                         style: OutlinedButton.styleFrom(
-                          foregroundColor: const Color(0xFF059669),
-                          backgroundColor: const Color(0xFFECFDF5),
-                          side: const BorderSide(color: Color(0xFFA7F3D0)),
+                          foregroundColor: tokens.successText,
+                          backgroundColor: tokens.successBg,
+                          side: BorderSide(color: tokens.successBorder),
                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                           minimumSize: const Size(0, 28),
                         ),
                         onPressed: _isProcessing ? null : () => _handleApproveOnboardingSession(s),
-                        icon: const Icon(Icons.check_circle_outline, size: 12, color: Color(0xFF059669)),
-                        label: const Text('Approve', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: Color(0xFF059669))),
+                        icon: Icon(Icons.check_circle_outline, size: 12, color: tokens.successText),
+                        label: Text('Approve', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: tokens.successText)),
                       ),
                     ],
                     OutlinedButton.icon(
                       style: OutlinedButton.styleFrom(
-                        foregroundColor: const Color(0xFFDC2626),
-                        backgroundColor: const Color(0xFFFEF2F2),
-                        side: const BorderSide(color: Color(0xFFFCA5A5)),
+                        foregroundColor: tokens.dangerText,
+                        backgroundColor: tokens.dangerBg,
+                        side: BorderSide(color: tokens.dangerBorder),
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                         minimumSize: const Size(0, 28),
                       ),
                       onPressed: _isProcessing ? null : () => _handleDeleteOnboardingSession(s),
-                      icon: const Icon(Icons.delete_outline, size: 12, color: Color(0xFFDC2626)),
-                      label: const Text('Delete', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: Color(0xFFDC2626))),
+                      icon: Icon(Icons.delete_outline, size: 12, color: tokens.dangerText),
+                      label: Text('Delete', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: tokens.dangerText)),
                     ),
                   ],
                 ),
@@ -1679,7 +1736,7 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
               children: [
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                  decoration: BoxDecoration(color: const Color(0xFF0F2744), borderRadius: BorderRadius.circular(4)),
+                  decoration: BoxDecoration(color: codeBadgeBg, borderRadius: BorderRadius.circular(4)),
                   child: Text(branchCode, style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: Colors.white)),
                 ),
                 const SizedBox(width: 10),
@@ -1688,11 +1745,11 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(branchName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF0F172A))),
+                      Text(branchName, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: tokens.textPrimary)),
                       const SizedBox(height: 2),
                       Text(
                         'Groups: $groupsCount • Members: $membersCount • Savings: ${CurrencyFormatter.formatNaira(savings)}',
-                        style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                        style: TextStyle(fontSize: 11, color: tokens.textMuted),
                       ),
                     ],
                   ),
@@ -1722,29 +1779,29 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                   const SizedBox(width: 8),
                   OutlinedButton.icon(
                     style: OutlinedButton.styleFrom(
-                      foregroundColor: const Color(0xFF059669),
-                      backgroundColor: const Color(0xFFECFDF5),
-                      side: const BorderSide(color: Color(0xFFA7F3D0)),
+                      foregroundColor: tokens.successText,
+                      backgroundColor: tokens.successBg,
+                      side: BorderSide(color: tokens.successBorder),
                       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
                       minimumSize: const Size(0, 28),
                     ),
                     onPressed: _isProcessing ? null : () => _handleApproveOnboardingSession(s),
-                    icon: const Icon(Icons.check_circle_outline, size: 13, color: Color(0xFF059669)),
-                    label: const Text('Approve', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF059669))),
+                    icon: Icon(Icons.check_circle_outline, size: 13, color: tokens.successText),
+                    label: Text('Approve', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: tokens.successText)),
                   ),
                 ],
                 const SizedBox(width: 8),
                 OutlinedButton.icon(
                   style: OutlinedButton.styleFrom(
-                    foregroundColor: const Color(0xFFDC2626),
-                    backgroundColor: const Color(0xFFFEF2F2),
-                    side: const BorderSide(color: Color(0xFFFCA5A5)),
+                    foregroundColor: tokens.dangerText,
+                    backgroundColor: tokens.dangerBg,
+                    side: BorderSide(color: tokens.dangerBorder),
                     padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
                     minimumSize: const Size(0, 28),
                   ),
                   onPressed: _isProcessing ? null : () => _handleDeleteOnboardingSession(s),
-                  icon: const Icon(Icons.delete_outline, size: 13, color: Color(0xFFDC2626)),
-                  label: const Text('Delete', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFFDC2626))),
+                  icon: Icon(Icons.delete_outline, size: 13, color: tokens.dangerText),
+                  label: Text('Delete', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: tokens.dangerText)),
                 ),
               ],
             ),
@@ -1754,25 +1811,25 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
               child: Container(
                 margin: const EdgeInsets.only(bottom: 8),
                 decoration: BoxDecoration(
-                  color: const Color(0xB3FFFFFF),
+                  color: tokens.surface.withValues(alpha: 0.78),
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: const Center(
+                child: Center(
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       SizedBox(
                         width: 14,
                         height: 14,
-                        child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFFDC2626)),
+                        child: CircularProgressIndicator(strokeWidth: 2, color: tokens.dangerText),
                       ),
-                      SizedBox(width: 8),
+                      const SizedBox(width: 8),
                       Text(
                         'Deleting session...',
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.bold,
-                          color: Color(0xFFDC2626),
+                          color: tokens.dangerText,
                         ),
                       ),
                     ],
@@ -1913,15 +1970,18 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
     required Color iconBg,
     bool isAlert = false,
   }) {
+    final tokens = IcareSurfaceTokens.of(context);
     return Container(
       padding: const EdgeInsets.all(13),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: tokens.surface,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: isAlert ? const Color(0xFFFECACA) : const Color(0xFFE2E8F0)),
-        boxShadow: const [
-          BoxShadow(color: Color(0x040F172A), blurRadius: 4, offset: Offset(0, 1)),
-        ],
+        border: Border.all(color: isAlert ? tokens.dangerBorder : tokens.borderSubtle),
+        boxShadow: tokens.isDark
+            ? null
+            : const [
+                BoxShadow(color: Color(0x040F172A), blurRadius: 4, offset: Offset(0, 1)),
+              ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1932,7 +1992,7 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
               Expanded(
                 child: Text(
                   title,
-                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF64748B)),
+                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: tokens.textMuted),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -1958,7 +2018,7 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
               style: TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.w800,
-                color: isAlert ? const Color(0xFFDC2626) : const Color(0xFF0F172A),
+                color: isAlert ? tokens.dangerText : tokens.textPrimary,
                 fontFamily: 'monospace',
                 fontFeatures: const [FontFeature.tabularFigures()],
               ),
@@ -1970,7 +2030,7 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
             style: TextStyle(
               fontSize: 10,
               fontWeight: FontWeight.w500,
-              color: isAlert ? const Color(0xFFEF4444) : const Color(0xFF94A3B8),
+              color: isAlert ? tokens.dangerDot : tokens.textLight,
             ),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
@@ -1984,6 +2044,7 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
   // SECTION 2: AREA APPROVALS HUB
   // =========================================================================
   Widget _buildAreaApprovalsHub(AreaApprovalsHubModel approvals, bool isMobile, {String areaName = 'Area 1'}) {
+    final tokens = IcareSurfaceTokens.of(context);
     final eodCount = approvals.pendingBranchEods.length;
     final loanCount = approvals.pendingHighValueLoans.length;
     final transferCount = approvals.pendingBranchTransfers.length;
@@ -2003,10 +2064,10 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
       width: double.infinity,
       padding: EdgeInsets.all(isMobile ? 14 : 20),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: tokens.surface,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-        boxShadow: const [BoxShadow(color: Color(0x040F172A), blurRadius: 4, offset: Offset(0, 1))],
+        border: Border.all(color: tokens.borderSubtle),
+        boxShadow: tokens.isDark ? null : const [BoxShadow(color: Color(0x040F172A), blurRadius: 4, offset: Offset(0, 1))],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2015,9 +2076,9 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('Area Governance & Approvals Hub', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: Color(0xFF0F172A))),
+                Text('Area Governance & Approvals Hub', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: tokens.textPrimary)),
                 const SizedBox(height: 3),
-                const Text('Operational sign-off, loan escalations, and branch transfers.', style: TextStyle(fontSize: 11.5, color: Color(0xFF64748B))),
+                Text('Operational sign-off, loan escalations, and branch transfers.', style: TextStyle(fontSize: 11.5, color: tokens.textMuted)),
                 if (approvals.canLockArea) ...[
                   const SizedBox(height: 12),
                   SizedBox(
@@ -2027,7 +2088,8 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                       icon: const Icon(Icons.lock, size: 15, color: Colors.white),
                       label: Text('Lock & Seal $areaName EOD', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF064E3B),
+                        backgroundColor: tokens.brandPrimaryDark,
+                        foregroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(vertical: 12),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                       ),
@@ -2040,12 +2102,12 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Column(
+                Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Area Governance & Approvals Hub', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Color(0xFF0F172A))),
-                    SizedBox(height: 3),
-                    Text('Operational sign-off, loan escalations, and branch transfers.', style: TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+                    Text('Area Governance & Approvals Hub', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: tokens.textPrimary)),
+                    const SizedBox(height: 3),
+                    Text('Operational sign-off, loan escalations, and branch transfers.', style: TextStyle(fontSize: 12, color: tokens.textMuted)),
                   ],
                 ),
                 if (approvals.canLockArea)
@@ -2053,7 +2115,7 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                     onPressed: _isProcessing ? null : () => _handleConfirmAreaClosure(areaName, DateFormat('yyyy-MM-dd').format(ref.read(amSelectedDateProvider))),
                     icon: const Icon(Icons.lock, size: 15, color: Colors.white),
                     label: Text('Lock & Seal $areaName EOD', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
-                    style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF064E3B)),
+                    style: ElevatedButton.styleFrom(backgroundColor: tokens.brandPrimaryDark, foregroundColor: Colors.white),
                   ),
               ],
             ),
@@ -2077,9 +2139,9 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                       decoration: BoxDecoration(
-                        color: isSel ? const Color(0xFF0F766E) : const Color(0xFFF1F5F9),
+                        color: isSel ? tokens.brandPrimaryDark : tokens.surfaceHover,
                         borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: isSel ? const Color(0xFF0F766E) : const Color(0xFFE2E8F0)),
+                        border: Border.all(color: isSel ? tokens.brandPrimaryDark : tokens.borderSubtle),
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
@@ -2089,14 +2151,14 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                             style: TextStyle(
                               fontSize: 12,
                               fontWeight: isSel ? FontWeight.w700 : FontWeight.w600,
-                              color: isSel ? Colors.white : const Color(0xFF334155),
+                              color: isSel ? Colors.white : tokens.textSecondary,
                             ),
                           ),
                           const SizedBox(width: 6),
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
                             decoration: BoxDecoration(
-                              color: isSel ? const Color(0xFF134E4A) : (count > 0 ? const Color(0xFFE0F2FE) : const Color(0xFFE2E8F0)),
+                              color: isSel ? Colors.black.withValues(alpha: 0.25) : (count > 0 ? tokens.infoBg : tokens.borderSubtle),
                               borderRadius: BorderRadius.circular(10),
                             ),
                             child: Text(
@@ -2104,7 +2166,7 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                               style: TextStyle(
                                 fontSize: 10,
                                 fontWeight: FontWeight.w800,
-                                color: isSel ? Colors.white : (count > 0 ? const Color(0xFF0369A1) : const Color(0xFF64748B)),
+                                color: isSel ? Colors.white : (count > 0 ? tokens.infoText : tokens.textMuted),
                                 fontFeatures: const [FontFeature.tabularFigures()],
                               ),
                             ),
@@ -2118,7 +2180,7 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
             ),
           ),
           const SizedBox(height: 14),
-          const Divider(height: 1, color: Color(0xFFE2E8F0)),
+          Divider(height: 1, color: tokens.borderSubtle),
           const SizedBox(height: 14),
 
           if (_activeApprovalTab.startsWith('Branch EOD'))
@@ -2135,34 +2197,35 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
   }
 
   Widget _buildEmptyQueueCard({required IconData icon, required String title, required String subtitle}) {
+    final tokens = IcareSurfaceTokens.of(context);
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(vertical: 36, horizontal: 20),
       decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
+        color: tokens.surfaceSubtle,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: tokens.borderSubtle),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           Container(
             padding: const EdgeInsets.all(12),
-            decoration: const BoxDecoration(
+            decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: Color(0xFFF0FDFA),
+              color: tokens.brandSoftBg,
             ),
-            child: Icon(icon, size: 28, color: const Color(0xFF0F766E)),
+            child: Icon(icon, size: 28, color: tokens.brandPrimary),
           ),
           const SizedBox(height: 12),
           Text(
             title,
-            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
+            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: tokens.textPrimary),
           ),
           const SizedBox(height: 4),
           Text(
             subtitle,
-            style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+            style: TextStyle(fontSize: 12, color: tokens.textMuted),
             textAlign: TextAlign.center,
           ),
         ],
@@ -2171,6 +2234,7 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
   }
 
   Widget _buildBranchEodApprovalsTab(List<PendingBranchEodItemModel> eods, bool isMobile) {
+    final tokens = IcareSurfaceTokens.of(context);
     if (eods.isEmpty) {
       return _buildEmptyQueueCard(
         icon: Icons.check_circle_outline,
@@ -2182,15 +2246,16 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
     return Column(
       children: eods.map((e) {
         final isConfirmed = e.isConfirmed;
+        final confirmedPillBg = tokens.isDark ? tokens.surface : const Color(0xFFDCFCE7);
 
         if (isMobile) {
           return Container(
             margin: const EdgeInsets.only(bottom: 12),
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
-              color: isConfirmed ? const Color(0xFFF0FDF4) : const Color(0xFFF8FAFC),
+              color: isConfirmed ? tokens.successBg : tokens.surfaceSubtle,
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: isConfirmed ? const Color(0xFF86EFAC) : const Color(0xFFE2E8F0)),
+              border: Border.all(color: isConfirmed ? tokens.successBorder : tokens.borderSubtle),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -2203,23 +2268,23 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                         Container(
                           padding: const EdgeInsets.all(6),
                           decoration: BoxDecoration(
-                            color: isConfirmed ? const Color(0xFFDCFCE7) : const Color(0xFFEFF6FF),
+                            color: isConfirmed ? confirmedPillBg : tokens.infoBg,
                             borderRadius: BorderRadius.circular(6),
                           ),
                           child: Icon(
                             isConfirmed ? Icons.check_circle : Icons.pending_actions,
-                            color: isConfirmed ? const Color(0xFF15803D) : const Color(0xFF2563EB),
+                            color: isConfirmed ? tokens.successText : tokens.infoText,
                             size: 16,
                           ),
                         ),
                         const SizedBox(width: 8),
-                        Text(e.branchName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                        Text(e.branchName, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: tokens.textPrimary)),
                       ],
                     ),
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
                       decoration: BoxDecoration(
-                        color: isConfirmed ? const Color(0xFFDCFCE7) : const Color(0xFFFEF3C7),
+                        color: isConfirmed ? confirmedPillBg : tokens.warningBg,
                         borderRadius: BorderRadius.circular(4),
                       ),
                       child: Text(
@@ -2227,7 +2292,7 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                         style: TextStyle(
                           fontSize: 10,
                           fontWeight: FontWeight.bold,
-                          color: isConfirmed ? const Color(0xFF15803D) : const Color(0xFF92400E),
+                          color: isConfirmed ? tokens.successText : tokens.warningText,
                         ),
                       ),
                     ),
@@ -2237,9 +2302,9 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                 Container(
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
-                    color: Colors.white,
+                    color: tokens.surface,
                     borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                    border: Border.all(color: tokens.borderSubtle),
                   ),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -2247,16 +2312,16 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text('Primary Vault Cash', style: TextStyle(fontSize: 10.5, color: Color(0xFF64748B))),
+                          Text('Primary Vault Cash', style: TextStyle(fontSize: 10.5, color: tokens.textMuted)),
                           const SizedBox(height: 2),
                           Text(
                             CurrencyFormatter.format(e.vaultCash),
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 13,
                               fontWeight: FontWeight.bold,
-                              color: Color(0xFF0F172A),
+                              color: tokens.textPrimary,
                               fontFamily: 'monospace',
-                              fontFeatures: [FontFeature.tabularFigures()],
+                              fontFeatures: const [FontFeature.tabularFigures()],
                             ),
                           ),
                         ],
@@ -2264,14 +2329,14 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.end,
                         children: [
-                          const Text('Cash Variance', style: TextStyle(fontSize: 10.5, color: Color(0xFF64748B))),
+                          Text('Cash Variance', style: TextStyle(fontSize: 10.5, color: tokens.textMuted)),
                           const SizedBox(height: 2),
                           Text(
                             CurrencyFormatter.format(e.cashVariance),
                             style: TextStyle(
                               fontSize: 13,
                               fontWeight: FontWeight.bold,
-                              color: e.cashVariance == 0 ? const Color(0xFF15803D) : const Color(0xFFDC2626),
+                              color: e.cashVariance == 0 ? tokens.successText : tokens.dangerText,
                               fontFamily: 'monospace',
                               fontFeatures: const [FontFeature.tabularFigures()],
                             ),
@@ -2287,19 +2352,19 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                     width: double.infinity,
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFF1F5F9),
+                      color: tokens.surfaceHover,
                       borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                      border: Border.all(color: tokens.borderSubtle),
                     ),
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Icon(Icons.sticky_note_2_outlined, size: 14, color: Color(0xFF64748B)),
+                        Icon(Icons.sticky_note_2_outlined, size: 14, color: tokens.textMuted),
                         const SizedBox(width: 6),
                         Expanded(
                           child: Text(
                             'BM Note: ${e.notes!}',
-                            style: const TextStyle(fontSize: 11.5, color: Color(0xFF334155), fontStyle: FontStyle.italic),
+                            style: TextStyle(fontSize: 11.5, color: tokens.textSecondary, fontStyle: FontStyle.italic),
                           ),
                         ),
                       ],
@@ -2314,8 +2379,8 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                         child: OutlinedButton(
                           onPressed: _isProcessing ? null : () => _handleRejectBranchEod(e.branchId, e.branchName, e.closureDate),
                           style: OutlinedButton.styleFrom(
-                            foregroundColor: const Color(0xFFDC2626),
-                            side: const BorderSide(color: Color(0xFFFCA5A5)),
+                            foregroundColor: tokens.dangerText,
+                            side: BorderSide(color: tokens.dangerBorder),
                             padding: const EdgeInsets.symmetric(vertical: 10),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                           ),
@@ -2329,7 +2394,8 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                           icon: const Icon(Icons.check, size: 15, color: Colors.white),
                           label: const Text('Confirm EOD', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF065F46),
+                            backgroundColor: tokens.brandPrimaryDark,
+                            foregroundColor: Colors.white,
                             padding: const EdgeInsets.symmetric(vertical: 10),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                           ),
@@ -2340,9 +2406,9 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                 else
                   Row(
                     children: [
-                      const Icon(Icons.verified, size: 14, color: Color(0xFF15803D)),
+                      Icon(Icons.verified, size: 14, color: tokens.successText),
                       const SizedBox(width: 4),
-                      Text('Signed by ${e.confirmedBy ?? "AM"}', style: const TextStyle(fontSize: 11.5, color: Color(0xFF15803D), fontWeight: FontWeight.w600)),
+                      Text('Signed by ${e.confirmedBy ?? "AM"}', style: TextStyle(fontSize: 11.5, color: tokens.successText, fontWeight: FontWeight.w600)),
                     ],
                   ),
               ],
@@ -2354,21 +2420,21 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
           margin: const EdgeInsets.only(bottom: 10),
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
-            color: isConfirmed ? const Color(0xFFF0FDF4) : const Color(0xFFF8FAFC),
+            color: isConfirmed ? tokens.successBg : tokens.surfaceSubtle,
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: isConfirmed ? const Color(0xFF86EFAC) : const Color(0xFFE2E8F0)),
+            border: Border.all(color: isConfirmed ? tokens.successBorder : tokens.borderSubtle),
           ),
           child: Row(
             children: [
               Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: isConfirmed ? const Color(0xFFDCFCE7) : const Color(0xFFEFF6FF),
+                  color: isConfirmed ? confirmedPillBg : tokens.infoBg,
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Icon(
                   isConfirmed ? Icons.check_circle : Icons.pending_actions,
-                  color: isConfirmed ? const Color(0xFF15803D) : const Color(0xFF2563EB),
+                  color: isConfirmed ? tokens.successText : tokens.infoText,
                   size: 20,
                 ),
               ),
@@ -2379,12 +2445,12 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                   children: [
                     Row(
                       children: [
-                        Text(e.branchName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                        Text(e.branchName, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: tokens.textPrimary)),
                         const SizedBox(width: 8),
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                           decoration: BoxDecoration(
-                            color: isConfirmed ? const Color(0xFFDCFCE7) : const Color(0xFFFEF3C7),
+                            color: isConfirmed ? confirmedPillBg : tokens.warningBg,
                             borderRadius: BorderRadius.circular(4),
                           ),
                           child: Text(
@@ -2392,7 +2458,7 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                             style: TextStyle(
                               fontSize: 10,
                               fontWeight: FontWeight.bold,
-                              color: isConfirmed ? const Color(0xFF15803D) : const Color(0xFF92400E),
+                              color: isConfirmed ? tokens.successText : tokens.warningText,
                             ),
                           ),
                         ),
@@ -2401,13 +2467,13 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                     const SizedBox(height: 4),
                     Text(
                       'Vault Cash: ${CurrencyFormatter.format(e.vaultCash)} | Variance: ${CurrencyFormatter.format(e.cashVariance)}',
-                      style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                      style: TextStyle(fontSize: 12, color: tokens.textMuted),
                     ),
                     if (e.notes != null && e.notes!.trim().isNotEmpty) ...[
                       const SizedBox(height: 4),
                       Text(
                         'BM Note: ${e.notes!}',
-                        style: const TextStyle(fontSize: 11.5, color: Color(0xFF475569), fontStyle: FontStyle.italic),
+                        style: TextStyle(fontSize: 11.5, color: tokens.textSecondary, fontStyle: FontStyle.italic),
                       ),
                     ],
                   ],
@@ -2420,8 +2486,8 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                     OutlinedButton(
                       onPressed: _isProcessing ? null : () => _handleRejectBranchEod(e.branchId, e.branchName, e.closureDate),
                       style: OutlinedButton.styleFrom(
-                        foregroundColor: const Color(0xFFDC2626),
-                        side: const BorderSide(color: Color(0xFFFCA5A5)),
+                        foregroundColor: tokens.dangerText,
+                        side: BorderSide(color: tokens.dangerBorder),
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                       ),
                       child: const Text('Return to BM', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600)),
@@ -2431,12 +2497,12 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                       onPressed: _isProcessing ? null : () => _handleConfirmBranchEod(e.branchId, e.branchName, e.closureDate),
                       icon: const Icon(Icons.check, size: 14, color: Colors.white),
                       label: const Text('Confirm EOD', style: TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.bold)),
-                      style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF065F46)),
+                      style: ElevatedButton.styleFrom(backgroundColor: tokens.brandPrimaryDark, foregroundColor: Colors.white),
                     ),
                   ],
                 )
               else
-                Text('Signed by ${e.confirmedBy ?? "AM"}', style: const TextStyle(fontSize: 11.5, color: Color(0xFF15803D), fontWeight: FontWeight.w600)),
+                Text('Signed by ${e.confirmedBy ?? "AM"}', style: TextStyle(fontSize: 11.5, color: tokens.successText, fontWeight: FontWeight.w600)),
             ],
           ),
         );
@@ -2445,6 +2511,7 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
   }
 
   Widget _buildHighValueLoansApprovalsTab(List<PendingHighValueLoanItemModel> loans, bool isMobile) {
+    final tokens = IcareSurfaceTokens.of(context);
     if (loans.isEmpty) {
       return _buildEmptyQueueCard(
         icon: Icons.verified_outlined,
@@ -2460,9 +2527,9 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
             margin: const EdgeInsets.only(bottom: 12),
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
-              color: const Color(0xFFF8FAFC),
+              color: tokens.surfaceSubtle,
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: const Color(0xFFE2E8F0)),
+              border: Border.all(color: tokens.borderSubtle),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -2474,33 +2541,33 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                       children: [
                         Container(
                           padding: const EdgeInsets.all(6),
-                          decoration: BoxDecoration(color: const Color(0xFFFEF3C7), borderRadius: BorderRadius.circular(6)),
-                          child: const Icon(Icons.trending_up, color: Color(0xFFB45309), size: 16),
+                          decoration: BoxDecoration(color: tokens.warningBg, borderRadius: BorderRadius.circular(6)),
+                          child: Icon(Icons.trending_up, color: tokens.warningText, size: 16),
                         ),
                         const SizedBox(width: 8),
-                        Text(l.clientName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                        Text(l.clientName, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: tokens.textPrimary)),
                       ],
                     ),
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(color: const Color(0xFFEFF6FF), borderRadius: BorderRadius.circular(4)),
-                      child: Text(l.branchName, style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: Color(0xFF1D4ED8))),
+                      decoration: BoxDecoration(color: tokens.infoBg, borderRadius: BorderRadius.circular(4)),
+                      child: Text(l.branchName, style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: tokens.infoText)),
                     ),
                   ],
                 ),
                 const SizedBox(height: 8),
                 Text(
                   'Officer: ${l.officer} • Product: ${l.loanProduct}',
-                  style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B)),
+                  style: TextStyle(fontSize: 11.5, color: tokens.textMuted),
                 ),
                 const SizedBox(height: 4),
                 Text(
                   'Amount: ${CurrencyFormatter.format(l.loanAmount)}',
-                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: Color(0xFF2563EB), fontFamily: 'monospace'),
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: tokens.infoText, fontFamily: 'monospace'),
                 ),
                 if (l.escalationReason.isNotEmpty) ...[
                   const SizedBox(height: 4),
-                  Text(l.escalationReason, style: const TextStyle(fontSize: 11, color: Color(0xFFDC2626))),
+                  Text(l.escalationReason, style: TextStyle(fontSize: 11, color: tokens.dangerText)),
                 ],
                 const SizedBox(height: 12),
                 Row(
@@ -2509,8 +2576,8 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                       child: OutlinedButton(
                         onPressed: _isProcessing ? null : () => _handleRejectHighValueLoan(l.loanId, l.clientName),
                         style: OutlinedButton.styleFrom(
-                          foregroundColor: const Color(0xFFDC2626),
-                          side: const BorderSide(color: Color(0xFFFCA5A5)),
+                          foregroundColor: tokens.dangerText,
+                          side: BorderSide(color: tokens.dangerBorder),
                           padding: const EdgeInsets.symmetric(vertical: 10),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                         ),
@@ -2522,7 +2589,8 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                       child: ElevatedButton(
                         onPressed: _isProcessing ? null : () => _handleApproveHighValueLoan(l.loanId, l.clientName, l.loanAmount),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF2563EB),
+                          backgroundColor: const Color(0xFF1D4ED8),
+                          foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(vertical: 10),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                         ),
@@ -2540,16 +2608,16 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
           margin: const EdgeInsets.only(bottom: 10),
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
-            color: const Color(0xFFF8FAFC),
+            color: tokens.surfaceSubtle,
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: const Color(0xFFE2E8F0)),
+            border: Border.all(color: tokens.borderSubtle),
           ),
           child: Row(
             children: [
               Container(
                 padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(color: const Color(0xFFFEF3C7), borderRadius: BorderRadius.circular(8)),
-                child: const Icon(Icons.trending_up, color: Color(0xFFB45309), size: 20),
+                decoration: BoxDecoration(color: tokens.warningBg, borderRadius: BorderRadius.circular(8)),
+                child: Icon(Icons.trending_up, color: tokens.warningText, size: 20),
               ),
               const SizedBox(width: 14),
               Expanded(
@@ -2558,15 +2626,15 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                   children: [
                     Row(
                       children: [
-                        Text(l.clientName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                        Text(l.clientName, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: tokens.textPrimary)),
                         const SizedBox(width: 8),
-                        Text('(${l.branchName} — ${l.officer})', style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B))),
+                        Text('(${l.branchName} — ${l.officer})', style: TextStyle(fontSize: 11.5, color: tokens.textMuted)),
                       ],
                     ),
                     const SizedBox(height: 4),
                     Text('Amount: ${CurrencyFormatter.format(l.loanAmount)} | Product: ${l.loanProduct}',
-                        style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: Color(0xFF2563EB))),
-                    Text(l.escalationReason, style: const TextStyle(fontSize: 11, color: Color(0xFFDC2626))),
+                        style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: tokens.infoText)),
+                    Text(l.escalationReason, style: TextStyle(fontSize: 11, color: tokens.dangerText)),
                   ],
                 ),
               ),
@@ -2574,13 +2642,13 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                 children: [
                   OutlinedButton(
                     onPressed: _isProcessing ? null : () => _handleRejectHighValueLoan(l.loanId, l.clientName),
-                    style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFFDC2626)),
+                    style: OutlinedButton.styleFrom(foregroundColor: tokens.dangerText, side: BorderSide(color: tokens.dangerBorder)),
                     child: const Text('Reject', style: TextStyle(fontSize: 11.5)),
                   ),
                   const SizedBox(width: 8),
                   ElevatedButton(
                     onPressed: _isProcessing ? null : () => _handleApproveHighValueLoan(l.loanId, l.clientName, l.loanAmount),
-                    style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF2563EB)),
+                    style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1D4ED8), foregroundColor: Colors.white),
                     child: const Text('Confirm', style: TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.bold)),
                   ),
                 ],
@@ -2593,6 +2661,7 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
   }
 
   Widget _buildTransfersApprovalsTab(List<PendingBranchTransferItemModel> transfers, bool isMobile) {
+    final tokens = IcareSurfaceTokens.of(context);
     if (transfers.isEmpty) {
       return _buildEmptyQueueCard(
         icon: Icons.swap_horiz_outlined,
@@ -2608,9 +2677,9 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
             margin: const EdgeInsets.only(bottom: 12),
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
-              color: const Color(0xFFF8FAFC),
+              color: tokens.surfaceSubtle,
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: const Color(0xFFE2E8F0)),
+              border: Border.all(color: tokens.borderSubtle),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -2619,24 +2688,24 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                   children: [
                     Container(
                       padding: const EdgeInsets.all(6),
-                      decoration: BoxDecoration(color: const Color(0xFFEFF6FF), borderRadius: BorderRadius.circular(6)),
-                      child: const Icon(Icons.swap_horiz, color: Color(0xFF2563EB), size: 16),
+                      decoration: BoxDecoration(color: tokens.infoBg, borderRadius: BorderRadius.circular(6)),
+                      child: Icon(Icons.swap_horiz, color: tokens.infoText, size: 16),
                     ),
                     const SizedBox(width: 8),
                     Expanded(
-                      child: Text(t.clientName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                      child: Text(t.clientName, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: tokens.textPrimary)),
                     ),
                   ],
                 ),
                 const SizedBox(height: 8),
                 Text(
                   'Route: ${t.sourceBranchName} -> ${t.destBranchName}',
-                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: tokens.textPrimary),
                 ),
                 const SizedBox(height: 4),
                 Text(
                   'Balance: ${CurrencyFormatter.format(t.outstandingBalance)} | Savings: ${CurrencyFormatter.format(t.savingsBalance)}',
-                  style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B)),
+                  style: TextStyle(fontSize: 11.5, color: tokens.textMuted),
                 ),
                 const SizedBox(height: 12),
                 SizedBox(
@@ -2644,7 +2713,8 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                   child: ElevatedButton(
                     onPressed: _isProcessing ? null : () => _handleSignOffTransfer(t.transferId, t.clientName),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF065F46),
+                      backgroundColor: tokens.brandPrimaryDark,
+                      foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(vertical: 11),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                     ),
@@ -2660,33 +2730,33 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
           margin: const EdgeInsets.only(bottom: 10),
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
-            color: const Color(0xFFF8FAFC),
+            color: tokens.surfaceSubtle,
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: const Color(0xFFE2E8F0)),
+            border: Border.all(color: tokens.borderSubtle),
           ),
           child: Row(
             children: [
               Container(
                 padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(color: const Color(0xFFEFF6FF), borderRadius: BorderRadius.circular(8)),
-                child: const Icon(Icons.swap_horiz, color: Color(0xFF2563EB), size: 20),
+                decoration: BoxDecoration(color: tokens.infoBg, borderRadius: BorderRadius.circular(8)),
+                child: Icon(Icons.swap_horiz, color: tokens.infoText, size: 20),
               ),
               const SizedBox(width: 14),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(t.clientName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                    Text(t.clientName, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: tokens.textPrimary)),
                     const SizedBox(height: 4),
-                    Text('Route: ${t.sourceBranchName} -> ${t.destBranchName}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF0F172A))),
+                    Text('Route: ${t.sourceBranchName} -> ${t.destBranchName}', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: tokens.textPrimary)),
                     Text('Balance: ${CurrencyFormatter.format(t.outstandingBalance)} | Savings: ${CurrencyFormatter.format(t.savingsBalance)}',
-                        style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B))),
+                        style: TextStyle(fontSize: 11.5, color: tokens.textMuted)),
                   ],
                 ),
               ),
               ElevatedButton(
                 onPressed: _isProcessing ? null : () => _handleSignOffTransfer(t.transferId, t.clientName),
-                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF065F46)),
+                style: ElevatedButton.styleFrom(backgroundColor: tokens.brandPrimaryDark, foregroundColor: Colors.white),
                 child: const Text('Sign Off', style: TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.bold)),
               ),
             ],
@@ -2697,16 +2767,17 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
   }
 
   Widget _buildMonthlyReportApprovalsTab(AsyncValue<List<MonthlyWorkflowPendingBranchModel>> asyncData, bool isMobile, {String areaName = 'Area 1'}) {
+    final tokens = IcareSurfaceTokens.of(context);
     return asyncData.when(
-      loading: () => const Padding(
-        padding: EdgeInsets.all(24),
+      loading: () => Padding(
+        padding: const EdgeInsets.all(24),
         child: Center(
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
-              SizedBox(width: 12),
-              Text('Loading supervised monthly submissions...', style: TextStyle(fontSize: 12.5, color: Color(0xFF64748B))),
+              const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+              const SizedBox(width: 12),
+              Text('Loading supervised monthly submissions...', style: TextStyle(fontSize: 12.5, color: tokens.textMuted)),
             ],
           ),
         ),
@@ -2716,15 +2787,15 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
         child: Container(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
-            color: const Color(0xFFFEF2F2),
+            color: tokens.dangerBg,
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: const Color(0xFFFECACA)),
+            border: Border.all(color: tokens.dangerBorder),
           ),
           child: Row(
             children: [
-              const Icon(Icons.info_outline, color: Color(0xFFDC2626), size: 18),
+              Icon(Icons.info_outline, color: tokens.dangerDot, size: 18),
               const SizedBox(width: 10),
-              Expanded(child: Text('Failed to load monthly submissions: $err', style: const TextStyle(color: Color(0xFF991B1B), fontSize: 12))),
+              Expanded(child: Text('Failed to load monthly submissions: $err', style: TextStyle(color: tokens.dangerText, fontSize: 12))),
               TextButton(
                 onPressed: () => ref.invalidate(amMonthlyWorkflowSubmissionsProvider),
                 child: const Text('Retry', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
@@ -2753,27 +2824,30 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                 margin: const EdgeInsets.only(bottom: 14),
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF0FDF4),
+                  color: tokens.successBg,
                   borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: const Color(0xFF86EFAC)),
+                  border: Border.all(color: tokens.successBorder),
                 ),
                 child: Row(
                   children: [
                     Container(
                       padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(color: const Color(0xFFDCFCE7), borderRadius: BorderRadius.circular(8)),
-                      child: const Icon(Icons.verified, color: Color(0xFF166534), size: 24),
+                      decoration: BoxDecoration(
+                        color: tokens.isDark ? tokens.surface : const Color(0xFFDCFCE7),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Icon(Icons.verified, color: tokens.successText, size: 24),
                     ),
                     const SizedBox(width: 14),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('All $areaName Branches Endorsed', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: Color(0xFF166534))),
+                          Text('All $areaName Branches Endorsed', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: tokens.successText)),
                           const SizedBox(height: 2),
-                          const Text(
+                          Text(
                             'All assigned branches have completed Area Manager review. Seal the consolidated regional package for Executive Admin archival.',
-                            style: TextStyle(fontSize: 12, color: Color(0xFF334155)),
+                            style: TextStyle(fontSize: 12, color: tokens.textSecondary),
                           ),
                         ],
                       ),
@@ -2783,7 +2857,7 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                       onPressed: _isProcessing ? null : () => _handleSealAreaMonthlyPackage(areaName),
                       icon: const Icon(Icons.lock, size: 14, color: Colors.white),
                       label: Text('Seal $areaName Month-End', style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
-                      style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF064E3B)),
+                      style: ElevatedButton.styleFrom(backgroundColor: tokens.brandPrimaryDark, foregroundColor: Colors.white),
                     ),
                   ],
                 ),
@@ -2793,18 +2867,18 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                 margin: const EdgeInsets.only(bottom: 14),
                 padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFEFF6FF),
+                  color: tokens.infoBg,
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: const Color(0xFF93C5FD)),
+                  border: Border.all(color: tokens.infoBorder),
                 ),
-                child: const Row(
+                child: Row(
                   children: [
-                    Icon(Icons.folder_special, color: Color(0xFF1D4ED8), size: 20),
-                    SizedBox(width: 10),
+                    Icon(Icons.folder_special, color: tokens.infoDot, size: 20),
+                    const SizedBox(width: 10),
                     Expanded(
                       child: Text(
                         'Regional month-end package is sealed and submitted to Executive Admin for institutional archival.',
-                        style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: Color(0xFF1E40AF)),
+                        style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: tokens.infoText),
                       ),
                     ),
                   ],
@@ -2820,6 +2894,7 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
   }
 
   Widget _buildMonthlyBranchSubmissionCard(MonthlyWorkflowPendingBranchModel b, bool isMobile) {
+    final tokens = IcareSurfaceTokens.of(context);
     Color pillBg;
     Color pillColor;
     String pillText;
@@ -2828,59 +2903,60 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
 
     switch (b.status) {
       case 'BM_SUBMITTED':
-        pillBg = const Color(0xFFFEF3C7);
-        pillColor = const Color(0xFF92400E);
+        pillBg = tokens.warningBg;
+        pillColor = tokens.warningText;
         pillText = 'SUBMITTED FOR SIGN-OFF';
         icon = Icons.pending_actions;
-        iconColor = const Color(0xFFB45309);
+        iconColor = tokens.warningDot;
         break;
       case 'AM_VERIFIED':
-        pillBg = const Color(0xFFDCFCE7);
-        pillColor = const Color(0xFF166534);
+        pillBg = tokens.successBg;
+        pillColor = tokens.successText;
         pillText = 'ENDORSED';
         icon = Icons.check_circle;
-        iconColor = const Color(0xFF15803D);
+        iconColor = tokens.successDot;
         break;
       case 'RETURNED_FOR_CORRECTION':
-        pillBg = const Color(0xFFFEE2E2);
-        pillColor = const Color(0xFF991B1B);
+        pillBg = tokens.dangerBg;
+        pillColor = tokens.dangerText;
         pillText = 'RETURNED WITH QUERIES';
         icon = Icons.assignment_return;
-        iconColor = const Color(0xFFDC2626);
+        iconColor = tokens.dangerDot;
         break;
       case 'AREA_SEALED':
-        pillBg = const Color(0xFFDBEAFE);
-        pillColor = const Color(0xFF1D4ED8);
+        pillBg = tokens.infoBg;
+        pillColor = tokens.infoText;
         pillText = 'AREA SEALED';
         icon = Icons.folder_special;
-        iconColor = const Color(0xFF1D4ED8);
+        iconColor = tokens.infoDot;
         break;
       case 'ADMIN_LOCKED':
-        pillBg = const Color(0xFFE2E8F0);
-        pillColor = const Color(0xFF0F172A);
+        pillBg = tokens.neutralBg;
+        pillColor = tokens.neutralText;
         pillText = 'ARCHIVED';
         icon = Icons.lock;
-        iconColor = const Color(0xFF0F172A);
+        iconColor = tokens.neutralText;
         break;
       default: // DRAFT
-        pillBg = const Color(0xFFF1F5F9);
-        pillColor = const Color(0xFF475569);
+        pillBg = tokens.surfaceHover;
+        pillColor = tokens.textSecondary;
         pillText = 'DRAFT (OPEN)';
         icon = Icons.edit_note;
-        iconColor = const Color(0xFF475569);
+        iconColor = tokens.textSecondary;
         break;
     }
 
     final isSubmitted = b.status == 'BM_SUBMITTED';
+    final innerPillBg = (isSubmitted && tokens.isDark) ? tokens.surface : pillBg;
 
     if (isMobile) {
       return Container(
         margin: const EdgeInsets.only(bottom: 12),
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: const Color(0xFFF8FAFC),
+          color: tokens.surfaceSubtle,
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: isSubmitted ? const Color(0xFFFDE68A) : const Color(0xFFE2E8F0)),
+          border: Border.all(color: isSubmitted ? tokens.warningBorder : tokens.borderSubtle),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -2896,7 +2972,7 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                       child: Icon(icon, color: iconColor, size: 16),
                     ),
                     const SizedBox(width: 8),
-                    Text(b.branchName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                    Text(b.branchName, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: tokens.textPrimary)),
                   ],
                 ),
                 Container(
@@ -2909,29 +2985,29 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
             const SizedBox(height: 6),
             Text(
               'BM: ${b.bmName ?? "Unassigned"}${b.submittedAt != null ? " • Submitted: ${(b.submittedAt!.length > 10 ? b.submittedAt!.substring(0, 10) : b.submittedAt!)}" : ""}',
-              style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B)),
+              style: TextStyle(fontSize: 11.5, color: tokens.textMuted),
             ),
             const SizedBox(height: 10),
             Container(
               padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(6), border: Border.all(color: const Color(0xFFE2E8F0))),
+              decoration: BoxDecoration(color: tokens.surface, borderRadius: BorderRadius.circular(6), border: Border.all(color: tokens.borderSubtle)),
               child: Column(
                 children: [
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text('Collections: ${CurrencyFormatter.format(b.collections)}', style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600)),
-                      Text('Vault Cash: ${CurrencyFormatter.format(b.vaultCash)}', style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600)),
+                      Text('Collections: ${CurrencyFormatter.format(b.collections)}', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: tokens.textPrimary)),
+                      Text('Vault Cash: ${CurrencyFormatter.format(b.vaultCash)}', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: tokens.textPrimary)),
                     ],
                   ),
                   const SizedBox(height: 4),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text('Active Credit: ${CurrencyFormatter.format(b.closingCredit)}', style: const TextStyle(fontSize: 11.5, color: Color(0xFF2563EB), fontWeight: FontWeight.bold)),
+                      Text('Active Credit: ${CurrencyFormatter.format(b.closingCredit)}', style: TextStyle(fontSize: 11.5, color: tokens.infoText, fontWeight: FontWeight.bold)),
                       Text(
                         b.isGlBalanced ? 'GL: Balanced' : 'GL: Unbalanced',
-                        style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: b.isGlBalanced ? const Color(0xFF15803D) : const Color(0xFFDC2626)),
+                        style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: b.isGlBalanced ? tokens.successText : tokens.dangerText),
                       ),
                     ],
                   ),
@@ -2940,7 +3016,7 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
             ),
             if (b.amQueryNotes != null && b.amQueryNotes!.isNotEmpty && b.status == 'RETURNED_FOR_CORRECTION') ...[
               const SizedBox(height: 6),
-              Text('Query: ${b.amQueryNotes}', style: const TextStyle(fontSize: 11, color: Color(0xFFDC2626))),
+              Text('Query: ${b.amQueryNotes}', style: TextStyle(fontSize: 11, color: tokens.dangerText)),
             ],
             const SizedBox(height: 12),
             Row(
@@ -2961,7 +3037,7 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                   Expanded(
                     child: OutlinedButton(
                       onPressed: _isProcessing ? null : () => _handleAmReturnSubmission(b),
-                      style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFFDC2626), side: const BorderSide(color: Color(0xFFFCA5A5))),
+                      style: OutlinedButton.styleFrom(foregroundColor: tokens.dangerText, side: BorderSide(color: tokens.dangerBorder)),
                       child: const Text('Query', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
                     ),
                   ),
@@ -2969,7 +3045,7 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                   Expanded(
                     child: ElevatedButton(
                       onPressed: _isProcessing ? null : () => _handleAmEndorseSubmission(b),
-                      style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF065F46)),
+                      style: ElevatedButton.styleFrom(backgroundColor: tokens.brandPrimaryDark, foregroundColor: Colors.white),
                       child: const Text('Endorse', style: TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.bold)),
                     ),
                   ),
@@ -2985,15 +3061,15 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: isSubmitted ? const Color(0xFFFFFBEB) : const Color(0xFFF8FAFC),
+        color: isSubmitted ? tokens.warningBg : tokens.surfaceSubtle,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: isSubmitted ? const Color(0xFFFDE68A) : const Color(0xFFE2E8F0)),
+        border: Border.all(color: isSubmitted ? tokens.warningBorder : tokens.borderSubtle),
       ),
       child: Row(
         children: [
           Container(
             padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(color: pillBg, borderRadius: BorderRadius.circular(8)),
+            decoration: BoxDecoration(color: innerPillBg, borderRadius: BorderRadius.circular(8)),
             child: Icon(icon, color: iconColor, size: 20),
           ),
           const SizedBox(width: 14),
@@ -3003,11 +3079,11 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
               children: [
                 Row(
                   children: [
-                    Text(b.branchName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                    Text(b.branchName, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: tokens.textPrimary)),
                     const SizedBox(width: 8),
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(color: pillBg, borderRadius: BorderRadius.circular(4)),
+                      decoration: BoxDecoration(color: innerPillBg, borderRadius: BorderRadius.circular(4)),
                       child: Text(pillText, style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: pillColor)),
                     ),
                   ],
@@ -3015,10 +3091,10 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                 const SizedBox(height: 4),
                 Text(
                   'BM: ${b.bmName ?? "Unassigned"}${b.submittedAt != null ? " • Submitted: ${(b.submittedAt!.length > 16 ? b.submittedAt!.substring(0, 16) : b.submittedAt!)}" : ""} | Collections: ${CurrencyFormatter.format(b.collections)} | Vault: ${CurrencyFormatter.format(b.vaultCash)} | Credit: ${CurrencyFormatter.format(b.closingCredit)}',
-                  style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                  style: TextStyle(fontSize: 12, color: tokens.textMuted),
                 ),
                 if (b.amQueryNotes != null && b.amQueryNotes!.isNotEmpty && b.status == 'RETURNED_FOR_CORRECTION')
-                  Text('Query: ${b.amQueryNotes}', style: const TextStyle(fontSize: 11.5, color: Color(0xFFDC2626))),
+                  Text('Query: ${b.amQueryNotes}', style: TextStyle(fontSize: 11.5, color: tokens.dangerText)),
               ],
             ),
           ),
@@ -3039,13 +3115,13 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                 const SizedBox(width: 8),
                 OutlinedButton(
                   onPressed: _isProcessing ? null : () => _handleAmReturnSubmission(b),
-                  style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFFDC2626), side: const BorderSide(color: Color(0xFFFCA5A5))),
+                  style: OutlinedButton.styleFrom(foregroundColor: tokens.dangerText, side: BorderSide(color: tokens.dangerBorder)),
                   child: const Text('Query', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
                 ),
                 const SizedBox(width: 8),
                 ElevatedButton(
                   onPressed: _isProcessing ? null : () => _handleAmEndorseSubmission(b),
-                  style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF065F46)),
+                  style: ElevatedButton.styleFrom(backgroundColor: tokens.brandPrimaryDark, foregroundColor: Colors.white),
                   child: const Text('Endorse', style: TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.bold)),
                 ),
               ],
@@ -3060,13 +3136,14 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
   // SECTION 3: BRANCH COMPARATIVE PERFORMANCE MATRIX
   // =========================================================================
   Widget _buildBranchPerformanceMatrix(List<BranchPerformanceItemModel> branches, bool isMobile) {
+    final tokens = IcareSurfaceTokens.of(context);
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: tokens.surface,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-        boxShadow: const [BoxShadow(color: Color(0x040F172A), blurRadius: 4, offset: Offset(0, 1))],
+        border: Border.all(color: tokens.borderSubtle),
+        boxShadow: tokens.isDark ? null : const [BoxShadow(color: Color(0x040F172A), blurRadius: 4, offset: Offset(0, 1))],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -3080,18 +3157,18 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                   children: [
                     Container(
                       padding: const EdgeInsets.all(6),
-                      decoration: BoxDecoration(color: const Color(0xFFECFDF5), borderRadius: BorderRadius.circular(6)),
-                      child: const Icon(Icons.table_chart_outlined, size: 16, color: Color(0xFF065F46)),
+                      decoration: BoxDecoration(color: tokens.brandSoftBg, borderRadius: BorderRadius.circular(6)),
+                      child: Icon(Icons.table_chart_outlined, size: 16, color: tokens.brandPrimary),
                     ),
                     const SizedBox(width: 8),
-                    const Text('Branch Comparative Performance Matrix', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: Color(0xFF0F172A))),
+                    Text('Branch Comparative Performance Matrix', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: tokens.textPrimary)),
                   ],
                 ),
-                Text('${branches.length} Supervised Branches', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF64748B))),
+                Text('${branches.length} Supervised Branches', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tokens.textMuted)),
               ],
             ),
           ),
-          const Divider(height: 1, color: Color(0xFFE2E8F0)),
+          Divider(height: 1, color: tokens.borderSubtle),
 
           if (isMobile)
             Padding(
@@ -3106,39 +3183,39 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
               child: SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
                 child: DataTable(
-                  headingRowColor: WidgetStateProperty.all(const Color(0xFFF8FAFC)),
-                  columns: const [
-                    DataColumn(label: Text('Branch Name', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
-                    DataColumn(label: Text('Branch Manager', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
-                    DataColumn(label: Text('Expected (₦)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
-                    DataColumn(label: Text('Collected (₦)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
-                    DataColumn(label: Text('Compliance %', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
-                    DataColumn(label: Text('Vault Cash (₦)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
-                    DataColumn(label: Text('PAR %', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
-                    DataColumn(label: Text('Status', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
-                    DataColumn(label: Text('Actions', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
+                  headingRowColor: WidgetStateProperty.all(tokens.surfaceSubtle),
+                  columns: [
+                    DataColumn(label: Text('Branch Name', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: tokens.textPrimary))),
+                    DataColumn(label: Text('Branch Manager', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: tokens.textPrimary))),
+                    DataColumn(label: Text('Expected (₦)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: tokens.textPrimary))),
+                    DataColumn(label: Text('Collected (₦)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: tokens.textPrimary))),
+                    DataColumn(label: Text('Compliance %', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: tokens.textPrimary))),
+                    DataColumn(label: Text('Vault Cash (₦)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: tokens.textPrimary))),
+                    DataColumn(label: Text('PAR %', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: tokens.textPrimary))),
+                    DataColumn(label: Text('Status', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: tokens.textPrimary))),
+                    DataColumn(label: Text('Actions', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: tokens.textPrimary))),
                   ],
                   rows: branches.map((b) {
                     final isHealthy = b.compliancePct >= 85.0 && b.cashVariance == 0.0;
                     return DataRow(
                       cells: [
-                        DataCell(Text(b.branchName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5))),
-                        DataCell(Text(b.bmName, style: const TextStyle(fontSize: 12))),
-                        DataCell(Text(CurrencyFormatter.format(b.expectedCollection), style: const TextStyle(fontSize: 12, fontFeatures: [FontFeature.tabularFigures()]))),
-                        DataCell(Text(CurrencyFormatter.format(b.collected), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF15803D), fontFeatures: [FontFeature.tabularFigures()]))),
+                        DataCell(Text(b.branchName, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5, color: tokens.textPrimary))),
+                        DataCell(Text(b.bmName, style: TextStyle(fontSize: 12, color: tokens.textSecondary))),
+                        DataCell(Text(CurrencyFormatter.format(b.expectedCollection), style: TextStyle(fontSize: 12, color: tokens.textPrimary, fontFeatures: const [FontFeature.tabularFigures()]))),
+                        DataCell(Text(CurrencyFormatter.format(b.collected), style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: tokens.successText, fontFeatures: const [FontFeature.tabularFigures()]))),
                         DataCell(
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                             decoration: BoxDecoration(
-                              color: isHealthy ? const Color(0xFFDCFCE7) : const Color(0xFFFEE2E2),
+                              color: isHealthy ? tokens.successBg : tokens.dangerBg,
                               borderRadius: BorderRadius.circular(4),
                             ),
-                            child: Text('${b.compliancePct}%', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: isHealthy ? const Color(0xFF15803D) : const Color(0xFFDC2626), fontFeatures: const [FontFeature.tabularFigures()])),
+                            child: Text('${b.compliancePct}%', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: isHealthy ? tokens.successText : tokens.dangerText, fontFeatures: const [FontFeature.tabularFigures()])),
                           ),
                         ),
-                        DataCell(Text(CurrencyFormatter.format(b.vaultCashAcct1000), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF2563EB), fontFeatures: [FontFeature.tabularFigures()]))),
-                        DataCell(Text(b.par, style: const TextStyle(fontSize: 12))),
-                        DataCell(Text(b.operationalStatus, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: isHealthy ? const Color(0xFF15803D) : const Color(0xFFDC2626)))),
+                        DataCell(Text(CurrencyFormatter.format(b.vaultCashAcct1000), style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: tokens.infoText, fontFeatures: const [FontFeature.tabularFigures()]))),
+                        DataCell(Text(b.par, style: TextStyle(fontSize: 12, color: tokens.textPrimary))),
+                        DataCell(Text(b.operationalStatus, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: isHealthy ? tokens.successText : tokens.dangerText))),
                         DataCell(
                           Row(
                             children: [
@@ -3153,7 +3230,7 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                                 onPressed: () => _showBranchHandoverModal(b.branchId, b.branchName),
                                 icon: const Icon(Icons.folder_open, size: 12, color: Colors.white),
                                 label: const Text('Reports', style: TextStyle(fontSize: 11, color: Colors.white)),
-                                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF065F46), padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4)),
+                                style: ElevatedButton.styleFrom(backgroundColor: tokens.brandPrimaryDark, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4)),
                               ),
                             ],
                           ),
@@ -3170,6 +3247,7 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
   }
 
   Widget _buildMobileBranchCard(BranchPerformanceItemModel b) {
+    final tokens = IcareSurfaceTokens.of(context);
     final isHealthy = b.compliancePct >= 85.0 && b.cashVariance == 0.0;
     final progress = (b.expectedCollection > 0)
         ? (b.collected / b.expectedCollection).clamp(0.0, 1.0)
@@ -3179,10 +3257,10 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: tokens.surface,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-        boxShadow: const [BoxShadow(color: Color(0x040F172A), blurRadius: 4, offset: Offset(0, 1))],
+        border: Border.all(color: tokens.borderSubtle),
+        boxShadow: tokens.isDark ? null : const [BoxShadow(color: Color(0x040F172A), blurRadius: 4, offset: Offset(0, 1))],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -3196,17 +3274,17 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                     width: 32,
                     height: 32,
                     decoration: BoxDecoration(
-                      color: const Color(0xFFF1F5F9),
+                      color: tokens.surfaceHover,
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    child: const Icon(Icons.location_city, color: Color(0xFF0F172A), size: 16),
+                    child: Icon(Icons.location_city, color: tokens.textPrimary, size: 16),
                   ),
                   const SizedBox(width: 8),
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(b.branchName, style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w800, color: Color(0xFF0F172A))),
-                      Text('BM: ${b.bmName}', style: const TextStyle(fontSize: 11, color: Color(0xFF64748B))),
+                      Text(b.branchName, style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w800, color: tokens.textPrimary)),
+                      Text('BM: ${b.bmName}', style: TextStyle(fontSize: 11, color: tokens.textMuted)),
                     ],
                   ),
                 ],
@@ -3214,7 +3292,7 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
                 decoration: BoxDecoration(
-                  color: isHealthy ? const Color(0xFFDCFCE7) : const Color(0xFFFEE2E2),
+                  color: isHealthy ? tokens.successBg : tokens.dangerBg,
                   borderRadius: BorderRadius.circular(4),
                 ),
                 child: Text(
@@ -3222,7 +3300,7 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                   style: TextStyle(
                     fontSize: 10,
                     fontWeight: FontWeight.bold,
-                    color: isHealthy ? const Color(0xFF15803D) : const Color(0xFFDC2626),
+                    color: isHealthy ? tokens.successText : tokens.dangerText,
                   ),
                 ),
               ),
@@ -3236,14 +3314,14 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
             children: [
               Text(
                 'Collection: ${CurrencyFormatter.format(b.collected)}',
-                style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: Color(0xFF0F172A), fontFamily: 'monospace'),
+                style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: tokens.textPrimary, fontFamily: 'monospace'),
               ),
               Text(
                 '${b.compliancePct.toStringAsFixed(1)}%',
                 style: TextStyle(
                   fontSize: 11.5,
                   fontWeight: FontWeight.w800,
-                  color: isHealthy ? const Color(0xFF15803D) : const Color(0xFFDC2626),
+                  color: isHealthy ? tokens.successText : tokens.dangerText,
                 ),
               ),
             ],
@@ -3254,9 +3332,9 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
             child: LinearProgressIndicator(
               value: progress,
               minHeight: 5,
-              backgroundColor: const Color(0xFFE2E8F0),
+              backgroundColor: tokens.surfaceHover,
               valueColor: AlwaysStoppedAnimation<Color>(
-                isHealthy ? const Color(0xFF059669) : const Color(0xFFD97706),
+                isHealthy ? tokens.successDot : tokens.warningDot,
               ),
             ),
           ),
@@ -3269,26 +3347,26 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                 child: Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFF8FAFC),
+                    color: tokens.surfaceSubtle,
                     borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: const Color(0xFFF1F5F9)),
+                    border: Border.all(color: tokens.borderSubtle),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text('Vault Cash', style: TextStyle(fontSize: 9.5, color: Color(0xFF64748B))),
+                      Text('Vault Cash', style: TextStyle(fontSize: 9.5, color: tokens.textMuted)),
                       const SizedBox(height: 2),
                       FittedBox(
                         fit: BoxFit.scaleDown,
                         alignment: Alignment.centerLeft,
                         child: Text(
                           CurrencyFormatter.format(b.vaultCashAcct1000),
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 12.5,
                             fontWeight: FontWeight.bold,
-                            color: Color(0xFF2563EB),
+                            color: tokens.infoText,
                             fontFamily: 'monospace',
-                            fontFeatures: [FontFeature.tabularFigures()],
+                            fontFeatures: const [FontFeature.tabularFigures()],
                           ),
                         ),
                       ),
@@ -3301,21 +3379,21 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                 child: Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFF8FAFC),
+                    color: tokens.surfaceSubtle,
                     borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: const Color(0xFFF1F5F9)),
+                    border: Border.all(color: tokens.borderSubtle),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text('PAR > 30d', style: TextStyle(fontSize: 9.5, color: Color(0xFF64748B))),
+                      Text('PAR > 30d', style: TextStyle(fontSize: 9.5, color: tokens.textMuted)),
                       const SizedBox(height: 2),
                       Text(
                         b.par,
                         style: TextStyle(
                           fontSize: 12.5,
                           fontWeight: FontWeight.bold,
-                          color: b.par == '0.0%' ? const Color(0xFF15803D) : const Color(0xFFDC2626),
+                          color: b.par == '0.0%' ? tokens.successText : tokens.dangerText,
                           fontFamily: 'monospace',
                         ),
                       ),
@@ -3348,7 +3426,8 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                   icon: const Icon(Icons.folder_open, size: 14, color: Colors.white),
                   label: const Text('Reports', style: TextStyle(fontSize: 11.5, color: Colors.white, fontWeight: FontWeight.bold)),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF065F46),
+                    backgroundColor: tokens.brandPrimaryDark,
+                    foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(vertical: 10),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                   ),
@@ -3399,14 +3478,15 @@ class _BranchHandoverSheetState extends ConsumerState<_BranchHandoverSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final tokens = IcareSurfaceTokens.of(context);
     final maxH = MediaQuery.of(context).size.height * 0.85;
     return SafeArea(
       child: Center(
         child: Container(
           constraints: BoxConstraints(maxWidth: 680, maxHeight: maxH),
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+          decoration: BoxDecoration(
+            color: tokens.surfaceElevated,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
           ),
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
           child: FutureBuilder<BranchHandoverSummaryModel>(
@@ -3423,7 +3503,7 @@ class _BranchHandoverSheetState extends ConsumerState<_BranchHandoverSheet> {
                   padding: const EdgeInsets.all(20),
                   child: Text(
                     'Error loading handover reports: ${snapshot.error}',
-                    style: const TextStyle(color: Colors.red),
+                    style: TextStyle(color: tokens.dangerText),
                   ),
                 );
               }
@@ -3440,12 +3520,12 @@ class _BranchHandoverSheetState extends ConsumerState<_BranchHandoverSheet> {
                         Expanded(
                           child: Row(
                             children: [
-                              const Icon(Icons.description_outlined, color: Color(0xFF064E3B), size: 22),
+                              Icon(Icons.description_outlined, color: tokens.brandPrimary, size: 22),
                               const SizedBox(width: 8),
                               Expanded(
                                 child: Text(
                                   'Branch Handover — ${widget.branchName}',
-                                  style: const TextStyle(fontSize: 16.5, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
+                                  style: TextStyle(fontSize: 16.5, fontWeight: FontWeight.bold, color: tokens.textPrimary),
                                   overflow: TextOverflow.ellipsis,
                                 ),
                               ),
@@ -3461,21 +3541,21 @@ class _BranchHandoverSheetState extends ConsumerState<_BranchHandoverSheet> {
                     const SizedBox(height: 4),
                     Text(
                       'Branch Manager: ${handover.bmName} | Date: ${widget.businessDate}',
-                      style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                      style: TextStyle(fontSize: 12, color: tokens.textMuted),
                     ),
-                    const Divider(height: 24),
-                    const Text(
+                    Divider(height: 24, color: tokens.borderSubtle),
+                    Text(
                       'Available Official Books (Read-Only)',
-                      style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
+                      style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold, color: tokens.textPrimary),
                     ),
                     const SizedBox(height: 12),
                     ...handover.availableReports.map((rep) => Container(
                           margin: const EdgeInsets.only(bottom: 10),
                           padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
-                            color: const Color(0xFFF8FAFC),
+                            color: tokens.surfaceSubtle,
                             borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: const Color(0xFFE2E8F0)),
+                            border: Border.all(color: tokens.borderSubtle),
                           ),
                           child: LayoutBuilder(
                             builder: (context, constraints) {
@@ -3499,7 +3579,8 @@ class _BranchHandoverSheetState extends ConsumerState<_BranchHandoverSheet> {
                                     icon: const Icon(Icons.download, size: 14, color: Colors.white),
                                     label: const Text('Download', style: TextStyle(fontSize: 11.5, color: Colors.white)),
                                     style: ElevatedButton.styleFrom(
-                                      backgroundColor: const Color(0xFF065F46),
+                                      backgroundColor: tokens.brandPrimaryDark,
+                                      foregroundColor: Colors.white,
                                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                                     ),
                                   ),
@@ -3515,18 +3596,18 @@ class _BranchHandoverSheetState extends ConsumerState<_BranchHandoverSheet> {
                                         Container(
                                           padding: const EdgeInsets.all(8),
                                           decoration: BoxDecoration(
-                                            color: const Color(0xFFECFDF5),
+                                            color: tokens.brandSoftBg,
                                             borderRadius: BorderRadius.circular(6),
                                           ),
-                                          child: const Icon(Icons.file_present_outlined, color: Color(0xFF065F46), size: 20),
+                                          child: Icon(Icons.file_present_outlined, color: tokens.brandPrimary, size: 20),
                                         ),
                                         const SizedBox(width: 12),
                                         Expanded(
                                           child: Column(
                                             crossAxisAlignment: CrossAxisAlignment.start,
                                             children: [
-                                              Text(rep.title, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
-                                              Text(rep.description, style: const TextStyle(fontSize: 11, color: Color(0xFF64748B))),
+                                              Text(rep.title, style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: tokens.textPrimary)),
+                                              Text(rep.description, style: TextStyle(fontSize: 11, color: tokens.textMuted)),
                                             ],
                                           ),
                                         ),
@@ -3543,18 +3624,18 @@ class _BranchHandoverSheetState extends ConsumerState<_BranchHandoverSheet> {
                                   Container(
                                     padding: const EdgeInsets.all(8),
                                     decoration: BoxDecoration(
-                                      color: const Color(0xFFECFDF5),
+                                      color: tokens.brandSoftBg,
                                       borderRadius: BorderRadius.circular(6),
                                     ),
-                                    child: const Icon(Icons.file_present_outlined, color: Color(0xFF065F46), size: 20),
+                                    child: Icon(Icons.file_present_outlined, color: tokens.brandPrimary, size: 20),
                                   ),
                                   const SizedBox(width: 12),
                                   Expanded(
                                     child: Column(
                                       crossAxisAlignment: CrossAxisAlignment.start,
                                       children: [
-                                        Text(rep.title, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
-                                        Text(rep.description, style: const TextStyle(fontSize: 11, color: Color(0xFF64748B))),
+                                        Text(rep.title, style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: tokens.textPrimary)),
+                                        Text(rep.description, style: TextStyle(fontSize: 11, color: tokens.textMuted)),
                                       ],
                                     ),
                                   ),

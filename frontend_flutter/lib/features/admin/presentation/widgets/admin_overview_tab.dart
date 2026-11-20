@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/errors/app_error_formatter.dart';
+import '../../../../core/theme/icare_theme_tokens.dart';
 import '../../../../core/utils/currency_formatter.dart';
 import '../../../../core/widgets/icare_skeleton_loader.dart';
 import '../../data/datasources/admin_api_service.dart';
@@ -29,6 +30,7 @@ class AdminOverviewTab extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final opsAsync = ref.watch(adminOperationsProvider(dateStr));
+    final tokens = IcareSurfaceTokens.of(context);
 
     return opsAsync.when(
       loading: () => const Column(
@@ -45,18 +47,18 @@ class AdminOverviewTab extends ConsumerWidget {
         return Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: const Color(0xFFFEF2F2),
+            color: tokens.dangerBg,
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: const Color(0xFFFCA5A5)),
+            border: Border.all(color: tokens.dangerBorder),
           ),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Padding(
-                padding: EdgeInsets.only(top: 2),
+              Padding(
+                padding: const EdgeInsets.only(top: 2),
                 child: Icon(
                   Icons.error_outline,
-                  color: Color(0xFFDC2626),
+                  color: tokens.dangerDot,
                   size: 20,
                 ),
               ),
@@ -69,28 +71,28 @@ class AdminOverviewTab extends ConsumerWidget {
                       errorDetails.title.isNotEmpty
                           ? errorDetails.title
                           : 'Unable to Load Institutional Operations',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w700,
-                        color: Color(0xFF991B1B),
+                        color: tokens.dangerText,
                       ),
                     ),
                     const SizedBox(height: 4),
                     Text(
                       errorDetails.message,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 12.5,
-                        color: Color(0xFFB91C1C),
+                        color: tokens.dangerText,
                       ),
                     ),
                     if (errorDetails.action.isNotEmpty) ...[
                       const SizedBox(height: 4),
                       Text(
                         errorDetails.action,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 11,
                           fontStyle: FontStyle.italic,
-                          color: Color(0xFF7F1D1D),
+                          color: tokens.dangerText,
                         ),
                       ),
                     ],
@@ -101,8 +103,8 @@ class AdminOverviewTab extends ConsumerWidget {
               TextButton(
                 onPressed: () => ref.invalidate(adminOperationsProvider(dateStr)),
                 style: TextButton.styleFrom(
-                  foregroundColor: const Color(0xFF991B1B),
-                  backgroundColor: const Color(0xFFFEE2E2),
+                  foregroundColor: tokens.dangerText,
+                  backgroundColor: tokens.dangerBg,
                 ),
                 child: const Text(
                   'Retry',
@@ -120,6 +122,7 @@ class AdminOverviewTab extends ConsumerWidget {
         final chartCard = _buildFinancialActivityCard(
           context,
           ref,
+          tokens,
           data.financialActivityWeek,
           size,
         );
@@ -131,11 +134,13 @@ class AdminOverviewTab extends ConsumerWidget {
         );
         final branchCollectionsCard = _buildBranchPerformanceCard(
           context,
+          tokens,
           data.branchPerformanceSummary,
           size,
         );
         final reconciliationCard = _buildStatutoryReconciliationPortalCard(
           context,
+          tokens,
           data.branchPerformanceSummary,
           size,
         );
@@ -144,7 +149,7 @@ class AdminOverviewTab extends ConsumerWidget {
           return Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              _buildTopKpiGrid(data, size),
+              _buildTopKpiGrid(tokens, data, size),
               const SizedBox(height: 18),
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -174,7 +179,7 @@ class AdminOverviewTab extends ConsumerWidget {
               approvalsCard,
               const SizedBox(height: 16),
             ],
-            _buildTopKpiGrid(data, size),
+            _buildTopKpiGrid(tokens, data, size),
             const SizedBox(height: 16),
             chartCard,
             const SizedBox(height: 16),
@@ -191,7 +196,8 @@ class AdminOverviewTab extends ConsumerWidget {
     );
   }
 
-  Widget _buildTopKpiGrid(AdminOperationsSnapshotModel data, AdminSize size) {
+  Widget _buildTopKpiGrid(
+      IcareSurfaceTokens tokens, AdminOperationsSnapshotModel data, AdminSize size) {
     final ov = data.overview;
     final branches = data.branchPerformanceSummary;
     final hoCount = branches.where((b) => b.isHeadOffice).length;
@@ -236,17 +242,17 @@ class AdminOverviewTab extends ConsumerWidget {
       columns: size.isCompact ? 2 : 4,
       crossAxisSpacing: 10,
       mainAxisSpacing: 10,
-      children: cards.map(_buildCompactKpiCard).toList(),
+      children: cards.map((item) => _buildCompactKpiCard(tokens, item)).toList(),
     );
   }
 
-  Widget _buildCompactKpiCard(_OverviewKpiItem item) {
+  Widget _buildCompactKpiCard(IcareSurfaceTokens tokens, _OverviewKpiItem item) {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: tokens.surface,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: tokens.borderSubtle),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -254,15 +260,15 @@ class AdminOverviewTab extends ConsumerWidget {
         children: [
           Row(
             children: [
-              Icon(item.icon, size: 16, color: const Color(0xFF64748B)),
+              Icon(item.icon, size: 16, color: tokens.textMuted),
               const SizedBox(width: 6),
               Expanded(
                 child: Text(
                   item.label,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w500,
-                    color: Color(0xFF64748B),
+                    color: tokens.textMuted,
                   ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -276,20 +282,20 @@ class AdminOverviewTab extends ConsumerWidget {
             alignment: Alignment.centerLeft,
             child: Text(
               item.value,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 20,
                 fontWeight: FontWeight.w800,
-                color: Color(0xFF0F172A),
-                fontFeatures: [FontFeature.tabularFigures()],
+                color: tokens.textPrimary,
+                fontFeatures: const [FontFeature.tabularFigures()],
               ),
             ),
           ),
           const SizedBox(height: 4),
           Text(
             item.subtitle,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 10.5,
-              color: Color(0xFF94A3B8),
+              color: tokens.textLight,
               height: 1.25,
             ),
             maxLines: 2,
@@ -303,6 +309,7 @@ class AdminOverviewTab extends ConsumerWidget {
   Widget _buildFinancialActivityCard(
     BuildContext context,
     WidgetRef ref,
+    IcareSurfaceTokens tokens,
     List<FinancialActivityDayModel> weekData,
     AdminSize size,
   ) {
@@ -322,9 +329,9 @@ class AdminOverviewTab extends ConsumerWidget {
     return Container(
       padding: EdgeInsets.all(isCompact ? 14 : 18),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: tokens.surface,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: tokens.borderSubtle),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -333,7 +340,7 @@ class AdminOverviewTab extends ConsumerWidget {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Expanded(
+              Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -342,13 +349,13 @@ class AdminOverviewTab extends ConsumerWidget {
                       style: TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w700,
-                        color: Color(0xFF0F172A),
+                        color: tokens.textPrimary,
                       ),
                     ),
-                    SizedBox(height: 2),
+                    const SizedBox(height: 2),
                     Text(
                       'Money collected vs loans given out Monday to Friday',
-                      style: TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                      style: TextStyle(fontSize: 11, color: tokens.textMuted),
                     ),
                   ],
                 ),
@@ -363,16 +370,16 @@ class AdminOverviewTab extends ConsumerWidget {
                   padding:
                       const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFF1F5F9),
+                    color: tokens.surfaceSubtle,
                     borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                    border: Border.all(color: tokens.borderSubtle),
                   ),
                   child: Text(
                     showFull7d ? 'All 7 Days' : 'Work Days Only (Mon–Fri)',
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.w600,
-                      color: Color(0xFF475569),
+                      color: tokens.textSecondary,
                     ),
                   ),
                 ),
@@ -384,8 +391,8 @@ class AdminOverviewTab extends ConsumerWidget {
             spacing: 16,
             runSpacing: 6,
             children: [
-              _buildLegendItem('Money Collected', const Color(0xFF059669)),
-              _buildLegendItem('Loans Given Out', const Color(0xFF3B82F6)),
+              _buildLegendItem(tokens, 'Money Collected', tokens.successDot),
+              _buildLegendItem(tokens, 'Loans Given Out', tokens.infoDot),
             ],
           ),
           const SizedBox(height: 16),
@@ -421,25 +428,25 @@ class AdminOverviewTab extends ConsumerWidget {
                             height: 28,
                             width: isCompact ? 32 : 54,
                             decoration: BoxDecoration(
-                              color: const Color(0xFFF8FAFC),
+                              color: tokens.surfaceSubtle,
                               borderRadius: BorderRadius.circular(6),
-                              border: Border.all(color: const Color(0xFFE2E8F0)),
+                              border: Border.all(color: tokens.borderSubtle),
                             ),
-                            child: const Column(
+                            child: Column(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
                                 Icon(
                                   Icons.lock_outline,
                                   size: 11,
-                                  color: Color(0xFF94A3B8),
+                                  color: tokens.textLight,
                                 ),
-                                SizedBox(height: 2),
+                                const SizedBox(height: 2),
                                 Text(
                                   'Closed',
                                   style: TextStyle(
                                     fontSize: 8.5,
                                     fontWeight: FontWeight.w700,
-                                    color: Color(0xFF94A3B8),
+                                    color: tokens.textLight,
                                   ),
                                 ),
                               ],
@@ -453,9 +460,9 @@ class AdminOverviewTab extends ConsumerWidget {
                               Container(
                                 width: isCompact ? 12 : 18,
                                 height: colHeight,
-                                decoration: const BoxDecoration(
-                                  color: Color(0xFF059669),
-                                  borderRadius: BorderRadius.vertical(
+                                decoration: BoxDecoration(
+                                  color: tokens.successDot,
+                                  borderRadius: const BorderRadius.vertical(
                                     top: Radius.circular(4),
                                   ),
                                 ),
@@ -464,9 +471,9 @@ class AdminOverviewTab extends ConsumerWidget {
                               Container(
                                 width: isCompact ? 12 : 18,
                                 height: disbHeight,
-                                decoration: const BoxDecoration(
-                                  color: Color(0xFF3B82F6),
-                                  borderRadius: BorderRadius.vertical(
+                                decoration: BoxDecoration(
+                                  color: tokens.infoDot,
+                                  borderRadius: const BorderRadius.vertical(
                                     top: Radius.circular(4),
                                   ),
                                 ),
@@ -482,8 +489,8 @@ class AdminOverviewTab extends ConsumerWidget {
                                 ? FontWeight.w500
                                 : FontWeight.w700,
                             color: isNonWorking
-                                ? const Color(0xFF94A3B8)
-                                : const Color(0xFF475569),
+                                ? tokens.textLight
+                                : tokens.textSecondary,
                           ),
                         ),
                       ],
@@ -498,7 +505,8 @@ class AdminOverviewTab extends ConsumerWidget {
     );
   }
 
-  Widget _buildLegendItem(String label, Color color) {
+  Widget _buildLegendItem(
+      IcareSurfaceTokens tokens, String label, Color color) {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -513,10 +521,10 @@ class AdminOverviewTab extends ConsumerWidget {
         const SizedBox(width: 6),
         Text(
           label,
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 11.5,
             fontWeight: FontWeight.w600,
-            color: Color(0xFF475569),
+            color: tokens.textSecondary,
           ),
         ),
       ],
@@ -525,6 +533,7 @@ class AdminOverviewTab extends ConsumerWidget {
 
   Widget _buildBranchPerformanceCard(
     BuildContext context,
+    IcareSurfaceTokens tokens,
     List<BranchPerformanceRowModel> branches,
     AdminSize size,
   ) {
@@ -533,14 +542,14 @@ class AdminOverviewTab extends ConsumerWidget {
     return Container(
       padding: EdgeInsets.all(isCompact ? 14 : 18),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: tokens.surface,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: tokens.borderSubtle),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Row(
+          Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Expanded(
@@ -552,32 +561,32 @@ class AdminOverviewTab extends ConsumerWidget {
                       style: TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w700,
-                        color: Color(0xFF0F172A),
+                        color: tokens.textPrimary,
                       ),
                     ),
-                    SizedBox(height: 2),
+                    const SizedBox(height: 2),
                     Text(
                       'Money collected today by each branch',
-                      style: TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                      style: TextStyle(fontSize: 11, color: tokens.textMuted),
                     ),
                   ],
                 ),
               ),
-              SizedBox(width: 8),
+              const SizedBox(width: 8),
               Text(
                 'Tap branch for detail',
-                style: TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                style: TextStyle(fontSize: 11, color: tokens.textMuted),
               ),
             ],
           ),
           const SizedBox(height: 14),
           if (branches.isEmpty)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 16),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 16),
               child: Center(
                 child: Text(
                   'No branch collection records found for today.',
-                  style: TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
+                  style: TextStyle(fontSize: 12, color: tokens.textLight),
                 ),
               ),
             )
@@ -585,19 +594,20 @@ class AdminOverviewTab extends ConsumerWidget {
             ...branches.asMap().entries.map((entry) {
               return _buildBranchPerformanceRow(
                 context,
+                tokens,
                 entry.value,
                 entry.key + 1,
               );
             }),
           const SizedBox(height: 14),
-          const Divider(height: 1, color: Color(0xFFF1F5F9)),
+          Divider(height: 1, color: tokens.borderSubtle),
           const SizedBox(height: 10),
-          const Text(
+          Text(
             'Numbers update live as collections are recorded and approved.',
             style: TextStyle(
               fontSize: 11,
               fontStyle: FontStyle.italic,
-              color: Color(0xFF94A3B8),
+              color: tokens.textLight,
             ),
           ),
         ],
@@ -607,6 +617,7 @@ class AdminOverviewTab extends ConsumerWidget {
 
   Widget _buildBranchPerformanceRow(
     BuildContext context,
+    IcareSurfaceTokens tokens,
     BranchPerformanceRowModel b,
     int rank,
   ) {
@@ -615,9 +626,9 @@ class AdminOverviewTab extends ConsumerWidget {
         margin: const EdgeInsets.only(bottom: 8),
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: const Color(0xFFF8FAFC),
+          color: tokens.surfaceSubtle,
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: const Color(0xFFCBD5E1)),
+          border: Border.all(color: tokens.borderStrong),
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -628,7 +639,7 @@ class AdminOverviewTab extends ConsumerWidget {
                   Container(
                     padding: const EdgeInsets.all(6),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF0F172A),
+                      color: tokens.brandPrimaryDark,
                       borderRadius: BorderRadius.circular(6),
                     ),
                     child: const Icon(
@@ -649,10 +660,10 @@ class AdminOverviewTab extends ConsumerWidget {
                           children: [
                             Text(
                               b.branchName,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 13,
                                 fontWeight: FontWeight.w700,
-                                color: Color(0xFF0F172A),
+                                color: tokens.textPrimary,
                               ),
                             ),
                             Container(
@@ -661,15 +672,15 @@ class AdminOverviewTab extends ConsumerWidget {
                                 vertical: 2,
                               ),
                               decoration: BoxDecoration(
-                                color: const Color(0xFFE2E8F0),
+                                color: tokens.surfaceHover,
                                 borderRadius: BorderRadius.circular(4),
                               ),
-                              child: const Text(
+                              child: Text(
                                 'Head Office • Treasury',
                                 style: TextStyle(
                                   fontSize: 9.5,
                                   fontWeight: FontWeight.w700,
-                                  color: Color(0xFF334155),
+                                  color: tokens.textSecondary,
                                 ),
                               ),
                             ),
@@ -678,10 +689,10 @@ class AdminOverviewTab extends ConsumerWidget {
                         const SizedBox(height: 2),
                         Text(
                           'Vault cash: ${CurrencyFormatter.format(b.vaultCash)}',
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 11.5,
                             fontWeight: FontWeight.w600,
-                            color: Color(0xFF047857),
+                            color: tokens.successText,
                           ),
                         ),
                       ],
@@ -691,12 +702,12 @@ class AdminOverviewTab extends ConsumerWidget {
               ),
             ),
             const SizedBox(width: 8),
-            const Text(
+            Text(
               'Treasury Hub',
               style: TextStyle(
                 fontSize: 11,
                 fontStyle: FontStyle.italic,
-                color: Color(0xFF64748B),
+                color: tokens.textMuted,
               ),
             ),
           ],
@@ -727,8 +738,8 @@ class AdminOverviewTab extends ConsumerWidget {
                         height: 20,
                         decoration: BoxDecoration(
                           color: rank <= 3
-                              ? const Color(0xFF022C22)
-                              : const Color(0xFFF1F5F9),
+                              ? tokens.brandPrimaryDark
+                              : tokens.surfaceHover,
                           borderRadius: BorderRadius.circular(4),
                         ),
                         child: Center(
@@ -739,7 +750,7 @@ class AdminOverviewTab extends ConsumerWidget {
                               fontWeight: FontWeight.w700,
                               color: rank <= 3
                                   ? Colors.white
-                                  : const Color(0xFF475569),
+                                  : tokens.textSecondary,
                             ),
                           ),
                         ),
@@ -748,10 +759,10 @@ class AdminOverviewTab extends ConsumerWidget {
                       Flexible(
                         child: Text(
                           b.branchName,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.w600,
-                            color: Color(0xFF1E293B),
+                            color: tokens.textPrimary,
                           ),
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -760,9 +771,9 @@ class AdminOverviewTab extends ConsumerWidget {
                       Flexible(
                         child: Text(
                           '(${b.managerName})',
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 11,
-                            color: Color(0xFF94A3B8),
+                            color: tokens.textLight,
                           ),
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -776,18 +787,18 @@ class AdminOverviewTab extends ConsumerWidget {
                   children: [
                     Text(
                       b.volume > 0 ? CurrencyFormatter.format(b.volume) : '₦—',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
-                        color: Color(0xFF0F172A),
-                        fontFeatures: [FontFeature.tabularFigures()],
+                        color: tokens.textPrimary,
+                        fontFeatures: const [FontFeature.tabularFigures()],
                       ),
                     ),
                     const SizedBox(width: 6),
-                    const Icon(
+                    Icon(
                       Icons.chevron_right,
                       size: 16,
-                      color: Color(0xFF94A3B8),
+                      color: tokens.textLight,
                     ),
                   ],
                 ),
@@ -799,9 +810,9 @@ class AdminOverviewTab extends ConsumerWidget {
               child: LinearProgressIndicator(
                 value: b.relativePct.clamp(0.04, 1.0),
                 minHeight: 4,
-                backgroundColor: const Color(0xFFF1F5F9),
+                backgroundColor: tokens.surfaceHover,
                 valueColor:
-                    const AlwaysStoppedAnimation<Color>(Color(0xFF059669)),
+                    AlwaysStoppedAnimation<Color>(tokens.successDot),
               ),
             ),
           ],
@@ -812,6 +823,7 @@ class AdminOverviewTab extends ConsumerWidget {
 
   Widget _buildStatutoryReconciliationPortalCard(
     BuildContext context,
+    IcareSurfaceTokens tokens,
     List<BranchPerformanceRowModel> branches,
     AdminSize size,
   ) {
@@ -820,9 +832,9 @@ class AdminOverviewTab extends ConsumerWidget {
     return Container(
       padding: EdgeInsets.all(isCompact ? 14 : 18),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: tokens.surface,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: tokens.borderSubtle),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -838,18 +850,18 @@ class AdminOverviewTab extends ConsumerWidget {
                     Container(
                       padding: const EdgeInsets.all(7),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFF0FDFA),
+                        color: tokens.brandSoftBg,
                         borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: const Color(0xFFCCFBF1)),
+                        border: Border.all(color: tokens.brandSoftBorder),
                       ),
-                      child: const Icon(
+                      child: Icon(
                         Icons.account_balance_outlined,
                         size: 18,
-                        color: Color(0xFF0F766E),
+                        color: tokens.brandPrimary,
                       ),
                     ),
                     const SizedBox(width: 10),
-                    const Expanded(
+                    Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -858,15 +870,15 @@ class AdminOverviewTab extends ConsumerWidget {
                             style: TextStyle(
                               fontSize: 14,
                               fontWeight: FontWeight.w700,
-                              color: Color(0xFF0F172A),
+                              color: tokens.textPrimary,
                             ),
                           ),
-                          SizedBox(height: 2),
+                          const SizedBox(height: 2),
                           Text(
                             'Input and manage physical paper returns, bank balances, and brought-forward ledgers',
                             style: TextStyle(
                               fontSize: 11,
-                              color: Color(0xFF64748B),
+                              color: tokens.textMuted,
                             ),
                           ),
                         ],
@@ -893,7 +905,7 @@ class AdminOverviewTab extends ConsumerWidget {
                     ),
                   ),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF0F766E),
+                    backgroundColor: tokens.brandPrimaryDark,
                     elevation: 0,
                     padding: const EdgeInsets.symmetric(
                       horizontal: 14,
@@ -927,7 +939,7 @@ class AdminOverviewTab extends ConsumerWidget {
                   ),
                 ),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF0F766E),
+                  backgroundColor: tokens.brandPrimaryDark,
                   elevation: 0,
                   padding: const EdgeInsets.symmetric(vertical: 10),
                   shape: RoundedRectangleBorder(
@@ -939,12 +951,12 @@ class AdminOverviewTab extends ConsumerWidget {
           ],
           const SizedBox(height: 14),
           if (branches.isEmpty)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 12),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12),
               child: Center(
                 child: Text(
                   'No active branches found.',
-                  style: TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
+                  style: TextStyle(fontSize: 12, color: tokens.textLight),
                 ),
               ),
             )
@@ -955,9 +967,9 @@ class AdminOverviewTab extends ConsumerWidget {
                 padding:
                     const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF8FAFC),
+                  color: tokens.surfaceSubtle,
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                  border: Border.all(color: tokens.borderSubtle),
                 ),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -968,13 +980,13 @@ class AdminOverviewTab extends ConsumerWidget {
                           Container(
                             padding: const EdgeInsets.all(5),
                             decoration: BoxDecoration(
-                              color: const Color(0xFFE2E8F0),
+                              color: tokens.surfaceHover,
                               borderRadius: BorderRadius.circular(6),
                             ),
-                            child: const Icon(
+                            child: Icon(
                               Icons.domain_outlined,
                               size: 14,
-                              color: Color(0xFF334155),
+                              color: tokens.textSecondary,
                             ),
                           ),
                           const SizedBox(width: 8),
@@ -984,18 +996,18 @@ class AdminOverviewTab extends ConsumerWidget {
                               children: [
                                 Text(
                                   b.branchName,
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     fontSize: 12.5,
                                     fontWeight: FontWeight.w700,
-                                    color: Color(0xFF1E293B),
+                                    color: tokens.textPrimary,
                                   ),
                                   overflow: TextOverflow.ellipsis,
                                 ),
                                 Text(
                                   'Manager: ${b.managerName}',
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     fontSize: 11,
-                                    color: Color(0xFF64748B),
+                                    color: tokens.textMuted,
                                   ),
                                   overflow: TextOverflow.ellipsis,
                                 ),
@@ -1014,22 +1026,22 @@ class AdminOverviewTab extends ConsumerWidget {
                           branchName: b.branchName,
                         );
                       },
-                      icon: const Icon(
+                      icon: Icon(
                         Icons.edit_note_outlined,
                         size: 15,
-                        color: Color(0xFF0F766E),
+                        color: tokens.brandPrimary,
                       ),
                       label: Text(
                         isCompact ? 'B/F' : 'Input / Manage B/F',
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w700,
-                          color: Color(0xFF0F766E),
+                          color: tokens.brandPrimary,
                         ),
                       ),
                       style: OutlinedButton.styleFrom(
-                        backgroundColor: Colors.white,
-                        side: const BorderSide(color: Color(0xFF99F6E4)),
+                        backgroundColor: tokens.surface,
+                        side: BorderSide(color: tokens.brandSoftBorder),
                         padding: const EdgeInsets.symmetric(
                           horizontal: 10,
                           vertical: 5,

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import '../theme/icare_colors.dart';
 import '../theme/icare_spacing.dart';
+import '../theme/icare_theme_tokens.dart';
 
 /// Clean loading skeleton for cards and metrics with smooth curved shimmer animation
 class IcareSkeletonLoader extends StatefulWidget {
@@ -37,6 +37,17 @@ class _IcareSkeletonLoaderState extends State<IcareSkeletonLoader>
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (MediaQuery.disableAnimationsOf(context)) {
+      _controller.stop();
+      _controller.value = 0.65;
+    } else if (!_controller.isAnimating) {
+      _controller.repeat(reverse: true);
+    }
+  }
+
+  @override
   void dispose() {
     _controller.dispose();
     super.dispose();
@@ -44,18 +55,20 @@ class _IcareSkeletonLoaderState extends State<IcareSkeletonLoader>
 
   @override
   Widget build(BuildContext context) {
+    final tokens = IcareSurfaceTokens.of(context);
+    final fillColor = tokens.isDark ? tokens.surfaceHover : const Color(0xFFE2E8F0);
     return AnimatedBuilder(
       animation: _animation,
       builder: (context, child) {
         return Opacity(
-          opacity: _animation.value,
+          opacity: MediaQuery.disableAnimationsOf(context) ? 0.65 : _animation.value,
           child: Container(
             height: widget.height,
             width: widget.width ?? double.infinity,
             decoration: BoxDecoration(
-              color: const Color(0xFFE2E8F0),
+              color: fillColor,
               borderRadius: widget.borderRadius ?? IcareSpacing.roundedMd,
-              border: Border.all(color: IcareColors.border),
+              border: Border.all(color: tokens.borderSubtle),
             ),
           ),
         );
@@ -124,6 +137,7 @@ class IcareTableSkeleton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final tokens = IcareSurfaceTokens.of(context);
     return SingleChildScrollView(
       padding: padding ?? IcareSpacing.screenPadding(context),
       child: Column(
@@ -135,18 +149,18 @@ class IcareTableSkeleton extends StatelessWidget {
           ],
           Container(
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: tokens.surface,
               borderRadius: IcareSpacing.roundedLg,
-              border: Border.all(color: IcareColors.border),
+              border: Border.all(color: tokens.borderSubtle),
             ),
             child: Column(
               children: [
                 // Header placeholder row
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  decoration: const BoxDecoration(
-                    color: Color(0xFFF1F5F9),
-                    borderRadius: BorderRadius.vertical(top: Radius.circular(8)),
+                  decoration: BoxDecoration(
+                    color: tokens.surfaceHover,
+                    borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
                   ),
                   child: const Row(
                     children: [
@@ -160,7 +174,7 @@ class IcareTableSkeleton extends StatelessWidget {
                     ],
                   ),
                 ),
-                const Divider(height: 1, color: IcareColors.border),
+                Divider(height: 1, color: tokens.borderSubtle),
                 // Body rows
                 ...List.generate(rowCount, (index) {
                   return Column(
@@ -180,7 +194,7 @@ class IcareTableSkeleton extends StatelessWidget {
                         ),
                       ),
                       if (index < rowCount - 1)
-                        const Divider(height: 1, color: Color(0xFFF1F5F9)),
+                        Divider(height: 1, color: tokens.borderSubtle),
                     ],
                   );
                 }),
@@ -257,6 +271,7 @@ class IcareListSkeleton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final tokens = IcareSurfaceTokens.of(context);
     return ListView.separated(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
@@ -267,9 +282,9 @@ class IcareListSkeleton extends StatelessWidget {
         return Container(
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: tokens.surface,
             borderRadius: IcareSpacing.roundedMd,
-            border: Border.all(color: IcareColors.border),
+            border: Border.all(color: tokens.borderSubtle),
           ),
           child: const Row(
             children: [
@@ -312,6 +327,7 @@ class IcareFormSkeleton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final tokens = IcareSurfaceTokens.of(context);
     return SingleChildScrollView(
       padding: padding ?? IcareSpacing.screenPadding(context),
       child: Column(
@@ -324,9 +340,9 @@ class IcareFormSkeleton extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: tokens.surface,
               borderRadius: IcareSpacing.roundedLg,
-              border: Border.all(color: IcareColors.border),
+              border: Border.all(color: tokens.borderSubtle),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -388,6 +404,17 @@ class _IcareShimmerState extends State<IcareShimmer> with SingleTickerProviderSt
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (MediaQuery.disableAnimationsOf(context)) {
+      _controller.stop();
+      _controller.value = 0.5;
+    } else if (!_controller.isAnimating) {
+      _controller.repeat();
+    }
+  }
+
+  @override
   void dispose() {
     _controller.dispose();
     super.dispose();
@@ -433,9 +460,10 @@ class SkeletonShimmerBox extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final tokens = IcareSurfaceTokens.of(context);
     final animation = IcareShimmer.of(context);
-    final base = baseColor ?? const Color(0xFFF1F5F9);
-    final highlight = highlightColor ?? const Color(0xFFE2E8F0);
+    final base = baseColor ?? (tokens.isDark ? tokens.surfaceHover : const Color(0xFFF1F5F9));
+    final highlight = highlightColor ?? (tokens.isDark ? tokens.surfaceElevated : const Color(0xFFE2E8F0));
 
     if (animation == null) {
       return _StandaloneShimmerBox(
@@ -556,7 +584,7 @@ class IcareAmPortfolioSkeleton extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // 1. Regional Loan Book Distribution Skeleton Card
-          _buildPortfolioShareSkeleton(mobile),
+          _buildPortfolioShareSkeleton(context, mobile),
           const SizedBox(height: 18),
 
           // 2. 6 Regional KPI Summary Cards Skeleton Grid
@@ -572,23 +600,24 @@ class IcareAmPortfolioSkeleton extends StatelessWidget {
           const SizedBox(height: 24),
 
           // 5. Governance Advisory Skeleton Card
-          _buildGovernanceSkeleton(),
+          _buildGovernanceSkeleton(context),
           const SizedBox(height: 32),
         ],
       ),
     );
   }
 
-  Widget _buildPortfolioShareSkeleton(bool mobile) {
+  Widget _buildPortfolioShareSkeleton(BuildContext context, bool mobile) {
+    final tokens = IcareSurfaceTokens.of(context);
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: tokens.surface,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-        boxShadow: const [
-          BoxShadow(color: Color(0x040F172A), blurRadius: 4, offset: Offset(0, 1)),
+        border: Border.all(color: tokens.borderSubtle),
+        boxShadow: [
+          BoxShadow(color: tokens.isDark ? const Color(0x20000000) : const Color(0x040F172A), blurRadius: 4, offset: const Offset(0, 1)),
         ],
       ),
       child: Column(
@@ -614,8 +643,8 @@ class IcareAmPortfolioSkeleton extends StatelessWidget {
                   Container(
                     width: 8,
                     height: 8,
-                    decoration: const BoxDecoration(
-                      color: Color(0xFFCBD5E1),
+                    decoration: BoxDecoration(
+                      color: tokens.borderStrong,
                       shape: BoxShape.circle,
                     ),
                   ),
@@ -642,14 +671,15 @@ class IcareAmPortfolioSkeleton extends StatelessWidget {
         mainAxisSpacing: 10,
         childAspectRatio: desktop ? 1.55 : 1.65,
       ),
-      itemBuilder: (_, __) {
+      itemBuilder: (ctx, __) {
+        final tokens = IcareSurfaceTokens.of(ctx);
         return Container(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: tokens.surface,
             borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: const Color(0xFFE2E8F0)),
-            boxShadow: const [BoxShadow(color: Color(0x040F172A), blurRadius: 3, offset: Offset(0, 1))],
+            border: Border.all(color: tokens.borderSubtle),
+            boxShadow: [BoxShadow(color: tokens.isDark ? const Color(0x20000000) : const Color(0x040F172A), blurRadius: 3, offset: const Offset(0, 1))],
           ),
           child: const Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -717,13 +747,14 @@ class IcareAmPortfolioSkeleton extends StatelessWidget {
     );
   }
 
-  Widget _buildGovernanceSkeleton() {
+  Widget _buildGovernanceSkeleton(BuildContext context) {
+    final tokens = IcareSurfaceTokens.of(context);
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
+        color: tokens.surfaceSubtle,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: tokens.borderSubtle),
       ),
       child: const Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -751,14 +782,15 @@ class _BranchCardSkeleton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final tokens = IcareSurfaceTokens.of(context);
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: tokens.surface,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-        boxShadow: const [
-          BoxShadow(color: Color(0x060F172A), blurRadius: 6, offset: Offset(0, 2)),
+        border: Border.all(color: tokens.borderSubtle),
+        boxShadow: [
+          BoxShadow(color: tokens.isDark ? const Color(0x20000000) : const Color(0x060F172A), blurRadius: 6, offset: const Offset(0, 2)),
         ],
       ),
       child: Column(
@@ -798,9 +830,9 @@ class _BranchCardSkeleton extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
-              color: const Color(0xFFF8FAFC),
+              color: tokens.surfaceSubtle,
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: const Color(0xFFE2E8F0)),
+              border: Border.all(color: tokens.borderSubtle),
             ),
             child: const Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
@@ -858,6 +890,7 @@ class IcareOnboardingSkeleton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final tokens = IcareSurfaceTokens.of(context);
     return IcareShimmer(
       child: Column(
         children: List.generate(
@@ -866,9 +899,9 @@ class IcareOnboardingSkeleton extends StatelessWidget {
             margin: const EdgeInsets.only(bottom: 12),
             padding: const EdgeInsets.all(18),
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: tokens.surface,
               borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: const Color(0xFFE2E8F0)),
+              border: Border.all(color: tokens.borderSubtle),
             ),
             child: const Column(
               crossAxisAlignment: CrossAxisAlignment.start,

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import '../theme/icare_colors.dart';
 import '../theme/icare_typography.dart';
+import '../theme/icare_theme_tokens.dart';
 
 /// Clean institutional section header with optional action button and accent line
 class IcareSectionHeader extends StatelessWidget {
@@ -19,6 +19,7 @@ class IcareSectionHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final tokens = IcareSurfaceTokens.of(context);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
@@ -29,7 +30,7 @@ class IcareSectionHeader extends StatelessWidget {
               width: 3.5,
               height: 16,
               decoration: BoxDecoration(
-                color: IcareColors.primary,
+                color: tokens.brandPrimary,
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
@@ -42,13 +43,13 @@ class IcareSectionHeader extends StatelessWidget {
               children: [
                 Text(
                   title,
-                  style: IcareTypography.sectionHeader,
+                  style: IcareTypography.sectionHeader.copyWith(color: tokens.textPrimary),
                 ),
                 if (subtitle != null) ...[
                   const SizedBox(height: 2),
                   Text(
                     subtitle!,
-                    style: IcareTypography.sectionSubtitle,
+                    style: IcareTypography.sectionSubtitle.copyWith(color: tokens.textMuted),
                   ),
                 ],
               ],

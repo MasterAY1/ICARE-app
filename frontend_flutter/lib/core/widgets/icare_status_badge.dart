@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import '../theme/icare_colors.dart';
 import '../theme/icare_typography.dart';
 import '../theme/icare_spacing.dart';
+import '../theme/icare_theme_tokens.dart';
 
 enum IcareBadgeVariant {
   success,
@@ -50,6 +50,7 @@ class IcareStatusBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final v = variant ?? IcareBadgeVariant.neutral;
+    final tokens = IcareSurfaceTokens.of(context);
 
     Color bg;
     Color text;
@@ -58,34 +59,34 @@ class IcareStatusBadge extends StatelessWidget {
 
     switch (v) {
       case IcareBadgeVariant.success:
-        bg = IcareColors.statusSuccessBg;
-        text = IcareColors.statusSuccessText;
-        border = IcareColors.statusSuccessBorder;
-        dot = IcareColors.statusSuccessDot;
+        bg = tokens.successBg;
+        text = tokens.successText;
+        border = tokens.successBorder;
+        dot = tokens.successDot;
         break;
       case IcareBadgeVariant.warning:
-        bg = IcareColors.statusWarningBg;
-        text = IcareColors.statusWarningText;
-        border = IcareColors.statusWarningBorder;
-        dot = IcareColors.statusWarningDot;
+        bg = tokens.warningBg;
+        text = tokens.warningText;
+        border = tokens.warningBorder;
+        dot = tokens.warningDot;
         break;
       case IcareBadgeVariant.danger:
-        bg = IcareColors.statusDangerBg;
-        text = IcareColors.statusDangerText;
-        border = IcareColors.statusDangerBorder;
-        dot = IcareColors.statusDangerDot;
+        bg = tokens.dangerBg;
+        text = tokens.dangerText;
+        border = tokens.dangerBorder;
+        dot = tokens.dangerDot;
         break;
       case IcareBadgeVariant.info:
-        bg = IcareColors.statusInfoBg;
-        text = IcareColors.statusInfoText;
-        border = IcareColors.statusInfoBorder;
-        dot = IcareColors.statusInfoDot;
+        bg = tokens.infoBg;
+        text = tokens.infoText;
+        border = tokens.infoBorder;
+        dot = tokens.infoDot;
         break;
       case IcareBadgeVariant.neutral:
-        bg = IcareColors.statusNeutralBg;
-        text = IcareColors.statusNeutralText;
-        border = IcareColors.statusNeutralBorder;
-        dot = IcareColors.statusNeutralDot;
+        bg = tokens.neutralBg;
+        text = tokens.neutralText;
+        border = tokens.neutralBorder;
+        dot = tokens.neutralDot;
         break;
     }
 

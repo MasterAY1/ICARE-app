@@ -8,6 +8,7 @@ import '../../../core/auth/auth_controller.dart';
 import '../../../core/auth/auth_state.dart';
 import '../data/datasources/co_api_service.dart';
 import '../../../core/widgets/icare_skeleton_loader.dart';
+import '../../../core/theme/icare_theme_tokens.dart';
 import 'co_dashboard_screen.dart';
 import 'daily_cashbook_screen.dart';
 import '../../bm/presentation/bm_dashboard_screen.dart';
@@ -764,6 +765,7 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
   // TAB 1 BUILDER: INDIVIDUAL SAVINGS (app.py L7324–7645)
   // ==========================================================================
   Widget _buildIndividualTab(bool isManager) {
+    final tokens = IcareSurfaceTokens.of(context);
     final indAsync = ref.watch(individualOptionsProvider);
     final grpVal = ref.watch(groupOptionsProvider).valueOrNull;
     final allGroups = ((grpVal?['all_groups'] ?? grpVal?['groups']) as List<dynamic>?)
@@ -789,12 +791,12 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
           return Container(
             padding: const EdgeInsets.all(24),
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: tokens.surface,
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: const Color(0xFFE2E8F0)),
+              border: Border.all(color: tokens.borderSubtle),
             ),
-            child: const Center(
-              child: Text('No active clients found for the selected group.', style: TextStyle(color: Color(0xFF64748B), fontSize: 13)),
+            child: Center(
+              child: Text('No active clients found for the selected group.', style: TextStyle(color: tokens.textMuted, fontSize: 13)),
             ),
           );
         }
@@ -863,10 +865,11 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                 final grpField = DropdownButtonFormField<String>(
                   value: _indGroupFilter,
                   isExpanded: true,
+                  dropdownColor: tokens.surfaceElevated,
+                  style: TextStyle(fontSize: 13, color: tokens.textPrimary),
                   decoration: const InputDecoration(
                     labelText: 'Group Filter',
                     isDense: true,
-                    
                     border: OutlineInputBorder(),
                     contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                   ),
@@ -886,10 +889,11 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                 final clientField = DropdownButtonFormField<String>(
                   value: _indSelectedClientId,
                   isExpanded: true,
+                  dropdownColor: tokens.surfaceElevated,
+                  style: TextStyle(fontSize: 13, color: tokens.textPrimary),
                   decoration: const InputDecoration(
                     labelText: 'Select Member',
                     isDense: true,
-                    
                     border: OutlineInputBorder(),
                     contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                   ),
@@ -942,10 +946,11 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
             DropdownButtonFormField<String>(
               value: _indDestOp,
               isExpanded: true,
+              dropdownColor: tokens.surfaceElevated,
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: tokens.textPrimary),
               decoration: const InputDecoration(
                 labelText: 'Destination',
                 isDense: true,
-                
                 border: OutlineInputBorder(),
                 contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               ),
@@ -956,7 +961,7 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                     opt['title'] as String,
                     overflow: TextOverflow.ellipsis,
                     softWrap: true,
-                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: tokens.textPrimary),
                   ),
                 );
               }).toList(),
@@ -973,20 +978,21 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                   width: double.infinity,
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFFFFBEB),
+                    color: tokens.warningBg,
                     borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: const Color(0xFFFDE68A)),
+                    border: Border.all(color: tokens.warningBorder),
                   ),
-                  child: const Text('No active loans found for this client to offset.', style: TextStyle(color: Color(0xFF92400E), fontSize: 12), softWrap: true),
+                  child: Text('No active loans found for this client to offset.', style: TextStyle(color: tokens.warningText, fontSize: 12), softWrap: true),
                 )
               else ...[
                 DropdownButtonFormField<String>(
                   value: _indSelectedLoanId,
                   isExpanded: true,
+                  dropdownColor: tokens.surfaceElevated,
+                  style: TextStyle(fontSize: 13, color: tokens.textPrimary),
                   decoration: const InputDecoration(
                     labelText: 'Target Loan for Debt Offset',
                     isDense: true,
-                    
                     border: OutlineInputBorder(),
                     contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                   ),
@@ -1006,7 +1012,7 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                         child: _buildMetricTile(
                           'Loan Balance',
                           CurrencyFormatter.formatNaira((selLoan['balance'] as num?)?.toDouble() ?? 0.0),
-                          const Color(0xFFDC2626),
+                          tokens.dangerText,
                         ),
                       ),
                       const SizedBox(width: 8),
@@ -1014,7 +1020,7 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                         child: _buildMetricTile(
                           'Active Credit',
                           CurrencyFormatter.formatNaira((selLoan['active_credit'] as num?)?.toDouble() ?? 0.0),
-                          const Color(0xFF2563EB),
+                          tokens.infoText,
                         ),
                       ),
                     ],
@@ -1026,10 +1032,11 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
               DropdownButtonFormField<String>(
                 value: _indFeeType,
                 isExpanded: true,
+                dropdownColor: tokens.surfaceElevated,
+                style: TextStyle(fontSize: 13, color: tokens.textPrimary),
                 decoration: const InputDecoration(
                   labelText: 'Fee Type',
                   isDense: true,
-                  
                   border: OutlineInputBorder(),
                   contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                 ),
@@ -1049,6 +1056,8 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
               DropdownButtonFormField<String>(
                 value: _indTransferTargetCat,
                 isExpanded: true,
+                dropdownColor: tokens.surfaceElevated,
+                style: TextStyle(fontSize: 13, color: tokens.textPrimary),
                 decoration: const InputDecoration(
                   labelText: 'Transfer Destination Type',
                   isDense: true,
@@ -1072,10 +1081,12 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
               DropdownButtonFormField<String>(
                 value: safeIndTransferVal,
                 isExpanded: true,
+                dropdownColor: tokens.surfaceElevated,
+                style: TextStyle(fontSize: 13, color: tokens.textPrimary),
                 decoration: InputDecoration(
                   labelText: _indTransferTargetCat == 'GroupSavings' ? 'Recipient Group Account' : 'Recipient Member',
                   isDense: true,
-                  border: OutlineInputBorder(),
+                  border: const OutlineInputBorder(),
                   contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                 ),
                 items: validIndTransferItems,
@@ -1093,11 +1104,11 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
             TextField(
               controller: _indAmountCtrl,
               keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              style: TextStyle(fontSize: 13, color: tokens.textPrimary),
               decoration: const InputDecoration(
                 labelText: 'Withdrawal Amount (₦)',
                 hintText: 'Enter amount...',
                 isDense: true,
-                
                 border: OutlineInputBorder(),
                 contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               ),
@@ -1108,11 +1119,11 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
             TextField(
               controller: _indRemarksCtrl,
               maxLines: 1,
+              style: TextStyle(fontSize: 13, color: tokens.textPrimary),
               decoration: const InputDecoration(
                 labelText: 'Remarks & Authorization Notes',
                 hintText: 'Reason or account details...',
                 isDense: true,
-                
                 border: OutlineInputBorder(),
                 contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               ),
@@ -1124,10 +1135,10 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
               CheckboxListTile(
                 dense: true,
                 contentPadding: EdgeInsets.zero,
-                title: const Text('Immediate Branch Manager Authorization', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
-                subtitle: const Text('Authorize and settle immediately without queuing for review.', style: TextStyle(fontSize: 11, color: Color(0xFF64748B))),
+                title: Text('Immediate Branch Manager Authorization', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: tokens.textPrimary)),
+                subtitle: Text('Authorize and settle immediately without queuing for review.', style: TextStyle(fontSize: 11, color: tokens.textMuted)),
                 value: _indAutoExec,
-                activeColor: const Color(0xFF15803D),
+                activeColor: tokens.brandPrimary,
                 onChanged: (v) => setState(() => _indAutoExec = v ?? false),
                 controlAffinity: ListTileControlAffinity.leading,
               ),
@@ -1140,8 +1151,10 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
               height: 42,
               child: ElevatedButton.icon(
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: (isManager && _indAutoExec) ? const Color(0xFF15803D) : const Color(0xFF064E3B),
+                  backgroundColor: (isManager && _indAutoExec) ? const Color(0xFF15803D) : tokens.brandPrimaryDark,
                   foregroundColor: Colors.white,
+                  disabledBackgroundColor: tokens.surfaceSubtle,
+                  disabledForegroundColor: tokens.textMuted,
                   elevation: 0,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                 ),
@@ -1176,6 +1189,7 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
   // TAB 2 BUILDER: GROUP SAVINGS
   // ==========================================================================
   Widget _buildGroupTab(bool isManager) {
+    final tokens = IcareSurfaceTokens.of(context);
     final grpAsync = ref.watch(groupOptionsProvider);
     final indVal = ref.watch(individualOptionsProvider).valueOrNull;
     final allClients = (indVal?['clients'] as List<dynamic>?)
@@ -1197,12 +1211,12 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
           return Container(
             padding: const EdgeInsets.all(24),
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: tokens.surface,
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: const Color(0xFFE2E8F0)),
+              border: Border.all(color: tokens.borderSubtle),
             ),
-            child: const Center(
-              child: Text('No active groups found for the selected officer.', style: TextStyle(color: Color(0xFF64748B), fontSize: 13)),
+            child: Center(
+              child: Text('No active groups found for the selected officer.', style: TextStyle(color: tokens.textMuted, fontSize: 13)),
             ),
           );
         }
@@ -1290,6 +1304,8 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
             DropdownButtonFormField<String>(
               value: _grpSelectedGroupId,
               isExpanded: true,
+              dropdownColor: tokens.surfaceElevated,
+              style: TextStyle(fontSize: 13, color: tokens.textPrimary),
               decoration: const InputDecoration(
                 labelText: 'Select Group',
                 isDense: true,
@@ -1325,6 +1341,8 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
             DropdownButtonFormField<String>(
               value: safeGrpDestOp,
               isExpanded: true,
+              dropdownColor: tokens.surfaceElevated,
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: tokens.textPrimary),
               decoration: const InputDecoration(
                 labelText: 'Destination',
                 isDense: true,
@@ -1338,7 +1356,7 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                     opt['title'] as String,
                     overflow: TextOverflow.ellipsis,
                     softWrap: true,
-                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: tokens.textPrimary),
                   ),
                 );
               }).toList(),
@@ -1355,16 +1373,18 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                   width: double.infinity,
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFFFFBEB),
+                    color: tokens.warningBg,
                     borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: const Color(0xFFFDE68A)),
+                    border: Border.all(color: tokens.warningBorder),
                   ),
-                  child: const Text('No active members found in this group.', style: TextStyle(color: Color(0xFF92400E), fontSize: 12)),
+                  child: Text('No active members found in this group.', style: TextStyle(color: tokens.warningText, fontSize: 12)),
                 )
               else ...[
                 DropdownButtonFormField<String>(
                   value: members.any((m) => m['client_id']?.toString() == _grpSelectedMemberId) ? _grpSelectedMemberId : null,
                   isExpanded: true,
+                  dropdownColor: tokens.surfaceElevated,
+                  style: TextStyle(fontSize: 13, color: tokens.textPrimary),
                   decoration: const InputDecoration(
                     labelText: 'Select Group Member',
                     isDense: true,
@@ -1392,16 +1412,18 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                     width: double.infinity,
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFFFFBEB),
+                      color: tokens.warningBg,
                       borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: const Color(0xFFFDE68A)),
+                      border: Border.all(color: tokens.warningBorder),
                     ),
-                    child: const Text('No active loans found for the selected member to offset.', style: TextStyle(color: Color(0xFF92400E), fontSize: 12)),
+                    child: Text('No active loans found for the selected member to offset.', style: TextStyle(color: tokens.warningText, fontSize: 12)),
                   )
                 else ...[
                   DropdownButtonFormField<String>(
                     value: memberLoans.any((l) => l['loan_id']?.toString() == _grpSelectedLoanId) ? _grpSelectedLoanId : null,
                     isExpanded: true,
+                    dropdownColor: tokens.surfaceElevated,
+                    style: TextStyle(fontSize: 13, color: tokens.textPrimary),
                     decoration: const InputDecoration(
                       labelText: 'Target Member Loan for Debt Offset',
                       isDense: true,
@@ -1424,7 +1446,7 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                           child: _buildMetricTile(
                             'Loan Balance',
                             CurrencyFormatter.formatNaira((selMemberLoan['balance'] as num?)?.toDouble() ?? 0.0),
-                            const Color(0xFFDC2626),
+                            tokens.dangerText,
                           ),
                         ),
                         const SizedBox(width: 8),
@@ -1432,7 +1454,7 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                           child: _buildMetricTile(
                             'Active Credit',
                             CurrencyFormatter.formatNaira((selMemberLoan['active_credit'] as num?)?.toDouble() ?? 0.0),
-                            const Color(0xFF2563EB),
+                            tokens.infoText,
                           ),
                         ),
                       ],
@@ -1446,6 +1468,8 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                 DropdownButtonFormField<String>(
                   value: members.any((m) => m['client_id']?.toString() == _grpSelectedMemberId) ? _grpSelectedMemberId : null,
                   isExpanded: true,
+                  dropdownColor: tokens.surfaceElevated,
+                  style: TextStyle(fontSize: 13, color: tokens.textPrimary),
                   decoration: const InputDecoration(
                     labelText: 'Attribute Fee to Group Member (Optional)',
                     isDense: true,
@@ -1470,6 +1494,8 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
               DropdownButtonFormField<String>(
                 value: _grpFeeType,
                 isExpanded: true,
+                dropdownColor: tokens.surfaceElevated,
+                style: TextStyle(fontSize: 13, color: tokens.textPrimary),
                 decoration: const InputDecoration(
                   labelText: 'Fee Type',
                   isDense: true,
@@ -1492,6 +1518,8 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
               DropdownButtonFormField<String>(
                 value: _grpTransferTargetCat,
                 isExpanded: true,
+                dropdownColor: tokens.surfaceElevated,
+                style: TextStyle(fontSize: 13, color: tokens.textPrimary),
                 decoration: const InputDecoration(
                   labelText: 'Transfer Destination Type',
                   isDense: true,
@@ -1515,10 +1543,12 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
               DropdownButtonFormField<String>(
                 value: safeGrpTransferVal,
                 isExpanded: true,
+                dropdownColor: tokens.surfaceElevated,
+                style: TextStyle(fontSize: 13, color: tokens.textPrimary),
                 decoration: InputDecoration(
                   labelText: _grpTransferTargetCat == 'GroupSavings' ? 'Recipient Group Account' : 'Recipient Client',
                   isDense: true,
-                  border: OutlineInputBorder(),
+                  border: const OutlineInputBorder(),
                   contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                 ),
                 items: validGrpTransferItems,
@@ -1531,6 +1561,8 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
               DropdownButtonFormField<String>(
                 value: members.any((m) => m['client_id']?.toString() == _grpLapsBeneficiaryClientId) ? _grpLapsBeneficiaryClientId : null,
                 isExpanded: true,
+                dropdownColor: tokens.surfaceElevated,
+                style: TextStyle(fontSize: 13, color: tokens.textPrimary),
                 decoration: const InputDecoration(
                   labelText: 'Beneficiary Group Member (LAPS Record Holder)',
                   isDense: true,
@@ -1566,6 +1598,7 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
             TextField(
               controller: _grpAmountCtrl,
               keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              style: TextStyle(fontSize: 13, color: tokens.textPrimary),
               decoration: const InputDecoration(
                 labelText: 'Amount (₦)',
                 hintText: 'Enter group withdrawal amount...',
@@ -1580,6 +1613,7 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
             TextField(
               controller: _grpRemarksCtrl,
               maxLines: 1,
+              style: TextStyle(fontSize: 13, color: tokens.textPrimary),
               decoration: const InputDecoration(
                 labelText: 'Remarks & Group Resolution Notes',
                 hintText: 'Resolution reference or details...',
@@ -1595,10 +1629,10 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
               CheckboxListTile(
                 dense: true,
                 contentPadding: EdgeInsets.zero,
-                title: const Text('Immediate Branch Manager Authorization', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
-                subtitle: const Text('Authorize and settle immediately without queuing for review.', style: TextStyle(fontSize: 11, color: Color(0xFF64748B))),
+                title: Text('Immediate Branch Manager Authorization', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: tokens.textPrimary)),
+                subtitle: Text('Authorize and settle immediately without queuing for review.', style: TextStyle(fontSize: 11, color: tokens.textMuted)),
                 value: _grpAutoExec,
-                activeColor: const Color(0xFF15803D),
+                activeColor: tokens.brandPrimary,
                 onChanged: (v) => setState(() => _grpAutoExec = v ?? false),
                 controlAffinity: ListTileControlAffinity.leading,
               ),
@@ -1611,8 +1645,10 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
               height: 42,
               child: ElevatedButton.icon(
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: (isManager && _grpAutoExec) ? const Color(0xFF15803D) : const Color(0xFF064E3B),
+                  backgroundColor: (isManager && _grpAutoExec) ? const Color(0xFF15803D) : tokens.brandPrimaryDark,
                   foregroundColor: Colors.white,
+                  disabledBackgroundColor: tokens.surfaceSubtle,
+                  disabledForegroundColor: tokens.textMuted,
                   elevation: 0,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                 ),
@@ -1647,6 +1683,7 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
   // TAB 3 BUILDER: MISC SAVINGS
   // ==========================================================================
   Widget _buildMiscTab(bool isManager) {
+    final tokens = IcareSurfaceTokens.of(context);
     final miscAsync = ref.watch(miscBalanceProvider);
 
     return miscAsync.when(
@@ -1671,27 +1708,27 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               decoration: BoxDecoration(
-                color: const Color(0xFFEFF6FF),
+                color: tokens.infoBg,
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: const Color(0xFFBFDBFE)),
+                border: Border.all(color: tokens.infoBorder),
               ),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Icon(Icons.info_outline_rounded, size: 16, color: Color(0xFF1D4ED8)),
+                  Icon(Icons.info_outline_rounded, size: 16, color: tokens.infoText),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
+                        Text(
                           'Branch Manager Governance',
-                          style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: Color(0xFF1E40AF)),
+                          style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: tokens.infoText),
                         ),
                         const SizedBox(height: 2),
                         Text(
                           roleNotice,
-                          style: const TextStyle(color: Color(0xFF1E3A8A), fontSize: 11, height: 1.3),
+                          style: TextStyle(color: tokens.infoText.withValues(alpha: 0.9), fontSize: 11, height: 1.3),
                           softWrap: true,
                         ),
                       ],
@@ -1705,6 +1742,8 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
               DropdownButtonFormField<String>(
                 value: _miscPayoutMethod,
                 isExpanded: true,
+                dropdownColor: tokens.surfaceElevated,
+                style: TextStyle(fontSize: 13, color: tokens.textPrimary),
                 decoration: const InputDecoration(
                   labelText: 'Payout Settlement Method',
                   isDense: true,
@@ -1725,6 +1764,7 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
               TextField(
                 controller: _miscAmountCtrl,
                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                style: TextStyle(fontSize: 13, color: tokens.textPrimary),
                 decoration: const InputDecoration(
                   labelText: 'Misc Withdrawal Amount (₦)',
                   hintText: 'Enter amount...',
@@ -1737,6 +1777,7 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
               TextField(
                 controller: _miscRemarksCtrl,
                 maxLines: 1,
+                style: TextStyle(fontSize: 13, color: tokens.textPrimary),
                 decoration: const InputDecoration(
                   labelText: 'Authorization Remarks',
                   hintText: 'Purpose or voucher reference...',
@@ -1750,10 +1791,10 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                 CheckboxListTile(
                   dense: true,
                   contentPadding: EdgeInsets.zero,
-                  title: const Text('Immediate Branch Manager Authorization', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
-                  subtitle: const Text('Authorize and settle immediately without queuing for review.', style: TextStyle(fontSize: 11, color: Color(0xFF64748B))),
+                  title: Text('Immediate Branch Manager Authorization', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: tokens.textPrimary)),
+                  subtitle: Text('Authorize and settle immediately without queuing for review.', style: TextStyle(fontSize: 11, color: tokens.textMuted)),
                   value: _miscAutoExec,
-                  activeColor: const Color(0xFF15803D),
+                  activeColor: tokens.brandPrimary,
                   onChanged: (v) => setState(() => _miscAutoExec = v ?? true),
                   controlAffinity: ListTileControlAffinity.leading,
                 ),
@@ -1764,8 +1805,10 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                 height: 42,
                 child: ElevatedButton.icon(
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: (isManager && _miscAutoExec) ? const Color(0xFF15803D) : const Color(0xFF064E3B),
+                    backgroundColor: (isManager && _miscAutoExec) ? const Color(0xFF15803D) : tokens.brandPrimaryDark,
                     foregroundColor: Colors.white,
+                    disabledBackgroundColor: tokens.surfaceSubtle,
+                    disabledForegroundColor: tokens.textMuted,
                     elevation: 0,
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                   ),
@@ -1792,6 +1835,7 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
   // TAB 4 BUILDER: LAPS SAVINGS
   // ==========================================================================
   Widget _buildLapsTab(bool isManager) {
+    final tokens = IcareSurfaceTokens.of(context);
     final lapsAsync = ref.watch(lapsOptionsProvider);
 
     return lapsAsync.when(
@@ -1804,14 +1848,14 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
           return Container(
             padding: const EdgeInsets.all(24),
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: tokens.surface,
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: const Color(0xFFE2E8F0)),
+              border: Border.all(color: tokens.borderSubtle),
             ),
-            child: const Center(
+            child: Center(
               child: Text(
                 'No LAPS savings records found for payout. LAPS records are created for closed clients and groups.',
-                style: TextStyle(color: Color(0xFF64748B), fontSize: 13),
+                style: TextStyle(color: tokens.textMuted, fontSize: 13),
               ),
             ),
           );
@@ -1831,6 +1875,8 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
             DropdownButtonFormField<String>(
               value: _selectedLapsClientId,
               isExpanded: true,
+              dropdownColor: tokens.surfaceElevated,
+              style: TextStyle(fontSize: 13, color: tokens.textPrimary),
               decoration: const InputDecoration(
                 labelText: 'Select LAPS Record',
                 isDense: true,
@@ -1900,10 +1946,10 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                       decoration: BoxDecoration(
-                        color: isSelected ? const Color(0xFFF0FDF4) : const Color(0xFFF8FAFC),
+                        color: isSelected ? tokens.successBg : tokens.surfaceSubtle,
                         borderRadius: BorderRadius.circular(8),
                         border: Border.all(
-                          color: isSelected ? const Color(0xFF15803D) : const Color(0xFFCBD5E1),
+                          color: isSelected ? tokens.successBorder : tokens.borderStrong,
                           width: isSelected ? 1.5 : 1.0,
                         ),
                       ),
@@ -1918,7 +1964,7 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                                 decoration: BoxDecoration(
                                   shape: BoxShape.circle,
                                   border: Border.all(
-                                    color: isSelected ? const Color(0xFF15803D) : const Color(0xFF94A3B8),
+                                    color: isSelected ? tokens.brandPrimary : tokens.textMuted,
                                     width: isSelected ? 4 : 1.5,
                                   ),
                                 ),
@@ -1930,7 +1976,7 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                                   style: TextStyle(
                                     fontSize: 12.5,
                                     fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
-                                    color: isSelected ? const Color(0xFF15803D) : const Color(0xFF0F172A),
+                                    color: isSelected ? tokens.successText : tokens.textPrimary,
                                   ),
                                 ),
                               ),
@@ -1939,7 +1985,7 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                           const SizedBox(height: 3),
                           Text(
                             opt['subtitle']!,
-                            style: const TextStyle(fontSize: 10.5, color: Color(0xFF64748B)),
+                            style: TextStyle(fontSize: 10.5, color: tokens.textMuted),
                           ),
                         ],
                       ),
@@ -1967,11 +2013,11 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
             TextField(
               controller: _lapsAmountCtrl,
               keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              style: TextStyle(fontSize: 13, color: tokens.textPrimary),
               decoration: const InputDecoration(
                 labelText: 'Payout Amount (₦)',
                 hintText: 'Enter amount...',
                 isDense: true,
-                
                 border: OutlineInputBorder(),
                 contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               ),
@@ -1982,11 +2028,11 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
             TextField(
               controller: _lapsRemarksCtrl,
               maxLines: 1,
+              style: TextStyle(fontSize: 13, color: tokens.textPrimary),
               decoration: const InputDecoration(
                 labelText: 'Remarks & Client Verification',
                 hintText: 'Identity notes or details...',
                 isDense: true,
-                
                 border: OutlineInputBorder(),
                 contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               ),
@@ -1998,10 +2044,10 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
               CheckboxListTile(
                 dense: true,
                 contentPadding: EdgeInsets.zero,
-                title: const Text('Immediate Branch Manager Authorization', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
-                subtitle: const Text('Authorize and settle immediately without queuing for review.', style: TextStyle(fontSize: 11, color: Color(0xFF64748B))),
+                title: Text('Immediate Branch Manager Authorization', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: tokens.textPrimary)),
+                subtitle: Text('Authorize and settle immediately without queuing for review.', style: TextStyle(fontSize: 11, color: tokens.textMuted)),
                 value: _lapsAutoExec,
-                activeColor: const Color(0xFF15803D),
+                activeColor: tokens.brandPrimary,
                 onChanged: (v) => setState(() => _lapsAutoExec = v ?? false),
                 controlAffinity: ListTileControlAffinity.leading,
               ),
@@ -2014,8 +2060,10 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
               height: 42,
               child: ElevatedButton.icon(
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: (isManager && _lapsAutoExec) ? const Color(0xFF15803D) : const Color(0xFF064E3B),
+                  backgroundColor: (isManager && _lapsAutoExec) ? const Color(0xFF15803D) : tokens.brandPrimaryDark,
                   foregroundColor: Colors.white,
+                  disabledBackgroundColor: tokens.surfaceSubtle,
+                  disabledForegroundColor: tokens.textMuted,
                   elevation: 0,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                 ),
@@ -2048,6 +2096,7 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
   // TAB 5 BUILDER: PENDING APPROVALS (BM ONLY)
   // ==========================================================================
   Widget _buildPendingApprovalsTab() {
+    final tokens = IcareSurfaceTokens.of(context);
     final pendingAsync = ref.watch(pendingApprovalsProvider);
 
     return pendingAsync.when(
@@ -2068,9 +2117,9 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
             width: double.infinity,
             padding: const EdgeInsets.symmetric(vertical: 48, horizontal: 24),
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: tokens.surface,
               borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: const Color(0xFFE2E8F0)),
+              border: Border.all(color: tokens.borderSubtle),
             ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -2079,30 +2128,30 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                   width: 56,
                   height: 56,
                   decoration: BoxDecoration(
-                    color: const Color(0xFFF0FDF4),
+                    color: tokens.successBg,
                     shape: BoxShape.circle,
-                    border: Border.all(color: const Color(0xFFBBF7D0)),
+                    border: Border.all(color: tokens.successBorder),
                   ),
-                  child: const Icon(
+                  child: Icon(
                     Icons.check_circle_outline_rounded,
                     size: 28,
-                    color: Color(0xFF15803D),
+                    color: tokens.successDot,
                   ),
                 ),
                 const SizedBox(height: 16),
-                const Text(
+                Text(
                   'All Caught Up',
                   style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w700,
-                    color: Color(0xFF0F172A),
+                    color: tokens.textPrimary,
                   ),
                 ),
                 const SizedBox(height: 6),
-                const Text(
+                Text(
                   'There are no withdrawal requests pending Branch Manager review or authorization.',
                   textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 13, color: Color(0xFF64748B)),
+                  style: TextStyle(fontSize: 13, color: tokens.textMuted),
                 ),
               ],
             ),
@@ -2118,14 +2167,14 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                 Container(
                   padding: const EdgeInsets.all(6),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFFEF2F2),
+                    color: tokens.dangerBg,
                     borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: const Color(0xFFFECACA)),
+                    border: Border.all(color: tokens.dangerBorder),
                   ),
-                  child: const Icon(
+                  child: Icon(
                     Icons.gavel_rounded,
                     size: 16,
-                    color: Color(0xFFDC2626),
+                    color: tokens.dangerDot,
                   ),
                 ),
                 const SizedBox(width: 10),
@@ -2135,17 +2184,17 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                     children: [
                       Text(
                         'Pending Authorizations (${pendingList.length})',
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.w700,
-                          color: Color(0xFF0F172A),
+                          color: tokens.textPrimary,
                         ),
                         softWrap: true,
                       ),
                       const SizedBox(height: 1),
-                      const Text(
+                      Text(
                         'Review submitted withdrawal requests for approval or rejection.',
-                        style: TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                        style: TextStyle(fontSize: 11, color: tokens.textMuted),
                         softWrap: true,
                       ),
                     ],
@@ -2176,15 +2225,15 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                 margin: const EdgeInsets.only(bottom: 10),
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: Colors.white,
+                  color: tokens.surface,
                   borderRadius: BorderRadius.circular(10),
                   border: Border.all(
-                    color: isRejecting ? const Color(0xFFFCA5A5) : const Color(0xFFE2E8F0),
+                    color: isRejecting ? tokens.dangerBorder : tokens.borderSubtle,
                     width: isRejecting ? 1.5 : 1,
                   ),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.02),
+                      color: Colors.black.withValues(alpha: tokens.isDark ? 0.18 : 0.02),
                       blurRadius: 4,
                       offset: const Offset(0, 1),
                     ),
@@ -2200,11 +2249,11 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                           children: [
                             CircleAvatar(
                               radius: 16,
-                              backgroundColor: const Color(0xFF064E3B).withValues(alpha: 0.1),
+                              backgroundColor: tokens.brandSoftBg,
                               child: Text(
                                 initials,
-                                style: const TextStyle(
-                                  color: Color(0xFF064E3B),
+                                style: TextStyle(
+                                  color: tokens.brandSoftText,
                                   fontWeight: FontWeight.w700,
                                   fontSize: 11,
                                 ),
@@ -2217,10 +2266,10 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                                 children: [
                                   Text(
                                     clientName,
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       fontWeight: FontWeight.w700,
                                       fontSize: 14,
-                                      color: Color(0xFF0F172A),
+                                      color: tokens.textPrimary,
                                     ),
                                     softWrap: true,
                                   ),
@@ -2233,16 +2282,16 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                                         Container(
                                           padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
                                           decoration: BoxDecoration(
-                                            color: const Color(0xFFF1F5F9),
+                                            color: tokens.surfaceSubtle,
                                             borderRadius: BorderRadius.circular(4),
                                           ),
                                           child: Text(
                                             clientCode,
-                                            style: const TextStyle(
+                                            style: TextStyle(
                                               fontSize: 10,
                                               fontFamily: 'JetBrains Mono',
                                               fontWeight: FontWeight.w600,
-                                              color: Color(0xFF475569),
+                                              color: tokens.textSecondary,
                                             ),
                                           ),
                                         ),
@@ -2250,15 +2299,15 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                                         Container(
                                           padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
                                           decoration: BoxDecoration(
-                                            color: const Color(0xFFF0FDF4),
+                                            color: tokens.successBg,
                                             borderRadius: BorderRadius.circular(4),
                                           ),
                                           child: Text(
                                             groupName,
-                                            style: const TextStyle(
+                                            style: TextStyle(
                                               fontSize: 10,
                                               fontWeight: FontWeight.w600,
-                                              color: Color(0xFF15803D),
+                                              color: tokens.successText,
                                             ),
                                             softWrap: true,
                                           ),
@@ -2266,15 +2315,15 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                                       Container(
                                         padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
                                         decoration: BoxDecoration(
-                                          color: const Color(0xFFEFF6FF),
+                                          color: tokens.infoBg,
                                           borderRadius: BorderRadius.circular(4),
                                         ),
                                         child: Text(
                                           '$savingsType - $opType',
-                                          style: const TextStyle(
+                                          style: TextStyle(
                                             fontSize: 10,
                                             fontWeight: FontWeight.w600,
-                                            color: Color(0xFF2563EB),
+                                            color: tokens.infoText,
                                           ),
                                           softWrap: true,
                                         ),
@@ -2292,27 +2341,27 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                           children: [
                             Text(
                               CurrencyFormatter.formatNaira(amt),
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 16,
                                 fontWeight: FontWeight.w800,
-                                color: Color(0xFFDC2626),
-                                fontFeatures: [FontFeature.tabularFigures()],
+                                color: tokens.dangerText,
+                                fontFeatures: const [FontFeature.tabularFigures()],
                               ),
                             ),
                             const SizedBox(height: 2),
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                               decoration: BoxDecoration(
-                                color: const Color(0xFFFEF2F2),
+                                color: tokens.dangerBg,
                                 borderRadius: BorderRadius.circular(4),
-                                border: Border.all(color: const Color(0xFFFECACA)),
+                                border: Border.all(color: tokens.dangerBorder),
                               ),
-                              child: const Text(
+                              child: Text(
                                 'Awaiting Approval',
                                 style: TextStyle(
                                   fontSize: 10,
                                   fontWeight: FontWeight.w700,
-                                  color: Color(0xFFDC2626),
+                                  color: tokens.dangerText,
                                 ),
                               ),
                             ),
@@ -2344,18 +2393,18 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                     Container(
                       padding: const EdgeInsets.all(8),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFF8FAFC),
+                        color: tokens.surfaceSubtle,
                         borderRadius: BorderRadius.circular(6),
                       ),
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Icon(Icons.info_outline_rounded, size: 14, color: Color(0xFF64748B)),
+                          Icon(Icons.info_outline_rounded, size: 14, color: tokens.textMuted),
                           const SizedBox(width: 6),
                           Expanded(
                             child: Text(
                               'Requested by $reqBy | Date: $opDate${remarks.isNotEmpty ? " | Notes: $remarks" : ""}',
-                              style: const TextStyle(fontSize: 11, color: Color(0xFF475569)),
+                              style: TextStyle(fontSize: 11, color: tokens.textSecondary),
                               softWrap: true,
                             ),
                           ),
@@ -2370,18 +2419,18 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                         width: double.infinity,
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                         decoration: BoxDecoration(
-                          color: const Color(0xFFFFFBEB),
+                          color: tokens.warningBg,
                           borderRadius: BorderRadius.circular(6),
-                          border: Border.all(color: const Color(0xFFFDE68A)),
+                          border: Border.all(color: tokens.warningBorder),
                         ),
-                        child: const Row(
+                        child: Row(
                           children: [
-                            Icon(Icons.verified_user_outlined, size: 14, color: Color(0xFFB45309)),
-                            SizedBox(width: 6),
+                            Icon(Icons.verified_user_outlined, size: 14, color: tokens.warningDot),
+                            const SizedBox(width: 6),
                             Expanded(
                               child: Text(
                                 'Maker-Checker: Awaiting peer manager review',
-                                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF92400E)),
+                                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: tokens.warningText),
                                 softWrap: true,
                               ),
                             ),
@@ -2392,29 +2441,31 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                       Container(
                         padding: const EdgeInsets.all(10),
                         decoration: BoxDecoration(
-                          color: const Color(0xFFFEF2F2),
+                          color: tokens.dangerBg,
                           borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: const Color(0xFFFECACA)),
+                          border: Border.all(color: tokens.dangerBorder),
                         ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Text(
+                            Text(
                               'Specify Rejection Reason',
                               style: TextStyle(
                                 fontSize: 12,
                                 fontWeight: FontWeight.w700,
-                                color: Color(0xFF991B1B),
+                                color: tokens.dangerText,
                               ),
                             ),
                             const SizedBox(height: 6),
                             TextField(
                               controller: _rejectReasonCtrl,
-                              decoration: const InputDecoration(
+                              style: TextStyle(color: tokens.textPrimary, fontSize: 13),
+                              decoration: InputDecoration(
                                 hintText: 'Enter reason for rejecting this request...',
-                                border: OutlineInputBorder(),
-                                contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                                fillColor: Colors.white,
+                                hintStyle: TextStyle(color: tokens.textMuted),
+                                border: const OutlineInputBorder(),
+                                contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                fillColor: tokens.surface,
                                 filled: true,
                                 isDense: true,
                               ),
@@ -2432,8 +2483,8 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                                     _rejectReasonCtrl.clear();
                                   }),
                                   style: OutlinedButton.styleFrom(
-                                    foregroundColor: const Color(0xFF64748B),
-                                    side: const BorderSide(color: Color(0xFFCBD5E1)),
+                                    foregroundColor: tokens.textSecondary,
+                                    side: BorderSide(color: tokens.borderStrong),
                                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                                     visualDensity: VisualDensity.compact,
                                   ),
@@ -2469,8 +2520,8 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                                       _rejectReasonCtrl.clear();
                                     }),
                             style: OutlinedButton.styleFrom(
-                              foregroundColor: const Color(0xFFDC2626),
-                              side: const BorderSide(color: Color(0xFFFCA5A5)),
+                              foregroundColor: tokens.dangerText,
+                              side: BorderSide(color: tokens.dangerBorder),
                               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
                               visualDensity: VisualDensity.compact,
@@ -2511,6 +2562,7 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
   // TAB 6 BUILDER: DAILY WITHDRAWALS
   // ==========================================================================
   Widget _buildDailyWithdrawalsTab(bool isManager) {
+    final tokens = IcareSurfaceTokens.of(context);
     final dwAsync = ref.watch(dailyWithdrawalsProvider);
     final showAll = ref.watch(dwShowAllProvider);
     final catFilter = ref.watch(dwCategoryProvider);
@@ -2541,10 +2593,10 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                 final isNarrow = constraints.maxWidth < 650;
                 final titleCol = Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
-                  children: const [
-                    Text('Daily Withdrawals', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Color(0xFF0F172A))),
-                    SizedBox(height: 2),
-                    Text('Review all savings withdrawals, upfront loan fee deductions, and request status for your clients.', style: TextStyle(fontSize: 11, color: Color(0xFF64748B)), softWrap: true),
+                  children: [
+                    Text('Daily Withdrawals', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: tokens.textPrimary)),
+                    const SizedBox(height: 2),
+                    Text('Review all savings withdrawals, upfront loan fee deductions, and request status for your clients.', style: TextStyle(fontSize: 11, color: tokens.textMuted), softWrap: true),
                   ],
                 );
                 final checkboxRow = Row(
@@ -2555,7 +2607,7 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                       visualDensity: VisualDensity.compact,
                       onChanged: (v) => ref.read(dwShowAllProvider.notifier).state = v ?? false,
                     ),
-                    const Text('Show all dates', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                    Text('Show all dates', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tokens.textPrimary)),
                   ],
                 );
                 if (isNarrow) {
@@ -2582,12 +2634,12 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
             // Top 6 KPI Cards
             LayoutBuilder(
               builder: (context, constraints) {
-                final c1 = _buildMetricTile(showAll ? 'Total Withdrawn' : 'Total Today', CurrencyFormatter.formatNaira(totWithdrawn), const Color(0xFF0F172A));
-                final c2 = _buildMetricTile('Loan Fees', CurrencyFormatter.formatNaira(feesDeducted), const Color(0xFF2563EB));
-                final c3 = _buildMetricTile('Cash & Bank Paid', CurrencyFormatter.formatNaira(cashBankPaid), const Color(0xFF15803D));
-                final c4 = _buildMetricTile('Debt/Fee Offsets', CurrencyFormatter.formatNaira(debtOffsets), const Color(0xFFD97706));
-                final c5 = _buildMetricTile('LAPS Reserve', CurrencyFormatter.formatNaira(lapsReserved), const Color(0xFF7C3AED));
-                final c6 = _buildMetricTile('Waiting Approval', '$waitCount req (${CurrencyFormatter.formatNaira(waitAmt)})', const Color(0xFFB91C1C));
+                final c1 = _buildMetricTile(showAll ? 'Total Withdrawn' : 'Total Today', CurrencyFormatter.formatNaira(totWithdrawn), tokens.textPrimary);
+                final c2 = _buildMetricTile('Loan Fees', CurrencyFormatter.formatNaira(feesDeducted), tokens.infoText);
+                final c3 = _buildMetricTile('Cash & Bank Paid', CurrencyFormatter.formatNaira(cashBankPaid), tokens.successText);
+                final c4 = _buildMetricTile('Debt/Fee Offsets', CurrencyFormatter.formatNaira(debtOffsets), tokens.warningText);
+                final c5 = _buildMetricTile('LAPS Reserve', CurrencyFormatter.formatNaira(lapsReserved), tokens.isDark ? const Color(0xFFA78BFA) : const Color(0xFF7C3AED));
+                final c6 = _buildMetricTile('Waiting Approval', '$waitCount req (${CurrencyFormatter.formatNaira(waitAmt)})', tokens.dangerText);
 
                 if (constraints.maxWidth >= 900) {
                   return Row(
@@ -2635,6 +2687,8 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                 final dropdown = DropdownButtonFormField<String>(
                   value: catFilter,
                   isExpanded: true,
+                  dropdownColor: tokens.surfaceElevated,
+                  style: TextStyle(fontSize: 13, color: tokens.textPrimary),
                   decoration: const InputDecoration(
                     labelText: 'Filter by Type',
                     border: OutlineInputBorder(),
@@ -2656,6 +2710,7 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                   },
                 );
                 final searchField = TextField(
+                  style: TextStyle(fontSize: 13, color: tokens.textPrimary),
                   decoration: const InputDecoration(
                     labelText: 'Search records',
                     hintText: 'Type client name, code, or loan ID...',
@@ -2720,6 +2775,7 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
   }
 
   Widget _buildSubtabButton(int idx, String title) {
+    final tokens = IcareSurfaceTokens.of(context);
     final isSel = _dwSubtabIndex == idx;
     return InkWell(
       onTap: () => setState(() => _dwSubtabIndex = idx),
@@ -2727,13 +2783,13 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         decoration: BoxDecoration(
-          color: isSel ? const Color(0xFFF1F5F9) : Colors.transparent,
+          color: isSel ? tokens.surfaceElevated : Colors.transparent,
           borderRadius: BorderRadius.circular(6),
-          border: Border.all(color: isSel ? const Color(0xFFCBD5E1) : const Color(0xFFE2E8F0)),
+          border: Border.all(color: isSel ? tokens.borderStrong : tokens.borderSubtle),
         ),
         child: Text(
           title,
-          style: TextStyle(fontSize: 11, fontWeight: isSel ? FontWeight.w700 : FontWeight.w500, color: isSel ? const Color(0xFF0F172A) : const Color(0xFF64748B)),
+          style: TextStyle(fontSize: 11, fontWeight: isSel ? FontWeight.w700 : FontWeight.w500, color: isSel ? tokens.textPrimary : tokens.textMuted),
           softWrap: true,
         ),
       ),
@@ -2741,15 +2797,16 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
   }
 
   Widget _buildStatusPill(String rawStatus) {
+    final tokens = IcareSurfaceTokens.of(context);
     final s = rawStatus.toUpperCase().trim();
-    Color bg = const Color(0xFFDCFCE7);
-    Color txt = const Color(0xFF15803D);
+    Color bg = tokens.successBg;
+    Color txt = tokens.successText;
     if (s == 'REVERSAL' || s == 'REJECTED') {
-      bg = const Color(0xFFFEE2E2);
-      txt = const Color(0xFFB91C1C);
+      bg = tokens.dangerBg;
+      txt = tokens.dangerText;
     } else if (s == 'REVERSED' || s == 'PENDING' || s == 'PROCESSING') {
-      bg = const Color(0xFFFEF3C7);
-      txt = const Color(0xFFB45309);
+      bg = tokens.warningBg;
+      txt = tokens.warningText;
     }
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
@@ -2765,16 +2822,17 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
   }
 
   Widget _buildAllWithdrawalsTable(List<Map<String, dynamic>> records) {
+    final tokens = IcareSurfaceTokens.of(context);
     if (records.isEmpty) {
       return Container(
         padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(color: const Color(0xFFF8FAFC), borderRadius: BorderRadius.circular(8), border: Border.all(color: const Color(0xFFE2E8F0))),
-        child: const Center(child: Text('No withdrawals found for the selected criteria.', style: TextStyle(color: Color(0xFF64748B), fontSize: 13), softWrap: true)),
+        decoration: BoxDecoration(color: tokens.surfaceSubtle, borderRadius: BorderRadius.circular(8), border: Border.all(color: tokens.borderSubtle)),
+        child: Center(child: Text('No withdrawals found for the selected criteria.', style: TextStyle(color: tokens.textMuted, fontSize: 13), softWrap: true)),
       );
     }
 
     return Container(
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(8), border: Border.all(color: const Color(0xFFE2E8F0))),
+      decoration: BoxDecoration(color: tokens.surface, borderRadius: BorderRadius.circular(8), border: Border.all(color: tokens.borderSubtle)),
       child: Scrollbar(
         thumbVisibility: true,
         child: SingleChildScrollView(
@@ -2785,7 +2843,9 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
             dataRowMaxHeight: 48,
             horizontalMargin: 10,
             columnSpacing: 12,
-            headingRowColor: WidgetStateProperty.all(const Color(0xFFF8FAFC)),
+            headingRowColor: WidgetStateProperty.all(tokens.surfaceSubtle),
+            headingTextStyle: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: tokens.textPrimary),
+            dataTextStyle: TextStyle(fontSize: 11.5, color: tokens.textSecondary),
             columns: const [
               DataColumn(label: Text('Date', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
               DataColumn(label: Text('Client Name', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
@@ -2805,24 +2865,24 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                   ? '-${CurrencyFormatter.formatNaira(amt.abs())}'
                   : CurrencyFormatter.formatNaira(amt);
               return DataRow(cells: [
-                DataCell(Text(r['date']?.toString() ?? '', style: const TextStyle(fontSize: 11))),
+                DataCell(Text(r['date']?.toString() ?? '', style: TextStyle(fontSize: 11, color: tokens.textSecondary))),
                 DataCell(
                   ConstrainedBox(
                     constraints: const BoxConstraints(maxWidth: 150),
-                    child: Text(r['client_name']?.toString() ?? '', style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12), softWrap: true),
+                    child: Text(r['client_name']?.toString() ?? '', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12, color: tokens.textPrimary), softWrap: true),
                   ),
                 ),
-                DataCell(Text(r['client_code']?.toString() ?? '', style: const TextStyle(fontSize: 11, fontFamily: 'JetBrains Mono'))),
+                DataCell(Text(r['client_code']?.toString() ?? '', style: TextStyle(fontSize: 11, fontFamily: 'JetBrains Mono', color: tokens.textSecondary))),
                 DataCell(
                   ConstrainedBox(
                     constraints: const BoxConstraints(maxWidth: 110),
-                    child: Text(r['group']?.toString() ?? '', style: const TextStyle(fontSize: 11), softWrap: true),
+                    child: Text(r['group']?.toString() ?? '', style: TextStyle(fontSize: 11, color: tokens.textSecondary), softWrap: true),
                   ),
                 ),
                 DataCell(
                   ConstrainedBox(
                     constraints: const BoxConstraints(maxWidth: 130),
-                    child: Text(r['category']?.toString() ?? '', style: const TextStyle(fontSize: 11), softWrap: true),
+                    child: Text(r['category']?.toString() ?? '', style: TextStyle(fontSize: 11, color: tokens.textSecondary), softWrap: true),
                   ),
                 ),
                 DataCell(
@@ -2831,7 +2891,7 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                     style: TextStyle(
                       fontWeight: FontWeight.w700,
                       fontSize: 12,
-                      color: isNeg ? const Color(0xFFB91C1C) : const Color(0xFF0F172A),
+                      color: isNeg ? tokens.dangerText : tokens.textPrimary,
                       fontFeatures: const [FontFeature.tabularFigures()],
                     ),
                   ),
@@ -2839,13 +2899,13 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                 DataCell(
                   ConstrainedBox(
                     constraints: const BoxConstraints(maxWidth: 170),
-                    child: Text(_cleanRemarks(r['details']), style: const TextStyle(fontSize: 11), softWrap: true),
+                    child: Text(_cleanRemarks(r['details']), style: TextStyle(fontSize: 11, color: tokens.textSecondary), softWrap: true),
                   ),
                 ),
                 DataCell(
                   ConstrainedBox(
                     constraints: const BoxConstraints(maxWidth: 120),
-                    child: Text(r['reference']?.toString() ?? '', style: const TextStyle(fontFamily: 'JetBrains Mono', fontSize: 10), softWrap: true),
+                    child: Text(r['reference']?.toString() ?? '', style: TextStyle(fontFamily: 'JetBrains Mono', fontSize: 10, color: tokens.textMuted), softWrap: true),
                   ),
                 ),
                 DataCell(_buildStatusPill(recStatus)),
@@ -2858,21 +2918,22 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
   }
 
   Widget _buildLoanFeeDeductionsTable(List<Map<String, dynamic>> records) {
+    final tokens = IcareSurfaceTokens.of(context);
     if (records.isEmpty) {
       return Container(
         padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(color: const Color(0xFFF8FAFC), borderRadius: BorderRadius.circular(8), border: Border.all(color: const Color(0xFFE2E8F0))),
-        child: const Center(child: Text('No loan fee deductions found for the selected criteria.', style: TextStyle(color: Color(0xFF64748B), fontSize: 13), softWrap: true)),
+        decoration: BoxDecoration(color: tokens.surfaceSubtle, borderRadius: BorderRadius.circular(8), border: Border.all(color: tokens.borderSubtle)),
+        child: Center(child: Text('No loan fee deductions found for the selected criteria.', style: TextStyle(color: tokens.textMuted, fontSize: 13), softWrap: true)),
       );
     }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text("When a loan is disbursed, markup interest and gap fees are automatically deducted from the borrower's savings.", style: TextStyle(fontSize: 11, color: Color(0xFF64748B)), softWrap: true),
+        Text("When a loan is disbursed, markup interest and gap fees are automatically deducted from the borrower's savings.", style: TextStyle(fontSize: 11, color: tokens.textMuted), softWrap: true),
         const SizedBox(height: 8),
         Container(
-          decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(8), border: Border.all(color: const Color(0xFFE2E8F0))),
+          decoration: BoxDecoration(color: tokens.surface, borderRadius: BorderRadius.circular(8), border: Border.all(color: tokens.borderSubtle)),
           child: Scrollbar(
             thumbVisibility: true,
             child: SingleChildScrollView(
@@ -2883,7 +2944,9 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                 dataRowMaxHeight: 48,
                 horizontalMargin: 10,
                 columnSpacing: 12,
-                headingRowColor: WidgetStateProperty.all(const Color(0xFFF8FAFC)),
+                headingRowColor: WidgetStateProperty.all(tokens.surfaceSubtle),
+                headingTextStyle: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: tokens.textPrimary),
+                dataTextStyle: TextStyle(fontSize: 11.5, color: tokens.textSecondary),
                 columns: const [
                   DataColumn(label: Text('Date', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
                   DataColumn(label: Text('Client Name', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
@@ -2899,24 +2962,24 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                   final uGap = (r['gap_fee_deducted'] as num?)?.toDouble() ?? 0.0;
                   final tot = (r['total_deducted'] as num?)?.toDouble() ?? 0.0;
                   return DataRow(cells: [
-                    DataCell(Text(r['date']?.toString() ?? '', style: const TextStyle(fontSize: 11))),
+                    DataCell(Text(r['date']?.toString() ?? '', style: TextStyle(fontSize: 11, color: tokens.textSecondary))),
                     DataCell(
                       ConstrainedBox(
                         constraints: const BoxConstraints(maxWidth: 150),
-                        child: Text(r['client_name']?.toString() ?? '', style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12), softWrap: true),
+                        child: Text(r['client_name']?.toString() ?? '', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12, color: tokens.textPrimary), softWrap: true),
                       ),
                     ),
-                    DataCell(Text(r['client_code']?.toString() ?? '', style: const TextStyle(fontSize: 11, fontFamily: 'JetBrains Mono'))),
+                    DataCell(Text(r['client_code']?.toString() ?? '', style: TextStyle(fontSize: 11, fontFamily: 'JetBrains Mono', color: tokens.textSecondary))),
                     DataCell(
                       ConstrainedBox(
                         constraints: const BoxConstraints(maxWidth: 130),
-                        child: Text(r['loan_ref']?.toString() ?? '', style: const TextStyle(fontSize: 11), softWrap: true),
+                        child: Text(r['loan_ref']?.toString() ?? '', style: TextStyle(fontSize: 11, color: tokens.textSecondary), softWrap: true),
                       ),
                     ),
-                    DataCell(Text(uInt > 0 ? CurrencyFormatter.formatNaira(uInt) : '-', style: const TextStyle(fontSize: 11, fontFeatures: [FontFeature.tabularFigures()]))),
-                    DataCell(Text(uGap > 0 ? CurrencyFormatter.formatNaira(uGap) : '-', style: const TextStyle(fontSize: 11, fontFeatures: [FontFeature.tabularFigures()]))),
-                    DataCell(Text(CurrencyFormatter.formatNaira(tot), style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12, fontFeatures: [FontFeature.tabularFigures()]))),
-                    DataCell(Text(r['status']?.toString() ?? 'Auto-deducted on Disbursement', style: const TextStyle(fontSize: 11, color: Color(0xFF047857)), softWrap: true)),
+                    DataCell(Text(uInt > 0 ? CurrencyFormatter.formatNaira(uInt) : '-', style: TextStyle(fontSize: 11, color: tokens.textSecondary, fontFeatures: const [FontFeature.tabularFigures()]))),
+                    DataCell(Text(uGap > 0 ? CurrencyFormatter.formatNaira(uGap) : '-', style: TextStyle(fontSize: 11, color: tokens.textSecondary, fontFeatures: const [FontFeature.tabularFigures()]))),
+                    DataCell(Text(CurrencyFormatter.formatNaira(tot), style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: tokens.textPrimary, fontFeatures: const [FontFeature.tabularFigures()]))),
+                    DataCell(Text(r['status']?.toString() ?? 'Auto-deducted on Disbursement', style: TextStyle(fontSize: 11, color: tokens.successText), softWrap: true)),
                   ]);
                 }).toList(),
               ),
@@ -2928,16 +2991,17 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
   }
 
   Widget _buildCashBankPayoutsTable(List<Map<String, dynamic>> records) {
+    final tokens = IcareSurfaceTokens.of(context);
     if (records.isEmpty) {
       return Container(
         padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(color: const Color(0xFFF8FAFC), borderRadius: BorderRadius.circular(8), border: Border.all(color: const Color(0xFFE2E8F0))),
-        child: const Center(child: Text('No cash or bank payouts found for the selected criteria.', style: TextStyle(color: Color(0xFF64748B), fontSize: 13), softWrap: true)),
+        decoration: BoxDecoration(color: tokens.surfaceSubtle, borderRadius: BorderRadius.circular(8), border: Border.all(color: tokens.borderSubtle)),
+        child: Center(child: Text('No cash or bank payouts found for the selected criteria.', style: TextStyle(color: tokens.textMuted, fontSize: 13), softWrap: true)),
       );
     }
 
     return Container(
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(8), border: Border.all(color: const Color(0xFFE2E8F0))),
+      decoration: BoxDecoration(color: tokens.surface, borderRadius: BorderRadius.circular(8), border: Border.all(color: tokens.borderSubtle)),
       child: Scrollbar(
         thumbVisibility: true,
         child: SingleChildScrollView(
@@ -2948,7 +3012,9 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
             dataRowMaxHeight: 48,
             horizontalMargin: 10,
             columnSpacing: 12,
-            headingRowColor: WidgetStateProperty.all(const Color(0xFFF8FAFC)),
+            headingRowColor: WidgetStateProperty.all(tokens.surfaceSubtle),
+            headingTextStyle: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: tokens.textPrimary),
+            dataTextStyle: TextStyle(fontSize: 11.5, color: tokens.textSecondary),
             columns: const [
               DataColumn(label: Text('Date', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
               DataColumn(label: Text('Client / Group', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
@@ -2961,31 +3027,31 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
             rows: records.map((r) {
               final amt = (r['amount'] as num?)?.toDouble() ?? 0.0;
               return DataRow(cells: [
-                DataCell(Text(r['date']?.toString() ?? '', style: const TextStyle(fontSize: 11))),
+                DataCell(Text(r['date']?.toString() ?? '', style: TextStyle(fontSize: 11, color: tokens.textSecondary))),
                 DataCell(
                   ConstrainedBox(
                     constraints: const BoxConstraints(maxWidth: 150),
-                    child: Text(r['client_name']?.toString() ?? '', style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12), softWrap: true),
+                    child: Text(r['client_name']?.toString() ?? '', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12, color: tokens.textPrimary), softWrap: true),
                   ),
                 ),
                 DataCell(
                   ConstrainedBox(
                     constraints: const BoxConstraints(maxWidth: 110),
-                    child: Text(r['group']?.toString() ?? '', style: const TextStyle(fontSize: 11), softWrap: true),
+                    child: Text(r['group']?.toString() ?? '', style: TextStyle(fontSize: 11, color: tokens.textSecondary), softWrap: true),
                   ),
                 ),
-                DataCell(Text(r['payment_type']?.toString() ?? '', style: const TextStyle(fontSize: 11))),
-                DataCell(Text(CurrencyFormatter.formatNaira(amt), style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12, fontFeatures: [FontFeature.tabularFigures()]))),
+                DataCell(Text(r['payment_type']?.toString() ?? '', style: TextStyle(fontSize: 11, color: tokens.textSecondary))),
+                DataCell(Text(CurrencyFormatter.formatNaira(amt), style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: tokens.textPrimary, fontFeatures: const [FontFeature.tabularFigures()]))),
                 DataCell(
                   ConstrainedBox(
                     constraints: const BoxConstraints(maxWidth: 170),
-                    child: Text(_cleanRemarks(r['approval_notes']), style: const TextStyle(fontSize: 11), softWrap: true),
+                    child: Text(_cleanRemarks(r['approval_notes']), style: TextStyle(fontSize: 11, color: tokens.textSecondary), softWrap: true),
                   ),
                 ),
                 DataCell(
                   ConstrainedBox(
                     constraints: const BoxConstraints(maxWidth: 120),
-                    child: Text(r['reference']?.toString() ?? '', style: const TextStyle(fontFamily: 'JetBrains Mono', fontSize: 10), softWrap: true),
+                    child: Text(r['reference']?.toString() ?? '', style: TextStyle(fontFamily: 'JetBrains Mono', fontSize: 10, color: tokens.textMuted), softWrap: true),
                   ),
                 ),
               ]);
@@ -2997,11 +3063,12 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
   }
 
   Widget _buildMyRequestsList(List<Map<String, dynamic>> requests) {
+    final tokens = IcareSurfaceTokens.of(context);
     if (requests.isEmpty) {
       return Container(
         padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(color: const Color(0xFFF8FAFC), borderRadius: BorderRadius.circular(8), border: Border.all(color: const Color(0xFFE2E8F0))),
-        child: const Center(child: Text('No withdrawal requests found.', style: TextStyle(color: Color(0xFF64748B), fontSize: 13), softWrap: true)),
+        decoration: BoxDecoration(color: tokens.surfaceSubtle, borderRadius: BorderRadius.circular(8), border: Border.all(color: tokens.borderSubtle)),
+        child: Center(child: Text('No withdrawal requests found.', style: TextStyle(color: tokens.textMuted, fontSize: 13), softWrap: true)),
       );
     }
 
@@ -3021,13 +3088,13 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
         Color badgeColor;
         String badgeText;
         if (stStatus == 'APPROVED') {
-          badgeColor = const Color(0xFF15803D);
+          badgeColor = tokens.successText;
           badgeText = '[Approved]';
         } else if (stStatus == 'REJECTED') {
-          badgeColor = const Color(0xFFB91C1C);
+          badgeColor = tokens.dangerText;
           badgeText = '[Rejected]';
         } else {
-          badgeColor = const Color(0xFFB45309);
+          badgeColor = tokens.warningText;
           badgeText = '[Waiting for Approval]';
         }
 
@@ -3035,9 +3102,9 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
           margin: const EdgeInsets.only(bottom: 8),
           padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: tokens.surface,
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: const Color(0xFFE2E8F0)),
+            border: Border.all(color: tokens.borderSubtle),
           ),
           child: LayoutBuilder(
             builder: (context, constraints) {
@@ -3047,20 +3114,20 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                 children: [
                   Text(
                     '$name | $stype — $op | Ref: $refCode',
-                    style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: tokens.textPrimary),
                     softWrap: true,
                   ),
                   const SizedBox(height: 2),
                   Text(
                     'Requested by: ${req['requested_by']} | Date: $opDate',
-                    style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                    style: TextStyle(fontSize: 11, color: tokens.textMuted),
                     softWrap: true,
                   ),
                   if (remarks.isNotEmpty) ...[
                     const SizedBox(height: 2),
                     Text(
                       'Notes: $remarks',
-                      style: const TextStyle(fontSize: 11, fontStyle: FontStyle.italic, color: Color(0xFF475569)),
+                      style: TextStyle(fontSize: 11, fontStyle: FontStyle.italic, color: tokens.textSecondary),
                       softWrap: true,
                     ),
                   ],
@@ -3068,14 +3135,14 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                     const SizedBox(height: 2),
                     Text(
                       'Reason from Manager: $rejReason',
-                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFFB91C1C)),
+                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: tokens.dangerText),
                       softWrap: true,
                     ),
                   ] else if (stStatus == 'APPROVED' && appBy.isNotEmpty) ...[
                     const SizedBox(height: 2),
                     Text(
                       'Authorized by $appBy',
-                      style: const TextStyle(fontSize: 11, color: Color(0xFF15803D)),
+                      style: TextStyle(fontSize: 11, color: tokens.successText),
                       softWrap: true,
                     ),
                   ],
@@ -3127,17 +3194,18 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
     required DateTime opDate,
     required VoidCallback onChangeDate,
   }) {
+    final tokens = IcareSurfaceTokens.of(context);
     return Container(
       width: double.infinity,
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: tokens.surface,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: tokens.borderSubtle),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.02),
+            color: Colors.black.withValues(alpha: tokens.isDark ? 0.16 : 0.02),
             blurRadius: 4,
             offset: const Offset(0, 1),
           ),
@@ -3153,7 +3221,7 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                 width: 32,
                 height: 32,
                 decoration: BoxDecoration(
-                  color: const Color(0xFF064E3B),
+                  color: tokens.brandPrimaryDark,
                   borderRadius: BorderRadius.circular(6),
                 ),
                 alignment: Alignment.center,
@@ -3165,12 +3233,12 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Text(
+                    Text(
                       'Withdrawal Operations',
                       style: TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.w700,
-                        color: Color(0xFF0F172A),
+                        color: tokens.textPrimary,
                       ),
                       softWrap: true,
                     ),
@@ -3178,7 +3246,7 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                       isManager ? 'Branch Manager Mode' : 'Credit Officer Request Mode',
                       style: TextStyle(
                         fontSize: 11,
-                        color: isManager ? const Color(0xFF15803D) : const Color(0xFF2563EB),
+                        color: isManager ? tokens.successText : tokens.infoText,
                         fontWeight: FontWeight.w600,
                       ),
                       softWrap: true,
@@ -3195,27 +3263,27 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               decoration: BoxDecoration(
-                color: const Color(0xFFF1F5F9),
+                color: tokens.surfaceSubtle,
                 borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: const Color(0xFFCBD5E1)),
+                border: Border.all(color: tokens.borderStrong),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.calendar_today_rounded, size: 12, color: Color(0xFF475569)),
+                  Icon(Icons.calendar_today_rounded, size: 12, color: tokens.textSecondary),
                   const SizedBox(width: 5),
                   Text(
                     DateFormat('dd MMM yyyy').format(opDate),
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.w600,
-                      color: Color(0xFF334155),
+                      color: tokens.textSecondary,
                       fontFamily: 'JetBrains Mono',
-                      fontFeatures: [FontFeature.tabularFigures()],
+                      fontFeatures: const [FontFeature.tabularFigures()],
                     ),
                   ),
                   const SizedBox(width: 2),
-                  const Icon(Icons.arrow_drop_down_rounded, size: 16, color: Color(0xFF64748B)),
+                  Icon(Icons.arrow_drop_down_rounded, size: 16, color: tokens.textMuted),
                 ],
               ),
             ),
@@ -3233,18 +3301,18 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFF1F5F9),
+                    color: tokens.surfaceSubtle,
                     borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: const Color(0xFFCBD5E1)),
+                    border: Border.all(color: tokens.borderStrong),
                   ),
-                  child: const Row(
+                  child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.refresh_rounded, size: 13, color: Color(0xFF334155)),
-                      SizedBox(width: 4),
+                      Icon(Icons.refresh_rounded, size: 13, color: tokens.textSecondary),
+                      const SizedBox(width: 4),
                       Text(
                         'Refresh',
-                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF334155)),
+                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: tokens.textSecondary),
                       ),
                     ],
                   ),
@@ -3279,19 +3347,20 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
 
   Widget _buildFlashBanner() {
     if (_flashMessage == null) return const SizedBox.shrink();
+    final tokens = IcareSurfaceTokens.of(context);
     final isSuccess = _isSuccessFlash;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
-        color: isSuccess ? const Color(0xFFF0FDF4) : const Color(0xFFFEF2F2),
+        color: isSuccess ? tokens.successBg : tokens.dangerBg,
         borderRadius: BorderRadius.circular(10),
         border: Border.all(
-          color: isSuccess ? const Color(0xFF86EFAC) : const Color(0xFFFCA5A5),
+          color: isSuccess ? tokens.successBorder : tokens.dangerBorder,
           width: 1.2,
         ),
         boxShadow: [
           BoxShadow(
-            color: (isSuccess ? const Color(0xFF16A34A) : const Color(0xFFDC2626)).withValues(alpha: 0.05),
+            color: (isSuccess ? tokens.successDot : tokens.dangerDot).withValues(alpha: 0.05),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -3302,13 +3371,13 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
           Container(
             padding: const EdgeInsets.all(6),
             decoration: BoxDecoration(
-              color: isSuccess ? const Color(0xFFDCFCE7) : const Color(0xFFFEE2E2),
+              color: (isSuccess ? tokens.successBorder : tokens.dangerBorder).withValues(alpha: 0.35),
               borderRadius: BorderRadius.circular(6),
             ),
             child: Icon(
               isSuccess ? Icons.check_circle_rounded : Icons.error_outline_rounded,
               size: 18,
-              color: isSuccess ? const Color(0xFF15803D) : const Color(0xFFB91C1C),
+              color: isSuccess ? tokens.successText : tokens.dangerText,
             ),
           ),
           const SizedBox(width: 12),
@@ -3316,7 +3385,7 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
             child: Text(
               _flashMessage!,
               style: TextStyle(
-                color: isSuccess ? const Color(0xFF15803D) : const Color(0xFFB91C1C),
+                color: isSuccess ? tokens.successText : tokens.dangerText,
                 fontWeight: FontWeight.w600,
                 fontSize: 13,
               ),
@@ -3324,7 +3393,7 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
           ),
           IconButton(
             icon: const Icon(Icons.close_rounded, size: 16),
-            color: isSuccess ? const Color(0xFF15803D) : const Color(0xFFB91C1C),
+            color: isSuccess ? tokens.successText : tokens.dangerText,
             onPressed: () => setState(() => _flashMessage = null),
           ),
         ],
@@ -3337,12 +3406,13 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
     required String activeTab,
     required ValueChanged<String> onSelectTab,
   }) {
+    final tokens = IcareSurfaceTokens.of(context);
     return Container(
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
-        color: const Color(0xFFF1F5F9),
+        color: tokens.surfaceSubtle,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: tokens.borderSubtle),
       ),
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
@@ -3360,19 +3430,19 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                   duration: const Duration(milliseconds: 180),
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                   decoration: BoxDecoration(
-                    color: isSel ? Colors.white : Colors.transparent,
+                    color: isSel ? tokens.surfaceElevated : Colors.transparent,
                     borderRadius: BorderRadius.circular(8),
                     boxShadow: isSel
                         ? [
                             BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.05),
+                              color: Colors.black.withValues(alpha: tokens.isDark ? 0.2 : 0.05),
                               blurRadius: 3,
                               offset: const Offset(0, 1),
                             ),
                           ]
                         : null,
                     border: isSel
-                        ? Border.all(color: const Color(0xFFCBD5E1))
+                        ? Border.all(color: tokens.borderStrong)
                         : Border.all(color: Colors.transparent),
                   ),
                   child: Text(
@@ -3381,8 +3451,8 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                       fontSize: 12.5,
                       fontWeight: isSel ? FontWeight.w700 : FontWeight.w600,
                       color: isSel
-                          ? (isPending ? const Color(0xFFDC2626) : const Color(0xFF0F172A))
-                          : const Color(0xFF475569),
+                          ? (isPending ? tokens.dangerText : tokens.textPrimary)
+                          : tokens.textMuted,
                     ),
                   ),
                 ),
@@ -3400,13 +3470,14 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
     String? tag,
     String? subtitle,
   }) {
+    final tokens = IcareSurfaceTokens.of(context);
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
-        color: const Color(0xFFF0FDF4),
+        color: tokens.successBg,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFA7F3D0)),
+        border: Border.all(color: tokens.successBorder),
       ),
       child: LayoutBuilder(
         builder: (context, constraints) {
@@ -3418,7 +3489,7 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                 width: 28,
                 height: 28,
                 decoration: BoxDecoration(
-                  color: const Color(0xFF064E3B),
+                  color: tokens.brandPrimaryDark,
                   borderRadius: BorderRadius.circular(6),
                 ),
                 alignment: Alignment.center,
@@ -3432,10 +3503,10 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                   children: [
                     Text(
                       label,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w700,
-                        color: Color(0xFF0F172A),
+                        color: tokens.textPrimary,
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -3445,7 +3516,7 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                       const SizedBox(height: 1),
                       Text(
                         [if (tag != null) tag, if (subtitle != null) subtitle].join(' | '),
-                        style: const TextStyle(fontSize: 10, color: Color(0xFF047857), fontWeight: FontWeight.w600),
+                        style: TextStyle(fontSize: 10, color: tokens.successText, fontWeight: FontWeight.w600),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         softWrap: true,
@@ -3461,18 +3532,18 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
             crossAxisAlignment: isNarrow ? CrossAxisAlignment.start : CrossAxisAlignment.end,
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Text(
+              Text(
                 'AVAILABLE BALANCE',
-                style: TextStyle(fontSize: 9, fontWeight: FontWeight.w700, color: Color(0xFF047857), letterSpacing: 0.5),
+                style: TextStyle(fontSize: 9, fontWeight: FontWeight.w700, color: tokens.successText, letterSpacing: 0.5),
               ),
               Text(
                 CurrencyFormatter.formatNaira(balance),
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 15,
                   fontWeight: FontWeight.w800,
-                  color: Color(0xFF064E3B),
+                  color: tokens.successText,
                   fontFamily: 'JetBrains Mono',
-                  fontFeatures: [FontFeature.tabularFigures()],
+                  fontFeatures: const [FontFeature.tabularFigures()],
                 ),
               ),
             ],
@@ -3508,6 +3579,7 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
     required TextEditingController controller,
   }) {
     if (availableBalance <= 0) return const SizedBox.shrink();
+    final tokens = IcareSurfaceTokens.of(context);
 
     final presets = [
       {'label': '25%', 'ratio': 0.25},
@@ -3522,21 +3594,21 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            const Text(
+            Text(
               'QUICK PRESETS',
               style: TextStyle(
                 fontSize: 10,
                 fontWeight: FontWeight.w700,
-                color: Color(0xFF64748B),
+                color: tokens.textMuted,
                 letterSpacing: 0.5,
               ),
             ),
             Text(
               'Max: ${CurrencyFormatter.formatNaira(availableBalance)}',
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 10,
                 fontWeight: FontWeight.w600,
-                color: Color(0xFF047857),
+                color: tokens.successText,
               ),
             ),
           ],
@@ -3558,17 +3630,17 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                   child: Container(
                     padding: const EdgeInsets.symmetric(vertical: 6),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFF8FAFC),
+                      color: tokens.surfaceSubtle,
                       borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: const Color(0xFFCBD5E1)),
+                      border: Border.all(color: tokens.borderStrong),
                     ),
                     alignment: Alignment.center,
                     child: Text(
                       label,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.w700,
-                        color: Color(0xFF0F172A),
+                        color: tokens.textPrimary,
                       ),
                     ),
                   ),
@@ -3587,16 +3659,17 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
     required List<Widget> children,
     String? subtitle,
   }) {
+    final tokens = IcareSurfaceTokens.of(context);
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: tokens.surface,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: tokens.borderSubtle),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.02),
+            color: Colors.black.withValues(alpha: tokens.isDark ? 0.16 : 0.02),
             blurRadius: 6,
             offset: const Offset(0, 1),
           ),
@@ -3610,10 +3683,10 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
             children: [
               Text(
                 title,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 15,
                   fontWeight: FontWeight.w700,
-                  color: Color(0xFF0F172A),
+                  color: tokens.textPrimary,
                   letterSpacing: -0.2,
                 ),
                 softWrap: true,
@@ -3622,9 +3695,9 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                 const SizedBox(height: 2),
                 Text(
                   subtitle,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 11.5,
-                    color: Color(0xFF64748B),
+                    color: tokens.textMuted,
                   ),
                   softWrap: true,
                 ),
@@ -3632,7 +3705,7 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
             ],
           ),
           const SizedBox(height: 10),
-          const Divider(height: 1, color: Color(0xFFE2E8F0)),
+          Divider(height: 1, color: tokens.borderSubtle),
           const SizedBox(height: 12),
           ...children,
         ],
@@ -3641,20 +3714,21 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
   }
 
   Widget _buildMetricTile(String label, String value, Color color, {IconData? icon}) {
+    final tokens = IcareSurfaceTokens.of(context);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: tokens.surface,
         borderRadius: BorderRadius.circular(8),
         border: Border(
           top: BorderSide(color: color, width: 3),
-          left: const BorderSide(color: Color(0xFFE2E8F0)),
-          right: const BorderSide(color: Color(0xFFE2E8F0)),
-          bottom: const BorderSide(color: Color(0xFFE2E8F0)),
+          left: BorderSide(color: tokens.borderSubtle),
+          right: BorderSide(color: tokens.borderSubtle),
+          bottom: BorderSide(color: tokens.borderSubtle),
         ),
         boxShadow: [
           BoxShadow(
-            color: color.withValues(alpha: 0.03),
+            color: color.withValues(alpha: tokens.isDark ? 0.08 : 0.03),
             blurRadius: 4,
             offset: const Offset(0, 1),
           ),
@@ -3670,7 +3744,7 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
               Expanded(
                 child: Text(
                   label,
-                  style: const TextStyle(fontSize: 10, color: Color(0xFF64748B), fontWeight: FontWeight.w600),
+                  style: TextStyle(fontSize: 10, color: tokens.textMuted, fontWeight: FontWeight.w600),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   softWrap: true,
@@ -3705,22 +3779,23 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
   }
 
   Widget _buildErrorCard(String error, VoidCallback onRetry) {
+    final tokens = IcareSurfaceTokens.of(context);
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: const Color(0xFFFEF2F2),
+        color: tokens.dangerBg,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFFCA5A5)),
+        border: Border.all(color: tokens.dangerBorder),
       ),
       child: Column(
         children: [
-          Text(error, style: const TextStyle(color: Color(0xFFB91C1C), fontSize: 13)),
+          Text(error, style: TextStyle(color: tokens.dangerText, fontSize: 13)),
           const SizedBox(height: 12),
           ElevatedButton.icon(
             icon: const Icon(Icons.refresh, size: 16),
             label: const Text('Retry'),
             style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFFB91C1C),
+              backgroundColor: const Color(0xFFDC2626),
               foregroundColor: Colors.white,
               elevation: 0,
             ),

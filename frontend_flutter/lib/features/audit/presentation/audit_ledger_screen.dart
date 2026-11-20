@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 
 import '../../../core/auth/auth_controller.dart';
 import '../../../core/auth/auth_state.dart';
+import '../../../core/theme/icare_theme_tokens.dart';
 import '../data/datasources/audit_api_service.dart';
 import '../data/models/audit_models.dart';
 import '../../shared/utils/file_download_helper.dart';
@@ -249,6 +250,7 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
     }
 
     final isMobile = MediaQuery.of(context).size.width < 750;
+    final tokens = IcareSurfaceTokens.of(context);
 
     return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -259,18 +261,18 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
             style: TextStyle(
               fontSize: isMobile ? 20 : 26,
               fontWeight: FontWeight.w700,
-              color: const Color(0xFF0F172A),
+              color: tokens.textPrimary,
               letterSpacing: -0.5,
             ),
           ),
           const SizedBox(height: 4),
           Text(
             pageCaption,
-            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: Color(0xFF64748B)),
+            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: tokens.textMuted),
           ),
           const SizedBox(height: 16),
 
-          // Authentic Streamlit Pill Tabs Bar
+          // Authentic Pill Tabs Bar
           _buildPillTabsBar(availableTabs),
           const SizedBox(height: 20),
 
@@ -322,9 +324,10 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
     final role = (user?.role ?? '').trim().toLowerCase();
     final isAm = role == 'area manager' || role == 'am';
     final isBm = role == 'branch manager' || role == 'bm';
+    final tokens = IcareSurfaceTokens.of(context);
     final activeThemeColor = isAm
-        ? const Color(0xFF0F766E)
-        : (isBm ? const Color(0xFF2563EB) : const Color(0xFF2E86C1));
+        ? tokens.brandPrimaryDark
+        : (isBm ? const Color(0xFF1D4ED8) : tokens.brandPrimary);
 
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
@@ -341,10 +344,10 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
                 duration: const Duration(milliseconds: 150),
                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
                 decoration: BoxDecoration(
-                  color: isSelected ? activeThemeColor : Colors.white,
+                  color: isSelected ? activeThemeColor : tokens.surface,
                   borderRadius: BorderRadius.circular(10),
                   border: Border.all(
-                    color: isSelected ? activeThemeColor : const Color(0xFFE2E8F0),
+                    color: isSelected ? activeThemeColor : tokens.borderSubtle,
                     width: isSelected ? 1.5 : 1.0,
                   ),
                   boxShadow: isSelected
@@ -357,7 +360,7 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
                         ]
                       : [
                           BoxShadow(
-                            color: Colors.black.withOpacity(0.02),
+                            color: Colors.black.withOpacity(tokens.isDark ? 0.16 : 0.02),
                             blurRadius: 2,
                             offset: const Offset(0, 1),
                           ),
@@ -369,7 +372,7 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
                     Icon(
                       icon,
                       size: 16,
-                      color: isSelected ? Colors.white : const Color(0xFF64748B),
+                      color: isSelected ? Colors.white : tokens.textMuted,
                     ),
                     const SizedBox(width: 8),
                     Text(
@@ -377,7 +380,7 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
                       style: TextStyle(
                         fontSize: 12.5,
                         fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
-                        color: isSelected ? Colors.white : const Color(0xFF334155),
+                        color: isSelected ? Colors.white : tokens.textSecondary,
                       ),
                     ),
                   ],
@@ -435,11 +438,12 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
       _selectedIntegrityBranch = bOptions.isNotEmpty ? bOptions.first : branchId;
     }
     final effectiveBranchId = _resolveTargetBranchId(_selectedIntegrityBranch!, branchId) ?? branchId;
+    final tokens = IcareSurfaceTokens.of(context);
     if (effectiveBranchId.isEmpty) {
       return Container(
         padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(color: const Color(0xFFFFFBEB), borderRadius: BorderRadius.circular(8)),
-        child: const Text('No active branch context resolved. Please ensure your account has an assigned branch.', style: TextStyle(color: Color(0xFFB45309))),
+        decoration: BoxDecoration(color: tokens.warningBg, borderRadius: BorderRadius.circular(8), border: Border.all(color: tokens.warningBorder)),
+        child: Text('No active branch context resolved. Please ensure your account has an assigned branch.', style: TextStyle(color: tokens.warningText)),
       );
     }
 
@@ -455,8 +459,8 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
         if (snapshot.hasError) {
           return Container(
             padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(color: const Color(0xFFFEF2F2), borderRadius: BorderRadius.circular(8)),
-            child: Text('Error loading 6-Way Integrity check: ${snapshot.error}', style: const TextStyle(color: Color(0xFFDC2626))),
+            decoration: BoxDecoration(color: tokens.dangerBg, borderRadius: BorderRadius.circular(8), border: Border.all(color: tokens.dangerBorder)),
+            child: Text('Error loading 6-Way Integrity check: ${snapshot.error}', style: TextStyle(color: tokens.dangerText)),
           );
         }
 
@@ -466,16 +470,16 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Live 6-Way Financial Integrity Verification', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Color(0xFF0F172A))),
+            Text('Live 6-Way Financial Integrity Verification', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: tokens.textPrimary)),
             const SizedBox(height: 4),
-            const Text('Mathematical cross-verification of daily operational collections, receipts, and cash movements across General Ledger, Audit Views, Cashbooks, Dashboards, and Reports.', style: TextStyle(fontSize: 13, color: Color(0xFF64748B))),
+            Text('Mathematical cross-verification of daily operational collections, receipts, and cash movements across General Ledger, Audit Views, Cashbooks, Dashboards, and Reports.', style: TextStyle(fontSize: 13, color: tokens.textMuted)),
             const SizedBox(height: 12),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: tokens.surface,
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: const Color(0xFFE2E8F0)),
+                border: Border.all(color: tokens.borderSubtle),
               ),
               child: Wrap(
                 spacing: 16,
@@ -486,9 +490,9 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
                     Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(Icons.account_balance_outlined, size: 18, color: Color(0xFF64748B)),
+                        Icon(Icons.account_balance_outlined, size: 18, color: tokens.textMuted),
                         const SizedBox(width: 8),
-                        const Text('Branch:', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: Color(0xFF334155))),
+                        Text('Branch:', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: tokens.textSecondary)),
                         const SizedBox(width: 8),
                         SizedBox(
                           width: 180,
@@ -506,11 +510,11 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
                     Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(Icons.account_balance_outlined, size: 18, color: Color(0xFF64748B)),
+                        Icon(Icons.account_balance_outlined, size: 18, color: tokens.textMuted),
                         const SizedBox(width: 8),
                         Text(
                           'Branch: ${_selectedIntegrityBranch ?? "Current Branch"}',
-                          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF334155)),
+                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: tokens.textSecondary),
                         ),
                       ],
                     ),
@@ -518,9 +522,9 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(Icons.event_outlined, size: 18, color: Color(0xFF64748B)),
+                      Icon(Icons.event_outlined, size: 18, color: tokens.textMuted),
                       const SizedBox(width: 8),
-                      const Text('Operations Date:', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: Color(0xFF334155))),
+                      Text('Operations Date:', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: tokens.textSecondary)),
                       const SizedBox(width: 8),
                       InkWell(
                         onTap: () async {
@@ -537,19 +541,19 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
                         child: Container(
                           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                           decoration: BoxDecoration(
-                            color: const Color(0xFFF8FAFC),
+                            color: tokens.surfaceSubtle,
                             borderRadius: BorderRadius.circular(6),
-                            border: Border.all(color: const Color(0xFFCBD5E1)),
+                            border: Border.all(color: tokens.borderStrong),
                           ),
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               Text(
                                 _formatDate(_selectedIntegrityDate),
-                                style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: Color(0xFF1E293B)),
+                                style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: tokens.textPrimary),
                               ),
                               const SizedBox(width: 6),
-                              const Icon(Icons.calendar_today_outlined, size: 14, color: Color(0xFF64748B)),
+                              Icon(Icons.calendar_today_outlined, size: 14, color: tokens.textMuted),
                             ],
                           ),
                         ),
@@ -566,10 +570,10 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
               width: double.infinity,
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
               decoration: BoxDecoration(
-                color: isBal ? const Color(0xFFECFDF5) : const Color(0xFFFEF2F2),
+                color: isBal ? tokens.successBg : tokens.dangerBg,
                 borderRadius: BorderRadius.circular(10),
                 border: Border.all(
-                  color: isBal ? const Color(0xFFA7F3D0) : const Color(0xFFFECACA),
+                  color: isBal ? tokens.successBorder : tokens.dangerBorder,
                   width: 1.5,
                 ),
               ),
@@ -578,12 +582,12 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
                   Container(
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
-                      color: isBal ? const Color(0xFFD1FAE5) : const Color(0xFFFEE2E2),
+                      color: (isBal ? tokens.successDot : tokens.dangerDot).withValues(alpha: 0.16),
                       shape: BoxShape.circle,
                     ),
                     child: Icon(
                       isBal ? Icons.verified_outlined : Icons.error_outline,
-                      color: isBal ? const Color(0xFF059669) : const Color(0xFFDC2626),
+                      color: isBal ? tokens.successDot : tokens.dangerDot,
                       size: 22,
                     ),
                   ),
@@ -598,7 +602,7 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
                             fontSize: 11,
                             fontWeight: FontWeight.w700,
                             letterSpacing: 0.5,
-                            color: isBal ? const Color(0xFF065F46) : const Color(0xFF991B1B),
+                            color: isBal ? tokens.successText : tokens.dangerText,
                           ),
                         ),
                         const SizedBox(height: 2),
@@ -607,7 +611,7 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
                           style: TextStyle(
                             fontSize: 13.5,
                             fontWeight: FontWeight.w600,
-                            color: isBal ? const Color(0xFF047857) : const Color(0xFFB91C1C),
+                            color: isBal ? tokens.successText : tokens.dangerText,
                           ),
                         ),
                       ],
@@ -644,7 +648,7 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
 
             // Itemized Variance Breakdown Table
             if (data.variances.isNotEmpty) ...[
-              const Text('Itemized Variance Breakdown', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Color(0xFF0F172A))),
+              Text('Itemized Variance Breakdown', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: tokens.textPrimary)),
               const SizedBox(height: 10),
               _buildDynamicDataTable(
                 data.variances.map((v) => {
@@ -670,13 +674,14 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
   Widget _buildTab2Fees(String branchId, bool isOfficer, bool isBm, bool isAm, bool isAdmin) {
     final bOptions = _getBranchOptions(isAdmin, isAm: isAm);
     final oOptions = _getOfficerOptions();
+    final tokens = IcareSurfaceTokens.of(context);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('Fee Audit Ledgers', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Color(0xFF0F172A))),
+        Text('Fee Audit Ledgers', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: tokens.textPrimary)),
         const SizedBox(height: 4),
-        const Text('Itemized audit trail of loan origination fees, passbooks, and processing charges.', style: TextStyle(fontSize: 13, color: Color(0xFF64748B))),
+        Text('Itemized audit trail of loan origination fees, passbooks, and processing charges.', style: TextStyle(fontSize: 13, color: tokens.textMuted)),
         const SizedBox(height: 14),
 
         // Responsive Filter Bar
@@ -806,7 +811,7 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
               return const IcareTableSkeleton(rowCount: 8, hasFilterBar: false);
             }
             if (snapshot.hasError) {
-              return Text('Error: ${snapshot.error}', style: const TextStyle(color: Color(0xFFDC2626)));
+              return Text('Error: ${snapshot.error}', style: TextStyle(color: IcareSurfaceTokens.of(context).dangerText));
             }
 
             final data = snapshot.data!;
@@ -866,15 +871,16 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
   // TAB 3: TREASURY AUDIT
   // =========================================================================
   Widget _buildTab3Treasury(String branchId, bool isOfficer, bool isBm, bool isAm, bool isAdmin) {
+    final tokens = IcareSurfaceTokens.of(context);
     final bOptions = _getBranchOptions(isAdmin, isAm: isAm);
     final oOptions = _getOfficerOptions();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('Treasury Audit Ledgers', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Color(0xFF0F172A))),
+        Text('Treasury Audit Ledgers', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: tokens.textPrimary)),
         const SizedBox(height: 4),
-        const Text('Audit trail of bank deposits, withdrawals, staff salaries, and inter-branch cash transfers.', style: TextStyle(fontSize: 13, color: Color(0xFF64748B))),
+        Text('Audit trail of bank deposits, withdrawals, staff salaries, and inter-branch cash transfers.', style: TextStyle(fontSize: 13, color: tokens.textMuted)),
         const SizedBox(height: 14),
 
         // Responsive Filter Bar
@@ -1003,7 +1009,7 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
               return const IcareTableSkeleton(rowCount: 8, hasFilterBar: false);
             }
             if (snapshot.hasError) {
-              return Text('Error: ${snapshot.error}', style: const TextStyle(color: Color(0xFFDC2626)));
+              return Text('Error: ${snapshot.error}', style: TextStyle(color: IcareSurfaceTokens.of(context).dangerText));
             }
 
             final data = snapshot.data!;
@@ -1063,15 +1069,16 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
   // TAB 4: SAVINGS AUDIT
   // =========================================================================
   Widget _buildTab4Savings(String branchId, bool isOfficer, bool isBm, bool isAm, bool isAdmin) {
+    final tokens = IcareSurfaceTokens.of(context);
     final bOptions = _getBranchOptions(isAdmin, isAm: isAm);
     final oOptions = _getOfficerOptions();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('Savings Audit Ledgers', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Color(0xFF0F172A))),
+        Text('Savings Audit Ledgers', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: tokens.textPrimary)),
         const SizedBox(height: 4),
-        const Text('Audit trail of voluntary individual deposits, group collateral savings, and laps reserves.', style: TextStyle(fontSize: 13, color: Color(0xFF64748B))),
+        Text('Audit trail of voluntary individual deposits, group collateral savings, and laps reserves.', style: TextStyle(fontSize: 13, color: tokens.textMuted)),
         const SizedBox(height: 14),
 
         // Responsive Filter Bar
@@ -1200,7 +1207,7 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
               return const IcareTableSkeleton(rowCount: 8, hasFilterBar: false);
             }
             if (snapshot.hasError) {
-              return Text('Error: ${snapshot.error}', style: const TextStyle(color: Color(0xFFDC2626)));
+              return Text('Error: ${snapshot.error}', style: TextStyle(color: IcareSurfaceTokens.of(context).dangerText));
             }
 
             final data = snapshot.data!;
@@ -1257,24 +1264,24 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
         ),
 
         const SizedBox(height: 24),
-        const Divider(height: 1, color: Color(0xFFE2E8F0)),
+        Divider(height: 1, color: tokens.borderSubtle),
         const SizedBox(height: 20),
 
         // Withdrawal Requests & Authorization Lifecycle Audit Sub-Section
         Row(
           children: [
-            const Expanded(
+            Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
                     'Withdrawal Requests & Authorization Audit',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: tokens.textPrimary),
                   ),
-                  SizedBox(height: 2),
+                  const SizedBox(height: 2),
                   Text(
                     'End-to-end audit trail of withdrawal requests, approvals, rejections, and ledger postings.',
-                    style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                    style: TextStyle(fontSize: 12, color: tokens.textMuted),
                   ),
                 ],
               ),
@@ -1306,7 +1313,7 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
               return const IcareTableSkeleton(rowCount: 4, hasFilterBar: false);
             }
             if (wrSnap.hasError) {
-              return Text('Error loading withdrawal audit: ${wrSnap.error}', style: const TextStyle(color: Color(0xFFDC2626)));
+              return Text('Error loading withdrawal audit: ${wrSnap.error}', style: TextStyle(color: IcareSurfaceTokens.of(context).dangerText));
             }
 
             final wrData = wrSnap.data!;
@@ -1358,9 +1365,9 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
                   ]),
                 if (evtRows.isNotEmpty) ...[
                   const SizedBox(height: 16),
-                  const Text(
+                  Text(
                     'Authorization & Action Events',
-                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: tokens.textPrimary),
                   ),
                   const SizedBox(height: 8),
                   _buildDynamicDataTable(evtRows, const [
@@ -1379,6 +1386,7 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
   // TAB 5: LOAN AUDIT
   // =========================================================================
   Widget _buildTab5Loans(String branchId, bool isOfficer, bool isBm, bool isAm, bool isAdmin) {
+    final tokens = IcareSurfaceTokens.of(context);
     final bOptions = _getBranchOptions(isAdmin, isAm: isAm);
     final oOptions = _getOfficerOptions();
     final pOptions = ['All Products'] + (_meta?.products.map((p) => p.name).toList() ?? []);
@@ -1386,9 +1394,9 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('Loan Audit Ledgers', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Color(0xFF0F172A))),
+        Text('Loan Audit Ledgers', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: tokens.textPrimary)),
         const SizedBox(height: 4),
-        const Text('Audit trail of approved principal disbursements and loan repayment collections.', style: TextStyle(fontSize: 13, color: Color(0xFF64748B))),
+        Text('Audit trail of approved principal disbursements and loan repayment collections.', style: TextStyle(fontSize: 13, color: tokens.textMuted)),
         const SizedBox(height: 14),
 
         // Responsive Filter Bar
@@ -1535,7 +1543,7 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
               return const IcareTableSkeleton(rowCount: 8, hasFilterBar: false);
             }
             if (snapshot.hasError) {
-              return Text('Error: ${snapshot.error}', style: const TextStyle(color: Color(0xFFDC2626)));
+              return Text('Error: ${snapshot.error}', style: TextStyle(color: IcareSurfaceTokens.of(context).dangerText));
             }
 
             final data = snapshot.data!;
@@ -1622,15 +1630,16 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
   // TAB 6: COLLECTION PERFORMANCE
   // =========================================================================
   Widget _buildTab6Collections(String branchId, bool isOfficer, bool isBm, bool isAm, bool isAdmin) {
+    final tokens = IcareSurfaceTokens.of(context);
     final bOptions = _getBranchOptions(isAdmin, isAm: isAm);
     final oOptions = _getOfficerOptions();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('Collection Performance Audit', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Color(0xFF0F172A))),
+        Text('Collection Performance Audit', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: tokens.textPrimary)),
         const SizedBox(height: 4),
-        const Text('Meeting compliance matrix comparing expected collections against actual payments.', style: TextStyle(fontSize: 13, color: Color(0xFF64748B))),
+        Text('Meeting compliance matrix comparing expected collections against actual payments.', style: TextStyle(fontSize: 13, color: tokens.textMuted)),
         const SizedBox(height: 14),
 
         // Responsive Filter Bar
@@ -1759,7 +1768,7 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
               return const IcareTableSkeleton(rowCount: 8, hasFilterBar: false);
             }
             if (snapshot.hasError) {
-              return Text('Error: ${snapshot.error}', style: const TextStyle(color: Color(0xFFDC2626)));
+              return Text('Error: ${snapshot.error}', style: TextStyle(color: IcareSurfaceTokens.of(context).dangerText));
             }
 
             final data = snapshot.data!;
@@ -1825,6 +1834,7 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
   // TAB 7: 15 EXCEPTION REPORTS
   // =========================================================================
   Widget _buildTab7Exceptions(String branchId) {
+    final tokens = IcareSurfaceTokens.of(context);
     return FutureBuilder<ExceptionReportsResponseModel>(
       future: ref.read(auditApiServiceProvider).getExceptionReports(branchId: branchId),
       builder: (context, snapshot) {
@@ -1832,7 +1842,7 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
           return const IcareTableSkeleton(rowCount: 8, hasFilterBar: false);
         }
         if (snapshot.hasError) {
-          return Text('Error: ${snapshot.error}', style: const TextStyle(color: Color(0xFFDC2626)));
+          return Text('Error: ${snapshot.error}', style: TextStyle(color: tokens.dangerText));
         }
 
         final data = snapshot.data!;
@@ -1841,9 +1851,9 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('15 Automated Audit Exception Reports', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Color(0xFF0F172A))),
+            Text('15 Automated Audit Exception Reports', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: tokens.textPrimary)),
             const SizedBox(height: 4),
-            const Text('Scans core database for compliance breaches, unposted transactions, or projection anomalies.', style: TextStyle(fontSize: 13, color: Color(0xFF64748B))),
+            Text('Scans core database for compliance breaches, unposted transactions, or projection anomalies.', style: TextStyle(fontSize: 13, color: tokens.textMuted)),
             const SizedBox(height: 16),
 
             Builder(
@@ -1864,78 +1874,79 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
               final issues = entry.value;
               final count = issues.length;
 
-              return Container(
-                margin: const EdgeInsets.only(bottom: 12),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: count > 0 ? const Color(0xFFFCA5A5) : const Color(0xFFE2E8F0)),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.02),
-                      blurRadius: 3,
-                      offset: const Offset(0, 1),
-                    ),
-                  ],
+    final tokens = IcareSurfaceTokens.of(context);
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: tokens.surface,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: count > 0 ? tokens.dangerBorder : tokens.borderSubtle),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(tokens.isDark ? 0.16 : 0.02),
+            blurRadius: 3,
+            offset: const Offset(0, 1),
+          ),
+        ],
+      ),
+      child: ExpansionTile(
+        leading: Container(
+          padding: const EdgeInsets.all(6),
+          decoration: BoxDecoration(
+            color: count > 0 ? tokens.dangerBg : tokens.successBg,
+            shape: BoxShape.circle,
+          ),
+          child: Icon(
+            count > 0 ? Icons.warning_amber_rounded : Icons.check_circle_outline,
+            color: count > 0 ? tokens.dangerDot : tokens.successDot,
+            size: 18,
+          ),
+        ),
+        title: Row(
+          children: [
+            Expanded(
+              child: Text(
+                ruleName,
+                style: TextStyle(
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w700,
+                  color: count > 0 ? tokens.dangerText : tokens.textPrimary,
                 ),
-                child: ExpansionTile(
-                  leading: Container(
-                    padding: const EdgeInsets.all(6),
-                    decoration: BoxDecoration(
-                      color: count > 0 ? const Color(0xFFFEE2E2) : const Color(0xFFDCFCE7),
-                      shape: BoxShape.circle,
-                    ),
-                    child: Icon(
-                      count > 0 ? Icons.warning_amber_rounded : Icons.check_circle_outline,
-                      color: count > 0 ? const Color(0xFFDC2626) : const Color(0xFF16A34A),
-                      size: 18,
-                    ),
-                  ),
-                  title: Row(
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              decoration: BoxDecoration(
+                color: count > 0 ? tokens.dangerBg : tokens.surfaceHover,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Text(
+                '$count issues',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  color: count > 0 ? tokens.dangerText : tokens.textMuted,
+                ),
+              ),
+            ),
+          ],
+        ),
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: count == 0
+                ? Row(
                     children: [
-                      Expanded(
-                        child: Text(
-                          ruleName,
-                          style: TextStyle(
-                            fontSize: 13.5,
-                            fontWeight: FontWeight.w700,
-                            color: count > 0 ? const Color(0xFF991B1B) : const Color(0xFF1E293B),
-                          ),
-                        ),
-                      ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: count > 0 ? const Color(0xFFFEE2E2) : const Color(0xFFF1F5F9),
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Text(
-                          '$count issues',
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700,
-                            color: count > 0 ? const Color(0xFFDC2626) : const Color(0xFF64748B),
-                          ),
-                        ),
-                      ),
+                      Icon(Icons.check_circle, color: tokens.successDot, size: 16),
+                      const SizedBox(width: 8),
+                      Text('Zero exceptions detected for this rule.', style: TextStyle(color: tokens.successText, fontWeight: FontWeight.w600, fontSize: 13)),
                     ],
-                  ),
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: count == 0
-                          ? const Row(
-                              children: [
-                                Icon(Icons.check_circle, color: Color(0xFF16A34A), size: 16),
-                                SizedBox(width: 8),
-                                Text('Zero exceptions detected for this rule.', style: TextStyle(color: Color(0xFF16A34A), fontWeight: FontWeight.w600, fontSize: 13)),
-                              ],
-                            )
-                          : _buildDynamicDataTable(issues, issues.first.keys.toList()),
-                    ),
-                  ],
-                ),
-              );
+                  )
+                : _buildDynamicDataTable(issues, issues.first.keys.toList()),
+          ),
+        ],
+      ),
+    );
             }),
           ],
         );
@@ -1947,24 +1958,25 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
   // TAB 8: 360° UNIVERSAL EXPLORER & TIMELINE
   // =========================================================================
   Widget _buildTab8Explorer(String branchId) {
+    final tokens = IcareSurfaceTokens.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('360° Universal Search & Audit Timeline', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Color(0xFF0F172A))),
+        Text('360° Universal Search & Audit Timeline', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: tokens.textPrimary)),
         const SizedBox(height: 4),
-        const Text('Search across all sub-systems by Client Code, Customer Name, Officer, Loan Number, or Reference ID.', style: TextStyle(fontSize: 13, color: Color(0xFF64748B))),
+        Text('Search across all sub-systems by Client Code, Customer Name, Officer, Loan Number, or Reference ID.', style: TextStyle(fontSize: 13, color: tokens.textMuted)),
         const SizedBox(height: 14),
 
         // Search Box Container
         Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: tokens.surface,
             borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: const Color(0xFFE2E8F0)),
+            border: Border.all(color: tokens.borderSubtle),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.02),
+                color: Colors.black.withOpacity(tokens.isDark ? 0.16 : 0.02),
                 blurRadius: 4,
                 offset: const Offset(0, 1),
               ),
@@ -1984,7 +1996,7 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
                           decoration: InputDecoration(
                             labelText: 'Enter Search Term',
                             hintText: 'e.g. OGI-12-005, Adewale, Ayomide, REF-00382',
-                            prefixIcon: const Icon(Icons.search, size: 18, color: Color(0xFF64748B)),
+                            prefixIcon: Icon(Icons.search, size: 18, color: tokens.textMuted),
                             border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                             contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                             suffixIcon: _explorerSearchCtrl.text.isNotEmpty
@@ -2006,7 +2018,8 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
                           child: ElevatedButton.icon(
                             onPressed: _explorerLoading ? null : () => _handleExplorerSearch(branchId),
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF2E86C1),
+                              backgroundColor: tokens.brandPrimaryDark,
+                              foregroundColor: Colors.white,
                               padding: const EdgeInsets.symmetric(horizontal: 20),
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                             ),
@@ -2027,7 +2040,7 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
                           decoration: InputDecoration(
                             labelText: 'Enter Search Term',
                             hintText: 'e.g. OGI-12-005, Adewale, Ayomide, REF-00382',
-                            prefixIcon: const Icon(Icons.search, size: 18, color: Color(0xFF64748B)),
+                            prefixIcon: Icon(Icons.search, size: 18, color: tokens.textMuted),
                             border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                             contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                             suffixIcon: _explorerSearchCtrl.text.isNotEmpty
@@ -2049,7 +2062,8 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
                         child: ElevatedButton.icon(
                           onPressed: _explorerLoading ? null : () => _handleExplorerSearch(branchId),
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF2E86C1),
+                            backgroundColor: tokens.brandPrimaryDark,
+                            foregroundColor: Colors.white,
                             padding: const EdgeInsets.symmetric(horizontal: 22),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                           ),
@@ -2070,7 +2084,7 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
                 runSpacing: 6,
                 crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
-                  const Text('Suggestions:', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF94A3B8))),
+                  Text('Suggestions:', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: tokens.textLight)),
                   _buildSearchSuggestionChip('OGI-', branchId),
                   _buildSearchSuggestionChip('LN-', branchId),
                   _buildSearchSuggestionChip('REF-', branchId),
@@ -2113,6 +2127,7 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
   }
 
   Widget _buildSearchSuggestionChip(String tag, String branchId) {
+    final tokens = IcareSurfaceTokens.of(context);
     return InkWell(
       onTap: () {
         _explorerSearchCtrl.text = tag;
@@ -2122,16 +2137,16 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
         decoration: BoxDecoration(
-          color: const Color(0xFFF1F5F9),
+          color: tokens.surfaceHover,
           borderRadius: BorderRadius.circular(6),
-          border: Border.all(color: const Color(0xFFE2E8F0)),
+          border: Border.all(color: tokens.borderSubtle),
         ),
         child: Text(
           tag,
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 11,
             fontWeight: FontWeight.w600,
-            color: Color(0xFF2E86C1),
+            color: tokens.infoText,
             fontFamily: 'JetBrains Mono',
           ),
         ),
@@ -2140,6 +2155,7 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
   }
 
   Widget _buildExplorerResultsSection(String branchId) {
+    final tokens = IcareSurfaceTokens.of(context);
     final res = _explorerResult!;
     if (!res.found) {
       return _buildEmptyState("No records found for '${res.query}'. Try changing the search criteria.");
@@ -2151,13 +2167,13 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
         Container(
           width: double.infinity,
           padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(color: const Color(0xFFECFDF5), borderRadius: BorderRadius.circular(8), border: Border.all(color: const Color(0xFFA7F3D0))),
-          child: Text("Audit records matched '${res.query}' across sub-systems", style: const TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF065F46))),
+          decoration: BoxDecoration(color: tokens.successBg, borderRadius: BorderRadius.circular(8), border: Border.all(color: tokens.successBorder)),
+          child: Text("Audit records matched '${res.query}' across sub-systems", style: TextStyle(fontWeight: FontWeight.w700, color: tokens.successText)),
         ),
         const SizedBox(height: 16),
 
         if (res.loans.isNotEmpty) ...[
-          const Text('Loans', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Color(0xFF0F172A))),
+          Text('Loans', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: tokens.textPrimary)),
           const SizedBox(height: 8),
           _buildDynamicDataTable(res.loans, ['Disbursement Date', 'Loan Number', 'Client Code', 'Client Name', 'Product', 'Officer', 'Branch', 'Principal', 'Status']),
           const SizedBox(height: 8),
@@ -2167,35 +2183,35 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
         ],
 
         if (res.repayments.isNotEmpty) ...[
-          const Text('Repayments', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Color(0xFF0F172A))),
+          Text('Repayments', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: tokens.textPrimary)),
           const SizedBox(height: 8),
           _buildDynamicDataTable(res.repayments, ['Repayment Date', 'Loan Number', 'Client Code', 'Client Name', 'Product', 'Amount Paid', 'Officer', 'Branch', 'Transaction Type', 'Status']),
           const SizedBox(height: 20),
         ],
 
         if (res.savings.isNotEmpty) ...[
-          const Text('Savings Ledger', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Color(0xFF0F172A))),
+          Text('Savings Ledger', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: tokens.textPrimary)),
           const SizedBox(height: 8),
           _buildDynamicDataTable(res.savings, ['Date', 'Client Code', 'Client Name', 'Ledger', 'Deposit', 'Withdrawal', 'Available Balance', 'Officer', 'Branch', 'Remarks', 'Status']),
           const SizedBox(height: 20),
         ],
 
         if (res.fees.isNotEmpty) ...[
-          const Text('Fee Ledger', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Color(0xFF0F172A))),
+          Text('Fee Ledger', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: tokens.textPrimary)),
           const SizedBox(height: 8),
           _buildDynamicDataTable(res.fees, ['Date', 'Client Code', 'Client Name', 'Fee Type', 'Amount', 'Officer', 'Branch', 'Reference', 'Status']),
           const SizedBox(height: 20),
         ],
 
         if (res.treasuryTransactions.isNotEmpty) ...[
-          const Text('Treasury Ledger', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Color(0xFF0F172A))),
+          Text('Treasury Ledger', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: tokens.textPrimary)),
           const SizedBox(height: 8),
           _buildDynamicDataTable(res.treasuryTransactions, ['Date', 'Category', 'Amount', 'Officer', 'Branch', 'Reference', 'Narration', 'Status']),
           const SizedBox(height: 20),
         ],
 
         if (res.ledgerTransactions.isNotEmpty) ...[
-          const Text('General Ledger Journals', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Color(0xFF0F172A))),
+          Text('General Ledger Journals', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: tokens.textPrimary)),
           const SizedBox(height: 8),
           _buildDynamicDataTable(res.ledgerTransactions, ['Posting Date', 'Journal Ref', 'Narration', 'Debit Account', 'Credit Account', 'Amount', 'Branch', 'Officer', 'Status']),
           const SizedBox(height: 8),
@@ -2204,7 +2220,7 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
         ],
 
         if (res.auditLogs.isNotEmpty) ...[
-          const Text('Audit Logs', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Color(0xFF0F172A))),
+          Text('Audit Logs', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: tokens.textPrimary)),
           const SizedBox(height: 8),
           _buildDynamicDataTable(res.auditLogs, res.auditLogs.first.keys.toList()),
           const SizedBox(height: 20),
@@ -2214,10 +2230,11 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
   }
 
   Widget _buildLoanTimelineExpander(List<Map<String, dynamic>> loans) {
+    final tokens = IcareSurfaceTokens.of(context);
     return Container(
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(8), border: Border.all(color: const Color(0xFFE2E8F0))),
+      decoration: BoxDecoration(color: tokens.surface, borderRadius: BorderRadius.circular(8), border: Border.all(color: tokens.borderSubtle)),
       child: ExpansionTile(
-        title: const Text('View Loan Lifecycle Audit Timelines', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
+        title: Text('View Loan Lifecycle Audit Timelines', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: tokens.textPrimary)),
         children: loans.take(5).map((l) {
           final raw = l['_raw_record'] as Map<String, dynamic>? ?? {};
           final lid = (raw['loan_id'] ?? raw['id'] ?? '').toString();
@@ -2233,7 +2250,9 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text('Timeline for $lNumber — $cName ($princ)', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
+                    Expanded(
+                      child: Text('Timeline for $lNumber — $cName ($princ)', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: tokens.textPrimary)),
+                    ),
                     TextButton.icon(
                       icon: const Icon(Icons.timeline, size: 16),
                       label: const Text('Load Timeline', style: TextStyle(fontSize: 12)),
@@ -2247,9 +2266,9 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
                   else if (_loanTimelineData != null && _loanTimelineData!.isNotEmpty)
                     _buildDynamicDataTable(_loanTimelineData!, _loanTimelineData!.first.keys.toList())
                   else
-                    const Text('No timeline events recorded.', style: TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+                    Text('No timeline events recorded.', style: TextStyle(fontSize: 12, color: tokens.textMuted)),
                 ],
-                const Divider(),
+                Divider(color: tokens.borderSubtle),
               ],
             ),
           );
@@ -2277,10 +2296,11 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
   }
 
   Widget _buildJournalLegsExpander(List<Map<String, dynamic>> journals) {
+    final tokens = IcareSurfaceTokens.of(context);
     return Container(
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(8), border: Border.all(color: const Color(0xFFE2E8F0))),
+      decoration: BoxDecoration(color: tokens.surface, borderRadius: BorderRadius.circular(8), border: Border.all(color: tokens.borderSubtle)),
       child: ExpansionTile(
-        title: const Text('Inspect Journal Double-Entry Legs', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
+        title: Text('Inspect Journal Double-Entry Legs', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: tokens.textPrimary)),
         children: journals.map((j) {
           final entries = (j['_entries'] as List<dynamic>?)?.map((e) => Map<String, dynamic>.from(e as Map)).toList() ?? [];
           if (entries.isEmpty) return const SizedBox.shrink();
@@ -2290,10 +2310,10 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Journal: ${j['Journal Ref']} — ${j['Narration']} (${j['Amount']})', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
+                Text('Journal: ${j['Journal Ref']} — ${j['Narration']} (${j['Amount']})', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: tokens.textPrimary)),
                 const SizedBox(height: 6),
                 _buildDynamicDataTable(entries, ['Journal Ref', 'Account', 'Leg', 'Debit (₦)', 'Credit (₦)', 'Line Narration']),
-                const Divider(),
+                Divider(color: tokens.borderSubtle),
               ],
             ),
           );
@@ -2306,6 +2326,7 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
   // TAB 9: PERFORMANCE INSIGHTS
   // =========================================================================
   Widget _buildTab9Insights(String branchId) {
+    final tokens = IcareSurfaceTokens.of(context);
     return FutureBuilder<RiskDistributionResponseModel>(
       future: ref.read(auditApiServiceProvider).getPerformanceInsights(branchId: branchId),
       builder: (context, snapshot) {
@@ -2313,7 +2334,7 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
           return const IcareTableSkeleton(rowCount: 8, hasFilterBar: false);
         }
         if (snapshot.hasError) {
-          return Text('Error: ${snapshot.error}', style: const TextStyle(color: Color(0xFFDC2626)));
+          return Text('Error: ${snapshot.error}', style: TextStyle(color: tokens.dangerText));
         }
 
         final dist = snapshot.data!.distribution;
@@ -2322,9 +2343,9 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Executive Performance Insights', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Color(0xFF0F172A))),
+            Text('Executive Performance Insights', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: tokens.textPrimary)),
             const SizedBox(height: 4),
-            const Text('System Performance & Portfolio Quality Insights based on loan repayment history and risk scores.', style: TextStyle(fontSize: 13, color: Color(0xFF64748B))),
+            Text('System Performance & Portfolio Quality Insights based on loan repayment history and risk scores.', style: TextStyle(fontSize: 13, color: tokens.textMuted)),
             const SizedBox(height: 16),
 
             _buildKpiRow5([
@@ -2344,24 +2365,25 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
   // TAB 10: RECONCILIATION WIZARD
   // =========================================================================
   Widget _buildTab10Wizard(String branchId) {
+    final tokens = IcareSurfaceTokens.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('Guided Reconciliation Wizard', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Color(0xFF0F172A))),
+        Text('Guided Reconciliation Wizard', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: tokens.textPrimary)),
         const SizedBox(height: 4),
-        const Text('Interactive wizard to verify balance, locate discrepancies, and trigger automated projection repair.', style: TextStyle(fontSize: 13, color: Color(0xFF64748B))),
+        Text('Interactive wizard to verify balance, locate discrepancies, and trigger automated projection repair.', style: TextStyle(fontSize: 13, color: tokens.textMuted)),
         const SizedBox(height: 16),
 
         if (_wizardBanner != null) ...[
           Container(
             width: double.infinity,
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            decoration: BoxDecoration(color: const Color(0xFFECFDF5), borderRadius: BorderRadius.circular(8), border: Border.all(color: const Color(0xFFA7F3D0))),
+            decoration: BoxDecoration(color: tokens.successBg, borderRadius: BorderRadius.circular(8), border: Border.all(color: tokens.successBorder)),
             child: Row(
               children: [
-                const Icon(Icons.check_circle_outline, color: Color(0xFF059669), size: 20),
+                Icon(Icons.check_circle_outline, color: tokens.successDot, size: 20),
                 const SizedBox(width: 10),
-                Expanded(child: Text(_wizardBanner!, style: const TextStyle(color: Color(0xFF065F46), fontWeight: FontWeight.w600, fontSize: 13.5))),
+                Expanded(child: Text(_wizardBanner!, style: TextStyle(color: tokens.successText, fontWeight: FontWeight.w600, fontSize: 13.5))),
               ],
             ),
           ),
@@ -2382,7 +2404,8 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
                     child: ElevatedButton.icon(
                       onPressed: _repairing ? null : () => _handleExecuteRepair(branchId),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFFFF4B4B),
+                        backgroundColor: const Color(0xFFDC2626),
+                        foregroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(horizontal: 20),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
                       ),
@@ -2409,7 +2432,8 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
                     child: ElevatedButton.icon(
                       onPressed: _repairing ? null : () => _handleExecuteRepair(branchId),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFFFF4B4B),
+                        backgroundColor: const Color(0xFFDC2626),
+                        foregroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(horizontal: 20),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
                       ),
@@ -2427,7 +2451,7 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
         const SizedBox(height: 20),
 
         if (_repairResult != null) ...[
-          const Text('Verification Results After Repair', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Color(0xFF0F172A))),
+          Text('Verification Results After Repair', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: tokens.textPrimary)),
           const SizedBox(height: 10),
           _buildRepairVerificationSection(_repairResult!.verificationAfterRepair),
         ],
@@ -2460,17 +2484,18 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
   }
 
   Widget _buildRepairVerificationSection(Integrity6WayModel verif) {
+    final tokens = IcareSurfaceTokens.of(context);
     return Container(
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(8), border: Border.all(color: const Color(0xFFE2E8F0))),
+      decoration: BoxDecoration(color: tokens.surface, borderRadius: BorderRadius.circular(8), border: Border.all(color: tokens.borderSubtle)),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Icon(verif.isBalanced ? Icons.check_circle : Icons.error_outline, color: verif.isBalanced ? const Color(0xFF16A34A) : const Color(0xFFDC2626), size: 20),
+              Icon(verif.isBalanced ? Icons.check_circle : Icons.error_outline, color: verif.isBalanced ? tokens.successDot : tokens.dangerDot, size: 20),
               const SizedBox(width: 10),
-              Text(verif.statusText, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: verif.isBalanced ? const Color(0xFF16A34A) : const Color(0xFFDC2626))),
+              Text(verif.statusText, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: verif.isBalanced ? tokens.successText : tokens.dangerText)),
             ],
           ),
           const SizedBox(height: 12),
@@ -2582,27 +2607,28 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
   }
 
   Widget _buildDatePresetChip(String label, VoidCallback onTap) {
+    final tokens = IcareSurfaceTokens.of(context);
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(12),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
         decoration: BoxDecoration(
-          color: const Color(0xFFF1F5F9),
+          color: tokens.surfaceSubtle,
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: const Color(0xFFCBD5E1)),
+          border: Border.all(color: tokens.borderStrong),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.flash_on, size: 10, color: Color(0xFF2E86C1)),
+            Icon(Icons.flash_on, size: 10, color: tokens.brandPrimary),
             const SizedBox(width: 3),
             Text(
               label,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 10,
                 fontWeight: FontWeight.w600,
-                color: Color(0xFF334155),
+                color: tokens.textSecondary,
               ),
             ),
           ],
@@ -2615,15 +2641,16 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
     required Widget child,
     required Function(DateTime, DateTime) onDateQuickSelect,
   }) {
+    final tokens = IcareSurfaceTokens.of(context);
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: tokens.surface,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: tokens.borderSubtle),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.02),
+            color: Colors.black.withOpacity(tokens.isDark ? 0.16 : 0.02),
             blurRadius: 4,
             offset: const Offset(0, 1),
           ),
@@ -2635,16 +2662,16 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Row(
+              Row(
                 children: [
-                  Icon(Icons.tune, size: 15, color: Color(0xFF2E86C1)),
-                  SizedBox(width: 6),
+                  Icon(Icons.tune, size: 15, color: tokens.brandPrimary),
+                  const SizedBox(width: 6),
                   Text(
                     'Audit Filters',
                     style: TextStyle(
                       fontSize: 12.5,
                       fontWeight: FontWeight.w700,
-                      color: Color(0xFF1E293B),
+                      color: tokens.textPrimary,
                     ),
                   ),
                 ],
@@ -2660,6 +2687,7 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
   }
 
   Widget _buildDatePicker(String label, DateTime value, Function(DateTime) onChanged) {
+    final tokens = IcareSurfaceTokens.of(context);
     return InkWell(
       onTap: () async {
         final picked = await showDatePicker(
@@ -2673,11 +2701,11 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
       child: InputDecorator(
         decoration: InputDecoration(
           labelText: label,
-          prefixIcon: const Icon(Icons.calendar_today_outlined, size: 14, color: Color(0xFF64748B)),
+          prefixIcon: Icon(Icons.calendar_today_outlined, size: 14, color: tokens.textMuted),
           border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
           contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
         ),
-        child: Text(DateFormat('yyyy-MM-dd').format(value), style: const TextStyle(fontSize: 12)),
+        child: Text(DateFormat('yyyy-MM-dd').format(value), style: TextStyle(fontSize: 12, color: tokens.textPrimary)),
       ),
     );
   }
@@ -2698,19 +2726,20 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
   }
 
   Widget _buildSearchField(String hint, TextEditingController ctrl, VoidCallback onSubmitted) {
+    final tokens = IcareSurfaceTokens.of(context);
     return TextField(
       controller: ctrl,
       decoration: InputDecoration(
         labelText: 'Search',
         hintText: hint,
-        prefixIcon: const Icon(Icons.search, size: 15, color: Color(0xFF64748B)),
+        prefixIcon: Icon(Icons.search, size: 15, color: tokens.textMuted),
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
         contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
         suffixIcon: ctrl.text.isNotEmpty
             ? IconButton(icon: const Icon(Icons.clear, size: 14), onPressed: () { ctrl.clear(); onSubmitted(); })
             : null,
       ),
-      style: const TextStyle(fontSize: 12),
+      style: TextStyle(fontSize: 12, color: tokens.textPrimary),
       onSubmitted: (_) => onSubmitted(),
     );
   }
@@ -2750,16 +2779,17 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
   }
 
   Widget _buildKpiCard(String label, String value, {String? delta, bool isDeltaInverse = false, required double width}) {
+    final tokens = IcareSurfaceTokens.of(context);
     return Container(
       width: width,
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: tokens.surface,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: tokens.borderSubtle),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.02),
+            color: Colors.black.withOpacity(tokens.isDark ? 0.16 : 0.02),
             blurRadius: 4,
             offset: const Offset(0, 1),
           ),
@@ -2770,10 +2800,10 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
         children: [
           Text(
             label,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 11,
               fontWeight: FontWeight.w600,
-              color: Color(0xFF64748B),
+              color: tokens.textMuted,
               letterSpacing: 0.2,
             ),
             maxLines: 1,
@@ -2785,10 +2815,10 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
             alignment: Alignment.centerLeft,
             child: Text(
               value,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.w700,
-                color: Color(0xFF0F172A),
+                color: tokens.textPrimary,
                 fontFamily: 'JetBrains Mono',
               ),
             ),
@@ -2800,7 +2830,7 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
                 Icon(
                   isDeltaInverse ? Icons.arrow_downward : Icons.arrow_upward,
                   size: 11,
-                  color: isDeltaInverse ? const Color(0xFFDC2626) : const Color(0xFF059669),
+                  color: isDeltaInverse ? tokens.dangerDot : tokens.successDot,
                 ),
                 const SizedBox(width: 2),
                 Text(
@@ -2808,7 +2838,7 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
                   style: TextStyle(
                     fontSize: 10.5,
                     fontWeight: FontWeight.w700,
-                    color: isDeltaInverse ? const Color(0xFFDC2626) : const Color(0xFF059669),
+                    color: isDeltaInverse ? tokens.dangerText : tokens.successText,
                   ),
                 ),
               ],
@@ -2827,6 +2857,7 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
     final screenWidth = MediaQuery.of(context).size.width;
     final isMobile = screenWidth < 750;
     final showCards = _useCardView ?? isMobile;
+    final tokens = IcareSurfaceTokens.of(context);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -2835,9 +2866,9 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           decoration: BoxDecoration(
-            color: const Color(0xFFF8FAFC),
+            color: tokens.surfaceSubtle,
             borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
-            border: Border.all(color: const Color(0xFFE2E8F0)),
+            border: Border.all(color: tokens.borderSubtle),
           ),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -2847,15 +2878,15 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFE2E8F0),
+                      color: tokens.surfaceHover,
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Text(
                       '${records.length} records',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.w700,
-                        color: Color(0xFF334155),
+                        color: tokens.textSecondary,
                       ),
                     ),
                   ),
@@ -2863,10 +2894,10 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
                     const SizedBox(width: 8),
                     Text(
                       title,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
-                        color: Color(0xFF475569),
+                        color: tokens.textSecondary,
                       ),
                     ),
                   ],
@@ -2875,7 +2906,7 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
               // Segmented Toggle: Cards vs Table
               Container(
                 decoration: BoxDecoration(
-                  color: const Color(0xFFE2E8F0),
+                  color: tokens.surfaceHover,
                   borderRadius: BorderRadius.circular(6),
                 ),
                 padding: const EdgeInsets.all(2),
@@ -2887,10 +2918,10 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                         decoration: BoxDecoration(
-                          color: showCards ? Colors.white : Colors.transparent,
+                          color: showCards ? tokens.surface : Colors.transparent,
                           borderRadius: BorderRadius.circular(4),
                           boxShadow: showCards
-                              ? [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 2)]
+                              ? [BoxShadow(color: Colors.black.withOpacity(tokens.isDark ? 0.24 : 0.05), blurRadius: 2)]
                               : null,
                         ),
                         child: Row(
@@ -2898,7 +2929,7 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
                             Icon(
                               Icons.view_agenda_outlined,
                               size: 13,
-                              color: showCards ? const Color(0xFF2E86C1) : const Color(0xFF64748B),
+                              color: showCards ? tokens.brandPrimary : tokens.textMuted,
                             ),
                             const SizedBox(width: 4),
                             Text(
@@ -2906,7 +2937,7 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
                               style: TextStyle(
                                 fontSize: 11,
                                 fontWeight: showCards ? FontWeight.w700 : FontWeight.w500,
-                                color: showCards ? const Color(0xFF2E86C1) : const Color(0xFF64748B),
+                                color: showCards ? tokens.brandPrimary : tokens.textMuted,
                               ),
                             ),
                           ],
@@ -2919,10 +2950,10 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                         decoration: BoxDecoration(
-                          color: !showCards ? Colors.white : Colors.transparent,
+                          color: !showCards ? tokens.surface : Colors.transparent,
                           borderRadius: BorderRadius.circular(4),
                           boxShadow: !showCards
-                              ? [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 2)]
+                              ? [BoxShadow(color: Colors.black.withOpacity(tokens.isDark ? 0.24 : 0.05), blurRadius: 2)]
                               : null,
                         ),
                         child: Row(
@@ -2930,7 +2961,7 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
                             Icon(
                               Icons.table_chart_outlined,
                               size: 13,
-                              color: !showCards ? const Color(0xFF2E86C1) : const Color(0xFF64748B),
+                              color: !showCards ? tokens.brandPrimary : tokens.textMuted,
                             ),
                             const SizedBox(width: 4),
                             Text(
@@ -2938,7 +2969,7 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
                               style: TextStyle(
                                 fontSize: 11,
                                 fontWeight: !showCards ? FontWeight.w700 : FontWeight.w500,
-                                color: !showCards ? const Color(0xFF2E86C1) : const Color(0xFF64748B),
+                                color: !showCards ? tokens.brandPrimary : tokens.textMuted,
                               ),
                             ),
                           ],
@@ -2962,14 +2993,15 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
   }
 
   Widget _buildRecordCardList(List<Map<String, dynamic>> records, List<String> columns) {
+    final tokens = IcareSurfaceTokens.of(context);
     return Container(
       decoration: BoxDecoration(
-        color: const Color(0xFFF1F5F9).withOpacity(0.5),
+        color: tokens.surfaceSubtle.withOpacity(0.7),
         borderRadius: const BorderRadius.vertical(bottom: Radius.circular(8)),
-        border: const Border(
-          left: BorderSide(color: Color(0xFFE2E8F0)),
-          right: BorderSide(color: Color(0xFFE2E8F0)),
-          bottom: BorderSide(color: Color(0xFFE2E8F0)),
+        border: Border(
+          left: BorderSide(color: tokens.borderSubtle),
+          right: BorderSide(color: tokens.borderSubtle),
+          bottom: BorderSide(color: tokens.borderSubtle),
         ),
       ),
       padding: const EdgeInsets.all(8),
@@ -2984,6 +3016,7 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
   }
 
   Widget _buildSingleRecordCard(Map<String, dynamic> r, List<String> columns, int idx) {
+    final tokens = IcareSurfaceTokens.of(context);
     final title = (r['Client Name'] ?? r['Category'] ?? r['Narration'] ?? r['Journal Ref'] ?? r['Loan Number'] ?? r['Source'] ?? '').toString();
     final displayTitle = title.isNotEmpty ? title : 'Record #${idx + 1}';
     final code = (r['Client Code'] ?? r['Loan Number'] ?? r['Reference'] ?? r['Journal Ref'] ?? '').toString();
@@ -3012,12 +3045,12 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: tokens.surface,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: tokens.borderSubtle),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.02),
+            color: Colors.black.withOpacity(tokens.isDark ? 0.16 : 0.02),
             blurRadius: 3,
             offset: const Offset(0, 1),
           ),
@@ -3038,10 +3071,10 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
                     children: [
                       Text(
                         displayTitle,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.w700,
-                          color: Color(0xFF0F172A),
+                          color: tokens.textPrimary,
                         ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
@@ -3050,10 +3083,10 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
                         const SizedBox(height: 2),
                         Text(
                           code,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 11,
                             fontWeight: FontWeight.w600,
-                            color: Color(0xFF64748B),
+                            color: tokens.textMuted,
                             fontFamily: 'JetBrains Mono',
                           ),
                         ),
@@ -3077,16 +3110,16 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
+                      Text(
                         'Amount',
-                        style: TextStyle(fontSize: 10, color: Color(0xFF94A3B8), fontWeight: FontWeight.w600),
+                        style: TextStyle(fontSize: 10, color: tokens.textLight, fontWeight: FontWeight.w600),
                       ),
                       Text(
                         amount,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.w700,
-                          color: Color(0xFF059669),
+                          color: tokens.successText,
                           fontFamily: 'JetBrains Mono',
                         ),
                       ),
@@ -3097,16 +3130,16 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
+                      Text(
                         'Withdrawal',
-                        style: TextStyle(fontSize: 10, color: Color(0xFF94A3B8), fontWeight: FontWeight.w600),
+                        style: TextStyle(fontSize: 10, color: tokens.textLight, fontWeight: FontWeight.w600),
                       ),
                       Text(
                         withdrawal,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.w700,
-                          color: Color(0xFFDC2626),
+                          color: tokens.dangerText,
                           fontFamily: 'JetBrains Mono',
                         ),
                       ),
@@ -3117,16 +3150,16 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
-                      const Text(
+                      Text(
                         'Available Bal',
-                        style: TextStyle(fontSize: 10, color: Color(0xFF94A3B8), fontWeight: FontWeight.w600),
+                        style: TextStyle(fontSize: 10, color: tokens.textLight, fontWeight: FontWeight.w600),
                       ),
                       Text(
                         availBalance,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.w700,
-                          color: Color(0xFF0F172A),
+                          color: tokens.textPrimary,
                           fontFamily: 'JetBrains Mono',
                         ),
                       ),
@@ -3137,7 +3170,7 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
             ),
 
             const SizedBox(height: 8),
-            const Divider(height: 1, color: Color(0xFFF1F5F9)),
+            Divider(height: 1, color: tokens.borderSubtle),
             const SizedBox(height: 8),
 
             // Metadata Chips (Date, Officer, Branch, Type)
@@ -3149,7 +3182,7 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
                 if (date.isNotEmpty)
                   _buildCardChip(Icons.calendar_today_outlined, date),
                 if (typeTag != null && typeTag.isNotEmpty)
-                  _buildCardChip(Icons.category_outlined, typeTag, color: const Color(0xFF6366F1)),
+                  _buildCardChip(Icons.category_outlined, typeTag, color: tokens.infoText),
                 if (officer != null && officer.isNotEmpty && officer != '-')
                   _buildCardChip(Icons.person_outline, officer),
                 if (branch != null && branch.isNotEmpty && branch != '-')
@@ -3166,15 +3199,15 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
                   childrenPadding: const EdgeInsets.only(top: 4),
                   dense: true,
                   visualDensity: VisualDensity.compact,
-                  title: const Text(
+                  title: Text(
                     'More details',
-                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF2E86C1)),
+                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: tokens.brandPrimary),
                   ),
                   children: [
                     Container(
                       padding: const EdgeInsets.all(8),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFF8FAFC),
+                        color: tokens.surfaceSubtle,
                         borderRadius: BorderRadius.circular(6),
                       ),
                       child: Column(
@@ -3188,13 +3221,13 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
                                   width: 110,
                                   child: Text(
                                     e.key,
-                                    style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: Color(0xFF64748B)),
+                                    style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: tokens.textMuted),
                                   ),
                                 ),
                                 Expanded(
                                   child: Text(
                                     e.value.toString(),
-                                    style: const TextStyle(fontSize: 10.5, color: Color(0xFF1E293B)),
+                                    style: TextStyle(fontSize: 10.5, color: tokens.textPrimary),
                                   ),
                                 ),
                               ],
@@ -3213,24 +3246,25 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
     );
   }
 
-  Widget _buildCardChip(IconData icon, String label, {Color color = const Color(0xFF64748B)}) {
+  Widget _buildCardChip(IconData icon, String label, {Color? color}) {
+    final resolvedColor = color ?? IcareSurfaceTokens.of(context).textMuted;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.08),
+        color: resolvedColor.withOpacity(0.10),
         borderRadius: BorderRadius.circular(4),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 11, color: color),
+          Icon(icon, size: 11, color: resolvedColor),
           const SizedBox(width: 4),
           Text(
             label,
             style: TextStyle(
               fontSize: 10.5,
               fontWeight: FontWeight.w600,
-              color: color,
+              color: resolvedColor,
             ),
           ),
         ],
@@ -3239,26 +3273,27 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
   }
 
   Widget _buildTableView(List<Map<String, dynamic>> records, List<String> columns) {
+    final tokens = IcareSurfaceTokens.of(context);
     return Container(
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.vertical(bottom: Radius.circular(8)),
+      decoration: BoxDecoration(
+        color: tokens.surface,
+        borderRadius: const BorderRadius.vertical(bottom: Radius.circular(8)),
         border: Border(
-          left: BorderSide(color: Color(0xFFE2E8F0)),
-          right: BorderSide(color: Color(0xFFE2E8F0)),
-          bottom: BorderSide(color: Color(0xFFE2E8F0)),
+          left: BorderSide(color: tokens.borderSubtle),
+          right: BorderSide(color: tokens.borderSubtle),
+          bottom: BorderSide(color: tokens.borderSubtle),
         ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Padding(
-            padding: EdgeInsets.only(left: 12, top: 8, bottom: 4),
+          Padding(
+            padding: const EdgeInsets.only(left: 12, top: 8, bottom: 4),
             child: Row(
               children: [
-                Icon(Icons.swipe, size: 14, color: Color(0xFF94A3B8)),
-                SizedBox(width: 6),
-                Text('Scroll horizontally for complete table', style: TextStyle(fontSize: 11, color: Color(0xFF64748B), fontWeight: FontWeight.w500)),
+                Icon(Icons.swipe, size: 14, color: tokens.textLight),
+                const SizedBox(width: 6),
+                Text('Scroll horizontally for complete table', style: TextStyle(fontSize: 11, color: tokens.textMuted, fontWeight: FontWeight.w500)),
               ],
             ),
           ),
@@ -3267,8 +3302,8 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
             child: DataTable(
               columnSpacing: 18.0,
               horizontalMargin: 12.0,
-              headingRowColor: MaterialStateProperty.all(const Color(0xFFF1F5F9)),
-              columns: columns.map((c) => DataColumn(label: Text(c, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 11.5)))).toList(),
+              headingRowColor: MaterialStateProperty.all(tokens.surfaceSubtle),
+              columns: columns.map((c) => DataColumn(label: Text(c, style: TextStyle(fontWeight: FontWeight.w700, fontSize: 11.5, color: tokens.textSecondary)))).toList(),
               rows: records.map((r) {
                 return DataRow(
                   cells: columns.map((col) {
@@ -3285,20 +3320,21 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
   }
 
   Widget _buildCellWidget(String col, String val) {
+    final tokens = IcareSurfaceTokens.of(context);
     if (col == 'Status') {
-      Color bg = const Color(0xFFF1F5F9);
-      Color txt = const Color(0xFF475569);
+      Color bg = tokens.neutralBg;
+      Color txt = tokens.neutralText;
       final cleanVal = val.replaceAll(RegExp(r'[^\w\s]'), '').trim().toUpperCase();
 
       if (cleanVal.contains('PAID') || cleanVal.contains('APPROVED') || cleanVal.contains('BALANCED') || cleanVal.contains('DISBURSED') || cleanVal.contains('COMPLETED') || cleanVal.contains('ACTIVE') || cleanVal.contains('SUCCESS')) {
-        bg = const Color(0xFFDCFCE7);
-        txt = const Color(0xFF15803D);
+        bg = tokens.successBg;
+        txt = tokens.successText;
       } else if (cleanVal.contains('PART') || cleanVal.contains('PENDING')) {
-        bg = const Color(0xFFFEF3C7);
-        txt = const Color(0xFFB45309);
+        bg = tokens.warningBg;
+        txt = tokens.warningText;
       } else if (cleanVal.contains('NOT') || cleanVal.contains('OVERDUE') || cleanVal.contains('REJECTED') || cleanVal.contains('REVERS') || cleanVal.contains('UNBALANCED') || cleanVal.contains('MISMATCH')) {
-        bg = const Color(0xFFFEE2E2);
-        txt = const Color(0xFFB91C1C);
+        bg = tokens.dangerBg;
+        txt = tokens.dangerText;
       }
 
       return Container(
@@ -3316,12 +3352,12 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
             val,
             overflow: TextOverflow.ellipsis,
             maxLines: 1,
-            style: const TextStyle(fontSize: 11),
+            style: TextStyle(fontSize: 11, color: tokens.textPrimary),
           ),
         ),
       );
     }
-    return Text(val, style: const TextStyle(fontSize: 11));
+    return Text(val, style: TextStyle(fontSize: 11, color: tokens.textPrimary));
   }
 
   Widget _buildInspectorSection({
@@ -3337,23 +3373,24 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
     final validIdx = (selectedIndex >= 0 && selectedIndex < records.length) ? selectedIndex : 0;
     final sel = records[validIdx];
     final details = detailsBuilder(sel);
+    final tokens = IcareSurfaceTokens.of(context);
 
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: tokens.surface,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: tokens.borderSubtle),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.02),
+            color: Colors.black.withOpacity(tokens.isDark ? 0.16 : 0.02),
             blurRadius: 4,
             offset: const Offset(0, 1),
           ),
         ],
       ),
       child: ExpansionTile(
-        leading: const Icon(Icons.fact_check_outlined, size: 20, color: Color(0xFF2E86C1)),
-        title: Text(title, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFF0F172A))),
+        leading: Icon(Icons.fact_check_outlined, size: 20, color: tokens.brandPrimary),
+        title: Text(title, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: tokens.textPrimary)),
         children: [
           Padding(
             padding: const EdgeInsets.all(16),
@@ -3376,7 +3413,7 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
                   onChanged: (val) { if (val != null) onIndexChanged(val); },
                 ),
                 const SizedBox(height: 16),
-                const Text('Transaction Details', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700, color: Color(0xFF1E293B))),
+                Text('Transaction Details', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700, color: tokens.textPrimary)),
                 const SizedBox(height: 10),
                 Wrap(
                   spacing: 10,
@@ -3386,21 +3423,21 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
                       width: 180,
                       padding: const EdgeInsets.all(10),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFF8FAFC),
+                        color: tokens.surfaceSubtle,
                         borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: const Color(0xFFE2E8F0)),
+                        border: Border.all(color: tokens.borderSubtle),
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(d.label, style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: Color(0xFF64748B))),
+                          Text(d.label, style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: tokens.textMuted)),
                           const SizedBox(height: 4),
                           Text(
                             d.value,
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 12,
                               fontWeight: FontWeight.w700,
-                              color: Color(0xFF0F172A),
+                              color: tokens.textPrimary,
                             ),
                           ),
                         ],
@@ -3412,7 +3449,7 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
                 Row(
                   children: [
                     Checkbox(value: showRawTech, onChanged: (v) => onToggleRawTech(v ?? false)),
-                    const Text('Show Advanced Technical Details (JSON)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
+                    Text('Show Advanced Technical Details (JSON)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: tokens.textPrimary)),
                   ],
                 ),
                 if (showRawTech) ...[
@@ -3465,38 +3502,40 @@ class _AuditLedgerScreenState extends ConsumerState<AuditLedgerScreen> {
   }
 
   Widget _buildExportButton(String label, VoidCallback onPressed) {
+    final tokens = IcareSurfaceTokens.of(context);
     return SizedBox(
       height: 40,
       child: OutlinedButton.icon(
         onPressed: onPressed,
         style: OutlinedButton.styleFrom(
-          side: const BorderSide(color: Color(0xFFCBD5E1)),
+          side: BorderSide(color: tokens.borderStrong),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-          backgroundColor: Colors.white,
+          backgroundColor: tokens.surface,
         ),
-        icon: const Icon(Icons.download, size: 16, color: Color(0xFF334155)),
-        label: Text(label, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF334155))),
+        icon: Icon(Icons.download, size: 16, color: tokens.textSecondary),
+        label: Text(label, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tokens.textSecondary)),
       ),
     );
   }
 
   Widget _buildEmptyState(String message) {
+    final tokens = IcareSurfaceTokens.of(context);
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFFEFF6FF),
+        color: tokens.infoBg,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFBFDBFE)),
+        border: Border.all(color: tokens.infoBorder),
       ),
       child: Row(
         children: [
-          const Icon(Icons.info_outline, color: Color(0xFF1E40AF), size: 20),
+          Icon(Icons.info_outline, color: tokens.infoText, size: 20),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
               message,
-              style: const TextStyle(fontSize: 13, color: Color(0xFF1E40AF), fontWeight: FontWeight.w500),
+              style: TextStyle(fontSize: 13, color: tokens.infoText, fontWeight: FontWeight.w500),
             ),
           ),
         ],

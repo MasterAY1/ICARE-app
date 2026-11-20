@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import '../../../core/theme/icare_theme_tokens.dart';
 import '../../../core/widgets/icare_card.dart';
 import '../../../core/widgets/icare_section_header.dart';
 import '../../../core/widgets/icare_skeleton_loader.dart';
@@ -70,8 +71,7 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
 
   // Feedback states
   String? _statusBannerText;
-  Color _statusBannerColor = const Color(0xFF065F46);
-  Color _statusBannerBg = const Color(0xFFECFDF5);
+  String _statusBannerSeverity = 'success';
   IconData _statusBannerIcon = Icons.check_circle_outline;
 
   bool _isSubmittingEod = false;
@@ -157,6 +157,7 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
   }
 
   Widget _buildClientFeesList() {
+    final tokens = IcareSurfaceTokens.of(context);
     final feesAsync = ref.watch(clientFeesProvider(_currentKey));
     return feesAsync.when(
       loading: () => const Padding(
@@ -171,18 +172,18 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
             margin: const EdgeInsets.only(top: 8),
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             decoration: BoxDecoration(
-              color: const Color(0xFFF8FAFC),
+              color: tokens.surfaceSubtle,
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: const Color(0xFFE2E8F0)),
+              border: Border.all(color: tokens.borderSubtle),
             ),
-            child: const Row(
+            child: Row(
               children: [
-                Icon(Icons.info_outline, size: 16, color: Color(0xFF64748B)),
-                SizedBox(width: 8),
+                Icon(Icons.info_outline, size: 16, color: tokens.textMuted),
+                const SizedBox(width: 8),
                 Expanded(
                   child: Text(
                     'No client fees recorded for this date yet. Use "Record Client Fee" to attribute a fee directly to a client.',
-                    style: TextStyle(fontSize: 11.5, color: Color(0xFF64748B)),
+                    style: TextStyle(fontSize: 11.5, color: tokens.textMuted),
                   ),
                 ),
               ],
@@ -194,9 +195,9 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
           width: double.infinity,
           margin: const EdgeInsets.only(top: 10),
           decoration: BoxDecoration(
-            color: const Color(0xFFF8FAFC),
+            color: tokens.surfaceSubtle,
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: const Color(0xFFE2E8F0)),
+            border: Border.all(color: tokens.borderSubtle),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -208,16 +209,16 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
                   children: [
                     Text(
                       'Recorded Client Fees (${fees.length})',
-                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF334155)),
+                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: tokens.textSecondary),
                     ),
-                    const Text(
+                    Text(
                       'Attributed in Audit View',
-                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF059669)),
+                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: tokens.successText),
                     ),
                   ],
                 ),
               ),
-              const Divider(height: 1, color: Color(0xFFE2E8F0)),
+              Divider(height: 1, color: tokens.borderSubtle),
               ...fees.map((f) {
                 final m = f as Map<String, dynamic>;
                 final cName = m['client_name'] ?? 'Unknown';
@@ -227,34 +228,34 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
 
                 return Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  decoration: const BoxDecoration(
-                    border: Border(bottom: BorderSide(color: Color(0xFFF1F5F9))),
+                  decoration: BoxDecoration(
+                    border: Border(bottom: BorderSide(color: tokens.borderSubtle)),
                   ),
                   child: Row(
                     children: [
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                         decoration: BoxDecoration(
-                          color: const Color(0xFFEFF6FF),
+                          color: tokens.infoBg,
                           borderRadius: BorderRadius.circular(4),
-                          border: Border.all(color: const Color(0xFFDBEAFE)),
+                          border: Border.all(color: tokens.infoBorder),
                         ),
                         child: Text(
                           fType,
-                          style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Color(0xFF1D4ED8)),
+                          style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: tokens.infoText),
                         ),
                       ),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
                           '$cCode — $cName',
-                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF1E293B)),
+                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tokens.textPrimary),
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
                       Text(
                         CurrencyFormatter.formatNaira(amt, showDecimals: true),
-                        style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: Color(0xFF065F46)),
+                        style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: tokens.successText),
                       ),
                     ],
                   ),
@@ -269,7 +270,7 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
 
   void _showRecordClientFeeModal(BuildContext context, bool isOpen, String openReason) {
     if (!isOpen) {
-      _showBanner('Cannot record fees today ($openReason).', const Color(0xFFDC2626), const Color(0xFFFEF2F2), Icons.error_outline);
+      _showBanner('Cannot record fees today ($openReason).', 'danger', Icons.error_outline);
       return;
     }
 
@@ -289,6 +290,7 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
 
         return StatefulBuilder(
           builder: (ctx, setModalState) {
+            final tokens = IcareSurfaceTokens.of(ctx);
             if (isLoadingClients && clientsList.isEmpty) {
               api.getSingleClientOptions().then((res) {
                 if (ctx.mounted) {
@@ -308,6 +310,20 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
             }
 
             final isMobile = MediaQuery.of(ctx).size.width < 600;
+            InputDecoration modalInputDec({String? prefixText, String? hintText}) {
+              return InputDecoration(
+                prefixText: prefixText,
+                prefixStyle: TextStyle(color: tokens.textSecondary, fontWeight: FontWeight.w600),
+                hintText: hintText,
+                hintStyle: TextStyle(fontSize: 13, color: tokens.textMuted),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                filled: true,
+                fillColor: tokens.surfaceSubtle,
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: tokens.borderStrong)),
+                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: tokens.borderStrong)),
+                focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: tokens.brandPrimary, width: 1.5)),
+              );
+            }
 
             return Dialog(
               backgroundColor: Colors.transparent,
@@ -318,8 +334,9 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
                 child: Container(
                   padding: const EdgeInsets.all(20),
                   decoration: BoxDecoration(
-                    color: Colors.white,
+                    color: tokens.surfaceElevated,
                     borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: tokens.borderSubtle),
                     boxShadow: const [
                       BoxShadow(color: Color(0x260F172A), blurRadius: 24, offset: Offset(0, 8)),
                     ],
@@ -333,39 +350,43 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
                           Container(
                             padding: const EdgeInsets.all(8),
                             decoration: BoxDecoration(
-                              color: const Color(0xFFECFDF5),
+                              color: tokens.successBg,
                               borderRadius: BorderRadius.circular(10),
                             ),
-                            child: const Icon(Icons.receipt_long_outlined, size: 20, color: Color(0xFF059669)),
+                            child: Icon(Icons.receipt_long_outlined, size: 20, color: tokens.successText),
                           ),
                           const SizedBox(width: 12),
-                          const Expanded(
+                          Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text('Record Client Fee', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Color(0xFF0F172A))),
-                                SizedBox(height: 2),
-                                Text('Attributed revenue fee linked directly to the client.', style: TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+                                Text('Record Client Fee', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: tokens.textPrimary)),
+                                const SizedBox(height: 2),
+                                Text('Attributed revenue fee linked directly to the client.', style: TextStyle(fontSize: 12, color: tokens.textMuted)),
                               ],
                             ),
                           ),
                           IconButton(
-                            icon: const Icon(Icons.close, size: 20, color: Color(0xFF64748B)),
+                            icon: Icon(Icons.close, size: 20, color: tokens.textMuted),
                             onPressed: () => Navigator.of(ctx).pop(),
                           ),
                         ],
                       ),
-                      const Divider(height: 24, color: Color(0xFFF1F5F9)),
+                      Divider(height: 24, color: tokens.borderSubtle),
 
                       if (localError != null)
                         Container(
                           padding: const EdgeInsets.all(10),
                           margin: const EdgeInsets.only(bottom: 12),
-                          decoration: BoxDecoration(color: const Color(0xFFFEF2F2), borderRadius: BorderRadius.circular(8)),
-                          child: Text(localError!, style: const TextStyle(fontSize: 12, color: Color(0xFFDC2626))),
+                          decoration: BoxDecoration(
+                            color: tokens.dangerBg,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: tokens.dangerBorder),
+                          ),
+                          child: Text(localError!, style: TextStyle(fontSize: 12, color: tokens.dangerText)),
                         ),
 
-                      const Text('Select Client', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: Color(0xFF334155))),
+                      Text('Select Client', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: tokens.textSecondary)),
                       const SizedBox(height: 6),
                       if (isLoadingClients)
                         const SizedBox(
@@ -376,14 +397,10 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
                         DropdownButtonFormField<Map<String, dynamic>>(
                           isExpanded: true,
                           value: selectedClient,
-                          hint: const Text('Search / Select Client', style: TextStyle(fontSize: 13, color: Color(0xFF94A3B8))),
-                          decoration: InputDecoration(
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                            filled: true,
-                            fillColor: const Color(0xFFF8FAFC),
-                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFFCBD5E1))),
-                            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFFCBD5E1))),
-                          ),
+                          dropdownColor: tokens.surfaceElevated,
+                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: tokens.textPrimary),
+                          hint: Text('Search / Select Client', style: TextStyle(fontSize: 13, color: tokens.textMuted)),
+                          decoration: modalInputDec(),
                           items: clientsList.map((c) {
                             final m = c as Map<String, dynamic>;
                             final name = m['client_name'] ?? 'Unknown';
@@ -393,7 +410,7 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
                               value: m,
                               child: Text(
                                 '$code — $name ($grp)',
-                                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF1E293B)),
+                                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: tokens.textPrimary),
                                 overflow: TextOverflow.ellipsis,
                               ),
                             );
@@ -402,23 +419,19 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
                         ),
                       const SizedBox(height: 14),
 
-                      const Text('Fee Category', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: Color(0xFF334155))),
+                      Text('Fee Category', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: tokens.textSecondary)),
                       const SizedBox(height: 6),
                       DropdownButtonFormField<String>(
                         value: selectedFeeType,
-                        decoration: InputDecoration(
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                          filled: true,
-                          fillColor: const Color(0xFFF8FAFC),
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFFCBD5E1))),
-                          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFFCBD5E1))),
-                        ),
-                        items: const [
-                          DropdownMenuItem(value: 'Credit Form / App Fee', child: Text('Credit Form / App Fee (Processing)')),
-                          DropdownMenuItem(value: 'Pass Book', child: Text('Pass Book')),
-                          DropdownMenuItem(value: 'Misc Fee', child: Text('Misc Fee (Misc Savings)')),
-                          DropdownMenuItem(value: 'Credit Form Damage', child: Text('Credit Form Damage (Damage Fee)')),
-                          DropdownMenuItem(value: 'Bonus', child: Text('Bonus')),
+                        dropdownColor: tokens.surfaceElevated,
+                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: tokens.textPrimary),
+                        decoration: modalInputDec(),
+                        items: [
+                          DropdownMenuItem(value: 'Credit Form / App Fee', child: Text('Credit Form / App Fee (Processing)', style: TextStyle(color: tokens.textPrimary))),
+                          DropdownMenuItem(value: 'Pass Book', child: Text('Pass Book', style: TextStyle(color: tokens.textPrimary))),
+                          DropdownMenuItem(value: 'Misc Fee', child: Text('Misc Fee (Misc Savings)', style: TextStyle(color: tokens.textPrimary))),
+                          DropdownMenuItem(value: 'Credit Form Damage', child: Text('Credit Form Damage (Damage Fee)', style: TextStyle(color: tokens.textPrimary))),
+                          DropdownMenuItem(value: 'Bonus', child: Text('Bonus', style: TextStyle(color: tokens.textPrimary))),
                         ],
                         onChanged: (v) {
                           if (v != null) setModalState(() => selectedFeeType = v);
@@ -426,35 +439,22 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
                       ),
                       const SizedBox(height: 14),
 
-                      const Text('Fee Amount (₦)', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: Color(0xFF334155))),
+                      Text('Fee Amount (₦)', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: tokens.textSecondary)),
                       const SizedBox(height: 6),
                       TextField(
                         controller: amountCtrl,
                         keyboardType: TextInputType.number,
-                        decoration: InputDecoration(
-                          prefixText: '₦ ',
-                          hintText: 'e.g. 500',
-                          filled: true,
-                          fillColor: const Color(0xFFF8FAFC),
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFFCBD5E1))),
-                          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFFCBD5E1))),
-                        ),
+                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: tokens.textPrimary),
+                        decoration: modalInputDec(prefixText: '₦ ', hintText: 'e.g. 500'),
                       ),
                       const SizedBox(height: 14),
 
-                      const Text('Transaction Remarks / Reference (Optional)', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: Color(0xFF334155))),
+                      Text('Transaction Remarks / Reference (Optional)', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: tokens.textSecondary)),
                       const SizedBox(height: 6),
                       TextField(
                         controller: remarksCtrl,
-                        decoration: InputDecoration(
-                          hintText: 'e.g. Passbook issuance during evening collection',
-                          filled: true,
-                          fillColor: const Color(0xFFF8FAFC),
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFFCBD5E1))),
-                          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFFCBD5E1))),
-                        ),
+                        style: TextStyle(fontSize: 13, color: tokens.textPrimary),
+                        decoration: modalInputDec(hintText: 'e.g. Passbook issuance during evening collection'),
                       ),
                       const SizedBox(height: 20),
 
@@ -464,8 +464,8 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
                             child: OutlinedButton(
                               onPressed: isSubmittingFee ? null : () => Navigator.of(ctx).pop(),
                               style: OutlinedButton.styleFrom(
-                                foregroundColor: const Color(0xFF475569),
-                                side: const BorderSide(color: Color(0xFFCBD5E1)),
+                                foregroundColor: tokens.textSecondary,
+                                side: BorderSide(color: tokens.borderStrong),
                                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                                 padding: const EdgeInsets.symmetric(vertical: 12),
                               ),
@@ -507,8 +507,7 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
                                         if (ctx.mounted) Navigator.of(ctx).pop();
                                         _showBanner(
                                           feeRes['message'] ?? 'Fee recorded successfully.',
-                                          const Color(0xFF065F46),
-                                          const Color(0xFFECFDF5),
+                                          'success',
                                           Icons.check_circle_outline,
                                         );
                                         _lastLoadedKey = null;
@@ -528,7 +527,7 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
                                   : const Icon(Icons.check, size: 16),
                               label: Text(isSubmittingFee ? 'Recording...' : 'Post Client Fee'),
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFF065F46),
+                                backgroundColor: tokens.brandPrimaryDark,
                                 foregroundColor: Colors.white,
                                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                                 padding: const EdgeInsets.symmetric(vertical: 12),
@@ -552,8 +551,7 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
     if (!isOpen) {
       _showBanner(
         'Cannot update End of Day inputs today ($openReason).',
-        const Color(0xFFDC2626),
-        const Color(0xFFFEF2F2),
+        'danger',
         Icons.error_outline,
       );
       return;
@@ -595,8 +593,7 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
       final res = await api.submitEodAdjustments(payload);
       _showBanner(
         res['message'] ?? 'End of Day Outflows & Fees Updated Successfully.',
-        const Color(0xFF065F46),
-        const Color(0xFFECFDF5),
+        'success',
         Icons.check_circle_outline,
       );
       _lastLoadedKey = null;
@@ -605,8 +602,7 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
     } catch (e) {
       _showBanner(
         'Error updating End of Day inputs: ${AppErrorDetails.from(e).message}',
-        const Color(0xFFDC2626),
-        const Color(0xFFFEF2F2),
+        'danger',
         Icons.error_outline,
       );
     } finally {
@@ -618,8 +614,7 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
     if (!isOpen) {
       _showBanner(
         'Cannot submit reversal request today ($openReason).',
-        const Color(0xFFDC2626),
-        const Color(0xFFFEF2F2),
+        'danger',
         Icons.error_outline,
       );
       return;
@@ -629,8 +624,7 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
     if (_selectedRevOptionId == null || _selectedRevOptionId!.isEmpty) {
       _showBanner(
         'Please select an EOD transaction to flag for reversal.',
-        const Color(0xFFD97706),
-        const Color(0xFFFFFBEB),
+        'warning',
         Icons.warning_amber_rounded,
       );
       return;
@@ -638,8 +632,7 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
     if (reason.isEmpty) {
       _showBanner(
         'Please provide a valid reason for the reversal.',
-        const Color(0xFFD97706),
-        const Color(0xFFFFFBEB),
+        'warning',
         Icons.warning_amber_rounded,
       );
       return;
@@ -656,8 +649,7 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
 
       _showBanner(
         res['message'] ?? 'Cashbook reversal request submitted to BM.',
-        const Color(0xFF065F46),
-        const Color(0xFFECFDF5),
+        'success',
         Icons.check_circle_outline,
       );
       _revReasonCtrl.clear();
@@ -670,8 +662,7 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
     } catch (e) {
       _showBanner(
         'Failed to submit reversal request: ${AppErrorDetails.from(e).message}',
-        const Color(0xFFDC2626),
-        const Color(0xFFFEF2F2),
+        'danger',
         Icons.error_outline,
       );
     } finally {
@@ -679,17 +670,17 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
     }
   }
 
-  void _showBanner(String msg, Color textCol, Color bgCol, IconData icon) {
+  void _showBanner(String msg, String severity, IconData icon) {
     setState(() {
       _statusBannerText = msg;
-      _statusBannerColor = textCol;
-      _statusBannerBg = bgCol;
+      _statusBannerSeverity = severity;
       _statusBannerIcon = icon;
     });
   }
 
   @override
   Widget build(BuildContext context) {
+    final tokens = IcareSurfaceTokens.of(context);
     final authState = ref.watch(authControllerProvider);
     final user = authState is AuthStateAuthenticated ? authState.user : null;
     final cashbookAsync = ref.watch(coCashbookDataProvider(_currentKey));
@@ -699,6 +690,28 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
         _lastLoadedKey = null;
       }
     });
+
+    final Color bannerFg;
+    final Color bannerBg;
+    final Color bannerBorder;
+    switch (_statusBannerSeverity) {
+      case 'danger':
+        bannerFg = tokens.dangerText;
+        bannerBg = tokens.dangerBg;
+        bannerBorder = tokens.dangerBorder;
+        break;
+      case 'warning':
+        bannerFg = tokens.warningText;
+        bannerBg = tokens.warningBg;
+        bannerBorder = tokens.warningBorder;
+        break;
+      case 'success':
+      default:
+        bannerFg = tokens.successText;
+        bannerBg = tokens.successBg;
+        bannerBorder = tokens.successBorder;
+        break;
+    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -716,26 +729,26 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             margin: const EdgeInsets.only(bottom: 16),
             decoration: BoxDecoration(
-              color: _statusBannerBg,
+              color: bannerBg,
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: _statusBannerColor.withValues(alpha: 0.35)),
+              border: Border.all(color: bannerBorder),
             ),
             child: Row(
               children: [
-                Icon(_statusBannerIcon, color: _statusBannerColor, size: 18),
+                Icon(_statusBannerIcon, color: bannerFg, size: 18),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
                     _statusBannerText!,
                     style: TextStyle(
-                      color: _statusBannerColor,
+                      color: bannerFg,
                       fontSize: 13,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
                 ),
                 IconButton(
-                  icon: Icon(Icons.close, size: 16, color: _statusBannerColor),
+                  icon: Icon(Icons.close, size: 16, color: bannerFg),
                   onPressed: () => setState(() => _statusBannerText = null),
                   splashRadius: 16,
                   padding: EdgeInsets.zero,
@@ -932,12 +945,13 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
     required String currentOfficer,
     required String branchName,
   }) {
+    final tokens = IcareSurfaceTokens.of(context);
     final dateCol = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
+        Text(
           'Select Date',
-          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF334155)),
+          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: tokens.textSecondary),
         ),
         const SizedBox(height: 6),
         InkWell(
@@ -959,18 +973,18 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             decoration: BoxDecoration(
-              color: const Color(0xFFF8FAFC),
+              color: tokens.surfaceSubtle,
               borderRadius: BorderRadius.circular(6),
-              border: Border.all(color: const Color(0xFFCBD5E1)),
+              border: Border.all(color: tokens.borderStrong),
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
                   DateFormat('dd MMMM yyyy').format(_selectedDate),
-                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF0F172A)),
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: tokens.textPrimary),
                 ),
-                const Icon(Icons.calendar_today_outlined, size: 16, color: Color(0xFF64748B)),
+                Icon(Icons.calendar_today_outlined, size: 16, color: tokens.textMuted),
               ],
             ),
           ),
@@ -983,24 +997,25 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
       children: [
         Text(
           canSelectOfficer ? 'Select Credit Officer' : 'Assigned Officer',
-          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF334155)),
+          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: tokens.textSecondary),
         ),
         const SizedBox(height: 6),
         if (canSelectOfficer && officers.isNotEmpty) ...[
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12),
             decoration: BoxDecoration(
-              color: const Color(0xFFF8FAFC),
+              color: tokens.surfaceSubtle,
               borderRadius: BorderRadius.circular(6),
-              border: Border.all(color: const Color(0xFFCBD5E1)),
+              border: Border.all(color: tokens.borderStrong),
             ),
             child: DropdownButtonHideUnderline(
               child: DropdownButton<String>(
                 isExpanded: true,
+                dropdownColor: tokens.surfaceElevated,
                 value: officers.any((o) => o['username'] == (_selectedOfficer ?? currentOfficer))
                     ? (_selectedOfficer ?? currentOfficer)
                     : (officers.first['username'] as String),
-                icon: const Icon(Icons.keyboard_arrow_down, size: 18, color: Color(0xFF64748B)),
+                icon: Icon(Icons.keyboard_arrow_down, size: 18, color: tokens.textMuted),
                 items: officers.map((o) {
                   final u = o['username'] as String;
                   final disp = (o['display'] ?? u).toString();
@@ -1008,7 +1023,7 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
                     value: u,
                     child: Text(
                       disp,
-                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF0F172A)),
+                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: tokens.textPrimary),
                     ),
                   );
                 }).toList(),
@@ -1025,18 +1040,18 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
             width: double.infinity,
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             decoration: BoxDecoration(
-              color: const Color(0xFFF1F5F9),
+              color: tokens.infoBg,
               borderRadius: BorderRadius.circular(6),
-              border: Border.all(color: const Color(0xFFCBD5E1)),
+              border: Border.all(color: tokens.infoBorder),
             ),
             child: Row(
               children: [
-                const Icon(Icons.info_outline, size: 15, color: Color(0xFF0284C7)),
+                Icon(Icons.info_outline, size: 15, color: tokens.infoText),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
                     '$currentOfficer • $branchName Branch',
-                    style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: Color(0xFF0369A1)),
+                    style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: tokens.infoText),
                   ),
                 ),
               ],
@@ -1052,14 +1067,14 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
         ref.invalidate(coCashbookDataProvider(_currentKey));
         ref.invalidate(clientFeesProvider(_currentKey));
       },
-      icon: const Icon(Icons.refresh, size: 16, color: Color(0xFF0F172A)),
-      label: const Text(
+      icon: Icon(Icons.refresh, size: 16, color: tokens.textPrimary),
+      label: Text(
         'Refresh',
-        style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: Color(0xFF0F172A)),
+        style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: tokens.textPrimary),
       ),
       style: OutlinedButton.styleFrom(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        side: const BorderSide(color: Color(0xFFCBD5E1)),
+        side: BorderSide(color: tokens.borderStrong),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       ),
     );
@@ -1091,21 +1106,22 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
   }
 
   Widget _buildSuspendedBanner(String openReason) {
+    final tokens = IcareSurfaceTokens.of(context);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
-        color: const Color(0xFFFFFBEB),
+        color: tokens.warningBg,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFFCD34D)),
+        border: Border.all(color: tokens.warningBorder),
       ),
       child: Row(
         children: [
-          const Icon(Icons.warning_amber_rounded, color: Color(0xFFB45309), size: 18),
+          Icon(Icons.warning_amber_rounded, color: tokens.warningDot, size: 18),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
               'Operations Suspended ($openReason) — Read-Only mode.',
-              style: const TextStyle(fontSize: 13, color: Color(0xFF92400E), fontWeight: FontWeight.w600),
+              style: TextStyle(fontSize: 13, color: tokens.warningText, fontWeight: FontWeight.w600),
             ),
           ),
         ],
@@ -1114,22 +1130,23 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
   }
 
   Widget _buildInfoCard(String message) {
+    final tokens = IcareSurfaceTokens.of(context);
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
+        color: tokens.surfaceSubtle,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: tokens.borderSubtle),
       ),
       child: Row(
         children: [
-          const Icon(Icons.info_outline, size: 16, color: Color(0xFF64748B)),
+          Icon(Icons.info_outline, size: 16, color: tokens.textMuted),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
               message,
-              style: const TextStyle(fontSize: 12.5, color: Color(0xFF64748B), fontStyle: FontStyle.italic),
+              style: TextStyle(fontSize: 12.5, color: tokens.textMuted, fontStyle: FontStyle.italic),
             ),
           ),
         ],
@@ -1392,19 +1409,21 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
     int? arrearsCount,
     int? reversalsCount,
   }) {
+    final tokens = IcareSurfaceTokens.of(context);
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
-        color: const Color(0xFFF1F5F9),
+        color: tokens.surfaceSubtle,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: tokens.borderSubtle),
       ),
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
         child: Row(
           children: [
             _buildCashbookPill(
+              tokens: tokens,
               index: 0,
               currentIndex: selectedTab,
               label: 'T-Ledger',
@@ -1413,6 +1432,7 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
             ),
             const SizedBox(width: 4),
             _buildCashbookPill(
+              tokens: tokens,
               index: 1,
               currentIndex: selectedTab,
               label: 'EOD Inputs',
@@ -1421,6 +1441,7 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
             ),
             const SizedBox(width: 4),
             _buildCashbookPill(
+              tokens: tokens,
               index: 2,
               currentIndex: selectedTab,
               label: 'Field Tally',
@@ -1431,6 +1452,7 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
             ),
             const SizedBox(width: 4),
             _buildCashbookPill(
+              tokens: tokens,
               index: 3,
               currentIndex: selectedTab,
               label: 'Reversals',
@@ -1445,6 +1467,7 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
   }
 
   Widget _buildCashbookPill({
+    required IcareSurfaceTokens tokens,
     required int index,
     required int currentIndex,
     required String label,
@@ -1464,14 +1487,15 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
           duration: const Duration(milliseconds: 150),
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           decoration: BoxDecoration(
-            color: isSelected ? Colors.white : Colors.transparent,
+            color: isSelected ? tokens.surfaceElevated : Colors.transparent,
             borderRadius: BorderRadius.circular(10),
+            border: isSelected ? Border.all(color: tokens.borderSubtle) : null,
             boxShadow: isSelected
-                ? const [
+                ? [
                     BoxShadow(
-                      color: Color(0x120F172A),
+                      color: Colors.black.withValues(alpha: tokens.isDark ? 0.18 : 0.06),
                       blurRadius: 6,
-                      offset: Offset(0, 2),
+                      offset: const Offset(0, 2),
                     ),
                   ]
                 : null,
@@ -1482,7 +1506,7 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
               Icon(
                 icon,
                 size: 16,
-                color: isSelected ? const Color(0xFF065F46) : const Color(0xFF64748B),
+                color: isSelected ? tokens.brandPrimary : tokens.textMuted,
               ),
               const SizedBox(width: 6),
               Text(
@@ -1490,7 +1514,7 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
                 style: TextStyle(
                   fontSize: 12.5,
                   fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                  color: isSelected ? const Color(0xFF0F172A) : const Color(0xFF64748B),
+                  color: isSelected ? tokens.textPrimary : tokens.textMuted,
                 ),
               ),
               if (badgeCount != null && badgeCount > 0) ...[
@@ -1499,8 +1523,8 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                   decoration: BoxDecoration(
                     color: isAlertBadge
-                        ? const Color(0xFFFEE2E2)
-                        : (isSelected ? const Color(0xFFECFDF5) : const Color(0xFFE2E8F0)),
+                        ? tokens.dangerBg
+                        : (isSelected ? tokens.brandSoftBg : tokens.neutralBg),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
@@ -1509,8 +1533,8 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
                       fontSize: 10.5,
                       fontWeight: FontWeight.w700,
                       color: isAlertBadge
-                          ? const Color(0xFF991B1B)
-                          : (isSelected ? const Color(0xFF065F46) : const Color(0xFF475569)),
+                          ? tokens.dangerText
+                          : (isSelected ? tokens.brandSoftText : tokens.textSecondary),
                     ),
                   ),
                 ),
@@ -1528,6 +1552,7 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
     num totalInflows,
     num totalOutflows,
   ) {
+    final tokens = IcareSurfaceTokens.of(context);
     final inflowItems = [
       ('Opening Balance', (inflows['opening_balance'] ?? 0.0) as num),
       ('Savings Deposit', (inflows['savings_deposit'] ?? 0.0) as num),
@@ -1579,9 +1604,9 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
         Container(
           padding: const EdgeInsets.all(4),
           decoration: BoxDecoration(
-            color: const Color(0xFFF8FAFC),
+            color: tokens.surfaceSubtle,
             borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: const Color(0xFFCBD5E1)),
+            border: Border.all(color: tokens.borderStrong),
           ),
           child: Row(
             children: [
@@ -1592,9 +1617,9 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
                   child: Container(
                     padding: const EdgeInsets.symmetric(vertical: 8),
                     decoration: BoxDecoration(
-                      color: isInflow ? const Color(0xFFECFDF5) : Colors.transparent,
+                      color: isInflow ? tokens.successBg : Colors.transparent,
                       borderRadius: BorderRadius.circular(8),
-                      border: isInflow ? Border.all(color: const Color(0xFFA7F3D0)) : null,
+                      border: isInflow ? Border.all(color: tokens.successBorder) : null,
                     ),
                     child: Column(
                       children: [
@@ -1604,9 +1629,9 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
                             Container(
                               width: 6,
                               height: 6,
-                              decoration: const BoxDecoration(
+                              decoration: BoxDecoration(
                                 shape: BoxShape.circle,
-                                color: Color(0xFF059669),
+                                color: tokens.successDot,
                               ),
                             ),
                             const SizedBox(width: 6),
@@ -1615,7 +1640,7 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
                               style: TextStyle(
                                 fontSize: 12,
                                 fontWeight: isInflow ? FontWeight.w700 : FontWeight.w500,
-                                color: isInflow ? const Color(0xFF065F46) : const Color(0xFF64748B),
+                                color: isInflow ? tokens.successText : tokens.textMuted,
                               ),
                             ),
                           ],
@@ -1626,7 +1651,7 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
                           style: TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.w800,
-                            color: isInflow ? const Color(0xFF065F46) : const Color(0xFF334155),
+                            color: isInflow ? tokens.successText : tokens.textSecondary,
                           ),
                         ),
                       ],
@@ -1642,9 +1667,9 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
                   child: Container(
                     padding: const EdgeInsets.symmetric(vertical: 8),
                     decoration: BoxDecoration(
-                      color: !isInflow ? const Color(0xFFFEF2F2) : Colors.transparent,
+                      color: !isInflow ? tokens.dangerBg : Colors.transparent,
                       borderRadius: BorderRadius.circular(8),
-                      border: !isInflow ? Border.all(color: const Color(0xFFFECACA)) : null,
+                      border: !isInflow ? Border.all(color: tokens.dangerBorder) : null,
                     ),
                     child: Column(
                       children: [
@@ -1654,9 +1679,9 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
                             Container(
                               width: 6,
                               height: 6,
-                              decoration: const BoxDecoration(
+                              decoration: BoxDecoration(
                                 shape: BoxShape.circle,
-                                color: Color(0xFFDC2626),
+                                color: tokens.dangerDot,
                               ),
                             ),
                             const SizedBox(width: 6),
@@ -1665,7 +1690,7 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
                               style: TextStyle(
                                 fontSize: 12,
                                 fontWeight: !isInflow ? FontWeight.w700 : FontWeight.w500,
-                                color: !isInflow ? const Color(0xFF991B1B) : const Color(0xFF64748B),
+                                color: !isInflow ? tokens.dangerText : tokens.textMuted,
                               ),
                             ),
                           ],
@@ -1676,7 +1701,7 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
                           style: TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.w800,
-                            color: !isInflow ? const Color(0xFF991B1B) : const Color(0xFF334155),
+                            color: !isInflow ? tokens.dangerText : tokens.textSecondary,
                           ),
                         ),
                       ],
@@ -1695,16 +1720,16 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
           children: [
             Text(
               isInflow ? 'Inflow Accounts' : 'Outflow Accounts',
-              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF334155)),
+              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: tokens.textSecondary),
             ),
             InkWell(
               onTap: () => setState(() => _mobileShowAllLedgerItems = !_mobileShowAllLedgerItems),
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF1F5F9),
+                  color: tokens.surfaceSubtle,
                   borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: const Color(0xFFCBD5E1)),
+                  border: Border.all(color: tokens.borderStrong),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
@@ -1712,14 +1737,14 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
                     Icon(
                       _mobileShowAllLedgerItems ? Icons.filter_list_off : Icons.filter_list,
                       size: 13,
-                      color: const Color(0xFF475569),
+                      color: tokens.textSecondary,
                     ),
                     const SizedBox(width: 4),
                     Text(
                       _mobileShowAllLedgerItems
                           ? 'Showing All (${currentItems.length})'
                           : 'Active Only (${isInflow ? activeInflows : activeOutflows})',
-                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF475569)),
+                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: tokens.textSecondary),
                     ),
                   ],
                 ),
@@ -1732,9 +1757,9 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
         // Items List Card
         Container(
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: tokens.surface,
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: const Color(0xFFE2E8F0)),
+            border: Border.all(color: tokens.borderSubtle),
           ),
           child: displayedItems.isEmpty
               ? Padding(
@@ -1742,11 +1767,11 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
                   child: Center(
                     child: Column(
                       children: [
-                        const Icon(Icons.inbox_outlined, size: 28, color: Color(0xFF94A3B8)),
+                        Icon(Icons.inbox_outlined, size: 28, color: tokens.textMuted),
                         const SizedBox(height: 8),
                         Text(
                           'No ${isInflow ? "inflows" : "outflows"} recorded today.',
-                          style: const TextStyle(fontSize: 12.5, color: Color(0xFF64748B), fontStyle: FontStyle.italic),
+                          style: TextStyle(fontSize: 12.5, color: tokens.textMuted, fontStyle: FontStyle.italic),
                         ),
                         const SizedBox(height: 6),
                         TextButton(
@@ -1760,8 +1785,9 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
               : Column(
                   children: [
                     for (int i = 0; i < displayedItems.length; i++) ...[
-                      if (i > 0) const Divider(height: 1, color: Color(0xFFF1F5F9)),
+                      if (i > 0) Divider(height: 1, color: tokens.borderSubtle),
                       _buildMobileLedgerItemRow(
+                        tokens,
                         displayedItems[i].$1,
                         displayedItems[i].$2,
                         isInflow: isInflow,
@@ -1774,17 +1800,17 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
     );
   }
 
-  Widget _buildMobileLedgerItemRow(String name, num amount, {required bool isInflow}) {
+  Widget _buildMobileLedgerItemRow(IcareSurfaceTokens tokens, String name, num amount, {required bool isInflow}) {
     final isNonZero = amount > 0;
     final color = isNonZero
-        ? (isInflow ? const Color(0xFF065F46) : const Color(0xFF991B1B))
-        : const Color(0xFF94A3B8);
+        ? (isInflow ? tokens.successText : tokens.dangerText)
+        : tokens.textMuted;
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
         color: isNonZero
-            ? (isInflow ? const Color(0xFFF0FDF4).withValues(alpha: 0.3) : const Color(0xFFFEF2F2).withValues(alpha: 0.3))
+            ? (isInflow ? tokens.successBg : tokens.dangerBg).withValues(alpha: tokens.isDark ? 0.35 : 0.45)
             : Colors.transparent,
       ),
       child: Row(
@@ -1799,7 +1825,7 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
                     height: 16,
                     margin: const EdgeInsets.only(right: 8),
                     decoration: BoxDecoration(
-                      color: isInflow ? const Color(0xFF059669) : const Color(0xFFDC2626),
+                      color: isInflow ? tokens.successDot : tokens.dangerDot,
                       borderRadius: BorderRadius.circular(2),
                     ),
                   ),
@@ -1810,7 +1836,7 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
                     style: TextStyle(
                       fontSize: 12.5,
                       fontWeight: isNonZero ? FontWeight.w600 : FontWeight.w400,
-                      color: isNonZero ? const Color(0xFF0F172A) : const Color(0xFF64748B),
+                      color: isNonZero ? tokens.textPrimary : tokens.textMuted,
                     ),
                   ),
                 ),
@@ -1832,34 +1858,37 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
   }
 
   Widget _buildEodForm(bool isOpen, String openReason, {bool isMobile = false}) {
+    final tokens = IcareSurfaceTokens.of(context);
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: tokens.surface,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: tokens.borderSubtle),
       ),
       child: Theme(
-        data: ThemeData(dividerColor: Colors.transparent),
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
         child: ExpansionTile(
           initiallyExpanded: isMobile,
+          iconColor: tokens.textMuted,
+          collapsedIconColor: tokens.textMuted,
           tilePadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 4),
-          title: const Row(
+          title: Row(
             children: [
-              Icon(Icons.tune_outlined, size: 18, color: Color(0xFF0F172A)),
-              SizedBox(width: 8),
+              Icon(Icons.tune_outlined, size: 18, color: tokens.textPrimary),
+              const SizedBox(width: 8),
               Expanded(
                 child: Text(
                   'End of Day Outflows & Fees',
-                  style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
+                  style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w700, color: tokens.textPrimary),
                 ),
               ),
             ],
           ),
-          subtitle: const Padding(
-            padding: EdgeInsets.only(top: 2),
+          subtitle: Padding(
+            padding: const EdgeInsets.only(top: 2),
             child: Text(
               'Record branch expenses, bank deposits, and fee collections.',
-              style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+              style: TextStyle(fontSize: 12, color: tokens.textMuted),
             ),
           ),
           children: [
@@ -1868,13 +1897,13 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Divider(color: Color(0xFFE2E8F0), height: 24),
+                  Divider(color: tokens.borderSubtle, height: 24),
 
                   // Responsive EOD Form Inputs
                   LayoutBuilder(
                     builder: (context, constraints) {
-                      final isMobile = constraints.maxWidth < 650;
-                      if (isMobile) {
+                      final isNarrow = constraints.maxWidth < 650;
+                      if (isNarrow) {
                         return Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
@@ -1887,17 +1916,19 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
                             Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                const Text(
+                                Text(
                                   'Additional Collections & Fees',
-                                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF334155)),
+                                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: tokens.textSecondary),
                                 ),
                                 ElevatedButton.icon(
                                   onPressed: isOpen ? () => _showRecordClientFeeModal(context, isOpen, openReason) : null,
                                   icon: const Icon(Icons.person_add_alt_1_outlined, size: 14),
                                   label: const Text('Record Client Fee', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700)),
                                   style: ElevatedButton.styleFrom(
-                                    backgroundColor: const Color(0xFF065F46),
+                                    backgroundColor: tokens.brandPrimaryDark,
                                     foregroundColor: Colors.white,
+                                    disabledBackgroundColor: tokens.surfaceSubtle,
+                                    disabledForegroundColor: tokens.textMuted,
                                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
                                     elevation: 0,
@@ -1958,17 +1989,19 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              const Text(
+                              Text(
                                 'Additional Collections & Fees',
-                                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF334155)),
+                                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: tokens.textSecondary),
                               ),
                               ElevatedButton.icon(
                                 onPressed: isOpen ? () => _showRecordClientFeeModal(context, isOpen, openReason) : null,
                                 icon: const Icon(Icons.person_add_alt_1_outlined, size: 14),
                                 label: const Text('Record Client Fee', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
                                 style: ElevatedButton.styleFrom(
-                                  backgroundColor: const Color(0xFF065F46),
+                                  backgroundColor: tokens.brandPrimaryDark,
                                   foregroundColor: Colors.white,
+                                  disabledBackgroundColor: tokens.surfaceSubtle,
+                                  disabledForegroundColor: tokens.textMuted,
                                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
                                   elevation: 0,
@@ -2050,11 +2083,12 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
                         style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700),
                       ),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF064E3B),
+                        backgroundColor: tokens.brandPrimaryDark,
                         foregroundColor: Colors.white,
                         elevation: 0,
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-                        disabledBackgroundColor: const Color(0xFF94A3B8),
+                        disabledBackgroundColor: tokens.surfaceSubtle,
+                        disabledForegroundColor: tokens.textMuted,
                       ),
                     ),
                   ),
@@ -2073,6 +2107,7 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
     String? help,
     double step = 500.0,
   }) {
+    final tokens = IcareSurfaceTokens.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -2080,13 +2115,13 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
           children: [
             Text(
               label,
-              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF334155)),
+              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tokens.textSecondary),
             ),
             if (help != null) ...[
               const SizedBox(width: 4),
               Tooltip(
                 message: help,
-                child: const Icon(Icons.help_outline, size: 13, color: Color(0xFF94A3B8)),
+                child: Icon(Icons.help_outline, size: 13, color: tokens.textMuted),
               ),
             ],
           ],
@@ -2095,22 +2130,22 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
         Container(
           height: 38,
           decoration: BoxDecoration(
-            color: const Color(0xFFF8FAFC),
+            color: tokens.surfaceSubtle,
             borderRadius: BorderRadius.circular(6),
-            border: Border.all(color: const Color(0xFFCBD5E1)),
+            border: Border.all(color: tokens.borderStrong),
           ),
           child: TextField(
             controller: ctrl,
             keyboardType: TextInputType.number,
-            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF0F172A)),
-            decoration: const InputDecoration(
+            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: tokens.textPrimary),
+            decoration: InputDecoration(
               isDense: true,
-              contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
               border: InputBorder.none,
               prefixText: '₦ ',
-              prefixStyle: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: Color(0xFF64748B)),
+              prefixStyle: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: tokens.textMuted),
               hintText: '0',
-              hintStyle: TextStyle(fontSize: 13, color: Color(0xFF94A3B8)),
+              hintStyle: TextStyle(fontSize: 13, color: tokens.textMuted),
             ),
           ),
         ),
@@ -2122,6 +2157,7 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
   // ARREARS RECONCILIATION TALLY
   // ==========================================
   Widget _buildArrearsTallySection(Map<String, dynamic> tally, String officerName, {bool isMobile = false}) {
+    final tokens = IcareSurfaceTokens.of(context);
     final exp = (tally['scheduled_expected'] ?? 0.0) as num;
     final notPaid = (tally['not_paid_amount'] ?? 0.0) as num;
     final notPaidCnt = (tally['not_paid_count'] ?? 0) as int;
@@ -2134,22 +2170,22 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: tokens.surface,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: tokens.borderSubtle),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Section Title & Subtitle (app.py L1088-1090)
-          const Text(
+          Text(
             'Collections & Arrears Reconciliation',
-            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
+            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: tokens.textPrimary),
           ),
           const SizedBox(height: 2),
-          const Text(
+          Text(
             'Field collections vs bank deposits & arrears',
-            style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+            style: TextStyle(fontSize: 12, color: tokens.textMuted),
           ),
           const SizedBox(height: 14),
 
@@ -2173,7 +2209,7 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
                               'Overdue Arrears',
                               CurrencyFormatter.formatNaira(notPaid),
                               notPaidCnt > 0 ? '$notPaidCnt Not Paid' : '0 Arrears',
-                              const Color(0xFFDC2626),
+                              tokens.dangerText,
                             ),
                           ),
                         ],
@@ -2189,7 +2225,7 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
                               'Physical Cash Collected',
                               CurrencyFormatter.formatNaira(cashCol),
                               excess > 0 ? '+${CurrencyFormatter.formatNaira(excess)} Excess' : null,
-                              const Color(0xFF059669),
+                              tokens.successText,
                             ),
                           ),
                           const SizedBox(width: 10),
@@ -2217,7 +2253,7 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
                               'Overdue Arrears',
                               CurrencyFormatter.formatNaira(notPaid),
                               notPaidCnt > 0 ? '$notPaidCnt Not Paid' : '0 Arrears',
-                              const Color(0xFFDC2626),
+                              tokens.dangerText,
                             ),
                           ),
                         ],
@@ -2233,7 +2269,7 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
                               'Physical Cash Collected',
                               CurrencyFormatter.formatNaira(cashCol),
                               excess > 0 ? '+${CurrencyFormatter.formatNaira(excess)} Excess' : null,
-                              const Color(0xFF059669),
+                              tokens.successText,
                             ),
                           ),
                           const SizedBox(width: 12),
@@ -2259,7 +2295,7 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
                         'Overdue Arrears',
                         CurrencyFormatter.formatNaira(notPaid),
                         notPaidCnt > 0 ? '$notPaidCnt Not Paid' : '0 Arrears',
-                        const Color(0xFFDC2626),
+                        tokens.dangerText,
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -2268,7 +2304,7 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
                         'Physical Cash Collected',
                         CurrencyFormatter.formatNaira(cashCol),
                         excess > 0 ? '+${CurrencyFormatter.formatNaira(excess)} Excess' : null,
-                        const Color(0xFF059669),
+                        tokens.successText,
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -2287,18 +2323,18 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               decoration: BoxDecoration(
-                color: const Color(0xFFECFDF5),
+                color: tokens.successBg,
                 borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: const Color(0xFFA7F3D0)),
+                border: Border.all(color: tokens.successBorder),
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.check_circle_outline, color: Color(0xFF065F46), size: 16),
+                  Icon(Icons.check_circle_outline, color: tokens.successDot, size: 16),
                   const SizedBox(width: 8),
                   Expanded(
                     child: RichText(
                       text: TextSpan(
-                        style: const TextStyle(fontSize: 12.5, color: Color(0xFF065F46)),
+                        style: TextStyle(fontSize: 12.5, color: tokens.successText),
                         children: [
                           const TextSpan(text: 'Physical Cash Reconciled: ', style: TextStyle(fontWeight: FontWeight.w700)),
                           const TextSpan(text: 'Balanced (₦0.00). '),
@@ -2314,18 +2350,18 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               decoration: BoxDecoration(
-                color: const Color(0xFFF0F9FF),
+                color: tokens.infoBg,
                 borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: const Color(0xFFBAE6FD)),
+                border: Border.all(color: tokens.infoBorder),
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.info_outline, color: Color(0xFF0369A1), size: 16),
+                  Icon(Icons.info_outline, color: tokens.infoText, size: 16),
                   const SizedBox(width: 8),
                   Expanded(
                     child: RichText(
                       text: TextSpan(
-                        style: const TextStyle(fontSize: 12.5, color: Color(0xFF0369A1)),
+                        style: TextStyle(fontSize: 12.5, color: tokens.infoText),
                         children: [
                           const TextSpan(text: 'Cash in Vault: ', style: TextStyle(fontWeight: FontWeight.w700)),
                           TextSpan(text: '${CurrencyFormatter.formatNaira(closing)} remaining. '),
@@ -2341,18 +2377,18 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               decoration: BoxDecoration(
-                color: const Color(0xFFFFFBEB),
+                color: tokens.warningBg,
                 borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: const Color(0xFFFCD34D)),
+                border: Border.all(color: tokens.warningBorder),
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.warning_amber_rounded, color: Color(0xFFB45309), size: 18),
+                  Icon(Icons.warning_amber_rounded, color: tokens.warningDot, size: 18),
                   const SizedBox(width: 8),
                   Expanded(
                     child: RichText(
                       text: TextSpan(
-                        style: const TextStyle(fontSize: 12.5, color: Color(0xFF92400E)),
+                        style: TextStyle(fontSize: 12.5, color: tokens.warningText),
                         children: [
                           const TextSpan(text: 'Extra Cash Deposited: ', style: TextStyle(fontWeight: FontWeight.w700)),
                           TextSpan(text: 'Surplus deposit of ${CurrencyFormatter.formatNaira(closing.abs())}.'),
@@ -2370,17 +2406,19 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
             const SizedBox(height: 12),
             Container(
               decoration: BoxDecoration(
-                color: const Color(0xFFF8FAFC),
+                color: tokens.surfaceSubtle,
                 borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: const Color(0xFFE2E8F0)),
+                border: Border.all(color: tokens.borderSubtle),
               ),
               child: Theme(
-                data: ThemeData(dividerColor: Colors.transparent),
+                data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
                 child: ExpansionTile(
                   initiallyExpanded: isMobile,
+                  iconColor: tokens.textMuted,
+                  collapsedIconColor: tokens.textMuted,
                   title: Text(
                     'Non-Paying Clients (${notPaidList.length})',
-                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF334155)),
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: tokens.textSecondary),
                   ),
                   children: [
                     Padding(
@@ -2395,7 +2433,7 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
                               child: ConstrainedBox(
                                 constraints: const BoxConstraints(minWidth: 600),
                                 child: Table(
-                                  border: TableBorder.all(color: const Color(0xFFE2E8F0), width: 1),
+                                  border: TableBorder.all(color: tokens.borderSubtle, width: 1),
                                   columnWidths: const {
                                     0: FlexColumnWidth(2.5),
                                     1: FlexColumnWidth(1.5),
@@ -2404,9 +2442,9 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
                                     4: FlexColumnWidth(2.2),
                                   },
                                   children: [
-                                    const TableRow(
-                                      decoration: BoxDecoration(color: Color(0xFFF1F5F9)),
-                                      children: [
+                                    TableRow(
+                                      decoration: BoxDecoration(color: tokens.neutralBg),
+                                      children: const [
                                         _TableHeaderCell('Client Name'),
                                         _TableHeaderCell('Client Code'),
                                         _TableHeaderCell('Expected'),
@@ -2425,8 +2463,8 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
                                           _TableCell(name, fontWeight: FontWeight.w600),
                                           _TableCell(code),
                                           _TableCell(CurrencyFormatter.formatNaira(expVal)),
-                                          _TableCell(CurrencyFormatter.formatNaira(shortVal), textColor: const Color(0xFFDC2626), fontWeight: FontWeight.w700),
-                                          _TableCell(isPart ? 'Partial Shortfall' : 'NOT PAID (₦0)', textColor: isPart ? const Color(0xFFD97706) : const Color(0xFFDC2626)),
+                                          _TableCell(CurrencyFormatter.formatNaira(shortVal), textColor: tokens.dangerText, fontWeight: FontWeight.w700),
+                                          _TableCell(isPart ? 'Partial Shortfall' : 'NOT PAID (₦0)', textColor: isPart ? tokens.warningText : tokens.dangerText),
                                         ],
                                       );
                                     }),
@@ -2440,7 +2478,7 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
                             Center(
                               child: OutlinedButton(
                                 style: OutlinedButton.styleFrom(
-                                  side: const BorderSide(color: Color(0xFFCBD5E1)),
+                                  side: BorderSide(color: tokens.borderStrong),
                                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
                                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                                 ),
@@ -2453,7 +2491,7 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
                                   _mobileNotPaidLimit == 10
                                       ? 'View All ${notPaidList.length} Arrears Records'
                                       : 'Show Top 10 Only',
-                                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
+                                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: tokens.textPrimary),
                                 ),
                               ),
                             ),
@@ -2472,17 +2510,18 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
   }
 
   Widget _buildTallyKpi(String label, String value, String? delta, Color? deltaColor) {
+    final tokens = IcareSurfaceTokens.of(context);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
+        color: tokens.surfaceSubtle,
         borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: tokens.borderSubtle),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label, style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B), fontWeight: FontWeight.w600)),
+          Text(label, style: TextStyle(fontSize: 11.5, color: tokens.textMuted, fontWeight: FontWeight.w600)),
           const SizedBox(height: 4),
           FittedBox(
             fit: BoxFit.scaleDown,
@@ -2491,14 +2530,14 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
               value,
               maxLines: 1,
               softWrap: false,
-              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: tokens.textPrimary),
             ),
           ),
           if (delta != null) ...[
             const SizedBox(height: 2),
             Text(
               delta,
-              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: deltaColor ?? const Color(0xFF64748B)),
+              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: deltaColor ?? tokens.textMuted),
             ),
           ],
         ],
@@ -2515,12 +2554,13 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
     num totalOutflows,
     num closingBalance,
   ) {
+    final tokens = IcareSurfaceTokens.of(context);
     return LayoutBuilder(
       builder: (context, constraints) {
         final w = constraints.maxWidth;
-        final c1 = _buildSummaryKpiCard('Opening Balance', CurrencyFormatter.formatNaira(openingBalance), const Color(0xFF0284C7));
-        final c2 = _buildSummaryKpiCard('Total Inflows', CurrencyFormatter.formatNaira(totalInflows), const Color(0xFF059669));
-        final c3 = _buildSummaryKpiCard('Total Outflows', CurrencyFormatter.formatNaira(totalOutflows), const Color(0xFFDC2626));
+        final c1 = _buildSummaryKpiCard('Opening Balance', CurrencyFormatter.formatNaira(openingBalance), tokens.infoText);
+        final c2 = _buildSummaryKpiCard('Total Inflows', CurrencyFormatter.formatNaira(totalInflows), tokens.successText);
+        final c3 = _buildSummaryKpiCard('Total Outflows', CurrencyFormatter.formatNaira(totalOutflows), tokens.dangerText);
         final c4 = _buildClosingCard(closingBalance);
 
         if (w < 600) {
@@ -2603,6 +2643,7 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
     num totalInflows,
     num totalOutflows,
   ) {
+    final tokens = IcareSurfaceTokens.of(context);
     // 22 Authoritative Inflow Items
     final inflowItems = [
       ('Opening Balance', (inflows['opening_balance'] ?? 0.0) as num),
@@ -2663,7 +2704,7 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(minWidth: 650),
                   child: Table(
-                  border: TableBorder.all(color: const Color(0xFFE2E8F0), width: 1),
+                  border: TableBorder.all(color: tokens.borderSubtle, width: 1),
                   columnWidths: const {
                     0: FlexColumnWidth(3),
                     1: FlexColumnWidth(2),
@@ -2672,19 +2713,19 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
                   },
                   children: [
                     // Header Row
-                    const TableRow(
-                      decoration: BoxDecoration(color: Color(0xFFF8FAFC)),
+                    TableRow(
+                      decoration: BoxDecoration(color: tokens.surfaceSubtle),
                       children: [
-                        _TableHeaderCell('Inflows (Left / Debit)', color: Color(0xFF065F46)),
-                        _TableHeaderCell('Amount (₦)', align: TextAlign.right, color: Color(0xFF065F46)),
-                        _TableHeaderCell('Outflows (Right / Credit)', color: Color(0xFF991B1B)),
-                        _TableHeaderCell('Amount (₦)', align: TextAlign.right, color: Color(0xFF991B1B)),
+                        _TableHeaderCell('Inflows (Left / Debit)', color: tokens.successText),
+                        _TableHeaderCell('Amount (₦)', align: TextAlign.right, color: tokens.successText),
+                        _TableHeaderCell('Outflows (Right / Credit)', color: tokens.dangerText),
+                        _TableHeaderCell('Amount (₦)', align: TextAlign.right, color: tokens.dangerText),
                       ],
                     ),
                     // 19 Data Rows
                     for (int i = 0; i < inflowItems.length; i++) ...[
                       TableRow(
-                        decoration: BoxDecoration(color: i % 2 == 0 ? Colors.white : const Color(0xFFFAFAFA)),
+                        decoration: BoxDecoration(color: i % 2 == 0 ? tokens.surface : tokens.surfaceSubtle),
                         children: [
                           // Inflow item name
                           _TableCell(inflowItems[i].$1, fontWeight: FontWeight.w500),
@@ -2710,28 +2751,28 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
                     ],
                     // Totals Footer Row
                     TableRow(
-                      decoration: const BoxDecoration(color: Color(0xFFF1F5F9)),
+                      decoration: BoxDecoration(color: tokens.neutralBg),
                       children: [
-                        const _TableCell(
+                        _TableCell(
                           'TOTAL INFLOWS (LEFT)',
-                          textColor: Color(0xFF065F46),
+                          textColor: tokens.successText,
                           fontWeight: FontWeight.w800,
                         ),
                         _TableCell(
                           CurrencyFormatter.formatNaira(totalInflows),
                           align: TextAlign.right,
-                          textColor: const Color(0xFF065F46),
+                          textColor: tokens.successText,
                           fontWeight: FontWeight.w800,
                         ),
-                        const _TableCell(
+                        _TableCell(
                           'TOTAL OUTFLOWS (RIGHT)',
-                          textColor: Color(0xFF991B1B),
+                          textColor: tokens.dangerText,
                           fontWeight: FontWeight.w800,
                         ),
                         _TableCell(
                           CurrencyFormatter.formatNaira(totalOutflows),
                           align: TextAlign.right,
-                          textColor: const Color(0xFF991B1B),
+                          textColor: tokens.dangerText,
                           fontWeight: FontWeight.w800,
                         ),
                       ],
@@ -2753,13 +2794,14 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
   }
 
   Widget _buildSummaryKpiCard(String label, String value, Color color) {
+    final tokens = IcareSurfaceTokens.of(context);
     return IcareCard(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       topAccentColor: color,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label.toUpperCase(), style: const TextStyle(fontSize: 10.5, color: Color(0xFF64748B), fontWeight: FontWeight.w700, letterSpacing: 0.4)),
+          Text(label.toUpperCase(), style: TextStyle(fontSize: 10.5, color: tokens.textMuted, fontWeight: FontWeight.w700, letterSpacing: 0.4)),
           const SizedBox(height: 4),
           FittedBox(
             fit: BoxFit.scaleDown,
@@ -2782,9 +2824,10 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
   }
 
   Widget _buildClosingCard(num closing) {
+    final tokens = IcareSurfaceTokens.of(context);
     final isPos = closing >= 0;
-    final accentCol = isPos ? const Color(0xFF059669) : const Color(0xFFDC2626);
-    final textCol = isPos ? const Color(0xFF065F46) : const Color(0xFF991B1B);
+    final accentCol = isPos ? tokens.successDot : tokens.dangerDot;
+    final textCol = isPos ? tokens.successText : tokens.dangerText;
 
     return IcareCard(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
@@ -2792,9 +2835,9 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
+          Text(
             'CLOSING BALANCE',
-            style: TextStyle(fontSize: 10.5, color: Color(0xFF64748B), fontWeight: FontWeight.w700, letterSpacing: 0.4),
+            style: TextStyle(fontSize: 10.5, color: tokens.textMuted, fontWeight: FontWeight.w700, letterSpacing: 0.4),
           ),
           const SizedBox(height: 4),
           FittedBox(
@@ -2827,42 +2870,45 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
     required String openReason,
     bool isMobile = false,
   }) {
+    final tokens = IcareSurfaceTokens.of(context);
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: tokens.surface,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: tokens.borderSubtle),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Header & Caption (app.py L11081-11082)
-          const Text(
+          Text(
             'Error Corrections & Reversals',
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: tokens.textPrimary),
           ),
           const SizedBox(height: 2),
-          const Text(
+          Text(
             'Request BM approval to reverse an erroneous fee, expense, or deposit.',
-            style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+            style: TextStyle(fontSize: 12, color: tokens.textMuted),
           ),
           const SizedBox(height: 14),
 
           // Expander: Flag an EOD Fee / Expense / Deposit for Reversal (app.py L11084-11153)
           Container(
             decoration: BoxDecoration(
-              color: const Color(0xFFF8FAFC),
+              color: tokens.surfaceSubtle,
               borderRadius: BorderRadius.circular(6),
-              border: Border.all(color: const Color(0xFFE2E8F0)),
+              border: Border.all(color: tokens.borderSubtle),
             ),
             child: Theme(
-              data: ThemeData(dividerColor: Colors.transparent),
+              data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
               child: ExpansionTile(
                 initiallyExpanded: isMobile,
-                title: const Text(
+                iconColor: tokens.textMuted,
+                collapsedIconColor: tokens.textMuted,
+                title: Text(
                   'Request Transaction Reversal',
-                  style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
+                  style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700, color: tokens.textPrimary),
                 ),
                 children: [
                   Padding(
@@ -2874,18 +2920,18 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                           decoration: BoxDecoration(
-                            color: const Color(0xFFF0F9FF),
+                            color: tokens.infoBg,
                             borderRadius: BorderRadius.circular(6),
-                            border: Border.all(color: const Color(0xFFBAE6FD)),
+                            border: Border.all(color: tokens.infoBorder),
                           ),
-                          child: const Row(
+                          child: Row(
                             children: [
-                              Icon(Icons.info_outline, color: Color(0xFF0369A1), size: 16),
-                              SizedBox(width: 8),
+                              Icon(Icons.info_outline, color: tokens.infoText, size: 16),
+                              const SizedBox(width: 8),
                               Expanded(
                                 child: Text(
                                   'Select a recent EOD transaction to flag for BM approval.',
-                                  style: TextStyle(fontSize: 12, color: Color(0xFF0369A1)),
+                                  style: TextStyle(fontSize: 12, color: tokens.infoText),
                                 ),
                               ),
                             ],
@@ -2895,25 +2941,26 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
 
                         if (reversalOptions.isNotEmpty) ...[
                           // Select Transaction Dropdown (app.py L11132)
-                          const Text(
+                          Text(
                             'Select Transaction',
-                            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF334155)),
+                            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: tokens.textSecondary),
                           ),
                           const SizedBox(height: 6),
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 12),
                             decoration: BoxDecoration(
-                              color: Colors.white,
+                              color: tokens.surface,
                               borderRadius: BorderRadius.circular(6),
-                              border: Border.all(color: const Color(0xFFCBD5E1)),
+                              border: Border.all(color: tokens.borderStrong),
                             ),
                             child: DropdownButtonHideUnderline(
                               child: DropdownButton<String>(
                                 isExpanded: true,
+                                dropdownColor: tokens.surfaceElevated,
                                 value: reversalOptions.any((o) => o['record_id'] == _selectedRevOptionId)
                                     ? _selectedRevOptionId
                                     : reversalOptions.first['record_id'] as String,
-                                icon: const Icon(Icons.keyboard_arrow_down, size: 18, color: Color(0xFF64748B)),
+                                icon: Icon(Icons.keyboard_arrow_down, size: 18, color: tokens.textMuted),
                                 items: reversalOptions.map((o) {
                                   final id = o['record_id'] as String;
                                   final label = (o['label'] ?? id).toString();
@@ -2921,7 +2968,7 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
                                     value: id,
                                     child: Text(
                                       label,
-                                      style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: Color(0xFF0F172A)),
+                                      style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: tokens.textPrimary),
                                     ),
                                   );
                                 }).toList(),
@@ -2942,26 +2989,26 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
                           const SizedBox(height: 12),
 
                           // Reason Text Input (app.py L11134)
-                          const Text(
+                          Text(
                             'Reason for Reversal',
-                            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF334155)),
+                            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: tokens.textSecondary),
                           ),
                           const SizedBox(height: 6),
                           Container(
                             decoration: BoxDecoration(
-                              color: isOpen ? Colors.white : const Color(0xFFF1F5F9),
+                              color: isOpen ? tokens.surface : tokens.surfaceSubtle,
                               borderRadius: BorderRadius.circular(6),
-                              border: Border.all(color: const Color(0xFFCBD5E1)),
+                              border: Border.all(color: tokens.borderStrong),
                             ),
                             child: TextField(
                               controller: _revReasonCtrl,
                               enabled: isOpen,
-                              style: const TextStyle(fontSize: 13, color: Color(0xFF0F172A)),
-                              decoration: const InputDecoration(
+                              style: TextStyle(fontSize: 13, color: tokens.textPrimary),
+                              decoration: InputDecoration(
                                 hintText: 'e.g., Typo in expense amount',
-                                hintStyle: TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
+                                hintStyle: TextStyle(fontSize: 12, color: tokens.textMuted),
                                 border: InputBorder.none,
-                                contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                               ),
                             ),
                           ),
@@ -2984,19 +3031,21 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
                               style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
                             ),
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF064E3B),
+                              backgroundColor: tokens.brandPrimaryDark,
                               foregroundColor: Colors.white,
+                              disabledBackgroundColor: tokens.surfaceSubtle,
+                              disabledForegroundColor: tokens.textMuted,
                               elevation: 0,
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
                               padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
                             ),
                           ),
                         ] else ...[
-                          const Padding(
-                            padding: EdgeInsets.symmetric(vertical: 8),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 8),
                             child: Text(
                               'No recent EOD transactions available to flag.',
-                              style: TextStyle(fontSize: 12.5, color: Color(0xFF64748B), fontStyle: FontStyle.italic),
+                              style: TextStyle(fontSize: 12.5, color: tokens.textMuted, fontStyle: FontStyle.italic),
                             ),
                           ),
                         ],
@@ -3010,18 +3059,18 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
           const SizedBox(height: 18),
 
           // Submitted Reversal Requests History (app.py L11156-11182)
-          const Text(
+          Text(
             'Submitted Requests',
-            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
+            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: tokens.textPrimary),
           ),
           const SizedBox(height: 8),
 
           if (submittedReversals.isEmpty) ...[
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 6),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 6),
               child: Text(
                 'No reversal requests submitted yet.',
-                style: TextStyle(fontSize: 12.5, color: Color(0xFF94A3B8), fontStyle: FontStyle.italic),
+                style: TextStyle(fontSize: 12.5, color: tokens.textMuted, fontStyle: FontStyle.italic),
               ),
             ),
           ] else ...[
@@ -3032,7 +3081,7 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(minWidth: 700),
                   child: Table(
-                    border: TableBorder.all(color: const Color(0xFFE2E8F0), width: 1),
+                    border: TableBorder.all(color: tokens.borderSubtle, width: 1),
                     columnWidths: const {
                       0: FlexColumnWidth(2.2),
                       1: FlexColumnWidth(1.2),
@@ -3042,9 +3091,9 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
                       5: FlexColumnWidth(1.8),
                     },
                     children: [
-                      const TableRow(
-                        decoration: BoxDecoration(color: Color(0xFFF1F5F9)),
-                        children: [
+                      TableRow(
+                        decoration: BoxDecoration(color: tokens.neutralBg),
+                        children: const [
                           _TableHeaderCell('Date'),
                           _TableHeaderCell('Type'),
                           _TableHeaderCell('Record Ref'),
@@ -3083,21 +3132,22 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
   }
 
   Widget _buildErrorCard(String error) {
+    final tokens = IcareSurfaceTokens.of(context);
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFFFEF2F2),
+        color: tokens.dangerBg,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFFCA5A5)),
+        border: Border.all(color: tokens.dangerBorder),
       ),
       child: Row(
         children: [
-          const Icon(Icons.error_outline, color: Color(0xFFDC2626), size: 18),
+          Icon(Icons.error_outline, color: tokens.dangerDot, size: 18),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
               'Error loading cashbook projection: $error',
-              style: const TextStyle(color: Color(0xFF991B1B), fontSize: 13),
+              style: TextStyle(color: tokens.dangerText, fontSize: 13),
             ),
           ),
           ElevatedButton(
@@ -3127,6 +3177,7 @@ class _TableHeaderCell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final tokens = IcareSurfaceTokens.of(context);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
       child: Text(
@@ -3135,7 +3186,7 @@ class _TableHeaderCell extends StatelessWidget {
         style: TextStyle(
           fontSize: 12,
           fontWeight: FontWeight.w700,
-          color: color ?? const Color(0xFF334155),
+          color: color ?? tokens.textSecondary,
         ),
       ),
     );
@@ -3157,6 +3208,7 @@ class _TableCell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final tokens = IcareSurfaceTokens.of(context);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7.5),
       child: Text(
@@ -3164,7 +3216,7 @@ class _TableCell extends StatelessWidget {
         textAlign: align,
         style: TextStyle(
           fontSize: 12,
-          color: textColor ?? const Color(0xFF0F172A),
+          color: textColor ?? tokens.textPrimary,
           fontWeight: fontWeight,
         ),
       ),
@@ -3179,16 +3231,17 @@ class _TableStatusBadgeCell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    Color bg = const Color(0xFFFEF3C7);
-    Color text = const Color(0xFF92400E);
+    final tokens = IcareSurfaceTokens.of(context);
+    Color bg = tokens.warningBg;
+    Color text = tokens.warningText;
 
     final sLower = status.toLowerCase();
     if (sLower.contains('approved') || sLower.contains('active')) {
-      bg = const Color(0xFFECFDF5);
-      text = const Color(0xFF065F46);
+      bg = tokens.successBg;
+      text = tokens.successText;
     } else if (sLower.contains('reject') || sLower.contains('denied')) {
-      bg = const Color(0xFFFEF2F2);
-      text = const Color(0xFF991B1B);
+      bg = tokens.dangerBg;
+      text = tokens.dangerText;
     }
 
     return Padding(

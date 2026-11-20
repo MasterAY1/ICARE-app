@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../../core/theme/icare_theme_tokens.dart';
 
 /// Modal dialog with smooth entry animations confirming successful deletion of an onboarding package.
 class SuccessfulDeleteAnimationDialog extends StatefulWidget {
@@ -93,10 +94,11 @@ class _SuccessfulDeleteAnimationDialogState extends State<SuccessfulDeleteAnimat
 
   @override
   Widget build(BuildContext context) {
+    final tokens = IcareSurfaceTokens.of(context);
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       elevation: 10,
-      backgroundColor: Colors.white,
+      backgroundColor: tokens.surfaceElevated,
       child: Container(
         constraints: const BoxConstraints(maxWidth: 420),
         padding: const EdgeInsets.symmetric(horizontal: 26, vertical: 30),
@@ -111,11 +113,11 @@ class _SuccessfulDeleteAnimationDialogState extends State<SuccessfulDeleteAnimat
                 height: 78,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: const Color(0xFFFEF2F2),
-                  border: Border.all(color: const Color(0xFFFCA5A5), width: 2),
-                  boxShadow: const [
+                  color: tokens.dangerBg,
+                  border: Border.all(color: tokens.dangerBorder, width: 2),
+                  boxShadow: [
                     BoxShadow(
-                      color: Color(0x18DC2626),
+                      color: tokens.dangerDot.withValues(alpha: tokens.isDark ? 0.24 : 0.10),
                       blurRadius: 18,
                       spreadRadius: 4,
                     ),
@@ -150,13 +152,13 @@ class _SuccessfulDeleteAnimationDialogState extends State<SuccessfulDeleteAnimat
                 position: _slideAnimation,
                 child: Column(
                   children: [
-                    const Text(
+                    Text(
                       'Session Deleted Successfully',
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         fontSize: 17,
                         fontWeight: FontWeight.w800,
-                        color: Color(0xFF0F172A),
+                        color: tokens.textPrimary,
                         letterSpacing: -0.2,
                       ),
                     ),
@@ -164,12 +166,12 @@ class _SuccessfulDeleteAnimationDialogState extends State<SuccessfulDeleteAnimat
                     RichText(
                       textAlign: TextAlign.center,
                       text: TextSpan(
-                        style: const TextStyle(fontSize: 13, color: Color(0xFF64748B), height: 1.45),
+                        style: TextStyle(fontSize: 13, color: tokens.textSecondary, height: 1.45),
                         children: [
                           const TextSpan(text: 'The onboarding package for '),
                           TextSpan(
                             text: '${widget.branchName} (${widget.branchCode})',
-                            style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
+                            style: TextStyle(fontWeight: FontWeight.bold, color: tokens.textPrimary),
                           ),
                           const TextSpan(text: ' and all associated staged records have been permanently removed.'),
                         ],
@@ -178,8 +180,8 @@ class _SuccessfulDeleteAnimationDialogState extends State<SuccessfulDeleteAnimat
                     const SizedBox(height: 22),
                     OutlinedButton(
                       style: OutlinedButton.styleFrom(
-                        foregroundColor: const Color(0xFF475569),
-                        side: const BorderSide(color: Color(0xFFCBD5E1)),
+                        foregroundColor: tokens.textSecondary,
+                        side: BorderSide(color: tokens.borderStrong),
                         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                       ),

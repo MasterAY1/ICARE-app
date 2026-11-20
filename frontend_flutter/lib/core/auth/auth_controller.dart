@@ -347,6 +347,35 @@ class AuthController extends StateNotifier<AuthState> {
     state = const AuthStateInitial();
   }
 
+  /// Updates the in-memory authenticated user profile and persists it on mobile/desktop.
+  Future<void> updateAuthenticatedUser(
+    AuthUser updatedUser, {
+    String? refreshedBearerToken,
+    String? refreshedCsrfToken,
+  }) async {
+    if (refreshedCsrfToken != null && refreshedCsrfToken.trim().isNotEmpty) {
+      _apiClient.setCsrfToken(refreshedCsrfToken);
+    }
+
+    final current = state;
+    if (current is! AuthStateAuthenticated) return;
+
+    final effectiveToken = (!_useCookieAuth &&
+            refreshedBearerToken != null &&
+            refreshedBearerToken.trim().isNotEmpty)
+        ? refreshedBearerToken.trim()
+        : current.token;
+
+    if (!_useCookieAuth && effectiveToken.isNotEmpty) {
+      _apiClient.setAuthToken(effectiveToken);
+      try {
+        await _sessionStorage.saveSession(effectiveToken, jsonEncode(updatedUser.toJson()));
+      } catch (_) {}
+    }
+
+    state = AuthStateAuthenticated(user: updatedUser, token: effectiveToken);
+  }
+
   Future<void> logout() async {
     try {
       await _apiClient.post('/api/v1/auth/logout');

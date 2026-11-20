@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 
 import '../../../core/auth/auth_controller.dart';
 import '../../../core/auth/auth_state.dart';
+import '../../../core/theme/icare_theme_tokens.dart';
 import '../data/datasources/user_management_api_service.dart';
 import '../data/models/user_management_models.dart';
 import '../../../core/widgets/icare_skeleton_loader.dart';
@@ -105,11 +106,12 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final tokens = IcareSurfaceTokens.of(context);
     final authState = ref.watch(authControllerProvider);
     final user = authState is AuthStateAuthenticated ? authState.user : null;
 
     if (user == null) {
-      return const Center(child: Text('Session expired. Please re-login.'));
+      return Center(child: Text('Session expired. Please re-login.', style: TextStyle(color: tokens.textMuted)));
     }
 
     final role = user.role.trim();
@@ -123,18 +125,18 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
       return Container(
         padding: const EdgeInsets.all(24),
         decoration: BoxDecoration(
-          color: const Color(0xFFFEF2F2),
+          color: tokens.dangerBg,
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: const Color(0xFFFCA5A5)),
+          border: Border.all(color: tokens.dangerBorder),
         ),
-        child: const Row(
+        child: Row(
           children: [
-            Icon(Icons.gpp_bad, color: Color(0xFFDC2626), size: 24),
-            SizedBox(width: 12),
+            Icon(Icons.gpp_bad, color: tokens.dangerDot, size: 24),
+            const SizedBox(width: 12),
             Expanded(
               child: Text(
                 'You do not have permission to access User Management.',
-                style: TextStyle(color: Color(0xFF991B1B), fontSize: 14, fontWeight: FontWeight.w600),
+                style: TextStyle(color: tokens.dangerText, fontSize: 14, fontWeight: FontWeight.w600),
               ),
             ),
           ],
@@ -194,7 +196,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
           style: TextStyle(
             fontSize: isMobile ? 20 : 24,
             fontWeight: FontWeight.w800,
-            color: const Color(0xFF0F172A),
+            color: tokens.textPrimary,
             fontFamily: 'Plus Jakarta Sans',
           ),
         ),
@@ -205,7 +207,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
               : (isBm
                   ? 'Manage branch personnel, configure product assignments, and handle password resets for ${user.branch} Branch.'
                   : 'Manage application users, reset passwords, and handle officer turnover.'),
-          style: const TextStyle(fontSize: 13, color: Color(0xFF64748B)),
+          style: TextStyle(fontSize: 13, color: tokens.textMuted),
         ),
         const SizedBox(height: 16),
 
@@ -220,7 +222,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
         ],
 
         // Pill Tabs Navigation
-        _buildPillTabs(tabs, _getActiveThemeColor(isAdmin, isBm, isAm)),
+        _buildPillTabs(tabs, _getActiveThemeColor(isAdmin, isBm, isAm, tokens)),
         const SizedBox(height: 20),
 
         // Tab Content Area
@@ -230,23 +232,24 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
   }
 
   Widget _buildFlashBanner(String message, {required bool isError}) {
+    final tokens = IcareSurfaceTokens.of(context);
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
-        color: isError ? const Color(0xFFFEF2F2) : const Color(0xFFF0FDF4),
+        color: isError ? tokens.dangerBg : tokens.successBg,
         borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: isError ? const Color(0xFFFCA5A5) : const Color(0xFF86EFAC)),
+        border: Border.all(color: isError ? tokens.dangerBorder : tokens.successBorder),
       ),
       child: Row(
         children: [
-          Icon(isError ? Icons.error_outline : Icons.check_circle_outline, color: isError ? const Color(0xFFDC2626) : const Color(0xFF16A34A), size: 18),
+          Icon(isError ? Icons.error_outline : Icons.check_circle_outline, color: isError ? tokens.dangerDot : tokens.successDot, size: 18),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
               message,
               style: TextStyle(
-                color: isError ? const Color(0xFF991B1B) : const Color(0xFF166534),
+                color: isError ? tokens.dangerText : tokens.successText,
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
               ),
@@ -256,7 +259,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
             icon: const Icon(Icons.close, size: 16),
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(),
-            color: isError ? const Color(0xFF991B1B) : const Color(0xFF166534),
+            color: isError ? tokens.dangerText : tokens.successText,
             onPressed: () => setState(() {
               _flashSuccess = null;
               _flashError = null;
@@ -295,16 +298,16 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
     }
   }
 
-  Color _getRoleBadgeColor(String role) {
+  Color _getRoleBadgeColor(String role, {bool isDark = false}) {
     final lower = role.toLowerCase();
     if (lower.contains('admin') || lower.contains('director')) {
-      return const Color(0xFF7C3AED);
+      return isDark ? const Color(0xFFA78BFA) : const Color(0xFF7C3AED);
     } else if (lower.contains('branch manager') || lower.contains('bm')) {
-      return const Color(0xFF1D4ED8);
+      return isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
     } else if (lower.contains('area manager') || lower.contains('am')) {
-      return const Color(0xFFB45309);
+      return isDark ? const Color(0xFFFBBF24) : const Color(0xFFB45309);
     } else {
-      return const Color(0xFF047857);
+      return isDark ? const Color(0xFF34D399) : const Color(0xFF047857);
     }
   }
 
@@ -315,14 +318,15 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
     return (parts[0][0] + parts[1][0]).toUpperCase();
   }
 
-  Color _getActiveThemeColor(bool isAdmin, bool isBm, bool isAm) {
-    if (isAdmin) return const Color(0xFF7C3AED);
-    if (isBm) return const Color(0xFF2563EB);
-    if (isAm) return const Color(0xFF0F766E);
-    return const Color(0xFF064E3B);
+  Color _getActiveThemeColor(bool isAdmin, bool isBm, bool isAm, IcareSurfaceTokens tokens) {
+    if (isAdmin) return tokens.isDark ? const Color(0xFF6D28D9) : const Color(0xFF7C3AED);
+    if (isBm) return tokens.isDark ? const Color(0xFF1D4ED8) : const Color(0xFF2563EB);
+    if (isAm) return tokens.brandPrimaryDark;
+    return tokens.brandPrimaryDark;
   }
 
   Widget _buildPillTabs(List<String> tabs, Color activeThemeColor) {
+    final tokens = IcareSurfaceTokens.of(context);
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       child: Row(
@@ -340,11 +344,11 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                 decoration: BoxDecoration(
-                  color: isSelected ? activeThemeColor : Colors.white,
+                  color: isSelected ? activeThemeColor : tokens.surface,
                   borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: isSelected ? activeThemeColor : const Color(0xFFCBD5E1)),
+                  border: Border.all(color: isSelected ? activeThemeColor : tokens.borderStrong),
                   boxShadow: isSelected
-                      ? [BoxShadow(color: activeThemeColor.withValues(alpha: 0.18), blurRadius: 4, offset: const Offset(0, 1))]
+                      ? [BoxShadow(color: activeThemeColor.withValues(alpha: 0.22), blurRadius: 4, offset: const Offset(0, 1))]
                       : null,
                 ),
                 child: Row(
@@ -353,7 +357,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
                     Icon(
                       icon,
                       size: 15,
-                      color: isSelected ? Colors.white : const Color(0xFF64748B),
+                      color: isSelected ? Colors.white : tokens.textMuted,
                     ),
                     const SizedBox(width: 6),
                     Text(
@@ -361,7 +365,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
                       style: TextStyle(
                         fontSize: 12.5,
                         fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                        color: isSelected ? Colors.white : const Color(0xFF334155),
+                        color: isSelected ? Colors.white : tokens.textSecondary,
                       ),
                     ),
                   ],
@@ -406,6 +410,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
   // TAB 1: USERS DIRECTORY & STATUS MANAGEMENT
   // =========================================================================
   Widget _buildTabUsersDirectory({required bool isAdmin, required bool isBm, required bool isAm, required bool isMobile}) {
+    final tokens = IcareSurfaceTokens.of(context);
     return FutureBuilder<UserListResponseModel>(
       future: _usersFuture,
       builder: (context, snapshot) {
@@ -483,12 +488,12 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
                   children: [
                     Text(
                       isAm ? 'Supervised Staff Directory (${filteredUsers.length})' : 'Users Directory (${allUsers.length})',
-                      style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
+                      style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: tokens.textPrimary),
                     ),
                     const SizedBox(height: 2),
                     Text(
                       '${allUsers.where((u) => u.isActive).length} Active • ${allUsers.where((u) => !u.isActive).length} Inactive',
-                      style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                      style: TextStyle(fontSize: 12, color: tokens.textMuted),
                     ),
                   ],
                 ),
@@ -497,7 +502,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
                     if (!isMobile) ...[
                       IconButton(
                         tooltip: showAsCards ? 'Switch to Table' : 'Switch to Cards',
-                        icon: Icon(showAsCards ? Icons.table_chart_outlined : Icons.view_agenda_outlined, size: 18),
+                        icon: Icon(showAsCards ? Icons.table_chart_outlined : Icons.view_agenda_outlined, size: 18, color: tokens.textSecondary),
                         onPressed: () => setState(() => _useCardView = !_useCardView),
                       ),
                       const SizedBox(width: 4),
@@ -507,10 +512,11 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
                       icon: const Icon(Icons.refresh, size: 15),
                       label: const Text('Refresh', style: TextStyle(fontSize: 12)),
                       style: OutlinedButton.styleFrom(
+                        foregroundColor: tokens.textPrimary,
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                        side: const BorderSide(color: Color(0xFFCBD5E1)),
+                        side: BorderSide(color: tokens.borderStrong),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-                        backgroundColor: Colors.white,
+                        backgroundColor: tokens.surface,
                       ),
                     ),
                   ],
@@ -525,8 +531,8 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
               onChanged: (_) => setState(() {}),
               decoration: InputDecoration(
                 hintText: 'Search by name, @username, role, or branch...',
-                hintStyle: const TextStyle(fontSize: 12.5, color: Color(0xFF94A3B8)),
-                prefixIcon: const Icon(Icons.search, size: 18, color: Color(0xFF64748B)),
+                hintStyle: TextStyle(fontSize: 12.5, color: tokens.textLight),
+                prefixIcon: Icon(Icons.search, size: 18, color: tokens.textMuted),
                 suffixIcon: _userSearchController.text.isNotEmpty
                     ? IconButton(
                         icon: const Icon(Icons.clear, size: 16),
@@ -537,11 +543,11 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
                       )
                     : null,
                 filled: true,
-                fillColor: Colors.white,
+                fillColor: tokens.surface,
                 isDense: true,
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFFCBD5E1))),
-                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFFE2E8F0))),
-                focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFF064E3B), width: 1.5)),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: tokens.borderStrong)),
+                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: tokens.borderSubtle)),
+                focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: tokens.brandPrimary, width: 1.5)),
                 contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               ),
             ),
@@ -552,22 +558,23 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
-                  color: Colors.white,
+                  color: tokens.surface,
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: const Color(0xFFCBD5E1)),
+                  border: Border.all(color: tokens.borderStrong),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.apartment, size: 16, color: Color(0xFF0F766E)),
+                    Icon(Icons.apartment, size: 16, color: tokens.brandPrimary),
                     const SizedBox(width: 8),
-                    const Text('Branch Scope:', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF64748B))),
+                    Text('Branch Scope:', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tokens.textMuted)),
                     const SizedBox(width: 8),
                     DropdownButton<String>(
                       value: _selectedBranchFilter,
                       underline: const SizedBox.shrink(),
                       isDense: true,
-                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
+                      dropdownColor: tokens.surfaceElevated,
+                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: tokens.textPrimary),
                       items: [
                         const DropdownMenuItem(value: 'ALL', child: Text('All Supervised Branches')),
                         ...branchesSet.map((b) => DropdownMenuItem(value: b, child: Text('$b Branch'))),
@@ -600,16 +607,16 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
                       label: Text(f.$2),
                       selected: isSelected,
                       onSelected: (_) => setState(() => _userRoleFilter = f.$1),
-                      selectedColor: const Color(0xFF0F172A),
-                      backgroundColor: Colors.white,
+                      selectedColor: tokens.brandPrimaryDark,
+                      backgroundColor: tokens.surface,
                       labelStyle: TextStyle(
                         fontSize: 11.5,
                         fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                        color: isSelected ? Colors.white : const Color(0xFF475569),
+                        color: isSelected ? Colors.white : tokens.textSecondary,
                       ),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(16),
-                        side: BorderSide(color: isSelected ? const Color(0xFF0F172A) : const Color(0xFFCBD5E1)),
+                        side: BorderSide(color: isSelected ? tokens.brandPrimaryDark : tokens.borderStrong),
                       ),
                     ),
                   );
@@ -624,28 +631,28 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
                 width: double.infinity,
                 padding: const EdgeInsets.all(24),
                 decoration: BoxDecoration(
-                  color: Colors.white,
+                  color: tokens.surface,
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                  border: Border.all(color: tokens.borderSubtle),
                 ),
                 alignment: Alignment.center,
-                child: const Text('No users match the search filter.', style: TextStyle(color: Color(0xFF64748B), fontSize: 13)),
+                child: Text('No users match the search filter.', style: TextStyle(color: tokens.textMuted, fontSize: 13)),
               )
             else if (showAsCards)
               ...filteredUsers.map((u) => _buildUserCard(u, isAdmin, isBm, isAm))
             else
               Container(
                 decoration: BoxDecoration(
-                  color: Colors.white,
+                  color: tokens.surface,
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                  border: Border.all(color: tokens.borderSubtle),
                 ),
                 child: SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
                   child: DataTable(
-                    headingRowColor: WidgetStateProperty.all(const Color(0xFFF8FAFC)),
-                    headingTextStyle: const TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF334155), fontSize: 13),
-                    dataTextStyle: const TextStyle(fontSize: 13, color: Color(0xFF0F172A)),
+                    headingRowColor: WidgetStateProperty.all(tokens.surfaceSubtle),
+                    headingTextStyle: TextStyle(fontWeight: FontWeight.w700, color: tokens.textPrimary, fontSize: 13),
+                    dataTextStyle: TextStyle(fontSize: 13, color: tokens.textPrimary),
                     columns: [
                       const DataColumn(label: Text('User')),
                       const DataColumn(label: Text('Full Name')),
@@ -656,15 +663,15 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
                       if (isAdmin || isBm || isAm) const DataColumn(label: Text('Actions')),
                     ],
                     rows: filteredUsers.map((u) {
-                      final roleColor = _getRoleBadgeColor(u.role);
+                      final roleColor = _getRoleBadgeColor(u.role, isDark: tokens.isDark);
                       return DataRow(
                         cells: [
-                          DataCell(Text('@${u.username}', style: const TextStyle(fontWeight: FontWeight.w600))),
+                          DataCell(Text('@${u.username}', style: TextStyle(fontWeight: FontWeight.w600, color: tokens.textPrimary))),
                           DataCell(Text(u.fullName)),
                           DataCell(
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                              decoration: BoxDecoration(color: roleColor.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(4)),
+                              decoration: BoxDecoration(color: roleColor.withValues(alpha: tokens.isDark ? 0.16 : 0.08), borderRadius: BorderRadius.circular(4)),
                               child: Text(u.role, style: TextStyle(color: roleColor, fontSize: 11, fontWeight: FontWeight.w600)),
                             ),
                           ),
@@ -673,7 +680,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                               decoration: BoxDecoration(
-                                color: u.isActive ? const Color(0xFFDCFCE7) : const Color(0xFFFEE2E2),
+                                color: u.isActive ? tokens.successBg : tokens.dangerBg,
                                 borderRadius: BorderRadius.circular(12),
                               ),
                               child: Text(
@@ -681,7 +688,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
                                 style: TextStyle(
                                   fontSize: 11,
                                   fontWeight: FontWeight.w700,
-                                  color: u.isActive ? const Color(0xFF166534) : const Color(0xFF991B1B),
+                                  color: u.isActive ? tokens.successText : tokens.dangerText,
                                 ),
                               ),
                             ),
@@ -694,7 +701,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
                                 children: [
                                   IconButton(
                                     tooltip: 'Reset Password',
-                                    icon: const Icon(Icons.lock_reset, size: 18, color: Color(0xFF2563EB)),
+                                    icon: Icon(Icons.lock_reset, size: 18, color: tokens.infoDot),
                                     onPressed: () {
                                       setState(() {
                                         _resetUsername = u.username;
@@ -707,7 +714,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
                                     icon: Icon(
                                       u.isActive ? Icons.block : Icons.check_circle_outline,
                                       size: 18,
-                                      color: u.isActive ? const Color(0xFFD97706) : const Color(0xFF16A34A),
+                                      color: u.isActive ? tokens.warningDot : tokens.successDot,
                                     ),
                                     onPressed: _isActionLoading ? null : () => _handleToggleStatus(u.id, !u.isActive),
                                   ),
@@ -724,26 +731,27 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
             // Status Management (Admin, AM & BM)
             if (isAdmin || isAm || isBm) ...[
               const SizedBox(height: 24),
-              const Divider(color: Color(0xFFE2E8F0)),
+              Divider(color: tokens.borderSubtle),
               const SizedBox(height: 16),
-              const Text('Manage User Status & Deletion', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Color(0xFF0F172A))),
+              Text('Manage User Status & Deletion', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: tokens.textPrimary)),
               const SizedBox(height: 12),
 
               Container(
                 padding: const EdgeInsets.all(20),
                 decoration: BoxDecoration(
-                  color: Colors.white,
+                  color: tokens.surface,
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                  border: Border.all(color: tokens.borderSubtle),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('Select User', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF334155))),
+                    Text('Select User', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: tokens.textSecondary)),
                     const SizedBox(height: 6),
                     DropdownButtonFormField<String>(
                       value: _selectedToggleUsername,
                       isExpanded: true,
+                      dropdownColor: tokens.surfaceElevated,
                       decoration: _inputDecoration(),
                       items: users.map((u) {
                         return DropdownMenuItem(value: u.username, child: Text('${u.username} — ${u.fullName} (${u.role})', overflow: TextOverflow.ellipsis));
@@ -754,13 +762,13 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
 
                     Row(
                       children: [
-                        const Text('Current Status: ', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                        Text('Current Status: ', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: tokens.textPrimary)),
                         Text(
                           selectedUser.isActive ? 'Active' : 'Inactive',
                           style: TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.w700,
-                            color: selectedUser.isActive ? const Color(0xFF16A34A) : const Color(0xFFDC2626),
+                            color: selectedUser.isActive ? tokens.successText : tokens.dangerText,
                           ),
                         ),
                       ],
@@ -775,8 +783,9 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
                                 ? null
                                 : () => _handleToggleStatus(selectedUser.id, true),
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF16A34A),
-                              disabledBackgroundColor: const Color(0xFFCBD5E1),
+                              backgroundColor: const Color(0xFF15803D),
+                              foregroundColor: Colors.white,
+                              disabledBackgroundColor: tokens.borderStrong,
                               padding: const EdgeInsets.symmetric(vertical: 14),
                             ),
                             child: const Text('Activate', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
@@ -789,8 +798,9 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
                                 ? null
                                 : () => _handleToggleStatus(selectedUser.id, false),
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFFD97706),
-                              disabledBackgroundColor: const Color(0xFFCBD5E1),
+                              backgroundColor: const Color(0xFFB45309),
+                              foregroundColor: Colors.white,
+                              disabledBackgroundColor: tokens.borderStrong,
                               padding: const EdgeInsets.symmetric(vertical: 14),
                             ),
                             child: const Text('Deactivate', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
@@ -804,22 +814,22 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
                       const SizedBox(height: 20),
                       Container(
                         decoration: BoxDecoration(
-                          color: const Color(0xFFFFF1F2),
+                          color: tokens.dangerBg,
                           borderRadius: BorderRadius.circular(6),
-                          border: Border.all(color: const Color(0xFFFECDD3)),
+                          border: Border.all(color: tokens.dangerBorder),
                         ),
                         child: ExpansionTile(
-                          leading: const Icon(Icons.warning_amber_rounded, color: Color(0xFFDC2626)),
-                          title: const Text('Danger Zone (Permanent Deletion)', style: TextStyle(color: Color(0xFF991B1B), fontWeight: FontWeight.w700, fontSize: 13.5)),
+                          leading: Icon(Icons.warning_amber_rounded, color: tokens.dangerDot),
+                          title: Text('Danger Zone (Permanent Deletion)', style: TextStyle(color: tokens.dangerText, fontWeight: FontWeight.w700, fontSize: 13.5)),
                           children: [
                             Padding(
                               padding: const EdgeInsets.all(16),
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  const Text(
+                                  Text(
                                     'Deleting a user permanently removes them from the database. If this user has logged transactions, clients, or loans, their reference will be preserved as empty/null in historical audit logs.',
-                                    style: TextStyle(fontSize: 12.5, color: Color(0xFF475569), height: 1.4),
+                                    style: TextStyle(fontSize: 12.5, color: tokens.textSecondary, height: 1.4),
                                   ),
                                   const SizedBox(height: 12),
                                   CheckboxListTile(
@@ -827,7 +837,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
                                     controlAffinity: ListTileControlAffinity.leading,
                                     title: Text(
                                       "Confirm I want to permanently delete the user '${selectedUser.username}'",
-                                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF1E293B)),
+                                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: tokens.textPrimary),
                                     ),
                                     value: _confirmPermanentDelete,
                                     onChanged: (val) => setState(() => _confirmPermanentDelete = val == true),
@@ -841,7 +851,8 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
                                           : () => _handleDeleteUser(selectedUser.id, selectedUser.username),
                                       style: ElevatedButton.styleFrom(
                                         backgroundColor: const Color(0xFFDC2626),
-                                        disabledBackgroundColor: const Color(0xFFCBD5E1),
+                                        foregroundColor: Colors.white,
+                                        disabledBackgroundColor: tokens.borderStrong,
                                         padding: const EdgeInsets.symmetric(vertical: 14),
                                       ),
                                       child: const Text('Permanently Delete User', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
@@ -865,19 +876,20 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
   }
 
   Widget _buildUserCard(UserListItemModel u, bool isAdmin, bool isBm, bool isAm) {
-    final roleColor = _getRoleBadgeColor(u.role);
+    final tokens = IcareSurfaceTokens.of(context);
+    final roleColor = _getRoleBadgeColor(u.role, isDark: tokens.isDark);
     final initials = _getInitials(u.fullName);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: tokens.surface,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: tokens.borderSubtle),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.02),
+            color: Colors.black.withValues(alpha: tokens.isDark ? 0.16 : 0.02),
             blurRadius: 4,
             offset: const Offset(0, 1),
           ),
@@ -891,7 +903,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
             children: [
               CircleAvatar(
                 radius: 20,
-                backgroundColor: roleColor.withValues(alpha: 0.12),
+                backgroundColor: roleColor.withValues(alpha: tokens.isDark ? 0.18 : 0.12),
                 child: Text(
                   initials,
                   style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: roleColor),
@@ -907,14 +919,14 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
                         Expanded(
                           child: Text(
                             u.fullName,
-                            style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: Color(0xFF0F172A)),
+                            style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: tokens.textPrimary),
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                           decoration: BoxDecoration(
-                            color: u.isActive ? const Color(0xFFDCFCE7) : const Color(0xFFFEE2E2),
+                            color: u.isActive ? tokens.successBg : tokens.dangerBg,
                             borderRadius: BorderRadius.circular(12),
                           ),
                           child: Row(
@@ -925,7 +937,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
                                 height: 6,
                                 decoration: BoxDecoration(
                                   shape: BoxShape.circle,
-                                  color: u.isActive ? const Color(0xFF16A34A) : const Color(0xFFDC2626),
+                                  color: u.isActive ? tokens.successDot : tokens.dangerDot,
                                 ),
                               ),
                               const SizedBox(width: 5),
@@ -934,7 +946,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
                                 style: TextStyle(
                                   fontSize: 11,
                                   fontWeight: FontWeight.w700,
-                                  color: u.isActive ? const Color(0xFF166534) : const Color(0xFF991B1B),
+                                  color: u.isActive ? tokens.successText : tokens.dangerText,
                                 ),
                               ),
                             ],
@@ -947,13 +959,13 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
                       children: [
                         Text(
                           '@${u.username}',
-                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: Color(0xFF64748B)),
+                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: tokens.textMuted),
                         ),
                         const SizedBox(width: 8),
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
                           decoration: BoxDecoration(
-                            color: roleColor.withValues(alpha: 0.08),
+                            color: roleColor.withValues(alpha: tokens.isDark ? 0.16 : 0.08),
                             borderRadius: BorderRadius.circular(4),
                           ),
                           child: Text(
@@ -969,19 +981,19 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
             ],
           ),
           const SizedBox(height: 12),
-          const Divider(height: 1, color: Color(0xFFF1F5F9)),
+          Divider(height: 1, color: tokens.borderSubtle),
           const SizedBox(height: 10),
           Row(
             children: [
               Expanded(
                 child: Row(
                   children: [
-                    const Icon(Icons.business_outlined, size: 14, color: Color(0xFF64748B)),
+                    Icon(Icons.business_outlined, size: 14, color: tokens.textMuted),
                     const SizedBox(width: 5),
                     Expanded(
                       child: Text(
                         u.branchName ?? 'Head Office',
-                        style: const TextStyle(fontSize: 12, color: Color(0xFF334155), fontWeight: FontWeight.w500),
+                        style: TextStyle(fontSize: 12, color: tokens.textSecondary, fontWeight: FontWeight.w500),
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
@@ -990,11 +1002,11 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
               ),
               Row(
                 children: [
-                  const Icon(Icons.access_time, size: 14, color: Color(0xFF64748B)),
+                  Icon(Icons.access_time, size: 14, color: tokens.textMuted),
                   const SizedBox(width: 5),
                   Text(
                     'Last: ${u.lastLogin ?? 'Never'}',
-                    style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B)),
+                    style: TextStyle(fontSize: 11.5, color: tokens.textMuted),
                   ),
                 ],
               ),
@@ -1017,8 +1029,9 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
                     icon: const Icon(Icons.lock_reset, size: 14),
                     label: const Text('Reset Pass', style: TextStyle(fontSize: 11.5)),
                     style: OutlinedButton.styleFrom(
+                      foregroundColor: tokens.textPrimary,
                       padding: const EdgeInsets.symmetric(vertical: 8),
-                      side: const BorderSide(color: Color(0xFFCBD5E1)),
+                      side: BorderSide(color: tokens.borderStrong),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
                     ),
                   ),
@@ -1039,7 +1052,8 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
                       style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: Colors.white),
                     ),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: u.isActive ? const Color(0xFFD97706) : const Color(0xFF16A34A),
+                      backgroundColor: u.isActive ? const Color(0xFFB45309) : const Color(0xFF15803D),
+                      foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(vertical: 8),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
                     ),
@@ -1062,6 +1076,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
     required bool isAm,
     required String branchName,
   }) {
+    final tokens = IcareSurfaceTokens.of(context);
     List<String> roleOptions;
     List<String> branchOptions;
 
@@ -1096,22 +1111,22 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
     return Container(
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: tokens.surface,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: tokens.borderSubtle),
       ),
       child: Form(
         key: _createFormKey,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Add New User', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Color(0xFF0F172A))),
+            Text('Add New User', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: tokens.textPrimary)),
             const SizedBox(height: 4),
             _buildInfoCard(infoMsg),
             const SizedBox(height: 20),
 
             // Username
-            const Text('Username (e.g. CO5, BM_Ikeja)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF334155))),
+            Text('Username (e.g. CO5, BM_Ikeja)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: tokens.textSecondary)),
             const SizedBox(height: 6),
             TextFormField(
               controller: _createUsernameController,
@@ -1121,7 +1136,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
             const SizedBox(height: 16),
 
             // Full Name
-            const Text('Full Name (e.g. Mr. Ayomide)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF334155))),
+            Text('Full Name (e.g. Mr. Ayomide)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: tokens.textSecondary)),
             const SizedBox(height: 6),
             TextFormField(
               controller: _createFullNameController,
@@ -1131,10 +1146,11 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
             const SizedBox(height: 16),
 
             // Role
-            const Text('Role', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF334155))),
+            Text('Role', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: tokens.textSecondary)),
             const SizedBox(height: 6),
             DropdownButtonFormField<String>(
               value: roleOptions.contains(_createRole) ? _createRole : roleOptions.first,
+              dropdownColor: tokens.surfaceElevated,
               decoration: _inputDecoration(),
               items: roleOptions.map((r) => DropdownMenuItem(value: r, child: Text(r))).toList(),
               onChanged: isBm ? null : (val) => setState(() => _createRole = val ?? roleOptions.first),
@@ -1142,10 +1158,11 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
             const SizedBox(height: 16),
 
             // Branch Name
-            const Text('Branch Name', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF334155))),
+            Text('Branch Name', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: tokens.textSecondary)),
             const SizedBox(height: 6),
             DropdownButtonFormField<String>(
               value: branchOptions.contains(_createBranch) ? _createBranch : branchOptions.first,
+              dropdownColor: tokens.surfaceElevated,
               decoration: _inputDecoration(),
               items: branchOptions.map((b) => DropdownMenuItem(value: b, child: Text(b))).toList(),
               onChanged: isBm ? null : (val) => setState(() => _createBranch = val ?? branchOptions.first),
@@ -1153,7 +1170,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
             const SizedBox(height: 16),
 
             // Password
-            const Text('Password', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF334155))),
+            Text('Password', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: tokens.textSecondary)),
             const SizedBox(height: 6),
             TextFormField(
               controller: _createPasswordController,
@@ -1173,7 +1190,8 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
               child: ElevatedButton(
                 onPressed: _isActionLoading ? null : _handleCreateUser,
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF064E3B),
+                  backgroundColor: tokens.brandPrimaryDark,
+                  foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(vertical: 14),
                 ),
                 child: const Text('Create User', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
@@ -1189,6 +1207,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
   // TAB 3: PASSWORD RESET
   // =========================================================================
   Widget _buildTabPasswordReset({required bool isAdmin, required bool isBm, required bool isAm}) {
+    final tokens = IcareSurfaceTokens.of(context);
     return FutureBuilder<UserListResponseModel>(
       future: _usersFuture,
       builder: (context, snapshot) {
@@ -1220,22 +1239,23 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
         return Container(
           padding: const EdgeInsets.all(24),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: tokens.surface,
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: const Color(0xFFE2E8F0)),
+            border: Border.all(color: tokens.borderSubtle),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('Reset Password', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Color(0xFF0F172A))),
+              Text('Reset Password', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: tokens.textPrimary)),
               const SizedBox(height: 4),
               _buildInfoCard(infoMsg),
               const SizedBox(height: 20),
 
-              const Text('Select User', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF334155))),
+              Text('Select User', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: tokens.textSecondary)),
               const SizedBox(height: 6),
               DropdownButtonFormField<String>(
                 value: users.any((u) => u.username == _resetUsername) ? _resetUsername : (users.isNotEmpty ? users.first.username : null),
+                dropdownColor: tokens.surfaceElevated,
                 decoration: _inputDecoration(),
                 items: users.map((u) {
                   return DropdownMenuItem(value: u.username, child: Text('${u.username} — ${u.fullName} (${u.role})'));
@@ -1244,7 +1264,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
               ),
               const SizedBox(height: 16),
 
-              const Text('New Password', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF334155))),
+              Text('New Password', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: tokens.textSecondary)),
               const SizedBox(height: 6),
               TextFormField(
                 controller: _resetPasswordController,
@@ -1263,7 +1283,8 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
                 child: ElevatedButton(
                   onPressed: _isActionLoading ? null : _handleResetPassword,
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF064E3B),
+                    backgroundColor: tokens.brandPrimaryDark,
+                    foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(vertical: 14),
                   ),
                   child: const Text('Reset Password', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
@@ -1280,6 +1301,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
   // TAB 4: OFFICER TURNOVER (Admin Only)
   // =========================================================================
   Widget _buildTabOfficerTurnover() {
+    final tokens = IcareSurfaceTokens.of(context);
     return FutureBuilder<UserListResponseModel>(
       future: _usersFuture,
       builder: (context, snapshot) {
@@ -1298,22 +1320,23 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
         return Container(
           padding: const EdgeInsets.all(24),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: tokens.surface,
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: const Color(0xFFE2E8F0)),
+            border: Border.all(color: tokens.borderSubtle),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('Update Officer Name (Turnover)', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Color(0xFF0F172A))),
+              Text('Update Officer Name (Turnover)', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: tokens.textPrimary)),
               const SizedBox(height: 4),
               _buildInfoCard('When an officer leaves, update the Full Name tied to their generic username (e.g. CO2) so that historical data remains intact but the new officer\'s name is used going forward.'),
               const SizedBox(height: 20),
 
-              const Text('Select Officer ID', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF334155))),
+              Text('Select Officer ID', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: tokens.textSecondary)),
               const SizedBox(height: 6),
               DropdownButtonFormField<String>(
                 value: _turnoverUsername,
+                dropdownColor: tokens.surfaceElevated,
                 decoration: _inputDecoration(),
                 items: coUsers.map((u) {
                   return DropdownMenuItem(value: u.username, child: Text('${u.username} — ${u.fullName} (${u.branchName ?? "HQ"})'));
@@ -1324,13 +1347,13 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
 
               Row(
                 children: [
-                  const Text('Current Name: ', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-                  Text(selectedCO.fullName, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF064E3B))),
+                  Text('Current Name: ', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: tokens.textPrimary)),
+                  Text(selectedCO.fullName, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: tokens.brandPrimary)),
                 ],
               ),
               const SizedBox(height: 16),
 
-              const Text('New Full Name', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF334155))),
+              Text('New Full Name', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: tokens.textSecondary)),
               const SizedBox(height: 6),
               TextFormField(
                 controller: _turnoverNewNameController,
@@ -1343,7 +1366,8 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
                 child: ElevatedButton(
                   onPressed: _isActionLoading ? null : _handleOfficerTurnover,
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF064E3B),
+                    backgroundColor: tokens.brandPrimaryDark,
+                    foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(vertical: 14),
                   ),
                   child: const Text('Update Officer Name', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
@@ -1360,6 +1384,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
   // TAB 5: PRODUCT ASSIGNMENT
   // =========================================================================
   Widget _buildTabProductAssignment() {
+    final tokens = IcareSurfaceTokens.of(context);
     return FutureBuilder<ProductAssignmentMetaResponseModel>(
       future: _productMetaFuture,
       builder: (context, snapshot) {
@@ -1391,22 +1416,23 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
         return Container(
           padding: const EdgeInsets.all(24),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: tokens.surface,
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: const Color(0xFFE2E8F0)),
+            border: Border.all(color: tokens.borderSubtle),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('Assign Products to Credit Officers', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Color(0xFF0F172A))),
+              Text('Assign Products to Credit Officers', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: tokens.textPrimary)),
               const SizedBox(height: 4),
               _buildInfoCard('Assign specific loan products to a Credit Officer. If left completely blank, the officer will have access to ALL products.'),
               const SizedBox(height: 20),
 
-              const Text('Select Credit Officer', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF334155))),
+              Text('Select Credit Officer', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: tokens.textSecondary)),
               const SizedBox(height: 6),
               DropdownButtonFormField<String>(
                 value: _selectedAssignCO,
+                dropdownColor: tokens.surfaceElevated,
                 decoration: _inputDecoration(),
                 items: officers.map((o) {
                   return DropdownMenuItem(value: o.username, child: Text('${o.username} — ${o.fullName}'));
@@ -1425,13 +1451,13 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
 
               Row(
                 children: [
-                  const Text('Name: ', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-                  Text(selectedOfficer.fullName, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF064E3B))),
+                  Text('Name: ', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: tokens.textPrimary)),
+                  Text(selectedOfficer.fullName, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: tokens.brandPrimary)),
                 ],
               ),
               const SizedBox(height: 16),
 
-              const Text('Allowed Products (Multi-select)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF334155))),
+              Text('Allowed Products (Multi-select)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: tokens.textSecondary)),
               const SizedBox(height: 8),
 
               Wrap(
@@ -1442,12 +1468,14 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
                   return FilterChip(
                     label: Text(p),
                     selected: isChecked,
-                    selectedColor: const Color(0xFFDCFCE7),
-                    checkmarkColor: const Color(0xFF166534),
+                    backgroundColor: tokens.surfaceHover,
+                    selectedColor: tokens.successBg,
+                    checkmarkColor: tokens.successText,
+                    side: BorderSide(color: isChecked ? tokens.successBorder : tokens.borderSubtle),
                     labelStyle: TextStyle(
                       fontSize: 12.5,
                       fontWeight: isChecked ? FontWeight.w700 : FontWeight.w400,
-                      color: isChecked ? const Color(0xFF166534) : const Color(0xFF334155),
+                      color: isChecked ? tokens.successText : tokens.textSecondary,
                     ),
                     onSelected: (selected) {
                       setState(() {
@@ -1468,7 +1496,8 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
                 child: ElevatedButton(
                   onPressed: _isActionLoading ? null : _handleAssignProducts,
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF064E3B),
+                    backgroundColor: tokens.brandPrimaryDark,
+                    foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(vertical: 14),
                   ),
                   child: const Text('Save Assignments', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
@@ -1485,6 +1514,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
   // TAB 6: AM BRANCH ASSIGNMENTS (Admin Only)
   // =========================================================================
   Widget _buildTabAMAssignments() {
+    final tokens = IcareSurfaceTokens.of(context);
     return FutureBuilder<AMAssignmentsResponseModel>(
       future: _amAssignmentsFuture,
       builder: (context, snapshot) {
@@ -1519,22 +1549,23 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
         return Container(
           padding: const EdgeInsets.all(24),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: tokens.surface,
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: const Color(0xFFE2E8F0)),
+            border: Border.all(color: tokens.borderSubtle),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('Area Manager Branch Assignments', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Color(0xFF0F172A))),
+              Text('Area Manager Branch Assignments', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: tokens.textPrimary)),
               const SizedBox(height: 4),
               _buildInfoCard('Each Area Manager supervises 5-7 branches. Assign branches below.'),
               const SizedBox(height: 20),
 
-              const Text('Select Area Manager', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF334155))),
+              Text('Select Area Manager', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: tokens.textSecondary)),
               const SizedBox(height: 6),
               DropdownButtonFormField<String>(
                 value: _selectedAMId,
+                dropdownColor: tokens.surfaceElevated,
                 decoration: _inputDecoration(),
                 items: ams.map((a) {
                   return DropdownMenuItem(value: a.userId, child: Text('${a.username} — ${a.fullName}'));
@@ -1553,11 +1584,11 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
 
               Row(
                 children: [
-                  const Text('Currently Assigned: ', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                  Text('Currently Assigned: ', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: tokens.textPrimary)),
                   Expanded(
                     child: Text(
                       selectedAM.assignedBranchNames.isNotEmpty ? selectedAM.assignedBranchNames.join(', ') : 'None',
-                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF064E3B)),
+                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: tokens.brandPrimary),
                     ),
                   ),
                 ],
@@ -1566,12 +1597,12 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
 
               Row(
                 children: [
-                  const Text('Select Branches (5-7 required):', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF334155))),
+                  Text('Select Branches (5-7 required):', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: tokens.textSecondary)),
                   const SizedBox(width: 8),
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                     decoration: BoxDecoration(
-                      color: isValidCount ? const Color(0xFFDCFCE7) : const Color(0xFFFEF3C7),
+                      color: isValidCount ? tokens.successBg : tokens.warningBg,
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Text(
@@ -1579,7 +1610,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
                       style: TextStyle(
                         fontSize: 11.5,
                         fontWeight: FontWeight.w700,
-                        color: isValidCount ? const Color(0xFF166534) : const Color(0xFF92400E),
+                        color: isValidCount ? tokens.successText : tokens.warningText,
                       ),
                     ),
                   ),
@@ -1595,12 +1626,14 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
                   return FilterChip(
                     label: Text(b.name),
                     selected: isChecked,
-                    selectedColor: const Color(0xFFDCFCE7),
-                    checkmarkColor: const Color(0xFF166534),
+                    backgroundColor: tokens.surfaceHover,
+                    selectedColor: tokens.successBg,
+                    checkmarkColor: tokens.successText,
+                    side: BorderSide(color: isChecked ? tokens.successBorder : tokens.borderSubtle),
                     labelStyle: TextStyle(
                       fontSize: 12.5,
                       fontWeight: isChecked ? FontWeight.w700 : FontWeight.w400,
-                      color: isChecked ? const Color(0xFF166534) : const Color(0xFF334155),
+                      color: isChecked ? tokens.successText : tokens.textSecondary,
                     ),
                     onSelected: (selected) {
                       setState(() {
@@ -1621,8 +1654,9 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
                 child: ElevatedButton(
                   onPressed: (_isActionLoading || !isValidCount) ? null : _handleSaveAMAssignments,
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF064E3B),
-                    disabledBackgroundColor: const Color(0xFFCBD5E1),
+                    backgroundColor: tokens.brandPrimaryDark,
+                    foregroundColor: Colors.white,
+                    disabledBackgroundColor: tokens.borderStrong,
                     padding: const EdgeInsets.symmetric(vertical: 14),
                   ),
                   child: const Text('Save Assignments', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
@@ -1639,6 +1673,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
   // TAB 7: BRANCH CLOSURES & SETTINGS
   // =========================================================================
   Widget _buildTabBranchClosures({required bool isAdmin, required bool isBm, required bool isAm, required String branchName, required bool isMobile}) {
+    final tokens = IcareSurfaceTokens.of(context);
     return FutureBuilder<BranchClosuresResponseModel>(
       future: _closuresFuture,
       builder: (context, snapshot) {
@@ -1647,7 +1682,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
         final startDatePicker = Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Start Date', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF475569))),
+            Text('Start Date', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tokens.textSecondary)),
             const SizedBox(height: 4),
             InkWell(
               onTap: () async {
@@ -1662,7 +1697,8 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                 decoration: BoxDecoration(
-                  border: Border.all(color: const Color(0xFFCBD5E1)),
+                  color: tokens.surfaceSubtle,
+                  border: Border.all(color: tokens.borderStrong),
                   borderRadius: BorderRadius.circular(6),
                 ),
                 child: Row(
@@ -1670,9 +1706,9 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
                   children: [
                     Text(
                       _closureStartDate != null ? DateFormat('yyyy-MM-dd').format(_closureStartDate!) : 'YYYY-MM-DD',
-                      style: TextStyle(fontSize: 13, color: _closureStartDate != null ? const Color(0xFF0F172A) : const Color(0xFF94A3B8)),
+                      style: TextStyle(fontSize: 13, color: _closureStartDate != null ? tokens.textPrimary : tokens.textLight),
                     ),
-                    const Icon(Icons.calendar_today, size: 16, color: Color(0xFF64748B)),
+                    Icon(Icons.calendar_today, size: 16, color: tokens.textMuted),
                   ],
                 ),
               ),
@@ -1683,7 +1719,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
         final endDatePicker = Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('End Date', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF475569))),
+            Text('End Date', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tokens.textSecondary)),
             const SizedBox(height: 4),
             InkWell(
               onTap: () async {
@@ -1698,7 +1734,8 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                 decoration: BoxDecoration(
-                  border: Border.all(color: const Color(0xFFCBD5E1)),
+                  color: tokens.surfaceSubtle,
+                  border: Border.all(color: tokens.borderStrong),
                   borderRadius: BorderRadius.circular(6),
                 ),
                 child: Row(
@@ -1706,9 +1743,9 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
                   children: [
                     Text(
                       _closureEndDate != null ? DateFormat('yyyy-MM-dd').format(_closureEndDate!) : 'YYYY-MM-DD',
-                      style: TextStyle(fontSize: 13, color: _closureEndDate != null ? const Color(0xFF0F172A) : const Color(0xFF94A3B8)),
+                      style: TextStyle(fontSize: 13, color: _closureEndDate != null ? tokens.textPrimary : tokens.textLight),
                     ),
-                    const Icon(Icons.calendar_today, size: 16, color: Color(0xFF64748B)),
+                    Icon(Icons.calendar_today, size: 16, color: tokens.textMuted),
                   ],
                 ),
               ),
@@ -1719,14 +1756,14 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
         final formCard = Container(
           padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: tokens.surface,
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: const Color(0xFFE2E8F0)),
+            border: Border.all(color: tokens.borderSubtle),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('Add New Closure', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: Color(0xFF0F172A))),
+              Text('Add New Closure', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: tokens.textPrimary)),
               const SizedBox(height: 16),
               if (isMobile) ...[
                 startDatePicker,
@@ -1743,7 +1780,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
               ],
               const SizedBox(height: 16),
               // Reason
-              const Text('Reason (e.g. End of Year Break)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF475569))),
+              Text('Reason (e.g. End of Year Break)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tokens.textSecondary)),
               const SizedBox(height: 4),
               TextFormField(
                 controller: _closureReasonController,
@@ -1754,12 +1791,13 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
               if (isAdmin || isAm) ...[
                 Text(
                   isAm ? 'Target Branch (Supervised Area)' : 'Target Branch',
-                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF475569)),
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tokens.textSecondary),
                 ),
                 const SizedBox(height: 4),
                 DropdownButtonFormField<String?>(
                   value: _selectedClosureBranchId,
                   isExpanded: true,
+                  dropdownColor: tokens.surfaceElevated,
                   decoration: _inputDecoration(),
                   items: [
                     if (isAdmin) const DropdownMenuItem(value: null, child: Text('All Branches (Global)')),
@@ -1772,7 +1810,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
                   onChanged: (val) => setState(() => _selectedClosureBranchId = val),
                 ),
               ] else ...[
-                Text('Target Branch: $branchName', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF064E3B))),
+                Text('Target Branch: $branchName', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: tokens.brandPrimary)),
               ],
               const SizedBox(height: 20),
               SizedBox(
@@ -1780,7 +1818,8 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
                 child: ElevatedButton(
                   onPressed: _isActionLoading ? null : _handleCreateClosure,
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF064E3B),
+                    backgroundColor: tokens.brandPrimaryDark,
+                    foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(vertical: 14),
                   ),
                   child: const Text('Save Closure', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
@@ -1793,35 +1832,35 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
         final tableCard = Container(
           padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: tokens.surface,
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: const Color(0xFFE2E8F0)),
+            border: Border.all(color: tokens.borderSubtle),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('Active Closures', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: Color(0xFF0F172A))),
+              Text('Active Closures', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: tokens.textPrimary)),
               const SizedBox(height: 16),
               if (closures.isEmpty)
                 _buildInfoCard('No custom closures recorded.')
               else ...[
                 if (isMobile)
-                  const Padding(
-                    padding: EdgeInsets.only(bottom: 8),
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
                     child: Row(
                       children: [
-                        Icon(Icons.swipe, size: 14, color: Color(0xFF64748B)),
-                        SizedBox(width: 4),
-                        Text('Scroll horizontally to view closures', style: TextStyle(fontSize: 11, color: Color(0xFF64748B), fontStyle: FontStyle.italic)),
+                        Icon(Icons.swipe, size: 14, color: tokens.textMuted),
+                        const SizedBox(width: 4),
+                        Text('Scroll horizontally to view closures', style: TextStyle(fontSize: 11, color: tokens.textMuted, fontStyle: FontStyle.italic)),
                       ],
                     ),
                   ),
                 SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
                   child: DataTable(
-                    headingRowColor: WidgetStateProperty.all(const Color(0xFFF8FAFC)),
-                    headingTextStyle: const TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF334155), fontSize: 12.5),
-                    dataTextStyle: const TextStyle(fontSize: 12.5, color: Color(0xFF0F172A)),
+                    headingRowColor: WidgetStateProperty.all(tokens.surfaceSubtle),
+                    headingTextStyle: TextStyle(fontWeight: FontWeight.w700, color: tokens.textPrimary, fontSize: 12.5),
+                    dataTextStyle: TextStyle(fontSize: 12.5, color: tokens.textPrimary),
                     columns: const [
                       DataColumn(label: Text('Start Date')),
                       DataColumn(label: Text('End Date')),
@@ -1838,7 +1877,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
                           DataCell(Text(c.branchName ?? 'Global')),
                           DataCell(
                             IconButton(
-                              icon: const Icon(Icons.delete_outline, size: 18, color: Color(0xFFDC2626)),
+                              icon: Icon(Icons.delete_outline, size: 18, color: tokens.dangerDot),
                               onPressed: () => _handleDeleteClosure(c.id),
                             ),
                           ),
@@ -1855,11 +1894,11 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Branch Settings & Closures', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Color(0xFF0F172A))),
+            Text('Branch Settings & Closures', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: tokens.textPrimary)),
             const SizedBox(height: 4),
-            const Text(
+            Text(
               'Manage custom branch closures (e.g., operational shutdowns, end-of-year breaks). These dates will be strictly excluded when calculating loan repayment schedules.',
-              style: TextStyle(fontSize: 13, color: Color(0xFF64748B)),
+              style: TextStyle(fontSize: 13, color: tokens.textMuted),
             ),
             const SizedBox(height: 20),
             if (isMobile) ...[
@@ -1886,6 +1925,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
   // TAB 8: AUDIT LOGS / BRANCH ACTIVITY LOGS
   // =========================================================================
   Widget _buildTabAuditLogs({required bool isBm, required String branch, required bool isMobile}) {
+    final tokens = IcareSurfaceTokens.of(context);
     return FutureBuilder<UserAuditLogsResponseModel>(
       future: _auditLogsFuture,
       builder: (context, snapshot) {
@@ -1910,7 +1950,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
           children: [
             Text(
               isBm ? 'Branch Activity Logs ($branch)' : 'System Audit Logs',
-              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: tokens.textPrimary),
             ),
             const SizedBox(height: 4),
             _buildInfoCard(
@@ -1926,7 +1966,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
               child: TextField(
                 controller: _auditSearchController,
                 decoration: _inputDecoration(hint: 'Filter by user, action, module...').copyWith(
-                  prefixIcon: const Icon(Icons.search, size: 18, color: Color(0xFF64748B)),
+                  prefixIcon: Icon(Icons.search, size: 18, color: tokens.textMuted),
                 ),
                 onChanged: (val) => setState(() {}),
               ),
@@ -1937,28 +1977,28 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
               _buildInfoCard('No audit logs recorded yet.')
             else ...[
               if (isMobile)
-                const Padding(
-                  padding: EdgeInsets.only(bottom: 8),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
                   child: Row(
                     children: [
-                      Icon(Icons.swipe, size: 14, color: Color(0xFF64748B)),
-                      SizedBox(width: 4),
-                      Text('Scroll horizontally to view audit trail', style: TextStyle(fontSize: 11, color: Color(0xFF64748B), fontStyle: FontStyle.italic)),
+                      Icon(Icons.swipe, size: 14, color: tokens.textMuted),
+                      const SizedBox(width: 4),
+                      Text('Scroll horizontally to view audit trail', style: TextStyle(fontSize: 11, color: tokens.textMuted, fontStyle: FontStyle.italic)),
                     ],
                   ),
                 ),
               Container(
                 decoration: BoxDecoration(
-                  color: Colors.white,
+                  color: tokens.surface,
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                  border: Border.all(color: tokens.borderSubtle),
                 ),
                 child: SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
                   child: DataTable(
-                    headingRowColor: WidgetStateProperty.all(const Color(0xFFF8FAFC)),
-                    headingTextStyle: const TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF334155), fontSize: 12.5),
-                    dataTextStyle: const TextStyle(fontSize: 12.5, color: Color(0xFF0F172A)),
+                    headingRowColor: WidgetStateProperty.all(tokens.surfaceSubtle),
+                    headingTextStyle: TextStyle(fontWeight: FontWeight.w700, color: tokens.textPrimary, fontSize: 12.5),
+                    dataTextStyle: TextStyle(fontSize: 12.5, color: tokens.textPrimary),
                     columns: const [
                       DataColumn(label: Text('Timestamp')),
                       DataColumn(label: Text('Username')),
@@ -1984,8 +2024,8 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
                               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                               decoration: BoxDecoration(
                                 color: (l.status ?? '').toUpperCase() == 'SUCCESS'
-                                    ? const Color(0xFFDCFCE7)
-                                    : const Color(0xFFF1F5F9),
+                                    ? tokens.successBg
+                                    : tokens.surfaceHover,
                                 borderRadius: BorderRadius.circular(10),
                               ),
                               child: Text(
@@ -1994,8 +2034,8 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
                                   fontSize: 11,
                                   fontWeight: FontWeight.w700,
                                   color: (l.status ?? '').toUpperCase() == 'SUCCESS'
-                                      ? const Color(0xFF166534)
-                                      : const Color(0xFF475569),
+                                      ? tokens.successText
+                                      : tokens.textSecondary,
                                 ),
                               ),
                             ),
@@ -2017,6 +2057,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
   // TAB 9: LOGIN HISTORY (Admin Only)
   // =========================================================================
   Widget _buildTabLoginHistory({bool isMobile = false}) {
+    final tokens = IcareSurfaceTokens.of(context);
     return FutureBuilder<LoginHistoryResponseModel>(
       future: _loginHistoryFuture,
       builder: (context, snapshot) {
@@ -2032,35 +2073,35 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Login History', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Color(0xFF0F172A))),
+            Text('Login History', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: tokens.textPrimary)),
             const SizedBox(height: 4),
             _buildInfoCard('System-wide authentication access log including successful logins, failures, and session IDs.'),
             const SizedBox(height: 16),
 
             if (isMobile)
-              const Padding(
-                padding: EdgeInsets.only(bottom: 8),
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
                 child: Row(
                   children: [
-                    Icon(Icons.swipe, size: 14, color: Color(0xFF64748B)),
-                    SizedBox(width: 4),
-                    Text('Scroll horizontally to view login history', style: TextStyle(fontSize: 11, color: Color(0xFF64748B), fontStyle: FontStyle.italic)),
+                    Icon(Icons.swipe, size: 14, color: tokens.textMuted),
+                    const SizedBox(width: 4),
+                    Text('Scroll horizontally to view login history', style: TextStyle(fontSize: 11, color: tokens.textMuted, fontStyle: FontStyle.italic)),
                   ],
                 ),
               ),
 
             Container(
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: tokens.surface,
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: const Color(0xFFE2E8F0)),
+                border: Border.all(color: tokens.borderSubtle),
               ),
               child: SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
                 child: DataTable(
-                  headingRowColor: WidgetStateProperty.all(const Color(0xFFF8FAFC)),
-                  headingTextStyle: const TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF334155), fontSize: 12.5),
-                  dataTextStyle: const TextStyle(fontSize: 12.5, color: Color(0xFF0F172A)),
+                  headingRowColor: WidgetStateProperty.all(tokens.surfaceSubtle),
+                  headingTextStyle: TextStyle(fontWeight: FontWeight.w700, color: tokens.textPrimary, fontSize: 12.5),
+                  dataTextStyle: TextStyle(fontSize: 12.5, color: tokens.textPrimary),
                   columns: const [
                     DataColumn(label: Text('Login Time')),
                     DataColumn(label: Text('Username')),
@@ -2079,7 +2120,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                             decoration: BoxDecoration(
-                              color: isSuccess ? const Color(0xFFDCFCE7) : const Color(0xFFFEE2E2),
+                              color: isSuccess ? tokens.successBg : tokens.dangerBg,
                               borderRadius: BorderRadius.circular(12),
                             ),
                             child: Text(
@@ -2087,7 +2128,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
                               style: TextStyle(
                                 fontSize: 11,
                                 fontWeight: FontWeight.w700,
-                                color: isSuccess ? const Color(0xFF166534) : const Color(0xFF991B1B),
+                                color: isSuccess ? tokens.successText : tokens.dangerText,
                               ),
                             ),
                           ),
@@ -2334,18 +2375,22 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
   Future<void> _handleDeleteClosure(String closureId) async {
     final confirm = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Delete Closure', style: TextStyle(fontWeight: FontWeight.w700)),
-        content: const Text('Are you sure you want to delete this custom branch closure?'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFDC2626)),
-            child: const Text('Delete', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-          ),
-        ],
-      ),
+      builder: (ctx) {
+        final dTokens = IcareSurfaceTokens.of(ctx);
+        return AlertDialog(
+          backgroundColor: dTokens.surfaceElevated,
+          title: Text('Delete Closure', style: TextStyle(fontWeight: FontWeight.w700, color: dTokens.textPrimary)),
+          content: Text('Are you sure you want to delete this custom branch closure?', style: TextStyle(color: dTokens.textSecondary)),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFDC2626), foregroundColor: Colors.white),
+              child: const Text('Delete', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            ),
+          ],
+        );
+      },
     );
 
     if (confirm != true) return;
@@ -2373,61 +2418,64 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
   // UI HELPERS
   // =========================================================================
   Widget _buildInfoCard(String text) {
+    final tokens = IcareSurfaceTokens.of(context);
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
+        color: tokens.surfaceSubtle,
         borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: tokens.borderSubtle),
       ),
       child: Row(
         children: [
-          const Icon(Icons.info_outline, size: 16, color: Color(0xFF3B82F6)),
+          Icon(Icons.info_outline, size: 16, color: tokens.infoDot),
           const SizedBox(width: 8),
-          Expanded(child: Text(text, style: const TextStyle(fontSize: 12.5, color: Color(0xFF475569)))),
+          Expanded(child: Text(text, style: TextStyle(fontSize: 12.5, color: tokens.textSecondary))),
         ],
       ),
     );
   }
 
   Widget _buildErrorCard(String text) {
+    final tokens = IcareSurfaceTokens.of(context);
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
-        color: const Color(0xFFFEF2F2),
+        color: tokens.dangerBg,
         borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: const Color(0xFFFCA5A5)),
+        border: Border.all(color: tokens.dangerBorder),
       ),
       child: Row(
         children: [
-          const Icon(Icons.error_outline, size: 16, color: Color(0xFFDC2626)),
+          Icon(Icons.error_outline, size: 16, color: tokens.dangerDot),
           const SizedBox(width: 8),
-          Expanded(child: Text(text, style: const TextStyle(fontSize: 12.5, color: Color(0xFF991B1B)))),
+          Expanded(child: Text(text, style: TextStyle(fontSize: 12.5, color: tokens.dangerText))),
         ],
       ),
     );
   }
 
   InputDecoration _inputDecoration({String? hint}) {
+    final tokens = IcareSurfaceTokens.of(context);
     return InputDecoration(
       hintText: hint,
-      hintStyle: const TextStyle(fontSize: 13, color: Color(0xFF94A3B8)),
+      hintStyle: TextStyle(fontSize: 13, color: tokens.textLight),
       filled: true,
-      fillColor: Colors.white,
+      fillColor: tokens.surface,
       contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(6),
-        borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
+        borderSide: BorderSide(color: tokens.borderStrong),
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(6),
-        borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
+        borderSide: BorderSide(color: tokens.borderStrong),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(6),
-        borderSide: const BorderSide(color: Color(0xFF064E3B), width: 1.5),
+        borderSide: BorderSide(color: tokens.brandPrimary, width: 1.5),
       ),
     );
   }

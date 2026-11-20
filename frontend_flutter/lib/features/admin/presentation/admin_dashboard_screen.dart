@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
+import '../../../core/theme/icare_theme_tokens.dart';
 import '../data/datasources/admin_api_service.dart';
 import 'widgets/admin_overview_tab.dart';
 import 'widgets/admin_rankings_tab.dart';
@@ -193,7 +194,7 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen>
                           index: activeTab,
                           children: [
                             RefreshIndicator(
-                              color: const Color(0xFF0F766E),
+                              color: IcareSurfaceTokens.of(context).brandPrimary,
                               onRefresh: () =>
                                   _refreshActiveTab(0, dateStr, year),
                               child: SingleChildScrollView(
@@ -209,7 +210,7 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen>
                               ),
                             ),
                             RefreshIndicator(
-                              color: const Color(0xFF0F766E),
+                              color: IcareSurfaceTokens.of(context).brandPrimary,
                               onRefresh: () =>
                                   _refreshActiveTab(1, dateStr, year),
                               child: SingleChildScrollView(
@@ -220,7 +221,7 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen>
                               ),
                             ),
                             RefreshIndicator(
-                              color: const Color(0xFF0F766E),
+                              color: IcareSurfaceTokens.of(context).brandPrimary,
                               onRefresh: () =>
                                   _refreshActiveTab(2, dateStr, year),
                               child: SingleChildScrollView(
@@ -305,18 +306,15 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen>
   }
 
   Widget _buildStatusBanner() {
+    final tokens = IcareSurfaceTokens.of(context);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       margin: const EdgeInsets.only(bottom: 14),
       decoration: BoxDecoration(
-        color: _isSuccessBanner
-            ? const Color(0xFFF0FDF4)
-            : const Color(0xFFFEF2F2),
+        color: _isSuccessBanner ? tokens.successBg : tokens.dangerBg,
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
-          color: _isSuccessBanner
-              ? const Color(0xFF86EFAC)
-              : const Color(0xFFFCA5A5),
+          color: _isSuccessBanner ? tokens.successBorder : tokens.dangerBorder,
         ),
       ),
       child: Row(
@@ -325,9 +323,7 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen>
             _isSuccessBanner
                 ? Icons.check_circle_outline
                 : Icons.error_outline,
-            color: _isSuccessBanner
-                ? const Color(0xFF15803D)
-                : const Color(0xFFDC2626),
+            color: _isSuccessBanner ? tokens.successDot : tokens.dangerDot,
             size: 18,
           ),
           const SizedBox(width: 10),
@@ -337,9 +333,7 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen>
               style: TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
-                color: _isSuccessBanner
-                    ? const Color(0xFF166534)
-                    : const Color(0xFF991B1B),
+                color: _isSuccessBanner ? tokens.successText : tokens.dangerText,
               ),
             ),
           ),
@@ -375,12 +369,13 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen>
             ? 'Compare branch and credit officer performance across the network.'
             : 'Monitor late repayments, recoveries, and early loan payoffs.';
 
+    final tokens = IcareSurfaceTokens.of(context);
     return Container(
       padding: EdgeInsets.all(isCompact ? 14 : 18),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: tokens.surface,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: tokens.borderSubtle),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -397,17 +392,17 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen>
                   Container(
                     padding: const EdgeInsets.all(7),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFF1F5F9),
+                      color: tokens.surfaceSubtle,
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    child: const Icon(
+                    child: Icon(
                       Icons.account_balance,
                       size: 18,
-                      color: Color(0xFF0F172A),
+                      color: tokens.textPrimary,
                     ),
                   ),
                   const SizedBox(width: 10),
-                  const Column(
+                  Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
@@ -416,7 +411,7 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen>
                           fontSize: 14,
                           fontWeight: FontWeight.w900,
                           letterSpacing: 1.1,
-                          color: Color(0xFF0F172A),
+                          color: tokens.textPrimary,
                         ),
                       ),
                       Text(
@@ -425,7 +420,7 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen>
                           fontSize: 10,
                           fontWeight: FontWeight.w700,
                           letterSpacing: 0.8,
-                          color: Color(0xFF64748B),
+                          color: tokens.textMuted,
                         ),
                       ),
                     ],
@@ -443,25 +438,25 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen>
                       ),
                       margin: const EdgeInsets.only(right: 4),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFFFFBEB),
+                        color: tokens.warningBg,
                         borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: const Color(0xFFFDE68A)),
+                        border: Border.all(color: tokens.warningBorder),
                       ),
-                      child: const Text(
+                      child: Text(
                         'Weekend (Closed)',
                         style: TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w700,
-                          color: Color(0xFFB45309),
+                          color: tokens.warningText,
                         ),
                       ),
                     ),
                   IconButton(
                     onPressed: () => _refreshActiveTab(activeTab, dateStr, year),
-                    icon: const Icon(
+                    icon: Icon(
                       Icons.refresh_rounded,
                       size: 18,
-                      color: Color(0xFF475569),
+                      color: tokens.textSecondary,
                     ),
                     tooltip: 'Refresh current tab',
                     visualDensity: VisualDensity.compact,
@@ -474,10 +469,10 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen>
                   ),
                   IconButton(
                     onPressed: () => _pickDate(context),
-                    icon: const Icon(
+                    icon: Icon(
                       Icons.calendar_today_outlined,
                       size: 18,
-                      color: Color(0xFF475569),
+                      color: tokens.textSecondary,
                     ),
                     tooltip: 'Select operational date',
                     visualDensity: VisualDensity.compact,
@@ -495,28 +490,28 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen>
           const SizedBox(height: 12),
           Text(
             formattedDate,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 11,
               fontWeight: FontWeight.w700,
               letterSpacing: 0.8,
-              color: Color(0xFF64748B),
+              color: tokens.textMuted,
             ),
           ),
           const SizedBox(height: 4),
           Text(
             tabTitle,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 22,
               fontWeight: FontWeight.w800,
-              color: Color(0xFF0F172A),
+              color: tokens.textPrimary,
             ),
           ),
           const SizedBox(height: 2),
           Text(
             tabSubtitle,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 13,
-              color: Color(0xFF64748B),
+              color: tokens.textMuted,
             ),
           ),
         ],
@@ -534,6 +529,7 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen>
     required int pendingApprovalsCount,
   }) {
     final isCompact = size.isCompact;
+    final tokens = IcareSurfaceTokens.of(context);
     final tabs = [
       (
         label: 'Overview',
@@ -557,9 +553,9 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen>
 
     return Container(
       decoration: BoxDecoration(
-        color: const Color(0xFFF1F5F9),
+        color: tokens.surfaceSubtle,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: tokens.borderSubtle),
       ),
       padding: const EdgeInsets.all(4),
       child: Row(
@@ -581,12 +577,12 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen>
                   horizontal: isCompact ? 6 : 10,
                 ),
                 decoration: BoxDecoration(
-                  color: isSelected ? Colors.white : Colors.transparent,
+                  color: isSelected ? tokens.surface : Colors.transparent,
                   borderRadius: BorderRadius.circular(6),
                   boxShadow: isSelected
                       ? [
                           BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.05),
+                            color: Colors.black.withValues(alpha: tokens.isDark ? 0.24 : 0.05),
                             blurRadius: 4,
                             offset: const Offset(0, 1),
                           ),
@@ -600,8 +596,8 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen>
                       tab.icon,
                       size: isCompact ? 14 : 15,
                       color: isSelected
-                          ? const Color(0xFF022C22)
-                          : const Color(0xFF64748B),
+                          ? tokens.brandPrimary
+                          : tokens.textMuted,
                     ),
                     SizedBox(width: isCompact ? 4 : 6),
                     Flexible(
@@ -612,8 +608,8 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen>
                           fontWeight:
                               isSelected ? FontWeight.w700 : FontWeight.w600,
                           color: isSelected
-                              ? const Color(0xFF022C22)
-                              : const Color(0xFF64748B),
+                              ? tokens.brandPrimary
+                              : tokens.textMuted,
                         ),
                         overflow: TextOverflow.ellipsis,
                         maxLines: 1,
@@ -627,7 +623,7 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen>
                           vertical: 1.5,
                         ),
                         decoration: BoxDecoration(
-                          color: const Color(0xFFDC2626),
+                          color: tokens.dangerDot,
                           borderRadius: BorderRadius.circular(999),
                         ),
                         child: Text(

@@ -7,6 +7,7 @@ import '../../shared/presentation/co_app_scaffold.dart';
 import '../../../core/auth/auth_controller.dart';
 import '../../../core/auth/auth_state.dart';
 import '../../../core/errors/app_error_formatter.dart';
+import '../../../core/theme/icare_theme_tokens.dart';
 import '../data/datasources/reports_api_service.dart';
 import '../data/models/report_models.dart';
 import '../../shared/utils/file_download_helper.dart';
@@ -318,24 +319,25 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
     final isAdmin = role == 'Admin' || role == 'Super Admin' || role == 'ADMIN' || isDirector;
     final isBm = role == 'Branch Manager' || role == 'BM';
     final isAm = role == 'Area Manager' || role == 'AM';
+    final tokens = IcareSurfaceTokens.of(context);
 
     // Access guard: CO prohibited
     if (isCo) {
       return Container(
         padding: const EdgeInsets.all(24),
         decoration: BoxDecoration(
-          color: const Color(0xFFFEF2F2),
+          color: tokens.dangerBg,
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: const Color(0xFFFCA5A5)),
+          border: Border.all(color: tokens.dangerBorder),
         ),
-        child: const Row(
+        child: Row(
           children: [
-            Icon(Icons.gpp_bad, color: Color(0xFFDC2626), size: 24),
-            SizedBox(width: 12),
+            Icon(Icons.gpp_bad, color: tokens.dangerDot, size: 24),
+            const SizedBox(width: 12),
             Expanded(
               child: Text(
                 'Access Denied: You do not have permission to access Reports & Export.',
-                style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF991B1B)),
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: tokens.dangerText),
               ),
             ),
           ],
@@ -394,6 +396,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
   // 1. Identity Banner
   // ---------------------------------------------------------------------------
   Widget _buildIdentityBanner(bool isAdmin, bool isBm, bool isAm, String userBranch, {bool isDirector = false}) {
+    final tokens = IcareSurfaceTokens.of(context);
     String title;
     String subtitle;
     String badgeTitle;
@@ -407,17 +410,17 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
       subtitle = 'Single-branch double-entry trial balance, officer supervision, savings portfolio, and collections.';
       badgeTitle = 'SCOPE LEVEL';
       badgeSubtitle = 'Single Branch ($userBranch)';
-      badgeBg = const Color(0xFFEFF6FF);
-      badgeBorder = const Color(0xFF3B82F6);
-      badgeText = const Color(0xFF1E3A8A);
+      badgeBg = tokens.infoBg;
+      badgeBorder = tokens.infoBorder;
+      badgeText = tokens.infoText;
     } else if (isAm) {
       title = 'Area Manager Regional Executive Reports';
       subtitle = 'Multi-branch regional supervision, cross-branch comparative analysis, and operational performance.';
       badgeTitle = 'SUPERVISED AREA';
       badgeSubtitle = 'Regional Supervised Branches';
-      badgeBg = const Color(0xFFF0FDFA);
-      badgeBorder = const Color(0xFF0F766E);
-      badgeText = const Color(0xFF0F766E);
+      badgeBg = tokens.brandSoftBg;
+      badgeBorder = tokens.brandSoftBorder;
+      badgeText = tokens.brandSoftText;
     } else {
       title = isDirector
           ? 'Director Executive Oversight Reports'
@@ -425,9 +428,9 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
       subtitle = 'Consolidated institutional double-entry trial balance, savings portfolios, collections, and multi-branch data exports.';
       badgeTitle = 'SCOPE LEVEL';
       badgeSubtitle = isDirector ? 'Institutional Scope (Read-Only)' : 'Institutional Scope';
-      badgeBg = const Color(0xFFFAF5FF);
-      badgeBorder = const Color(0xFFA855F7);
-      badgeText = const Color(0xFF581C87);
+      badgeBg = tokens.isDark ? const Color(0xFF2E1065) : const Color(0xFFFAF5FF);
+      badgeBorder = tokens.isDark ? const Color(0xFF7E22CE) : const Color(0xFFA855F7);
+      badgeText = tokens.isDark ? const Color(0xFFD8B4FE) : const Color(0xFF581C87);
     }
 
     return LayoutBuilder(
@@ -446,7 +449,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
             children: [
               Text(
                 badgeTitle,
-                style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: badgeBorder),
+                style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: badgeText),
               ),
               const SizedBox(height: 2),
               Text(
@@ -461,9 +464,9 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
           width: double.infinity,
           padding: EdgeInsets.all(isMobile ? 14 : 20),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: tokens.surface,
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: const Color(0xFFE2E8F0)),
+            border: Border.all(color: tokens.borderSubtle),
           ),
           child: isMobile
               ? Column(
@@ -471,17 +474,17 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                   children: [
                     Text(
                       title,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.w800,
-                        color: Color(0xFF0F172A),
+                        color: tokens.textPrimary,
                         fontFamily: 'Plus Jakarta Sans',
                       ),
                     ),
                     const SizedBox(height: 4),
                     Text(
                       subtitle,
-                      style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                      style: TextStyle(fontSize: 12, color: tokens.textMuted),
                     ),
                     const SizedBox(height: 10),
                     badgeWidget,
@@ -497,17 +500,17 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                         children: [
                           Text(
                             title,
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 20,
                               fontWeight: FontWeight.w800,
-                              color: Color(0xFF0F172A),
+                              color: tokens.textPrimary,
                               fontFamily: 'Plus Jakarta Sans',
                             ),
                           ),
                           const SizedBox(height: 4),
                           Text(
                             subtitle,
-                            style: const TextStyle(fontSize: 13, color: Color(0xFF64748B)),
+                            style: TextStyle(fontSize: 13, color: tokens.textMuted),
                           ),
                         ],
                       ),
@@ -525,6 +528,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
   // 2. Custom Export Filters Card (For Data Exports Tab)
   // ---------------------------------------------------------------------------
   Widget _buildExportFilterCard(bool isAdmin, bool isBm, bool isAm) {
+    final tokens = IcareSurfaceTokens.of(context);
     return FutureBuilder<ReportsMeta>(
       future: _metaFuture,
       builder: (context, snapshot) {
@@ -558,22 +562,22 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
         return Container(
           width: double.infinity,
           decoration: BoxDecoration(
-            color: const Color(0xFFF8FAFC),
+            color: tokens.surfaceSubtle,
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: const Color(0xFFE2E8F0)),
+            border: Border.all(color: tokens.borderSubtle),
           ),
           child: Theme(
             data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
             child: ExpansionTile(
               initiallyExpanded: false,
               tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-              title: const Text(
+              title: Text(
                 'Customize Export Parameters (Optional: Product, Officer, Date Range)',
-                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: tokens.textPrimary),
               ),
               subtitle: Text(
                 'Active: ${_selectedBranchName ?? 'All Branches'} • $_selectedProductName • $_selectedOfficerName • $_dateMode',
-                style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                style: TextStyle(fontSize: 11, color: tokens.textMuted),
               ),
               children: [
                 Padding(
@@ -585,7 +589,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                   final branchWidget = Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text('Branch Scope', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF475569))),
+                      Text('Branch Scope', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tokens.textSecondary)),
                       const SizedBox(height: 4),
                       DropdownButtonFormField<String>(
                         value: _selectedBranchName ?? (branchOptions.isNotEmpty ? branchOptions.first : null),
@@ -605,7 +609,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                   final productWidget = Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text('Loan Product', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF475569))),
+                      Text('Loan Product', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tokens.textSecondary)),
                       const SizedBox(height: 4),
                       DropdownButtonFormField<String>(
                         value: _selectedProductName,
@@ -625,7 +629,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                   final officerWidget = Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text('Credit Officer', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF475569))),
+                      Text('Credit Officer', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tokens.textSecondary)),
                       const SizedBox(height: 4),
                       DropdownButtonFormField<String>(
                         value: _selectedOfficerName,
@@ -645,7 +649,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                   final dateModeWidget = Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text('Date Mode', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF475569))),
+                      Text('Date Mode', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tokens.textSecondary)),
                       const SizedBox(height: 4),
                       DropdownButtonFormField<String>(
                         value: _dateMode,
@@ -665,7 +669,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                   final asOfWidget = Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text('As of Date', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF475569))),
+                      Text('As of Date', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tokens.textSecondary)),
                       const SizedBox(height: 4),
                       InkWell(
                         onTap: () async {
@@ -683,15 +687,15 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                         child: Container(
                           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                           decoration: BoxDecoration(
-                            color: const Color(0xFFF8FAFC),
+                            color: tokens.surfaceSubtle,
                             borderRadius: BorderRadius.circular(6),
-                            border: Border.all(color: const Color(0xFFCBD5E1)),
+                            border: Border.all(color: tokens.borderStrong),
                           ),
                           child: Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              Text(_dateFormat.format(_asOfDate), style: const TextStyle(fontSize: 13)),
-                              const Icon(Icons.calendar_today, size: 16, color: Color(0xFF64748B)),
+                              Text(_dateFormat.format(_asOfDate), style: TextStyle(fontSize: 13, color: tokens.textPrimary)),
+                              Icon(Icons.calendar_today, size: 16, color: tokens.textMuted),
                             ],
                           ),
                         ),
@@ -702,7 +706,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                   final startDateWidget = Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text('Start Date', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF475569))),
+                      Text('Start Date', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tokens.textSecondary)),
                       const SizedBox(height: 4),
                       InkWell(
                         onTap: () async {
@@ -720,15 +724,15 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                         child: Container(
                           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
                           decoration: BoxDecoration(
-                            color: const Color(0xFFF8FAFC),
+                            color: tokens.surfaceSubtle,
                             borderRadius: BorderRadius.circular(6),
-                            border: Border.all(color: const Color(0xFFCBD5E1)),
+                            border: Border.all(color: tokens.borderStrong),
                           ),
                           child: Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              Text(_dateFormat.format(_startDate), style: const TextStyle(fontSize: 12)),
-                              const Icon(Icons.calendar_today, size: 14, color: Color(0xFF64748B)),
+                              Text(_dateFormat.format(_startDate), style: TextStyle(fontSize: 12, color: tokens.textPrimary)),
+                              Icon(Icons.calendar_today, size: 14, color: tokens.textMuted),
                             ],
                           ),
                         ),
@@ -739,7 +743,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                   final endDateWidget = Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text('End Date', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF475569))),
+                      Text('End Date', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tokens.textSecondary)),
                       const SizedBox(height: 4),
                       InkWell(
                         onTap: () async {
@@ -757,15 +761,15 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                         child: Container(
                           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
                           decoration: BoxDecoration(
-                            color: const Color(0xFFF8FAFC),
+                            color: tokens.surfaceSubtle,
                             borderRadius: BorderRadius.circular(6),
-                            border: Border.all(color: const Color(0xFFCBD5E1)),
+                            border: Border.all(color: tokens.borderStrong),
                           ),
                           child: Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              Text(_dateFormat.format(_endDate), style: const TextStyle(fontSize: 12)),
-                              const Icon(Icons.calendar_today, size: 14, color: Color(0xFF64748B)),
+                              Text(_dateFormat.format(_endDate), style: TextStyle(fontSize: 12, color: tokens.textPrimary)),
+                              Icon(Icons.calendar_today, size: 14, color: tokens.textMuted),
                             ],
                           ),
                         ),
@@ -848,9 +852,10 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
     final role = (u?.role ?? '').trim().toLowerCase();
     final isBm = role == 'branch manager' || role == 'bm';
     final isAm = role == 'area manager' || role == 'am';
+    final tokens = IcareSurfaceTokens.of(context);
     final activeThemeColor = isBm
-        ? const Color(0xFF2563EB)
-        : (isAm ? const Color(0xFF0F766E) : const Color(0xFF064E3B));
+        ? const Color(0xFF1D4ED8)
+        : (isAm ? tokens.brandPrimary : tokens.brandPrimaryDark);
 
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
@@ -871,10 +876,10 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 decoration: BoxDecoration(
-                  color: isSelected ? activeThemeColor : Colors.white,
+                  color: isSelected ? activeThemeColor : tokens.surface,
                   borderRadius: BorderRadius.circular(20),
                   border: Border.all(
-                    color: isSelected ? activeThemeColor : const Color(0xFFE2E8F0),
+                    color: isSelected ? activeThemeColor : tokens.borderSubtle,
                   ),
                   boxShadow: isSelected
                       ? [
@@ -891,7 +896,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                   style: TextStyle(
                     fontSize: 13,
                     fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                    color: isSelected ? Colors.white : const Color(0xFF475569),
+                    color: isSelected ? Colors.white : tokens.textSecondary,
                   ),
                 ),
               ),
@@ -922,44 +927,44 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
   }
 
   // ---------------------------------------------------------------------------
-  // ---------------------------------------------------------------------------
   // Supervised Branch Switcher Bar (Area Manager Exclusive)
   // ---------------------------------------------------------------------------
   Widget _buildAmBranchSwitcherBar() {
     final branches = _cachedMeta?.branches ?? [];
     if (branches.isEmpty) return const SizedBox.shrink();
+    final tokens = IcareSurfaceTokens.of(context);
 
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: tokens.surface,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: tokens.borderSubtle),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              const Icon(Icons.apartment, size: 16, color: Color(0xFF0F766E)),
+              Icon(Icons.apartment, size: 16, color: tokens.brandPrimary),
               const SizedBox(width: 8),
-              const Text(
+              Text(
                 'Supervised Branch Switcher',
                 style: TextStyle(
                   fontSize: 11.5,
                   fontWeight: FontWeight.w700,
-                  color: Color(0xFF64748B),
+                  color: tokens.textMuted,
                   letterSpacing: 0.3,
                 ),
               ),
               const Spacer(),
               Text(
                 'Viewing: ${_selectedBranchName ?? "Select Branch"}',
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w800,
-                  color: Color(0xFF0F766E),
+                  color: tokens.brandPrimary,
                 ),
               ),
             ],
@@ -977,24 +982,24 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                       avatar: Icon(
                         Icons.storefront,
                         size: 14,
-                        color: _selectedBranchName == b.name ? Colors.white : const Color(0xFF0F766E),
+                        color: _selectedBranchName == b.name ? Colors.white : tokens.brandPrimary,
                       ),
                       label: Text(
                         b.name,
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: _selectedBranchName == b.name ? FontWeight.w800 : FontWeight.w600,
-                          color: _selectedBranchName == b.name ? Colors.white : const Color(0xFF1E293B),
+                          color: _selectedBranchName == b.name ? Colors.white : tokens.textPrimary,
                         ),
                       ),
                       selected: _selectedBranchName == b.name,
-                      selectedColor: const Color(0xFF0F766E),
-                      backgroundColor: const Color(0xFFF8FAFC),
+                      selectedColor: tokens.brandPrimaryDark,
+                      backgroundColor: tokens.surfaceSubtle,
                       visualDensity: VisualDensity.compact,
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                       materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       side: BorderSide(
-                        color: _selectedBranchName == b.name ? const Color(0xFF0F766E) : const Color(0xFFCBD5E1),
+                        color: _selectedBranchName == b.name ? tokens.brandPrimaryDark : tokens.borderStrong,
                       ),
                       onSelected: (selected) {
                         if (selected && _selectedBranchName != b.name) {
@@ -1018,6 +1023,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
   // Tab 0: Monthly Executive Parity Suite
   // ---------------------------------------------------------------------------
   Widget _buildMonthlyExecutiveParityTab(bool isAdmin, bool isBm, bool isAm) {
+    final tokens = IcareSurfaceTokens.of(context);
     final api = ref.read(reportsApiServiceProvider);
     final monthNames = [
       'January', 'February', 'March', 'April', 'May', 'June',
@@ -1043,9 +1049,9 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
           width: double.infinity,
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: tokens.surface,
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: const Color(0xFFE2E8F0)),
+            border: Border.all(color: tokens.borderSubtle),
           ),
           child: LayoutBuilder(
             builder: (layoutCtx, constraints) {
@@ -1054,16 +1060,16 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
               // Interactive Period Stepper: [ < ] Month Year [ > ]
               final periodStepper = Container(
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF8FAFC),
+                  color: tokens.surfaceSubtle,
                   borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                  border: Border.all(color: tokens.borderSubtle),
                 ),
                 padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     IconButton(
-                      icon: const Icon(Icons.chevron_left, size: 18, color: Color(0xFF0F766E)),
+                      icon: Icon(Icons.chevron_left, size: 18, color: tokens.brandPrimary),
                       visualDensity: VisualDensity.compact,
                       tooltip: 'Previous Month',
                       onPressed: () {
@@ -1082,15 +1088,15 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                       padding: const EdgeInsets.symmetric(horizontal: 8),
                       child: Text(
                         '${monthNames[_selectedExecMonth - 1]} $_selectedExecYear',
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.w700,
-                          color: Color(0xFF0F172A),
+                          color: tokens.textPrimary,
                         ),
                       ),
                     ),
                     IconButton(
-                      icon: const Icon(Icons.chevron_right, size: 18, color: Color(0xFF0F766E)),
+                      icon: Icon(Icons.chevron_right, size: 18, color: tokens.brandPrimary),
                       visualDensity: VisualDensity.compact,
                       tooltip: 'Next Month',
                       onPressed: () {
@@ -1135,17 +1141,17 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                                 style: TextStyle(
                                   fontSize: 11,
                                   fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                                  color: isSelected ? Colors.white : const Color(0xFF475569),
+                                  color: isSelected ? Colors.white : tokens.textSecondary,
                                 ),
                               ),
                               selected: isSelected,
-                              selectedColor: const Color(0xFF0F766E),
-                              backgroundColor: const Color(0xFFF1F5F9),
+                              selectedColor: tokens.brandPrimaryDark,
+                              backgroundColor: tokens.surfaceHover,
                               visualDensity: VisualDensity.compact,
                               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 0),
                               materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                               side: BorderSide(
-                                color: isSelected ? const Color(0xFF0F766E) : const Color(0xFFE2E8F0),
+                                color: isSelected ? tokens.brandPrimaryDark : tokens.borderSubtle,
                               ),
                               onSelected: (selected) {
                                 if (selected && !isSelected) {
@@ -1167,10 +1173,10 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
 
               // 3 Export Buttons: PDF, Excel, CSV
               final pdfBtn = OutlinedButton.icon(
-                icon: const Icon(Icons.picture_as_pdf_outlined, size: 13, color: Color(0xFFDC2626)),
-                label: const Text('PDF Statement (Print)', style: TextStyle(fontSize: 11, color: Color(0xFFDC2626), fontWeight: FontWeight.w700)),
+                icon: Icon(Icons.picture_as_pdf_outlined, size: 13, color: tokens.dangerText),
+                label: Text('PDF Statement (Print)', style: TextStyle(fontSize: 11, color: tokens.dangerText, fontWeight: FontWeight.w700)),
                 style: OutlinedButton.styleFrom(
-                  side: const BorderSide(color: Color(0xFFFCA5A5)),
+                  side: BorderSide(color: tokens.dangerBorder),
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                   visualDensity: VisualDensity.compact,
                 ),
@@ -1204,10 +1210,10 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
               );
 
               final excelBtn = OutlinedButton.icon(
-                icon: const Icon(Icons.table_view_outlined, size: 13, color: Color(0xFF0F766E)),
-                label: const Text('Excel Statement (All Sheets)', style: TextStyle(fontSize: 11, color: Color(0xFF0F766E), fontWeight: FontWeight.w700)),
+                icon: Icon(Icons.table_view_outlined, size: 13, color: tokens.brandPrimary),
+                label: Text('Excel Statement (All Sheets)', style: TextStyle(fontSize: 11, color: tokens.brandPrimary, fontWeight: FontWeight.w700)),
                 style: OutlinedButton.styleFrom(
-                  side: const BorderSide(color: Color(0xFF0F766E)),
+                  side: BorderSide(color: tokens.brandPrimary),
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                   visualDensity: VisualDensity.compact,
                 ),
@@ -1241,10 +1247,10 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
               );
 
               final csvBtn = OutlinedButton.icon(
-                icon: const Icon(Icons.grid_on_outlined, size: 13, color: Color(0xFF1E293B)),
-                label: const Text('CO Summary CSV', style: TextStyle(fontSize: 11, color: Color(0xFF1E293B), fontWeight: FontWeight.w700)),
+                icon: Icon(Icons.grid_on_outlined, size: 13, color: tokens.textSecondary),
+                label: Text('CO Summary CSV', style: TextStyle(fontSize: 11, color: tokens.textSecondary, fontWeight: FontWeight.w700)),
                 style: OutlinedButton.styleFrom(
-                  side: const BorderSide(color: Color(0xFFCBD5E1)),
+                  side: BorderSide(color: tokens.borderStrong),
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                   visualDensity: VisualDensity.compact,
                 ),
@@ -1288,17 +1294,18 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                 branchControl = Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFF8FAFC),
+                    color: tokens.surfaceSubtle,
                     borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                    border: Border.all(color: tokens.borderSubtle),
                   ),
                   child: DropdownButtonHideUnderline(
                     child: DropdownButton<String>(
                       value: options.contains(currBranch) ? currBranch : (options.isNotEmpty ? options.first : null),
                       isDense: true,
+                      dropdownColor: tokens.surfaceElevated,
                       items: options.map((b) => DropdownMenuItem(
                         value: b,
-                        child: Text(b, style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Color(0xFF1E293B)), overflow: TextOverflow.ellipsis),
+                        child: Text(b, style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: tokens.textPrimary), overflow: TextOverflow.ellipsis),
                       )).toList(),
                       onChanged: (val) {
                         if (val != null) {
@@ -1321,17 +1328,18 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
               final officerControl = Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF8FAFC),
+                  color: tokens.surfaceSubtle,
                   borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                  border: Border.all(color: tokens.borderSubtle),
                 ),
                 child: DropdownButtonHideUnderline(
                   child: DropdownButton<String>(
                     value: officers.contains(_selectedOfficerName) ? _selectedOfficerName : officers.first,
                     isDense: true,
+                    dropdownColor: tokens.surfaceElevated,
                     items: officers.map((o) => DropdownMenuItem(
                       value: o,
-                      child: Text(o, style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Color(0xFF1E293B)), overflow: TextOverflow.ellipsis),
+                      child: Text(o, style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: tokens.textPrimary), overflow: TextOverflow.ellipsis),
                     )).toList(),
                     onChanged: (val) {
                       if (val != null) {
@@ -1348,17 +1356,18 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
               final productControl = Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF8FAFC),
+                  color: tokens.surfaceSubtle,
                   borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                  border: Border.all(color: tokens.borderSubtle),
                 ),
                 child: DropdownButtonHideUnderline(
                   child: DropdownButton<String>(
                     value: products.contains(_selectedProductName) ? _selectedProductName : products.first,
                     isDense: true,
+                    dropdownColor: tokens.surfaceElevated,
                     items: products.map((p) => DropdownMenuItem(
                       value: p,
-                      child: Text(p, style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Color(0xFF1E293B)), overflow: TextOverflow.ellipsis),
+                      child: Text(p, style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: tokens.textPrimary), overflow: TextOverflow.ellipsis),
                     )).toList(),
                     onChanged: (val) {
                       if (val != null) {
@@ -1485,7 +1494,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                         Expanded(
                           child: Text(
                             'Executive Monthly Summary — ${data.branchName} (${data.monthLabel})',
-                            style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
+                            style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w800, color: tokens.textPrimary),
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
@@ -1493,11 +1502,11 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                           icon: Icon(
                             _showAllParityCards ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
                             size: 16,
-                            color: const Color(0xFF0F766E),
+                            color: tokens.brandPrimary,
                           ),
                           label: Text(
                             _showAllParityCards ? 'Less Metrics' : 'More Metrics (4)',
-                            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFF0F766E)),
+                            style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: tokens.brandPrimary),
                           ),
                           onPressed: () {
                             setState(() {
@@ -1544,9 +1553,9 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
         Container(
           width: double.infinity,
           decoration: BoxDecoration(
-            color: const Color(0xFFF1F5F9),
+            color: tokens.surfaceHover,
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: const Color(0xFFE2E8F0)),
+            border: Border.all(color: tokens.borderSubtle),
           ),
           padding: const EdgeInsets.all(4),
           child: SingleChildScrollView(
@@ -1604,6 +1613,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
   }
 
   Widget _buildSubTabButton(String label, int index, {IconData? icon}) {
+    final tokens = IcareSurfaceTokens.of(context);
     final isSelected = _selectedExecSubTab == index;
     return InkWell(
       onTap: () {
@@ -1615,10 +1625,10 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
-          color: isSelected ? Colors.white : Colors.transparent,
+          color: isSelected ? tokens.surface : Colors.transparent,
           borderRadius: BorderRadius.circular(6),
           boxShadow: isSelected
-              ? [const BoxShadow(color: Color(0x10000000), blurRadius: 4, offset: Offset(0, 1))]
+              ? [BoxShadow(color: Colors.black.withValues(alpha: tokens.isDark ? 0.2 : 0.06), blurRadius: 4, offset: const Offset(0, 1))]
               : null,
         ),
         child: Row(
@@ -1628,7 +1638,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
               Icon(
                 icon,
                 size: 14,
-                color: isSelected ? const Color(0xFF0F766E) : const Color(0xFF64748B),
+                color: isSelected ? tokens.brandPrimary : tokens.textMuted,
               ),
               const SizedBox(width: 6),
             ],
@@ -1637,7 +1647,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                color: isSelected ? const Color(0xFF0F172A) : const Color(0xFF64748B),
+                color: isSelected ? tokens.textPrimary : tokens.textMuted,
               ),
             ),
           ],
@@ -1647,6 +1657,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
   }
 
   Widget _buildProgramFilterChips(List<String> options, String selectedValue, ValueChanged<String> onSelected) {
+    final tokens = IcareSurfaceTokens.of(context);
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       physics: const BouncingScrollPhysics(),
@@ -1659,12 +1670,12 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
               label: Text(opt, style: TextStyle(
                 fontSize: 11,
                 fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                color: isSelected ? Colors.white : const Color(0xFF475569),
+                color: isSelected ? Colors.white : tokens.textSecondary,
               )),
               selected: isSelected,
-              selectedColor: const Color(0xFF0F766E),
-              backgroundColor: const Color(0xFFF1F5F9),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20), side: BorderSide(color: isSelected ? const Color(0xFF0F766E) : const Color(0xFFE2E8F0))),
+              selectedColor: tokens.brandPrimaryDark,
+              backgroundColor: tokens.surfaceHover,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20), side: BorderSide(color: isSelected ? tokens.brandPrimaryDark : tokens.borderSubtle)),
               onSelected: (val) {
                 if (val) {
                   onSelected(opt);
@@ -1678,6 +1689,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
   }
 
   Widget _buildMobileDetailRow(String label, String value, {bool isPrimary = false}) {
+    final tokens = IcareSurfaceTokens.of(context);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 2.0),
       child: Row(
@@ -1688,7 +1700,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
               label,
               style: TextStyle(
                 fontSize: 12,
-                color: isPrimary ? const Color(0xFF0F172A) : const Color(0xFF64748B),
+                color: isPrimary ? tokens.textPrimary : tokens.textMuted,
                 fontWeight: isPrimary ? FontWeight.w700 : FontWeight.w500,
               ),
             ),
@@ -1698,7 +1710,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
             style: TextStyle(
               fontSize: isPrimary ? 13 : 12,
               fontWeight: isPrimary ? FontWeight.w800 : FontWeight.w600,
-              color: isPrimary ? const Color(0xFF0F766E) : const Color(0xFF0F172A),
+              color: isPrimary ? tokens.brandPrimary : tokens.textPrimary,
               fontFeatures: const [FontFeature.tabularFigures()],
             ),
           ),
@@ -1720,6 +1732,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
   }
 
   Widget _buildCoMonthlySummaryTable(MonthlyParityData data) {
+    final tokens = IcareSurfaceTokens.of(context);
     final officers = data.officers;
 
     return LayoutBuilder(
@@ -1735,10 +1748,10 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    const Text('Credit Officers Summary', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF0F172A))),
+                    Text('Credit Officers Summary', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: tokens.textPrimary)),
                     IconButton(
                       tooltip: _showRawTableOnMobile ? 'Switch to Cards' : 'Switch to Table',
-                      icon: Icon(_showRawTableOnMobile ? Icons.view_agenda_outlined : Icons.table_chart_outlined, color: const Color(0xFF0F766E)),
+                      icon: Icon(_showRawTableOnMobile ? Icons.view_agenda_outlined : Icons.table_chart_outlined, color: tokens.brandPrimary),
                       onPressed: () {
                         setState(() {
                           _showRawTableOnMobile = !_showRawTableOnMobile;
@@ -1781,10 +1794,10 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                   margin: const EdgeInsets.only(bottom: 12),
                   padding: const EdgeInsets.all(14),
                   decoration: BoxDecoration(
-                    color: Colors.white,
+                    color: tokens.surface,
                     borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: const Color(0xFFE2E8F0)),
-                    boxShadow: const [BoxShadow(color: Color(0x06000000), blurRadius: 4, offset: Offset(0, 1))],
+                    border: Border.all(color: tokens.borderSubtle),
+                    boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: tokens.isDark ? 0.16 : 0.025), blurRadius: 4, offset: const Offset(0, 1))],
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -1795,13 +1808,13 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                           Expanded(
                             child: Text(
                               o.name,
-                              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: Color(0xFF0F766E)),
+                              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: tokens.brandPrimary),
                             ),
                           ),
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                            decoration: BoxDecoration(color: const Color(0xFFF1F5F9), borderRadius: BorderRadius.circular(12)),
-                            child: Text(o.username ?? 'Credit Officer', style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFF475569))),
+                            decoration: BoxDecoration(color: tokens.surfaceHover, borderRadius: BorderRadius.circular(12)),
+                            child: Text(o.username ?? 'Credit Officer', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: tokens.textSecondary)),
                           ),
                         ],
                       ),
@@ -1815,7 +1828,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                       _buildMobileDetailRow('Active Savers', '$actSavers savers | ${_formatNgn(sClose)}'),
                       _buildMobileDetailRow('Month Savings (In / Out)', '${_formatNgn(sDep)} / ${_formatNgn(sWth)}'),
                       const Divider(height: 16),
-                      const Text('Analysed Operational Expenses (OpEx):', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF64748B))),
+                      Text('Analysed Operational Expenses (OpEx):', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: tokens.textMuted)),
                       const SizedBox(height: 4),
                       _buildMobileDetailRow('Field Transport & Travel', _formatNgn(trans)),
                       _buildMobileDetailRow('Printing & Stationery', _formatNgn(stat)),
@@ -1830,21 +1843,21 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
               _buildContainedTable(
                 hint: 'Swipe horizontally to view all credit officers',
                 child: DataTable(
-                  headingRowColor: MaterialStateProperty.all(const Color(0xFFF8FAFC)),
-                  headingTextStyle: const TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF1E293B), fontSize: 12),
-                  dataTextStyle: const TextStyle(fontSize: 12, color: Color(0xFF334155)),
+                  headingRowColor: MaterialStateProperty.all(tokens.surfaceSubtle),
+                  headingTextStyle: TextStyle(fontWeight: FontWeight.w700, color: tokens.textPrimary, fontSize: 12),
+                  dataTextStyle: TextStyle(fontSize: 12, color: tokens.textSecondary),
                   columnSpacing: 20,
                   columns: [
                     const DataColumn(label: Text('Financial Metric')),
                     ...officers.map((o) => DataColumn(numeric: true, label: Text(o.name))),
-                    DataColumn(numeric: true, label: Text(data.totalColName, style: const TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF0F172A)))),
+                    DataColumn(numeric: true, label: Text(data.totalColName, style: TextStyle(fontWeight: FontWeight.w800, color: tokens.textPrimary))),
                   ],
                   rows: data.rows.map((r) {
                     final isCount = r.metric.contains('Count');
                     final isHighlight = r.metric.contains('Total') || r.metric.contains('Expenses') || r.metric.contains('Bank');
                     return DataRow(
                       cells: [
-                        DataCell(Text(_cleanCoMetricLabel(r.metric), style: TextStyle(fontWeight: isHighlight ? FontWeight.w700 : FontWeight.w600, color: isHighlight ? const Color(0xFF0F766E) : null))),
+                        DataCell(Text(_cleanCoMetricLabel(r.metric), style: TextStyle(fontWeight: isHighlight ? FontWeight.w700 : FontWeight.w600, color: isHighlight ? tokens.brandPrimary : tokens.textSecondary))),
                         ...officers.map((o) {
                           final val = r.values[o.name];
                           String disp;
@@ -1868,7 +1881,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                             } else {
                               disp = _formatNgn((val as num).toDouble());
                             }
-                            return Text(disp, style: const TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF0F172A)));
+                            return Text(disp, style: TextStyle(fontWeight: FontWeight.w800, color: tokens.textPrimary));
                           }),
                         ),
                       ],
@@ -1884,6 +1897,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
   }
 
   Widget _buildDepositStatementView() {
+    final tokens = IcareSurfaceTokens.of(context);
     return FutureBuilder<MonthlyExecutiveStatementsData>(
       future: _statementsFuture,
       builder: (context, snapshot) {
@@ -1896,9 +1910,9 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
         final data = snapshot.data!;
         final ds = data.depositStatement;
         if (ds == null || ds.rows.isEmpty) {
-          return const Center(child: Padding(
-            padding: EdgeInsets.all(32.0),
-            child: Text('No Deposit Statement records available for this period.', style: TextStyle(color: Color(0xFF64748B))),
+          return Center(child: Padding(
+            padding: const EdgeInsets.all(32.0),
+            child: Text('No Deposit Statement records available for this period.', style: TextStyle(color: tokens.textMuted)),
           ));
         }
 
@@ -1953,7 +1967,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                     if (isMobile)
                       IconButton(
                         tooltip: _showRawTableOnMobile ? 'Switch to Cards' : 'Switch to Table',
-                        icon: Icon(_showRawTableOnMobile ? Icons.view_agenda_outlined : Icons.table_chart_outlined, color: const Color(0xFF0F766E)),
+                        icon: Icon(_showRawTableOnMobile ? Icons.view_agenda_outlined : Icons.table_chart_outlined, color: tokens.brandPrimary),
                         onPressed: () {
                           setState(() {
                             _showRawTableOnMobile = !_showRawTableOnMobile;
@@ -1970,9 +1984,9 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                     return Container(
                       margin: const EdgeInsets.only(bottom: 8),
                       decoration: BoxDecoration(
-                        color: isTot ? const Color(0xFFF0FDF4) : Colors.white,
+                        color: isTot ? tokens.successBg : tokens.surface,
                         borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: isTot ? const Color(0xFF86EFAC) : const Color(0xFFE2E8F0)),
+                        border: Border.all(color: isTot ? tokens.successBorder : tokens.borderSubtle),
                       ),
                       child: Material(
                         color: Colors.transparent,
@@ -1987,13 +2001,13 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                               style: TextStyle(
                                 fontSize: 13,
                                 fontWeight: FontWeight.w800,
-                                color: isTot ? const Color(0xFF166534) : const Color(0xFF0F766E),
+                                color: isTot ? tokens.successText : tokens.brandPrimary,
                               ),
                             ),
                             trailing: Container(
                               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                               decoration: BoxDecoration(
-                                color: isTot ? const Color(0xFFDCFCE7) : const Color(0xFFF1F5F9),
+                                color: isTot ? tokens.successBg : tokens.surfaceHover,
                                 borderRadius: BorderRadius.circular(10),
                               ),
                               child: Text(
@@ -2001,7 +2015,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                                 style: TextStyle(
                                   fontSize: 10.5,
                                   fontWeight: FontWeight.bold,
-                                  color: isTot ? const Color(0xFF15803D) : const Color(0xFF475569),
+                                  color: isTot ? tokens.successText : tokens.textSecondary,
                                 ),
                               ),
                             ),
@@ -2027,9 +2041,9 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                   _buildContainedTable(
                     hint: 'Swipe horizontally to view all deposit columns across programmes',
                     child: DataTable(
-                      headingRowColor: MaterialStateProperty.all(const Color(0xFFF8FAFC)),
-                      headingTextStyle: const TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF1E293B), fontSize: 11),
-                      dataTextStyle: const TextStyle(fontSize: 11, color: Color(0xFF334155)),
+                      headingRowColor: MaterialStateProperty.all(tokens.surfaceSubtle),
+                      headingTextStyle: TextStyle(fontWeight: FontWeight.w700, color: tokens.textPrimary, fontSize: 11),
+                      dataTextStyle: TextStyle(fontSize: 11, color: tokens.textSecondary),
                       columnSpacing: 14,
                       columns: const [
                         DataColumn(label: Text('Programme')),
@@ -2050,11 +2064,13 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                       ],
                       rows: filteredRows.map((r) {
                         final isTot = r.programme == 'Total';
-                        final boldStyle = isTot ? const TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF0F172A), fontSize: 11) : const TextStyle(fontSize: 11);
+                        final boldStyle = isTot
+                            ? TextStyle(fontWeight: FontWeight.w800, color: tokens.textPrimary, fontSize: 11)
+                            : TextStyle(fontSize: 11, color: tokens.textSecondary);
                         return DataRow(
-                          color: isTot ? MaterialStateProperty.all(const Color(0xFFF1F5F9)) : null,
+                          color: isTot ? MaterialStateProperty.all(tokens.surfaceHover) : null,
                           cells: [
-                            DataCell(Text(r.programme, style: isTot ? const TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF0F766E)) : const TextStyle(fontWeight: FontWeight.w600))),
+                            DataCell(Text(r.programme, style: isTot ? TextStyle(fontWeight: FontWeight.w800, color: tokens.brandPrimary) : TextStyle(fontWeight: FontWeight.w600, color: tokens.textPrimary))),
                             DataCell(Text('${r.memberPrev}', style: boldStyle)),
                             DataCell(Text('${r.memberCurr}', style: boldStyle)),
                             DataCell(Text('${r.memberTotal}', style: boldStyle)),
@@ -2067,8 +2083,8 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                             DataCell(Text('${r.returnPrevNo} (${_formatNgn(r.returnPrevAmount)})', style: boldStyle)),
                             DataCell(Text('${r.returnCurrNo} (${_formatNgn(r.returnCurrAmount)})', style: boldStyle)),
                             DataCell(Text('${r.returnTotalNo} (${_formatNgn(r.returnTotalAmount)})', style: boldStyle)),
-                            DataCell(Text('${r.balanceNo}', style: isTot ? const TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF0F766E)) : const TextStyle(fontWeight: FontWeight.w700))),
-                            DataCell(Text(_formatNgn(r.balanceAmount), style: isTot ? const TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF0F766E)) : const TextStyle(fontWeight: FontWeight.w700))),
+                            DataCell(Text('${r.balanceNo}', style: isTot ? TextStyle(fontWeight: FontWeight.w800, color: tokens.brandPrimary) : TextStyle(fontWeight: FontWeight.w700, color: tokens.textPrimary))),
+                            DataCell(Text(_formatNgn(r.balanceAmount), style: isTot ? TextStyle(fontWeight: FontWeight.w800, color: tokens.brandPrimary) : TextStyle(fontWeight: FontWeight.w700, color: tokens.textPrimary))),
                           ],
                         );
                       }).toList(),
@@ -2091,6 +2107,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
   }
 
   Widget _buildCreditSectionCard(List<CreditStatementRow> rows, String sectionTitle, IconData icon, {bool isHighlight = false}) {
+    final tokens = IcareSurfaceTokens.of(context);
     final sectionRows = rows.where((r) {
       final s = r.section.toLowerCase();
       final target = sectionTitle.toLowerCase();
@@ -2116,9 +2133,9 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(
-        color: isHighlight ? const Color(0xFFF0FDF4) : Colors.white,
+        color: isHighlight ? tokens.successBg : tokens.surface,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: isHighlight ? const Color(0xFF86EFAC) : const Color(0xFFE2E8F0)),
+        border: Border.all(color: isHighlight ? tokens.successBorder : tokens.borderSubtle),
       ),
       child: Material(
         color: Colors.transparent,
@@ -2128,19 +2145,19 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
             initiallyExpanded: isHighlight || sectionTitle.contains('Disbursed') || sectionTitle.contains('Closing'),
             tilePadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
             childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-            leading: Icon(icon, size: 16, color: isHighlight ? const Color(0xFF166534) : const Color(0xFF0F766E)),
+            leading: Icon(icon, size: 16, color: isHighlight ? tokens.successText : tokens.brandPrimary),
             title: Text(
               sectionTitle,
               style: TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.w700,
-                color: isHighlight ? const Color(0xFF166534) : const Color(0xFF0F172A),
+                color: isHighlight ? tokens.successText : tokens.textPrimary,
               ),
             ),
             trailing: Container(
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-              decoration: BoxDecoration(color: const Color(0xFFF1F5F9), borderRadius: BorderRadius.circular(10)),
-              child: Text(_selectedCreditProgramFilter, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFF475569))),
+              decoration: BoxDecoration(color: tokens.surfaceHover, borderRadius: BorderRadius.circular(10)),
+              child: Text(_selectedCreditProgramFilter, style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: tokens.textSecondary)),
             ),
             children: [
               const Divider(height: 10),
@@ -2160,6 +2177,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
   }
 
   Widget _buildCreditStatementView() {
+    final tokens = IcareSurfaceTokens.of(context);
     return FutureBuilder<MonthlyExecutiveStatementsData>(
       future: _statementsFuture,
       builder: (context, snapshot) {
@@ -2172,9 +2190,9 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
         final data = snapshot.data!;
         final cs = data.creditStatement;
         if (cs == null || cs.rows.isEmpty) {
-          return const Center(child: Padding(
-            padding: EdgeInsets.all(32.0),
-            child: Text('No Credit Statement records available for this period.', style: TextStyle(color: Color(0xFF64748B))),
+          return Center(child: Padding(
+            padding: const EdgeInsets.all(32.0),
+            child: Text('No Credit Statement records available for this period.', style: TextStyle(color: tokens.textMuted)),
           ));
         }
 
@@ -2242,7 +2260,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                     if (isMobile)
                       IconButton(
                         tooltip: _showRawTableOnMobile ? 'Switch to Cards' : 'Switch to Table',
-                        icon: Icon(_showRawTableOnMobile ? Icons.view_agenda_outlined : Icons.table_chart_outlined, color: const Color(0xFF0F766E)),
+                        icon: Icon(_showRawTableOnMobile ? Icons.view_agenda_outlined : Icons.table_chart_outlined, color: tokens.brandPrimary),
                         onPressed: () {
                           setState(() {
                             _showRawTableOnMobile = !_showRawTableOnMobile;
@@ -2265,9 +2283,9 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                   _buildContainedTable(
                     hint: 'Swipe horizontally to view credit metrics across Monthly, Weekly, Daily programmes',
                     child: DataTable(
-                      headingRowColor: MaterialStateProperty.all(const Color(0xFFF8FAFC)),
-                      headingTextStyle: const TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF1E293B), fontSize: 11),
-                      dataTextStyle: const TextStyle(fontSize: 11, color: Color(0xFF334155)),
+                      headingRowColor: MaterialStateProperty.all(tokens.surfaceSubtle),
+                      headingTextStyle: TextStyle(fontWeight: FontWeight.w700, color: tokens.textPrimary, fontSize: 11),
+                      dataTextStyle: TextStyle(fontSize: 11, color: tokens.textSecondary),
                       columnSpacing: 16,
                       columns: [
                         const DataColumn(label: Text('Category')),
@@ -2277,7 +2295,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                           label: Text(
                             'Monthly',
                             style: TextStyle(
-                              color: _selectedCreditProgramFilter == 'Monthly' ? const Color(0xFF0F766E) : null,
+                              color: _selectedCreditProgramFilter == 'Monthly' ? tokens.brandPrimary : null,
                               fontWeight: _selectedCreditProgramFilter == 'Monthly' ? FontWeight.w800 : null,
                             ),
                           ),
@@ -2287,7 +2305,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                           label: Text(
                             'Weekly',
                             style: TextStyle(
-                              color: _selectedCreditProgramFilter == 'Weekly' ? const Color(0xFF0F766E) : null,
+                              color: _selectedCreditProgramFilter == 'Weekly' ? tokens.brandPrimary : null,
                               fontWeight: _selectedCreditProgramFilter == 'Weekly' ? FontWeight.w800 : null,
                             ),
                           ),
@@ -2297,7 +2315,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                           label: Text(
                             'Daily',
                             style: TextStyle(
-                              color: _selectedCreditProgramFilter == 'Daily' ? const Color(0xFF0F766E) : null,
+                              color: _selectedCreditProgramFilter == 'Daily' ? tokens.brandPrimary : null,
                               fontWeight: _selectedCreditProgramFilter == 'Daily' ? FontWeight.w800 : null,
                             ),
                           ),
@@ -2307,7 +2325,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                           label: Text(
                             'Consolidated\nTotal',
                             style: TextStyle(
-                              color: _selectedCreditProgramFilter == 'Consolidated Total' ? const Color(0xFF0F766E) : null,
+                              color: _selectedCreditProgramFilter == 'Consolidated Total' ? tokens.brandPrimary : null,
                               fontWeight: _selectedCreditProgramFilter == 'Consolidated Total' ? FontWeight.w800 : null,
                             ),
                           ),
@@ -2319,9 +2337,13 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                         final cleanItem = _cleanCreditItemLabel(r.item);
                         final isCount = cleanItem.contains('Count');
                         final isHighlight = cleanItem.contains('Total') || cleanItem.contains('Balance') || cleanItem.contains('Active');
-                        final rowColor = isHighlight ? const Color(0xFFF8FAFC) : null;
-                        final textStyle = isHighlight ? const TextStyle(fontWeight: FontWeight.w700, fontSize: 11) : const TextStyle(fontSize: 11);
-                        final totStyle = isHighlight ? const TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF0F766E), fontSize: 11) : const TextStyle(fontWeight: FontWeight.w600, fontSize: 11);
+                        final rowColor = isHighlight ? tokens.surfaceSubtle : null;
+                        final textStyle = isHighlight
+                            ? TextStyle(fontWeight: FontWeight.w700, fontSize: 11, color: tokens.textPrimary)
+                            : TextStyle(fontSize: 11, color: tokens.textSecondary);
+                        final totStyle = isHighlight
+                            ? TextStyle(fontWeight: FontWeight.w800, color: tokens.brandPrimary, fontSize: 11)
+                            : TextStyle(fontWeight: FontWeight.w600, fontSize: 11, color: tokens.textPrimary);
 
                         final isMonthlySel = _selectedCreditProgramFilter == 'Monthly';
                         final isWeeklySel = _selectedCreditProgramFilter == 'Weekly';
@@ -2332,7 +2354,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                           if (isSelected) {
                             return base.copyWith(
                               fontWeight: FontWeight.w800,
-                              color: const Color(0xFF0F766E),
+                              color: tokens.brandPrimary,
                             );
                           }
                           return base;
@@ -2347,7 +2369,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                         return DataRow(
                           color: rowColor != null ? MaterialStateProperty.all(rowColor) : null,
                           cells: [
-                            DataCell(Text(sectionName, style: const TextStyle(fontWeight: FontWeight.w600, color: Color(0xFF0F766E), fontSize: 11))),
+                            DataCell(Text(sectionName, style: TextStyle(fontWeight: FontWeight.w600, color: tokens.brandPrimary, fontSize: 11))),
                             DataCell(Text(cleanItem, style: textStyle)),
                             DataCell(Text(formatVal(r.monthly), style: colStyle(isMonthlySel, textStyle))),
                             DataCell(Text(formatVal(r.weekly), style: colStyle(isWeeklySel, textStyle))),
@@ -2368,6 +2390,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
   }
 
   Widget _buildAnnex1View() {
+    final tokens = IcareSurfaceTokens.of(context);
     return FutureBuilder<Annex1ReportData>(
       future: _annex1Future,
       builder: (context, snapshot) {
@@ -2404,10 +2427,10 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                   margin: const EdgeInsets.only(bottom: 16),
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: Colors.white,
+                    color: tokens.surface,
                     borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: const Color(0xFFE2E8F0)),
-                    boxShadow: const [BoxShadow(color: Color(0x06000000), blurRadius: 4, offset: Offset(0, 1))],
+                    border: Border.all(color: tokens.borderSubtle),
+                    boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: tokens.isDark ? 0.16 : 0.025), blurRadius: 4, offset: const Offset(0, 1))],
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -2415,15 +2438,15 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          const Expanded(
+                          Expanded(
                             child: Row(
                               children: [
-                                Icon(Icons.arrow_downward, color: Color(0xFF166534), size: 18),
-                                SizedBox(width: 8),
+                                Icon(Icons.arrow_downward, color: tokens.successText, size: 18),
+                                const SizedBox(width: 8),
                                 Expanded(
                                   child: Text(
                                     'Section A: Sundry Inflows / Auxiliary Receipts',
-                                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
+                                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: tokens.textPrimary),
                                     overflow: TextOverflow.ellipsis,
                                   ),
                                 ),
@@ -2433,7 +2456,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                           const SizedBox(width: 8),
                           Text(
                             _formatNgn(data.totalSundryReceipts),
-                            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: Color(0xFF166534), fontFeatures: [FontFeature.tabularFigures()]),
+                            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: tokens.successText, fontFeatures: const [FontFeature.tabularFigures()]),
                           ),
                         ],
                       ),
@@ -2442,10 +2465,10 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                         padding: const EdgeInsets.symmetric(vertical: 4.0),
                         child: Row(
                           children: [
-                            const Icon(Icons.subdirectory_arrow_right, size: 14, color: Color(0xFF64748B)),
+                            Icon(Icons.subdirectory_arrow_right, size: 14, color: tokens.textMuted),
                             const SizedBox(width: 8),
-                            Expanded(child: Text(r.name, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500))),
-                            Text(_formatNgn(r.amount), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, fontFeatures: [FontFeature.tabularFigures()])),
+                            Expanded(child: Text(r.name, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: tokens.textSecondary))),
+                            Text(_formatNgn(r.amount), style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: tokens.textPrimary, fontFeatures: const [FontFeature.tabularFigures()])),
                           ],
                         ),
                       )),
@@ -2459,10 +2482,10 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                     margin: const EdgeInsets.only(bottom: 12),
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      color: Colors.white,
+                      color: tokens.surface,
                       borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: const Color(0xFFE2E8F0)),
-                      boxShadow: const [BoxShadow(color: Color(0x06000000), blurRadius: 4, offset: Offset(0, 1))],
+                      border: Border.all(color: tokens.borderSubtle),
+                      boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: tokens.isDark ? 0.16 : 0.025), blurRadius: 4, offset: const Offset(0, 1))],
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -2473,12 +2496,12 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                             Expanded(
                               child: Row(
                                 children: [
-                                  const Icon(Icons.folder_open_outlined, size: 16, color: Color(0xFF1D4ED8)),
+                                  Icon(Icons.folder_open_outlined, size: 16, color: tokens.infoText),
                                   const SizedBox(width: 8),
                                   Expanded(
                                     child: Text(
                                       g.categoryName,
-                                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
+                                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: tokens.textPrimary),
                                       overflow: TextOverflow.ellipsis,
                                     ),
                                   ),
@@ -2488,7 +2511,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                             const SizedBox(width: 8),
                             Text(
                               _formatNgn(g.subtotal),
-                              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: Color(0xFF1D4ED8), fontFeatures: [FontFeature.tabularFigures()]),
+                              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: tokens.infoText, fontFeatures: const [FontFeature.tabularFigures()]),
                             ),
                           ],
                         ),
@@ -2497,10 +2520,10 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                           padding: const EdgeInsets.symmetric(vertical: 3.0),
                           child: Row(
                             children: [
-                              const Icon(Icons.remove, size: 12, color: Color(0xFF94A3B8)),
+                              Icon(Icons.remove, size: 12, color: tokens.textLight),
                               const SizedBox(width: 8),
-                              Expanded(child: Text(item.name, style: const TextStyle(fontSize: 12, color: Color(0xFF334155)))),
-                              Text(_formatNgn(item.amount), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, fontFeatures: [FontFeature.tabularFigures()])),
+                              Expanded(child: Text(item.name, style: TextStyle(fontSize: 12, color: tokens.textSecondary))),
+                              Text(_formatNgn(item.amount), style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tokens.textPrimary, fontFeatures: const [FontFeature.tabularFigures()])),
                             ],
                           ),
                         )),
@@ -2540,6 +2563,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
   }
 
   Widget _buildOfficialTrialBalanceView() {
+    final tokens = IcareSurfaceTokens.of(context);
     return FutureBuilder<MonthlyExecutiveStatementsData>(
       future: _statementsFuture,
       builder: (context, snapshot) {
@@ -2629,17 +2653,17 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                                     setState(() => _selectedTbSectionFilter = sec);
                                   }
                                 },
-                                selectedColor: const Color(0xFF0F766E),
+                                selectedColor: tokens.brandPrimaryDark,
                                 labelStyle: TextStyle(
                                   fontSize: 12,
                                   fontWeight: isSel ? FontWeight.w700 : FontWeight.w500,
-                                  color: isSel ? Colors.white : const Color(0xFF334155),
+                                  color: isSel ? Colors.white : tokens.textSecondary,
                                 ),
-                                backgroundColor: const Color(0xFFF1F5F9),
+                                backgroundColor: tokens.surfaceHover,
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(16),
                                   side: BorderSide(
-                                    color: isSel ? const Color(0xFF0F766E) : const Color(0xFFE2E8F0),
+                                    color: isSel ? tokens.brandPrimaryDark : tokens.borderSubtle,
                                   ),
                                 ),
                               ),
@@ -2653,7 +2677,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                         tooltip: _showRawTableOnMobile ? 'Switch to Cards' : 'Switch to Table',
                         icon: Icon(
                           _showRawTableOnMobile ? Icons.view_agenda_outlined : Icons.table_chart_outlined,
-                          color: const Color(0xFF0F766E),
+                          color: tokens.brandPrimary,
                         ),
                         onPressed: () {
                           setState(() {
@@ -2676,10 +2700,10 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                     return Container(
                       margin: const EdgeInsets.only(bottom: 12),
                       decoration: BoxDecoration(
-                        color: Colors.white,
+                        color: tokens.surface,
                         borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: const Color(0xFFE2E8F0)),
-                        boxShadow: const [BoxShadow(color: Color(0x06000000), blurRadius: 4, offset: Offset(0, 1))],
+                        border: Border.all(color: tokens.borderSubtle),
+                        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: tokens.isDark ? 0.16 : 0.025), blurRadius: 4, offset: const Offset(0, 1))],
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2687,31 +2711,31 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                           // Section Header
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                            decoration: const BoxDecoration(
-                              color: Color(0xFFF8FAFC),
-                              borderRadius: BorderRadius.vertical(top: Radius.circular(10)),
-                              border: Border(bottom: BorderSide(color: Color(0xFFE2E8F0))),
+                            decoration: BoxDecoration(
+                              color: tokens.surfaceSubtle,
+                              borderRadius: const BorderRadius.vertical(top: Radius.circular(10)),
+                              border: Border(bottom: BorderSide(color: tokens.borderSubtle)),
                             ),
                             child: Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
                                 Row(
                                   children: [
-                                    Icon(_getSectionIcon(secName), size: 16, color: const Color(0xFF0F766E)),
+                                    Icon(_getSectionIcon(secName), size: 16, color: tokens.brandPrimary),
                                     const SizedBox(width: 8),
                                     Text(
                                       secName,
-                                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
+                                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: tokens.textPrimary),
                                     ),
                                   ],
                                 ),
                                 Text(
                                   secDebits > 0 ? _formatNgn(secDebits) : _formatNgn(secCredits),
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     fontSize: 12,
                                     fontWeight: FontWeight.w800,
-                                    fontFeatures: [FontFeature.tabularFigures()],
-                                    color: Color(0xFF0F766E),
+                                    fontFeatures: const [FontFeature.tabularFigures()],
+                                    color: tokens.brandPrimary,
                                   ),
                                 ),
                               ],
@@ -2731,7 +2755,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                                   Expanded(
                                     child: Text(
                                       cleanTitle,
-                                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF1E293B)),
+                                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tokens.textPrimary),
                                     ),
                                   ),
                                   const SizedBox(width: 8),
@@ -2739,17 +2763,17 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                                     Container(
                                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                                       decoration: BoxDecoration(
-                                        color: const Color(0xFFF0FDF4),
+                                        color: tokens.successBg,
                                         borderRadius: BorderRadius.circular(4),
-                                        border: Border.all(color: const Color(0xFFBBF7D0)),
+                                        border: Border.all(color: tokens.successBorder),
                                       ),
                                       child: Text(
                                         'Dr ${_formatNgn(r.debit)}',
-                                        style: const TextStyle(
+                                        style: TextStyle(
                                           fontSize: 11,
                                           fontWeight: FontWeight.w700,
-                                          color: Color(0xFF166534),
-                                          fontFeatures: [FontFeature.tabularFigures()],
+                                          color: tokens.successText,
+                                          fontFeatures: const [FontFeature.tabularFigures()],
                                         ),
                                       ),
                                     ),
@@ -2757,22 +2781,22 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                                     Container(
                                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                                       decoration: BoxDecoration(
-                                        color: const Color(0xFFEFF6FF),
+                                        color: tokens.infoBg,
                                         borderRadius: BorderRadius.circular(4),
-                                        border: Border.all(color: const Color(0xFFBFDBFE)),
+                                        border: Border.all(color: tokens.infoBorder),
                                       ),
                                       child: Text(
                                         'Cr ${_formatNgn(r.credit)}',
-                                        style: const TextStyle(
+                                        style: TextStyle(
                                           fontSize: 11,
                                           fontWeight: FontWeight.w700,
-                                          color: Color(0xFF1E40AF),
-                                          fontFeatures: [FontFeature.tabularFigures()],
+                                          color: tokens.infoText,
+                                          fontFeatures: const [FontFeature.tabularFigures()],
                                         ),
                                       ),
                                     ),
                                   if (!hasDebit && !hasCredit)
-                                    const Text('-', style: TextStyle(fontSize: 12, color: Color(0xFF94A3B8))),
+                                    Text('-', style: TextStyle(fontSize: 12, color: tokens.textLight)),
                                 ],
                               ),
                             );
@@ -2786,9 +2810,9 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                   _buildContainedTable(
                     hint: 'Swipe horizontally to view full trial balance ledger accounts',
                     child: DataTable(
-                      headingRowColor: MaterialStateProperty.all(const Color(0xFFF8FAFC)),
-                      headingTextStyle: const TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF1E293B), fontSize: 12),
-                      dataTextStyle: const TextStyle(fontSize: 12, color: Color(0xFF334155)),
+                      headingRowColor: MaterialStateProperty.all(tokens.surfaceSubtle),
+                      headingTextStyle: TextStyle(fontWeight: FontWeight.w700, color: tokens.textPrimary, fontSize: 12),
+                      dataTextStyle: TextStyle(fontSize: 12, color: tokens.textSecondary),
                       columnSpacing: isExpanded ? 32 : 18,
                       columns: const [
                         DataColumn(label: Text('Section')),
@@ -2805,19 +2829,19 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                                   Container(
                                     padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
                                     decoration: BoxDecoration(
-                                      color: const Color(0xFFF1F5F9),
+                                      color: tokens.surfaceHover,
                                       borderRadius: BorderRadius.circular(4),
                                     ),
                                     child: Text(
                                       r.section,
-                                      style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Color(0xFF0F766E)),
+                                      style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: tokens.brandPrimary),
                                     ),
                                   ),
                                 ),
                                 DataCell(
                                   Text(
                                     _cleanTbItemName(r.item),
-                                    style: const TextStyle(fontWeight: FontWeight.w600),
+                                    style: TextStyle(fontWeight: FontWeight.w600, color: tokens.textPrimary),
                                   ),
                                 ),
                                 DataCell(
@@ -2825,7 +2849,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                                     r.debit > 0 ? _formatNgn(r.debit) : '-',
                                     style: TextStyle(
                                       fontWeight: r.debit > 0 ? FontWeight.w700 : FontWeight.normal,
-                                      color: r.debit > 0 ? const Color(0xFF166534) : const Color(0xFF94A3B8),
+                                      color: r.debit > 0 ? tokens.successText : tokens.textLight,
                                       fontFeatures: const [FontFeature.tabularFigures()],
                                     ),
                                   ),
@@ -2835,7 +2859,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                                     r.credit > 0 ? _formatNgn(r.credit) : '-',
                                     style: TextStyle(
                                       fontWeight: r.credit > 0 ? FontWeight.w700 : FontWeight.normal,
-                                      color: r.credit > 0 ? const Color(0xFF1E40AF) : const Color(0xFF94A3B8),
+                                      color: r.credit > 0 ? tokens.infoText : tokens.textLight,
                                       fontFeatures: const [FontFeature.tabularFigures()],
                                     ),
                                   ),
@@ -2846,22 +2870,22 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                         }),
                         // Grand Total Row
                         DataRow(
-                          color: MaterialStateProperty.all(const Color(0xFFF0FDF4)),
+                          color: MaterialStateProperty.all(tokens.successBg),
                           cells: [
-                            const DataCell(
+                            DataCell(
                               Text(
                                 'TOTALS',
-                                style: TextStyle(fontWeight: FontWeight.w900, color: Color(0xFF166534), fontSize: 12),
+                                style: TextStyle(fontWeight: FontWeight.w900, color: tokens.successText, fontSize: 12),
                               ),
                             ),
                             DataCell(
                               Row(
                                 children: [
-                                  const Icon(Icons.verified, size: 14, color: Color(0xFF166534)),
+                                  Icon(Icons.verified, size: 14, color: tokens.successText),
                                   const SizedBox(width: 6),
                                   Text(
                                     tb.isBalanced ? 'Trial Balance Balanced' : 'Unbalanced Variance',
-                                    style: const TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF166534), fontSize: 12),
+                                    style: TextStyle(fontWeight: FontWeight.w800, color: tokens.successText, fontSize: 12),
                                   ),
                                 ],
                               ),
@@ -2869,22 +2893,22 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                             DataCell(
                               Text(
                                 _formatNgn(tb.totalDebits),
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontWeight: FontWeight.w900,
-                                  color: Color(0xFF166534),
+                                  color: tokens.successText,
                                   fontSize: 12,
-                                  fontFeatures: [FontFeature.tabularFigures()],
+                                  fontFeatures: const [FontFeature.tabularFigures()],
                                 ),
                               ),
                             ),
                             DataCell(
                               Text(
                                 _formatNgn(tb.totalCredits),
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontWeight: FontWeight.w900,
-                                  color: Color(0xFF166534),
+                                  color: tokens.successText,
                                   fontSize: 12,
-                                  fontFeatures: [FontFeature.tabularFigures()],
+                                  fontFeatures: const [FontFeature.tabularFigures()],
                                 ),
                               ),
                             ),
@@ -2903,6 +2927,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
   }
 
   Widget _buildReceiptsAndPaymentsView() {
+    final tokens = IcareSurfaceTokens.of(context);
     return FutureBuilder<MonthlyExecutiveStatementsData>(
       future: _statementsFuture,
       builder: (context, snapshot) {
@@ -2965,9 +2990,9 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                         child: _buildCashFlowSideCard(
                           title: 'Cash Inflows (Receipts)',
                           icon: Icons.arrow_downward,
-                          accentColor: const Color(0xFF166534),
-                          headerBg: const Color(0xFFF0FDF4),
-                          borderColor: const Color(0xFF86EFAC),
+                          accentColor: tokens.successText,
+                          headerBg: tokens.successBg,
+                          borderColor: tokens.successBorder,
                           items: rp.receipts,
                           totalAmount: rp.totalReceipts,
                           isReceipt: true,
@@ -2979,9 +3004,9 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                         child: _buildCashFlowSideCard(
                           title: 'Cash Outflows (Payments)',
                           icon: Icons.arrow_upward,
-                          accentColor: const Color(0xFF1E40AF),
-                          headerBg: const Color(0xFFEFF6FF),
-                          borderColor: const Color(0xFF93C5FD),
+                          accentColor: tokens.infoText,
+                          headerBg: tokens.infoBg,
+                          borderColor: tokens.infoBorder,
                           items: rp.payments,
                           totalAmount: rp.totalPayments,
                           isReceipt: false,
@@ -2994,9 +3019,9 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                   Container(
                     width: double.infinity,
                     decoration: BoxDecoration(
-                      color: const Color(0xFFF1F5F9),
+                      color: tokens.surfaceHover,
                       borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                      border: Border.all(color: tokens.borderSubtle),
                     ),
                     padding: const EdgeInsets.all(4),
                     child: Row(
@@ -3024,9 +3049,9 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                     _buildCashFlowSideCard(
                       title: 'Cash Inflows (Receipts)',
                       icon: Icons.arrow_downward,
-                      accentColor: const Color(0xFF166534),
-                      headerBg: const Color(0xFFF0FDF4),
-                      borderColor: const Color(0xFF86EFAC),
+                      accentColor: tokens.successText,
+                      headerBg: tokens.successBg,
+                      borderColor: tokens.successBorder,
                       items: rp.receipts,
                       totalAmount: rp.totalReceipts,
                       isReceipt: true,
@@ -3036,9 +3061,9 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                     _buildCashFlowSideCard(
                       title: 'Cash Outflows (Payments)',
                       icon: Icons.arrow_upward,
-                      accentColor: const Color(0xFF1E40AF),
-                      headerBg: const Color(0xFFEFF6FF),
-                      borderColor: const Color(0xFF93C5FD),
+                      accentColor: tokens.infoText,
+                      headerBg: tokens.infoBg,
+                      borderColor: tokens.infoBorder,
                       items: rp.payments,
                       totalAmount: rp.totalPayments,
                       isReceipt: false,
@@ -3054,6 +3079,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
   }
 
   Widget _buildRpSegmentBtn(String label, int index, IconData icon) {
+    final tokens = IcareSurfaceTokens.of(context);
     final isSelected = _selectedRpSegmentIndex == index;
     return Expanded(
       child: InkWell(
@@ -3062,16 +3088,16 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: 8),
           decoration: BoxDecoration(
-            color: isSelected ? Colors.white : Colors.transparent,
+            color: isSelected ? tokens.surface : Colors.transparent,
             borderRadius: BorderRadius.circular(6),
             boxShadow: isSelected
-                ? const [BoxShadow(color: Color(0x10000000), blurRadius: 4, offset: Offset(0, 1))]
+                ? [BoxShadow(color: Colors.black.withValues(alpha: tokens.isDark ? 0.2 : 0.06), blurRadius: 4, offset: const Offset(0, 1))]
                 : null,
           ),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(icon, size: 13, color: isSelected ? const Color(0xFF0F766E) : const Color(0xFF64748B)),
+              Icon(icon, size: 13, color: isSelected ? tokens.brandPrimary : tokens.textMuted),
               const SizedBox(width: 4),
               Flexible(
                 child: Text(
@@ -3079,7 +3105,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                   style: TextStyle(
                     fontSize: 11,
                     fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
-                    color: isSelected ? const Color(0xFF0F766E) : const Color(0xFF64748B),
+                    color: isSelected ? tokens.brandPrimary : tokens.textMuted,
                   ),
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -3101,12 +3127,13 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
     required double totalAmount,
     required bool isReceipt,
   }) {
+    final tokens = IcareSurfaceTokens.of(context);
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: tokens.surface,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-        boxShadow: const [BoxShadow(color: Color(0x06000000), blurRadius: 4, offset: Offset(0, 1))],
+        border: Border.all(color: tokens.borderSubtle),
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: tokens.isDark ? 0.16 : 0.025), blurRadius: 4, offset: const Offset(0, 1))],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -3146,12 +3173,12 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
           ),
           // Items
           if (items.isEmpty)
-            const Padding(
-              padding: EdgeInsets.all(24.0),
+            Padding(
+              padding: const EdgeInsets.all(24.0),
               child: Center(
                 child: Text(
                   'No transactions recorded in this category.',
-                  style: TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
+                  style: TextStyle(fontSize: 12, color: tokens.textLight),
                 ),
               ),
             )
@@ -3160,7 +3187,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
               itemCount: items.length,
-              separatorBuilder: (_, __) => const Divider(height: 1, color: Color(0xFFF1F5F9)),
+              separatorBuilder: (_, __) => Divider(height: 1, color: tokens.borderSubtle),
               itemBuilder: (context, index) {
                 final it = items[index];
                 return Padding(
@@ -3174,13 +3201,13 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                           children: [
                             Text(
                               it.item,
-                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF1E293B)),
+                              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tokens.textPrimary),
                             ),
                             if (it.subDetail != null && it.subDetail!.isNotEmpty) ...[
                               const SizedBox(height: 2),
                               Text(
                                 it.subDetail!,
-                                style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                                style: TextStyle(fontSize: 11, color: tokens.textMuted),
                               ),
                             ],
                           ],
@@ -3192,7 +3219,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w800,
-                          color: isReceipt ? const Color(0xFF166534) : const Color(0xFF1E40AF),
+                          color: isReceipt ? tokens.successText : tokens.infoText,
                           fontFeatures: const [FontFeature.tabularFigures()],
                         ),
                       ),
@@ -3204,17 +3231,17 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
           // Subtotal footer
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            decoration: const BoxDecoration(
-              color: Color(0xFFF8FAFC),
-              borderRadius: BorderRadius.vertical(bottom: Radius.circular(10)),
-              border: Border(top: BorderSide(color: Color(0xFFE2E8F0))),
+            decoration: BoxDecoration(
+              color: tokens.surfaceSubtle,
+              borderRadius: const BorderRadius.vertical(bottom: Radius.circular(10)),
+              border: Border(top: BorderSide(color: tokens.borderSubtle)),
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text(
+                Text(
                   'Subtotal',
-                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF475569)),
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: tokens.textSecondary),
                 ),
                 Text(
                   _formatNgn(totalAmount),
@@ -3239,15 +3266,16 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
     required double totalInflows,
     required double totalOutflows,
   }) {
+    final tokens = IcareSurfaceTokens.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _buildCashFlowSideCard(
           title: 'Cash Inflows (Receipts)',
           icon: Icons.arrow_downward,
-          accentColor: const Color(0xFF166534),
-          headerBg: const Color(0xFFF0FDF4),
-          borderColor: const Color(0xFF86EFAC),
+          accentColor: tokens.successText,
+          headerBg: tokens.successBg,
+          borderColor: tokens.successBorder,
           items: receipts,
           totalAmount: totalInflows,
           isReceipt: true,
@@ -3256,9 +3284,9 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
         _buildCashFlowSideCard(
           title: 'Cash Outflows (Payments)',
           icon: Icons.arrow_upward,
-          accentColor: const Color(0xFF1E40AF),
-          headerBg: const Color(0xFFEFF6FF),
-          borderColor: const Color(0xFF93C5FD),
+          accentColor: tokens.infoText,
+          headerBg: tokens.infoBg,
+          borderColor: tokens.infoBorder,
           items: payments,
           totalAmount: totalOutflows,
           isReceipt: false,
@@ -3317,6 +3345,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
   // Tab: Regional Area Branches Comparison
   // ---------------------------------------------------------------------------
   Widget _buildAreaComparisonTab({bool isAdmin = false, bool isAm = false}) {
+    final tokens = IcareSurfaceTokens.of(context);
     final products = _cachedMeta != null ? ['All Products', ..._cachedMeta!.products] : ['All Products'];
 
     final filterBar = Container(
@@ -3324,37 +3353,38 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: tokens.surface,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: tokens.borderSubtle),
       ),
       child: Wrap(
         spacing: 10,
         runSpacing: 8,
         crossAxisAlignment: WrapCrossAlignment.center,
         children: [
-          const Row(
+          Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.filter_list, size: 15, color: Color(0xFF0F766E)),
-              SizedBox(width: 6),
-              Text('Matrix Filters:', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF334155))),
+              Icon(Icons.filter_list, size: 15, color: tokens.brandPrimary),
+              const SizedBox(width: 6),
+              Text('Matrix Filters:', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: tokens.textSecondary)),
             ],
           ),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
             decoration: BoxDecoration(
-              color: const Color(0xFFF8FAFC),
+              color: tokens.surfaceSubtle,
               borderRadius: BorderRadius.circular(6),
-              border: Border.all(color: const Color(0xFFE2E8F0)),
+              border: Border.all(color: tokens.borderSubtle),
             ),
             child: DropdownButtonHideUnderline(
               child: DropdownButton<String>(
                 value: products.contains(_selectedProductName) ? _selectedProductName : products.first,
                 isDense: true,
+                dropdownColor: tokens.surfaceElevated,
                 items: products.map((p) => DropdownMenuItem(
                   value: p,
-                  child: Text(p, style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Color(0xFF1E293B))),
+                  child: Text(p, style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: tokens.textPrimary)),
                 )).toList(),
                 onChanged: (val) {
                   if (val != null) {
@@ -3368,17 +3398,18 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
             decoration: BoxDecoration(
-              color: const Color(0xFFF8FAFC),
+              color: tokens.surfaceSubtle,
               borderRadius: BorderRadius.circular(6),
-              border: Border.all(color: const Color(0xFFE2E8F0)),
+              border: Border.all(color: tokens.borderSubtle),
             ),
             child: DropdownButtonHideUnderline(
               child: DropdownButton<String>(
                 value: _dateMode,
                 isDense: true,
+                dropdownColor: tokens.surfaceElevated,
                 items: ['As of Date', 'Date Range', 'All Time'].map((m) => DropdownMenuItem(
                   value: m,
-                  child: Text(m, style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Color(0xFF1E293B))),
+                  child: Text(m, style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: tokens.textPrimary)),
                 )).toList(),
                 onChanged: (val) {
                   if (val != null) {
@@ -3406,16 +3437,16 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF8FAFC),
+                  color: tokens.surfaceSubtle,
                   borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: const Color(0xFFCBD5E1)),
+                  border: Border.all(color: tokens.borderStrong),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.calendar_today, size: 13, color: Color(0xFF64748B)),
+                    Icon(Icons.calendar_today, size: 13, color: tokens.textMuted),
                     const SizedBox(width: 6),
-                    Text('As of: ${_dateFormat.format(_asOfDate)}', style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600)),
+                    Text('As of: ${_dateFormat.format(_asOfDate)}', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: tokens.textPrimary)),
                   ],
                 ),
               ),
@@ -3437,16 +3468,16 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF8FAFC),
+                  color: tokens.surfaceSubtle,
                   borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: const Color(0xFFCBD5E1)),
+                  border: Border.all(color: tokens.borderStrong),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.calendar_today, size: 13, color: Color(0xFF64748B)),
+                    Icon(Icons.calendar_today, size: 13, color: tokens.textMuted),
                     const SizedBox(width: 6),
-                    Text('From: ${_dateFormat.format(_startDate)}', style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600)),
+                    Text('From: ${_dateFormat.format(_startDate)}', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: tokens.textPrimary)),
                   ],
                 ),
               ),
@@ -3467,16 +3498,16 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF8FAFC),
+                  color: tokens.surfaceSubtle,
                   borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: const Color(0xFFCBD5E1)),
+                  border: Border.all(color: tokens.borderStrong),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.calendar_today, size: 13, color: Color(0xFF64748B)),
+                    Icon(Icons.calendar_today, size: 13, color: tokens.textMuted),
                     const SizedBox(width: 6),
-                    Text('To: ${_dateFormat.format(_endDate)}', style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600)),
+                    Text('To: ${_dateFormat.format(_endDate)}', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: tokens.textPrimary)),
                   ],
                 ),
               ),
@@ -3508,9 +3539,9 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
               width: double.infinity,
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: tokens.surface,
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: const Color(0xFFE2E8F0)),
+                border: Border.all(color: tokens.borderSubtle),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -3521,29 +3552,29 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                     alignment: WrapAlignment.spaceBetween,
                     crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
-                      const Column(
+                      Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('Regional Supervisory Area Performance Matrix', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Color(0xFF0F172A))),
-                          SizedBox(height: 4),
-                          Text('Side-by-side comparative analysis of all branches under your regional supervision.', style: TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+                          Text('Regional Supervisory Area Performance Matrix', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: tokens.textPrimary)),
+                          const SizedBox(height: 4),
+                          Text('Side-by-side comparative analysis of all branches under your regional supervision.', style: TextStyle(fontSize: 12, color: tokens.textMuted)),
                         ],
                       ),
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                         decoration: BoxDecoration(
-                          color: const Color(0xFFF0FDF4),
+                          color: tokens.successBg,
                           borderRadius: BorderRadius.circular(6),
-                          border: Border.all(color: const Color(0xFF86EFAC)),
+                          border: Border.all(color: tokens.successBorder),
                         ),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            const Icon(Icons.domain, size: 14, color: Color(0xFF047857)),
+                            Icon(Icons.domain, size: 14, color: tokens.successText),
                             const SizedBox(width: 6),
                             Text(
                               '${data.totalBranches} Branches Supervised',
-                              style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: Color(0xFF166534)),
+                              style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: tokens.successText),
                             ),
                           ],
                         ),
@@ -3576,14 +3607,14 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                     },
                   ),
                   const SizedBox(height: 20),
-                  const Divider(color: Color(0xFFE2E8F0)),
+                  Divider(color: tokens.borderSubtle),
                   const SizedBox(height: 12),
 
                   // Branch Certification & Month-End Sign-Off Ribbon (AM / Admin)
                   if (isAm || isAdmin) ...[
                     _buildCertificationRibbon(isAm),
                     const SizedBox(height: 20),
-                    const Divider(color: Color(0xFFE2E8F0)),
+                    Divider(color: tokens.borderSubtle),
                     const SizedBox(height: 12),
                   ],
 
@@ -3597,19 +3628,19 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              const Expanded(
+                              Expanded(
                                 child: Text(
                                   'Branch-by-Branch Comparative Matrix',
-                                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
+                                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: tokens.textPrimary),
                                   overflow: TextOverflow.ellipsis,
                                 ),
                               ),
                               if (isMobile)
                                 TextButton.icon(
-                                  icon: Icon(_showRawTableOnMobile ? Icons.view_agenda_outlined : Icons.table_chart_outlined, size: 14, color: const Color(0xFF0F766E)),
+                                  icon: Icon(_showRawTableOnMobile ? Icons.view_agenda_outlined : Icons.table_chart_outlined, size: 14, color: tokens.brandPrimary),
                                   label: Text(
                                     _showRawTableOnMobile ? 'Show Cards' : 'Show 11-Col Table',
-                                    style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: Color(0xFF0F766E)),
+                                    style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: tokens.brandPrimary),
                                   ),
                                   onPressed: () => setState(() => _showRawTableOnMobile = !_showRawTableOnMobile),
                                 ),
@@ -3625,7 +3656,9 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                             _buildContainedTable(
                               hint: 'Swipe horizontally to view all branch metrics',
                               child: DataTable(
-                                headingRowColor: MaterialStateProperty.all(const Color(0xFFF8FAFC)),
+                                headingRowColor: MaterialStateProperty.all(tokens.surfaceSubtle),
+                                headingTextStyle: TextStyle(fontWeight: FontWeight.bold, color: tokens.textPrimary),
+                                dataTextStyle: TextStyle(color: tokens.textSecondary),
                                 columns: const [
                                   DataColumn(label: Text('Branch', style: TextStyle(fontWeight: FontWeight.bold))),
                                   DataColumn(label: Text('People on Loan', style: TextStyle(fontWeight: FontWeight.bold))),
@@ -3643,7 +3676,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                                 rows: data.rows.map((r) {
                                   final isHealthy = r.status == 'HEALTHY';
                                   return DataRow(cells: [
-                                    DataCell(Text(r.branch, style: const TextStyle(fontWeight: FontWeight.w600))),
+                                    DataCell(Text(r.branch, style: TextStyle(fontWeight: FontWeight.w600, color: tokens.textPrimary))),
                                     DataCell(Text(_intFormat.format(r.peopleOnLoan))),
                                     DataCell(Text(_intFormat.format(r.activeLoans))),
                                     DataCell(Text(_intFormat.format(r.activeSavers))),
@@ -3656,24 +3689,24 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                                     DataCell(Container(
                                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                                       decoration: BoxDecoration(
-                                        color: isHealthy ? const Color(0xFFF0FDF4) : const Color(0xFFFEF2F2),
+                                        color: isHealthy ? tokens.successBg : tokens.dangerBg,
                                         borderRadius: BorderRadius.circular(4),
-                                        border: Border.all(color: isHealthy ? const Color(0xFF86EFAC) : const Color(0xFFFCA5A5)),
+                                        border: Border.all(color: isHealthy ? tokens.successBorder : tokens.dangerBorder),
                                       ),
                                       child: Text(
                                         r.status,
                                         style: TextStyle(
                                           fontSize: 11,
                                           fontWeight: FontWeight.bold,
-                                          color: isHealthy ? const Color(0xFF166534) : const Color(0xFF991B1B),
+                                          color: isHealthy ? tokens.successText : tokens.dangerText,
                                         ),
                                       ),
                                     )),
                                     DataCell(
                                       OutlinedButton(
                                         style: OutlinedButton.styleFrom(
-                                          foregroundColor: const Color(0xFF0F766E),
-                                          side: const BorderSide(color: Color(0xFF0F766E)),
+                                          foregroundColor: tokens.brandPrimary,
+                                          side: BorderSide(color: tokens.brandPrimary),
                                           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                                           minimumSize: Size.zero,
                                           tapTargetSize: MaterialTapTargetSize.shrinkWrap,
@@ -3697,7 +3730,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                     },
                   ),
                   const SizedBox(height: 20),
-                  const Divider(color: Color(0xFFE2E8F0)),
+                  Divider(color: tokens.borderSubtle),
                   const SizedBox(height: 12),
 
                   // Regional Actions Bar: Excel & CSV
@@ -3714,7 +3747,10 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                               onPressed: () => _triggerCsvDownload('area_comparison', 'area_branch_comparison.csv', forceConsolidated: true),
                               icon: const Icon(Icons.file_download, size: 16),
                               label: const Text('Download Area Comparison (CSV)'),
-                              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF0F172A), foregroundColor: Colors.white),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: tokens.isDark ? const Color(0xFF1E293B) : const Color(0xFF0F172A),
+                                foregroundColor: Colors.white,
+                              ),
                             ),
                           ),
                           SizedBox(
@@ -3723,7 +3759,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                               onPressed: () => _triggerExcelDownload(forceConsolidated: true),
                               icon: const Icon(Icons.table_chart, size: 16),
                               label: const Text('Download Regional Operational Report (Excel)'),
-                              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF064E3B), foregroundColor: Colors.white),
+                              style: ElevatedButton.styleFrom(backgroundColor: tokens.brandPrimaryDark, foregroundColor: Colors.white),
                             ),
                           ),
                         ],
@@ -3740,6 +3776,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
   }
 
   Widget _buildMobileBranchHealthCard(AreaBranchRow r, bool isAm) {
+    final tokens = IcareSurfaceTokens.of(context);
     final isHealthy = r.status == 'HEALTHY';
     final progress = (r.collectionEfficiency / 100.0).clamp(0.0, 1.0);
 
@@ -3747,9 +3784,9 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: tokens.surface,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: tokens.borderSubtle),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -3759,14 +3796,14 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
             children: [
               Text(
                 r.branch,
-                style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
+                style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w800, color: tokens.textPrimary),
               ),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
-                  color: isHealthy ? const Color(0xFFF0FDF4) : const Color(0xFFFEF2F2),
+                  color: isHealthy ? tokens.successBg : tokens.dangerBg,
                   borderRadius: BorderRadius.circular(4),
-                  border: Border.all(color: isHealthy ? const Color(0xFF86EFAC) : const Color(0xFFFCA5A5)),
+                  border: Border.all(color: isHealthy ? tokens.successBorder : tokens.dangerBorder),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
@@ -3775,7 +3812,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                       width: 6,
                       height: 6,
                       decoration: BoxDecoration(
-                        color: isHealthy ? const Color(0xFF166534) : const Color(0xFF991B1B),
+                        color: isHealthy ? tokens.successDot : tokens.dangerDot,
                         shape: BoxShape.circle,
                       ),
                     ),
@@ -3785,7 +3822,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                       style: TextStyle(
                         fontSize: 10.5,
                         fontWeight: FontWeight.w800,
-                        color: isHealthy ? const Color(0xFF166534) : const Color(0xFF991B1B),
+                        color: isHealthy ? tokens.successText : tokens.dangerText,
                       ),
                     ),
                   ],
@@ -3802,13 +3839,13 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text('Collection Efficiency', style: TextStyle(fontSize: 11, color: Color(0xFF64748B))),
+                  Text('Collection Efficiency', style: TextStyle(fontSize: 11, color: tokens.textMuted)),
                   Text(
                     '${r.collectionEfficiency.toStringAsFixed(1)}%',
                     style: TextStyle(
                       fontSize: 11.5,
                       fontWeight: FontWeight.w800,
-                      color: isHealthy ? const Color(0xFF166534) : const Color(0xFFB45309),
+                      color: isHealthy ? tokens.successText : tokens.warningText,
                       fontFeatures: const [FontFeature.tabularFigures()],
                     ),
                   ),
@@ -3820,9 +3857,9 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                 child: LinearProgressIndicator(
                   value: progress,
                   minHeight: 6,
-                  backgroundColor: const Color(0xFFF1F5F9),
+                  backgroundColor: tokens.surfaceHover,
                   valueColor: AlwaysStoppedAnimation<Color>(
-                    isHealthy ? const Color(0xFF0F766E) : const Color(0xFFD97706),
+                    isHealthy ? tokens.brandPrimary : tokens.warningDot,
                   ),
                 ),
               ),
@@ -3834,33 +3871,33 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
           Container(
             padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
-              color: const Color(0xFFF8FAFC),
+              color: tokens.surfaceSubtle,
               borderRadius: BorderRadius.circular(6),
-              border: Border.all(color: const Color(0xFFF1F5F9)),
+              border: Border.all(color: tokens.borderSubtle),
             ),
             child: Column(
               children: [
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text('Collections: ${_formatNgn(r.collectionsReceived)}', style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Color(0xFF0F172A), fontFeatures: [FontFeature.tabularFigures()])),
-                    Text('Expected: ${_formatNgn(r.expectedCollections)}', style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B), fontFeatures: [FontFeature.tabularFigures()])),
+                    Text('Collections: ${_formatNgn(r.collectionsReceived)}', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: tokens.textPrimary, fontFeatures: const [FontFeature.tabularFigures()])),
+                    Text('Expected: ${_formatNgn(r.expectedCollections)}', style: TextStyle(fontSize: 11.5, color: tokens.textMuted, fontFeatures: const [FontFeature.tabularFigures()])),
                   ],
                 ),
                 const SizedBox(height: 6),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text('Outstanding: ${_formatNgn(r.outstandingPortfolio)}', style: const TextStyle(fontSize: 11.5, color: Color(0xFF475569), fontFeatures: [FontFeature.tabularFigures()])),
-                    Text('PAR %: ${r.parPercentage.toStringAsFixed(1)}%', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: r.parPercentage > 5.0 ? const Color(0xFFDC2626) : const Color(0xFF166534))),
+                    Text('Outstanding: ${_formatNgn(r.outstandingPortfolio)}', style: TextStyle(fontSize: 11.5, color: tokens.textSecondary, fontFeatures: const [FontFeature.tabularFigures()])),
+                    Text('PAR %: ${r.parPercentage.toStringAsFixed(1)}%', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: r.parPercentage > 5.0 ? tokens.dangerText : tokens.successText)),
                   ],
                 ),
                 const SizedBox(height: 6),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text('Active Loans: ${_intFormat.format(r.activeLoans)}', style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B))),
-                    Text('Total Savings: ${_formatNgn(r.totalSavings)}', style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Color(0xFF0F766E), fontFeatures: [FontFeature.tabularFigures()])),
+                    Text('Active Loans: ${_intFormat.format(r.activeLoans)}', style: TextStyle(fontSize: 11.5, color: tokens.textMuted)),
+                    Text('Total Savings: ${_formatNgn(r.totalSavings)}', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: tokens.brandPrimary, fontFeatures: const [FontFeature.tabularFigures()])),
                   ],
                 ),
               ],
@@ -3871,10 +3908,10 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
           SizedBox(
             width: double.infinity,
             child: OutlinedButton.icon(
-              icon: const Icon(Icons.description_outlined, size: 14, color: Color(0xFF0F766E)),
-              label: const Text('Inspect Branch Statements', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF0F766E))),
+              icon: Icon(Icons.description_outlined, size: 14, color: tokens.brandPrimary),
+              label: Text('Inspect Branch Statements', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: tokens.brandPrimary)),
               style: OutlinedButton.styleFrom(
-                side: const BorderSide(color: Color(0xFF0F766E)),
+                side: BorderSide(color: tokens.brandPrimary),
                 padding: const EdgeInsets.symmetric(vertical: 8),
               ),
               onPressed: () {
@@ -3892,6 +3929,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
   }
 
   Widget _buildCertificationRibbon(bool isAm) {
+    final tokens = IcareSurfaceTokens.of(context);
     return FutureBuilder<List<MonthlyWorkflowPendingBranchModel>>(
       future: _pendingSubmissionsFuture,
       builder: (context, snapshot) {
@@ -3899,16 +3937,16 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
           return Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: const Color(0xFFF8FAFC),
+              color: tokens.surfaceSubtle,
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: const Color(0xFFE2E8F0)),
+              border: Border.all(color: tokens.borderSubtle),
             ),
-            child: const Row(
+            child: Row(
               children: [
-                SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
-                SizedBox(width: 12),
+                const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+                const SizedBox(width: 12),
                 Expanded(
-                  child: Text('Checking branch monthly submission & certification status...', style: TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+                  child: Text('Checking branch monthly submission & certification status...', style: TextStyle(fontSize: 12, color: tokens.textMuted)),
                 ),
               ],
             ),
@@ -3924,16 +3962,16 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
           return Container(
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
-              color: const Color(0xFFF0FDF4),
+              color: tokens.successBg,
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: const Color(0xFF86EFAC)),
+              border: Border.all(color: tokens.successBorder),
             ),
-            child: const Row(
+            child: Row(
               children: [
-                Icon(Icons.verified, size: 18, color: Color(0xFF047857)),
-                SizedBox(width: 10),
+                Icon(Icons.verified, size: 18, color: tokens.successText),
+                const SizedBox(width: 10),
                 Expanded(
-                  child: Text('All supervised branches have completed submissions for this period.', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: Color(0xFF166534))),
+                  child: Text('All supervised branches have completed submissions for this period.', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: tokens.successText)),
                 ),
               ],
             ),
@@ -3946,15 +3984,15 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Expanded(
+                Expanded(
                   child: Text(
                     'Branch Certification & Month-End Sign-Off',
-                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: tokens.textPrimary),
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
                 const SizedBox(width: 8),
-                Text('${list.length} Branches Tracked', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF0F766E))),
+                Text('${list.length} Branches Tracked', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tokens.brandPrimary)),
               ],
             ),
             const SizedBox(height: 10),
@@ -3969,13 +4007,13 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                     final isEndorsed = b.status == 'AM_VERIFIED';
                     final isReturned = b.status == 'RETURNED_FOR_CORRECTION';
 
-                    Color cardBg = isSubmitted ? const Color(0xFFFFFBEB) : (isEndorsed ? const Color(0xFFF0FDF4) : (isReturned ? const Color(0xFFFEF2F2) : const Color(0xFFF8FAFC)));
-                    Color cardBorder = isSubmitted ? const Color(0xFFFDE68A) : (isEndorsed ? const Color(0xFF86EFAC) : (isReturned ? const Color(0xFFFECACA) : const Color(0xFFE2E8F0)));
-                    Color pillBg = isSubmitted ? const Color(0xFFFEF3C7) : (isEndorsed ? const Color(0xFFDCFCE7) : (isReturned ? const Color(0xFFFEE2E2) : const Color(0xFFE2E8F0)));
-                    Color pillColor = isSubmitted ? const Color(0xFF92400E) : (isEndorsed ? const Color(0xFF166534) : (isReturned ? const Color(0xFF991B1B) : const Color(0xFF475569)));
-                    String pillText = isSubmitted ? 'AWAITING AM SIGN-OFF' : (isEndorsed ? 'AM ENDORSED' : (isReturned ? 'RETURNED TO BM' : 'PENDING BM SUBMISSION'));
-                    IconData statusIcon = isSubmitted ? Icons.pending_actions : (isEndorsed ? Icons.verified : (isReturned ? Icons.assignment_return_outlined : Icons.edit_note));
-                    Color iconColor = isSubmitted ? const Color(0xFFB45309) : (isEndorsed ? const Color(0xFF047857) : (isReturned ? const Color(0xFFDC2626) : const Color(0xFF64748B)));
+                    final cardBg = isSubmitted ? tokens.warningBg : (isEndorsed ? tokens.successBg : (isReturned ? tokens.dangerBg : tokens.surfaceSubtle));
+                    final cardBorder = isSubmitted ? tokens.warningBorder : (isEndorsed ? tokens.successBorder : (isReturned ? tokens.dangerBorder : tokens.borderSubtle));
+                    final pillBg = isSubmitted ? tokens.warningBg : (isEndorsed ? tokens.successBg : (isReturned ? tokens.dangerBg : tokens.surfaceHover));
+                    final pillColor = isSubmitted ? tokens.warningText : (isEndorsed ? tokens.successText : (isReturned ? tokens.dangerText : tokens.textSecondary));
+                    final pillText = isSubmitted ? 'AWAITING AM SIGN-OFF' : (isEndorsed ? 'AM ENDORSED' : (isReturned ? 'RETURNED TO BM' : 'PENDING BM SUBMISSION'));
+                    final statusIcon = isSubmitted ? Icons.pending_actions : (isEndorsed ? Icons.verified : (isReturned ? Icons.assignment_return_outlined : Icons.edit_note));
+                    final iconColor = isSubmitted ? tokens.warningDot : (isEndorsed ? tokens.successDot : (isReturned ? tokens.dangerDot : tokens.textMuted));
 
                     return Container(
                       width: isNarrow ? double.infinity : (constraints.maxWidth - 12) / 2,
@@ -3999,7 +4037,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                                     Expanded(
                                       child: Text(
                                         b.branchName,
-                                        style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13.5, color: Color(0xFF0F172A)),
+                                        style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13.5, color: tokens.textPrimary),
                                         overflow: TextOverflow.ellipsis,
                                       ),
                                     ),
@@ -4009,7 +4047,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                               const SizedBox(width: 8),
                               Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                decoration: BoxDecoration(color: pillBg, borderRadius: BorderRadius.circular(4)),
+                                decoration: BoxDecoration(color: pillBg, borderRadius: BorderRadius.circular(4), border: Border.all(color: cardBorder)),
                                 child: Text(pillText, style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: pillColor)),
                               ),
                             ],
@@ -4023,7 +4061,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                                     : (isReturned
                                         ? 'Queried: ${b.amQueryNotes ?? "Corrections requested"}'
                                         : 'BM reconciling vault • Books open for ${_monthNames[_selectedExecMonth - 1]} $_selectedExecYear')),
-                            style: const TextStyle(fontSize: 11.5, color: Color(0xFF475569)),
+                            style: TextStyle(fontSize: 11.5, color: tokens.textSecondary),
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                           ),
@@ -4044,7 +4082,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                                 style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
                               ),
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: isSubmitted ? const Color(0xFFB45309) : const Color(0xFF0F766E),
+                                backgroundColor: isSubmitted ? const Color(0xFFB45309) : tokens.brandPrimaryDark,
                                 foregroundColor: Colors.white,
                                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                                 visualDensity: VisualDensity.compact,
@@ -4068,6 +4106,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
   // Tab: Data Exports & Downloads (Dual-Card Architecture)
   // ---------------------------------------------------------------------------
   Widget _buildDataExportsTab(bool isAdmin, bool isBm, bool isAm) {
+    final tokens = IcareSurfaceTokens.of(context);
     final isMobile = MediaQuery.of(context).size.width < 750;
     final effectiveSingleBranch = (_selectedBranchName != null && !_selectedBranchName!.startsWith('All'))
         ? _selectedBranchName
@@ -4077,16 +4116,16 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
       width: double.infinity,
       padding: EdgeInsets.all(isMobile ? 14 : 24),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: tokens.surface,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: tokens.borderSubtle),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Comprehensive Operational Data Exports', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: Color(0xFF0F172A))),
+          Text('Comprehensive Operational Data Exports', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: tokens.textPrimary)),
           const SizedBox(height: 4),
-          const Text('Direct in-memory generation of full operational datasets. All files download directly to your browser without external cloud dependencies.', style: TextStyle(fontSize: 13, color: Color(0xFF64748B))),
+          Text('Direct in-memory generation of full operational datasets. All files download directly to your browser without external cloud dependencies.', style: TextStyle(fontSize: 13, color: tokens.textMuted)),
           const SizedBox(height: 20),
 
           // Optional Custom Export Filters
@@ -4098,9 +4137,9 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
             Container(
               padding: const EdgeInsets.all(18),
               decoration: BoxDecoration(
-                color: const Color(0xFFF8FAFC),
+                color: tokens.surfaceSubtle,
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: const Color(0xFFE2E8F0)),
+                border: Border.all(color: tokens.borderSubtle),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -4110,25 +4149,25 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                       Container(
                         padding: const EdgeInsets.all(8),
                         decoration: BoxDecoration(
-                          color: const Color(0xFFECFDF5),
+                          color: tokens.successBg,
                           borderRadius: BorderRadius.circular(6),
-                          border: Border.all(color: const Color(0xFFA7F3D0)),
+                          border: Border.all(color: tokens.successBorder),
                         ),
-                        child: const Icon(Icons.hub_outlined, color: Color(0xFF065F46), size: 20),
+                        child: Icon(Icons.hub_outlined, color: tokens.successText, size: 20),
                       ),
                       const SizedBox(width: 12),
-                      const Expanded(
+                      Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
                               'Card 1: Regional Consolidated Datasets (Supervisory Area Scope)',
-                              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
+                              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: tokens.textPrimary),
                             ),
-                            SizedBox(height: 2),
+                            const SizedBox(height: 2),
                             Text(
                               'Multi-branch consolidated operational workbooks and raw ledgers across all assigned district branches.',
-                              style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                              style: TextStyle(fontSize: 12, color: tokens.textMuted),
                             ),
                           ],
                         ),
@@ -4136,9 +4175,9 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                     ],
                   ),
                   const SizedBox(height: 14),
-                  const Text(
+                  Text(
                     'Includes: Area Branch Comparison matrix, Consolidated Trial Balance, Savings Summary, Repayments Summary, and Raw Loan Records scoped to your area.',
-                    style: TextStyle(fontSize: 12, color: Color(0xFF475569)),
+                    style: TextStyle(fontSize: 12, color: tokens.textSecondary),
                   ),
                   const SizedBox(height: 14),
                   Wrap(
@@ -4150,7 +4189,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                         icon: const Icon(Icons.table_chart, size: 16),
                         label: const Text('Download Master Regional Report (Excel)'),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF064E3B),
+                          backgroundColor: tokens.brandPrimaryDark,
                           foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                         ),
@@ -4160,7 +4199,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                         icon: const Icon(Icons.file_download, size: 16),
                         label: const Text('Area Comparison (CSV)'),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF0F172A),
+                          backgroundColor: tokens.isDark ? const Color(0xFF1E293B) : const Color(0xFF0F172A),
                           foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                         ),
@@ -4170,7 +4209,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                         icon: const Icon(Icons.file_download, size: 16),
                         label: const Text('Regional Raw Loans (CSV)'),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF1E293B),
+                          backgroundColor: tokens.isDark ? const Color(0xFF334155) : const Color(0xFF1E293B),
                           foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                         ),
@@ -4180,7 +4219,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                         icon: const Icon(Icons.file_download, size: 16),
                         label: const Text('Regional Raw Repayments (CSV)'),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF1E293B),
+                          backgroundColor: tokens.isDark ? const Color(0xFF334155) : const Color(0xFF1E293B),
                           foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                         ),
@@ -4197,9 +4236,9 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
           Container(
             padding: const EdgeInsets.all(18),
             decoration: BoxDecoration(
-              color: const Color(0xFFF8FAFC),
+              color: tokens.surfaceSubtle,
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: const Color(0xFFE2E8F0)),
+              border: Border.all(color: tokens.borderSubtle),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -4209,11 +4248,11 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                     Container(
                       padding: const EdgeInsets.all(8),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFEFF6FF),
+                        color: tokens.infoBg,
                         borderRadius: BorderRadius.circular(6),
-                        border: Border.all(color: const Color(0xFFBFDBFE)),
+                        border: Border.all(color: tokens.infoBorder),
                       ),
-                      child: const Icon(Icons.account_balance, color: Color(0xFF1E40AF), size: 20),
+                      child: Icon(Icons.account_balance, color: tokens.infoText, size: 20),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
@@ -4224,12 +4263,12 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                             isAm || isAdmin
                                 ? 'Card 2: Single-Branch Audited Package (Individual Extraction)'
                                 : 'Branch Operational Statements & Audited Extraction',
-                            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
+                            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: tokens.textPrimary),
                           ),
                           const SizedBox(height: 2),
                           Text(
                             'Extract official regulatory statements and raw registers for an individual branch (Currently: ${effectiveSingleBranch ?? "Selected Branch"}).',
-                            style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                            style: TextStyle(fontSize: 12, color: tokens.textMuted),
                           ),
                         ],
                       ),
@@ -4242,10 +4281,10 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                   runSpacing: 10,
                   children: [
                     OutlinedButton.icon(
-                      icon: const Icon(Icons.picture_as_pdf_outlined, size: 14, color: Color(0xFFDC2626)),
-                      label: const Text('Official Statement (PDF Print)', style: TextStyle(fontSize: 12, color: Color(0xFFDC2626), fontWeight: FontWeight.w700)),
+                      icon: Icon(Icons.picture_as_pdf_outlined, size: 14, color: tokens.dangerText),
+                      label: Text('Official Statement (PDF Print)', style: TextStyle(fontSize: 12, color: tokens.dangerText, fontWeight: FontWeight.w700)),
                       style: OutlinedButton.styleFrom(
-                        side: const BorderSide(color: Color(0xFFFCA5A5)),
+                        side: BorderSide(color: tokens.dangerBorder),
                         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                       ),
                       onPressed: () async {
@@ -4277,10 +4316,10 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                       },
                     ),
                     OutlinedButton.icon(
-                      icon: const Icon(Icons.table_view_outlined, size: 14, color: Color(0xFF0F766E)),
-                      label: const Text('Branch Excel Workbook', style: TextStyle(fontSize: 12, color: Color(0xFF0F766E), fontWeight: FontWeight.w700)),
+                      icon: Icon(Icons.table_view_outlined, size: 14, color: tokens.brandPrimary),
+                      label: Text('Branch Excel Workbook', style: TextStyle(fontSize: 12, color: tokens.brandPrimary, fontWeight: FontWeight.w700)),
                       style: OutlinedButton.styleFrom(
-                        side: const BorderSide(color: Color(0xFF0F766E)),
+                        side: BorderSide(color: tokens.brandPrimary),
                         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                       ),
                       onPressed: () async {
@@ -4312,10 +4351,10 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                       },
                     ),
                     OutlinedButton.icon(
-                      icon: const Icon(Icons.people_alt_outlined, size: 14, color: Color(0xFF1E293B)),
-                      label: const Text('Credit Officer Summary (CSV)', style: TextStyle(fontSize: 12, color: Color(0xFF1E293B), fontWeight: FontWeight.w700)),
+                      icon: Icon(Icons.people_alt_outlined, size: 14, color: tokens.textSecondary),
+                      label: Text('Credit Officer Summary (CSV)', style: TextStyle(fontSize: 12, color: tokens.textSecondary, fontWeight: FontWeight.w700)),
                       style: OutlinedButton.styleFrom(
-                        side: const BorderSide(color: Color(0xFFCBD5E1)),
+                        side: BorderSide(color: tokens.borderStrong),
                         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                       ),
                       onPressed: () async {
@@ -4350,13 +4389,21 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                       onPressed: () => _triggerCsvDownload('loans', '${effectiveSingleBranch ?? "branch"}_loans.csv', branchOverride: effectiveSingleBranch),
                       icon: const Icon(Icons.file_download, size: 14),
                       label: const Text('Branch Loans (CSV)', style: TextStyle(fontSize: 12)),
-                      style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF334155), foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10)),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: tokens.isDark ? const Color(0xFF1E293B) : const Color(0xFF334155),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      ),
                     ),
                     ElevatedButton.icon(
                       onPressed: () => _triggerCsvDownload('repayments', '${effectiveSingleBranch ?? "branch"}_repayments.csv', branchOverride: effectiveSingleBranch),
                       icon: const Icon(Icons.file_download, size: 14),
                       label: const Text('Branch Repayments (CSV)', style: TextStyle(fontSize: 12)),
-                      style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF334155), foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10)),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: tokens.isDark ? const Color(0xFF1E293B) : const Color(0xFF334155),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      ),
                     ),
                   ],
                 ),
@@ -4451,12 +4498,13 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
   }
 
   Widget _buildSnapshotRow(String label, String value, {bool isAccent = false, bool isDanger = false}) {
+    final tokens = IcareSurfaceTokens.of(context);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label, style: const TextStyle(fontSize: 12.5, color: Color(0xFF475569))),
+          Text(label, style: TextStyle(fontSize: 12.5, color: tokens.textSecondary)),
           Text(
             value,
             style: TextStyle(
@@ -4464,8 +4512,8 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
               fontWeight: isAccent ? FontWeight.w800 : FontWeight.w600,
               fontFeatures: const [FontFeature.tabularFigures()],
               color: isDanger
-                  ? const Color(0xFFDC2626)
-                  : (isAccent ? const Color(0xFF065F46) : const Color(0xFF0F172A)),
+                  ? tokens.dangerText
+                  : (isAccent ? tokens.successText : tokens.textPrimary),
             ),
           ),
         ],
@@ -4474,31 +4522,32 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
   }
 
   Widget _buildWorkflowStatusCard(bool isAdmin, bool isBm, bool isAm) {
+    final tokens = IcareSurfaceTokens.of(context);
     if (_selectedBranchName == null || _selectedBranchName!.startsWith('All')) {
       return Container(
         margin: const EdgeInsets.only(bottom: 16),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         decoration: BoxDecoration(
-          color: const Color(0xFFF8FAFC),
+          color: tokens.surfaceSubtle,
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: const Color(0xFFE2E8F0)),
+          border: Border.all(color: tokens.borderSubtle),
         ),
-        child: const Row(
+        child: Row(
           children: [
-            Icon(Icons.verified_outlined, size: 20, color: Color(0xFF0F766E)),
-            SizedBox(width: 12),
+            Icon(Icons.verified_outlined, size: 20, color: tokens.brandPrimary),
+            const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
                     'Monthly Statement Verification & Sign-Off Workflow',
-                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: tokens.textPrimary),
                   ),
-                  SizedBox(height: 2),
+                  const SizedBox(height: 2),
                   Text(
                     'Select an individual branch from the dropdown above to review certification status, submit books, or execute supervisory endorsements.',
-                    style: TextStyle(fontSize: 11.5, color: Color(0xFF64748B)),
+                    style: TextStyle(fontSize: 11.5, color: tokens.textMuted),
                   ),
                 ],
               ),
@@ -4516,16 +4565,16 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
             margin: const EdgeInsets.only(bottom: 16),
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: tokens.surface,
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: const Color(0xFFE2E8F0)),
+              border: Border.all(color: tokens.borderSubtle),
             ),
-            child: const Row(
+            child: Row(
               children: [
-                SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
-                SizedBox(width: 12),
+                const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+                const SizedBox(width: 12),
                 Expanded(
-                  child: Text('Checking monthly verification & sign-off status...', style: TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+                  child: Text('Checking monthly verification & sign-off status...', style: TextStyle(fontSize: 12, color: tokens.textMuted)),
                 ),
               ],
             ),
@@ -4538,16 +4587,16 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
             margin: const EdgeInsets.only(bottom: 16),
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
-              color: const Color(0xFFFEF2F2),
+              color: tokens.dangerBg,
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: const Color(0xFFFECACA)),
+              border: Border.all(color: tokens.dangerBorder),
             ),
             child: Row(
               children: [
-                const Icon(Icons.info_outline, size: 18, color: Color(0xFFDC2626)),
+                Icon(Icons.info_outline, size: 18, color: tokens.dangerDot),
                 const SizedBox(width: 10),
                 Expanded(
-                  child: Text('Workflow status unavailable: ${errInfo.message}', style: const TextStyle(fontSize: 12, color: Color(0xFF991B1B))),
+                  child: Text('Workflow status unavailable: ${errInfo.message}', style: TextStyle(fontSize: 12, color: tokens.dangerText)),
                 ),
               ],
             ),
@@ -4563,12 +4612,14 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
   }
 
   Widget _renderWorkflowBanner(MonthlyWorkflowStatusModel st, bool isAdmin, bool isBm, bool isAm) {
+    final tokens = IcareSurfaceTokens.of(context);
     final status = st.status;
     final authState = ref.read(authControllerProvider);
     final user = authState is AuthStateAuthenticated ? authState.user : null;
     final role = user?.role.trim() ?? '';
     final isDirector = role == 'Director' || role == 'DIRECTOR' || role == 'Executive Director';
     final canMutateAdmin = isAdmin && !isDirector;
+    final darkLockBg = tokens.isDark ? const Color(0xFF1E293B) : const Color(0xFF0F172A);
 
     Color bg;
     Color border;
@@ -4583,13 +4634,13 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
 
     switch (status) {
       case 'BM_SUBMITTED':
-        bg = const Color(0xFFFFFBEB);
-        border = const Color(0xFFFDE68A);
-        pillBg = const Color(0xFFFEF3C7);
-        pillText = const Color(0xFF92400E);
+        bg = tokens.warningBg;
+        border = tokens.warningBorder;
+        pillBg = tokens.warningBg;
+        pillText = tokens.warningText;
         pillLabel = 'SUBMITTED FOR AM SIGN-OFF';
         icon = Icons.pending_actions;
-        iconColor = const Color(0xFFB45309);
+        iconColor = tokens.warningDot;
         title = 'Submitted for Area Manager Endorsement';
         description = 'Certified by ${st.bmName ?? "Branch Manager"} on ${_formatDateTime(st.bmSubmittedAt)}. Books are locked pending Area Manager review.';
 
@@ -4597,10 +4648,10 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
           actions.add(
             OutlinedButton.icon(
               onPressed: _isWorkflowSubmitting ? null : () => _showAmReturnDialog(st),
-              icon: const Icon(Icons.assignment_return_outlined, size: 14, color: Color(0xFFDC2626)),
-              label: const Text('Query / Return', style: TextStyle(color: Color(0xFFDC2626), fontSize: 12, fontWeight: FontWeight.bold)),
+              icon: Icon(Icons.assignment_return_outlined, size: 14, color: tokens.dangerText),
+              label: Text('Query / Return', style: TextStyle(color: tokens.dangerText, fontSize: 12, fontWeight: FontWeight.bold)),
               style: OutlinedButton.styleFrom(
-                side: const BorderSide(color: Color(0xFFFCA5A5)),
+                side: BorderSide(color: tokens.dangerBorder),
                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               ),
             ),
@@ -4612,7 +4663,8 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
               icon: const Icon(Icons.check_circle_outline, size: 14, color: Colors.white),
               label: const Text('Endorse & Sign Off', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF065F46),
+                backgroundColor: tokens.brandPrimaryDark,
+                foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               ),
             ),
@@ -4621,21 +4673,21 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
           actions.add(
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              decoration: BoxDecoration(color: const Color(0xFFFEF3C7), borderRadius: BorderRadius.circular(6)),
-              child: const Text('Awaiting Supervisory Endorsement', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: Color(0xFF92400E))),
+              decoration: BoxDecoration(color: tokens.warningBg, borderRadius: BorderRadius.circular(6), border: Border.all(color: tokens.warningBorder)),
+              child: Text('Awaiting Supervisory Endorsement', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: tokens.warningText)),
             ),
           );
         }
         break;
 
       case 'RETURNED_FOR_CORRECTION':
-        bg = const Color(0xFFFEF2F2);
-        border = const Color(0xFFFCA5A5);
-        pillBg = const Color(0xFFFEE2E2);
-        pillText = const Color(0xFF991B1B);
+        bg = tokens.dangerBg;
+        border = tokens.dangerBorder;
+        pillBg = tokens.dangerBg;
+        pillText = tokens.dangerText;
         pillLabel = 'RETURNED FOR CORRECTION';
         icon = Icons.assignment_return_outlined;
-        iconColor = const Color(0xFFDC2626);
+        iconColor = tokens.dangerDot;
         title = 'Returned with Supervisory Queries';
         description = 'Area Manager ${st.amName != null ? "(${st.amName}) " : ""}has requested adjustments before sign-off.';
 
@@ -4646,7 +4698,8 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
               icon: const Icon(Icons.refresh, size: 14, color: Colors.white),
               label: const Text('Re-verify & Resubmit', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF0F766E),
+                backgroundColor: tokens.brandPrimaryDark,
+                foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               ),
             ),
@@ -4655,13 +4708,13 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
         break;
 
       case 'AM_VERIFIED':
-        bg = const Color(0xFFF0FDF4);
-        border = const Color(0xFF86EFAC);
-        pillBg = const Color(0xFFDCFCE7);
-        pillText = const Color(0xFF166534);
+        bg = tokens.successBg;
+        border = tokens.successBorder;
+        pillBg = tokens.successBg;
+        pillText = tokens.successText;
         pillLabel = 'ENDORSED BY AREA MANAGER';
         icon = Icons.verified;
-        iconColor = const Color(0xFF15803D);
+        iconColor = tokens.successDot;
         title = 'Supervisory Sign-Off Granted';
         description = 'Endorsed by Area Manager ${st.amName ?? ""} on ${_formatDateTime(st.amEndorsedAt)}. Ready for regional package seal or archival lock.';
 
@@ -4669,10 +4722,10 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
           actions.add(
             OutlinedButton.icon(
               onPressed: _isWorkflowSubmitting ? null : () => _sealAreaMonthlyPackage(),
-              icon: const Icon(Icons.folder_special_outlined, size: 14, color: Color(0xFF1D4ED8)),
-              label: const Text('Seal Regional Package', style: TextStyle(color: Color(0xFF1D4ED8), fontSize: 12, fontWeight: FontWeight.bold)),
+              icon: Icon(Icons.folder_special_outlined, size: 14, color: tokens.infoText),
+              label: Text('Seal Regional Package', style: TextStyle(color: tokens.infoText, fontSize: 12, fontWeight: FontWeight.bold)),
               style: OutlinedButton.styleFrom(
-                side: const BorderSide(color: Color(0xFF93C5FD)),
+                side: BorderSide(color: tokens.infoBorder),
                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               ),
             ),
@@ -4686,7 +4739,8 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
               icon: const Icon(Icons.lock_outline, size: 14, color: Colors.white),
               label: const Text('Lock & Archive', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF0F172A),
+                backgroundColor: darkLockBg,
+                foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               ),
             ),
@@ -4696,21 +4750,21 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
           actions.add(
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              decoration: BoxDecoration(color: const Color(0xFFDCFCE7), borderRadius: BorderRadius.circular(6)),
-              child: const Text('Endorsed • Awaiting Regional Seal', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: Color(0xFF166534))),
+              decoration: BoxDecoration(color: tokens.successBg, borderRadius: BorderRadius.circular(6), border: Border.all(color: tokens.successBorder)),
+              child: Text('Endorsed • Awaiting Regional Seal', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: tokens.successText)),
             ),
           );
         }
         break;
 
       case 'AREA_SEALED':
-        bg = const Color(0xFFEFF6FF);
-        border = const Color(0xFF93C5FD);
-        pillBg = const Color(0xFFDBEAFE);
-        pillText = const Color(0xFF1D4ED8);
+        bg = tokens.infoBg;
+        border = tokens.infoBorder;
+        pillBg = tokens.infoBg;
+        pillText = tokens.infoText;
         pillLabel = 'REGIONAL PACKAGE SEALED';
         icon = Icons.folder_special;
-        iconColor = const Color(0xFF1D4ED8);
+        iconColor = tokens.infoDot;
         title = 'Regional Month-End Package Sealed';
         description = 'Sealed by Area Manager. Awaiting Executive Admin permanent archival lock.';
 
@@ -4721,7 +4775,8 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
               icon: const Icon(Icons.lock_outline, size: 14, color: Colors.white),
               label: const Text('Execute Institutional Lock', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF0F172A),
+                backgroundColor: darkLockBg,
+                foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               ),
             ),
@@ -4730,33 +4785,33 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
           actions.add(
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              decoration: BoxDecoration(color: const Color(0xFFDBEAFE), borderRadius: BorderRadius.circular(6)),
-              child: const Text('Sealed • Awaiting Admin Archival', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: Color(0xFF1D4ED8))),
+              decoration: BoxDecoration(color: tokens.infoBg, borderRadius: BorderRadius.circular(6), border: Border.all(color: tokens.infoBorder)),
+              child: Text('Sealed • Awaiting Admin Archival', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: tokens.infoText)),
             ),
           );
         }
         break;
 
       case 'ADMIN_LOCKED':
-        bg = const Color(0xFFF8FAFC);
-        border = const Color(0xFFCBD5E1);
-        pillBg = const Color(0xFFE2E8F0);
-        pillText = const Color(0xFF0F172A);
+        bg = tokens.surfaceSubtle;
+        border = tokens.borderStrong;
+        pillBg = tokens.surfaceHover;
+        pillText = tokens.textPrimary;
         pillLabel = 'LOCKED & ARCHIVED';
         icon = Icons.lock;
-        iconColor = const Color(0xFF0F172A);
+        iconColor = tokens.textPrimary;
         title = 'Permanent Institutional Record';
         description = 'Permanently archived by ${st.adminName ?? "Administrator"} on ${_formatDateTime(st.adminLockedAt)}. Books are permanently closed.';
         actions.add(
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            decoration: BoxDecoration(color: const Color(0xFFE2E8F0), borderRadius: BorderRadius.circular(6)),
-            child: const Row(
+            decoration: BoxDecoration(color: tokens.surfaceHover, borderRadius: BorderRadius.circular(6)),
+            child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(Icons.lock, size: 13, color: Color(0xFF0F172A)),
-                SizedBox(width: 4),
-                Text('Permanent Audit Record', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: Color(0xFF0F172A))),
+                Icon(Icons.lock, size: 13, color: tokens.textPrimary),
+                const SizedBox(width: 4),
+                Text('Permanent Audit Record', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: tokens.textPrimary)),
               ],
             ),
           ),
@@ -4764,13 +4819,13 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
         break;
 
       default: // DRAFT
-        bg = const Color(0xFFF8FAFC);
-        border = const Color(0xFFE2E8F0);
-        pillBg = const Color(0xFFF1F5F9);
-        pillText = const Color(0xFF475569);
+        bg = tokens.surfaceSubtle;
+        border = tokens.borderSubtle;
+        pillBg = tokens.surfaceHover;
+        pillText = tokens.textSecondary;
         pillLabel = 'DRAFT — BOOKS OPEN';
         icon = Icons.edit_note;
-        iconColor = const Color(0xFF475569);
+        iconColor = tokens.textMuted;
         title = 'Month-End Statements in Preparation';
         description = 'Operational books are open for reconciliation. Ready to certify and submit to Area Manager?';
 
@@ -4781,7 +4836,8 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
               icon: const Icon(Icons.assignment_turned_in_outlined, size: 14, color: Colors.white),
               label: const Text('Verify & Submit to Area Manager', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF065F46),
+                backgroundColor: tokens.brandPrimaryDark,
+                foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               ),
             ),
@@ -4790,8 +4846,8 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
           actions.add(
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              decoration: BoxDecoration(color: const Color(0xFFF1F5F9), borderRadius: BorderRadius.circular(6)),
-              child: const Text('Awaiting Branch Submission', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Color(0xFF64748B))),
+              decoration: BoxDecoration(color: tokens.surfaceHover, borderRadius: BorderRadius.circular(6)),
+              child: Text('Awaiting Branch Submission', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: tokens.textMuted)),
             ),
           );
         }
@@ -4820,7 +4876,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                   Container(
                     padding: const EdgeInsets.all(6),
                     decoration: BoxDecoration(
-                      color: Colors.white,
+                      color: tokens.surface,
                       borderRadius: BorderRadius.circular(6),
                       border: Border.all(color: border),
                     ),
@@ -4833,13 +4889,13 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                       children: [
                         Text(
                           title,
-                          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
+                          style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: tokens.textPrimary),
                           softWrap: true,
                         ),
                         const SizedBox(height: 4),
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(color: pillBg, borderRadius: BorderRadius.circular(4)),
+                          decoration: BoxDecoration(color: pillBg, borderRadius: BorderRadius.circular(4), border: Border.all(color: border)),
                           child: Text(
                             pillLabel,
                             style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: pillText),
@@ -4851,25 +4907,25 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                 ],
               ),
               const SizedBox(height: 6),
-              Text(description, style: const TextStyle(fontSize: 12, color: Color(0xFF475569))),
+              Text(description, style: TextStyle(fontSize: 12, color: tokens.textSecondary)),
               if (st.amQueryNotes != null && st.amQueryNotes!.isNotEmpty && status == 'RETURNED_FOR_CORRECTION') ...[
                 const SizedBox(height: 8),
                 Container(
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
-                    color: Colors.white,
+                    color: tokens.surface,
                     borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: const Color(0xFFFECACA)),
+                    border: Border.all(color: tokens.dangerBorder),
                   ),
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Icon(Icons.help_outline, size: 15, color: Color(0xFFDC2626)),
+                      Icon(Icons.help_outline, size: 15, color: tokens.dangerDot),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
                           'Query: ${st.amQueryNotes}',
-                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF991B1B)),
+                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tokens.dangerText),
                         ),
                       ),
                     ],
@@ -4943,108 +4999,112 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
     final notesController = TextEditingController();
     final confirm = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        title: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(6),
-              decoration: BoxDecoration(color: const Color(0xFFECFDF5), borderRadius: BorderRadius.circular(6)),
-              child: const Icon(Icons.assignment_turned_in_outlined, color: Color(0xFF065F46), size: 20),
-            ),
-            const SizedBox(width: 10),
-            const Expanded(
-              child: Text(
-                'Verify & Submit Monthly Report',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+      builder: (ctx) {
+        final dTokens = IcareSurfaceTokens.of(ctx);
+        return AlertDialog(
+          backgroundColor: dTokens.surfaceElevated,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          title: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(color: dTokens.successBg, borderRadius: BorderRadius.circular(6)),
+                child: Icon(Icons.assignment_turned_in_outlined, color: dTokens.successText, size: 20),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Verify & Submit Monthly Report',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: dTokens.textPrimary),
+                ),
+              ),
+            ],
+          ),
+          content: Container(
+            constraints: const BoxConstraints(maxWidth: 480),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Branch: ${_selectedBranchName ?? "Current"} • Period: $_selectedExecYear-${_selectedExecMonth.toString().padLeft(2, '0')}',
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: dTokens.brandPrimary),
+                  ),
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: dTokens.surfaceSubtle,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: dTokens.borderSubtle),
+                    ),
+                    child: Column(
+                      children: [
+                        _buildSnapshotRow('Disbursed Principal', _formatNgn(st.disbursedPrincipal)),
+                        _buildSnapshotRow('Upfront Fees Deducted', _formatNgn(st.upfrontFees)),
+                        _buildSnapshotRow('Period Loan Collections', _formatNgn(st.collections)),
+                        _buildSnapshotRow('Closing Active Credit', _formatNgn(st.closingCredit), isAccent: true),
+                        _buildSnapshotRow('Closing Savings Balance', _formatNgn(st.closingSavings)),
+                        _buildSnapshotRow('Physical Vault Cash', _formatNgn(st.vaultCashAcct1000)),
+                        const Divider(height: 12),
+                        _buildSnapshotRow(
+                          'General Ledger Status',
+                          st.isGlBalanced ? 'Balanced (₦0.00)' : 'Variance: ${_formatNgn(st.glVariance)}',
+                          isDanger: !st.isGlBalanced,
+                          isAccent: st.isGlBalanced,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: dTokens.infoBg,
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: dTokens.infoBorder),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(Icons.info_outline, size: 16, color: dTokens.infoText),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Submitting certifies the branch books and locks the statement for Area Manager review.',
+                            style: TextStyle(fontSize: 11.5, color: dTokens.infoText),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  TextField(
+                    controller: notesController,
+                    decoration: const InputDecoration(
+                      labelText: 'Manager Verification Notes (Optional)',
+                      hintText: 'Enter verification notes...',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                    maxLines: 2,
+                  ),
+                ],
               ),
             ),
-          ],
-        ),
-        content: Container(
-          constraints: const BoxConstraints(maxWidth: 480),
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Branch: ${_selectedBranchName ?? "Current"} • Period: $_selectedExecYear-${_selectedExecMonth.toString().padLeft(2, '0')}',
-                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF0F766E)),
-                ),
-                const SizedBox(height: 12),
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF8FAFC),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: const Color(0xFFE2E8F0)),
-                  ),
-                  child: Column(
-                    children: [
-                      _buildSnapshotRow('Disbursed Principal', _formatNgn(st.disbursedPrincipal)),
-                      _buildSnapshotRow('Upfront Fees Deducted', _formatNgn(st.upfrontFees)),
-                      _buildSnapshotRow('Period Loan Collections', _formatNgn(st.collections)),
-                      _buildSnapshotRow('Closing Active Credit', _formatNgn(st.closingCredit), isAccent: true),
-                      _buildSnapshotRow('Closing Savings Balance', _formatNgn(st.closingSavings)),
-                      _buildSnapshotRow('Physical Vault Cash', _formatNgn(st.vaultCashAcct1000)),
-                      const Divider(height: 12),
-                      _buildSnapshotRow(
-                        'General Ledger Status',
-                        st.isGlBalanced ? 'Balanced (₦0.00)' : 'Variance: ${_formatNgn(st.glVariance)}',
-                        isDanger: !st.isGlBalanced,
-                        isAccent: st.isGlBalanced,
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFEFF6FF),
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: const Color(0xFFBFDBFE)),
-                  ),
-                  child: const Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Icon(Icons.info_outline, size: 16, color: Color(0xFF1D4ED8)),
-                      SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          'Submitting certifies the branch books and locks the statement for Area Manager review.',
-                          style: TextStyle(fontSize: 11.5, color: Color(0xFF1E40AF)),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 14),
-                TextField(
-                  controller: notesController,
-                  decoration: const InputDecoration(
-                    labelText: 'Manager Verification Notes (Optional)',
-                    hintText: 'Enter verification notes...',
-                    border: OutlineInputBorder(),
-                    isDense: true,
-                  ),
-                  maxLines: 2,
-                ),
-              ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+            ElevatedButton.icon(
+              onPressed: () => Navigator.pop(ctx, true),
+              icon: const Icon(Icons.send, size: 14, color: Colors.white),
+              label: const Text('Certify & Submit', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+              style: ElevatedButton.styleFrom(backgroundColor: dTokens.brandPrimaryDark, foregroundColor: Colors.white),
             ),
-          ),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          ElevatedButton.icon(
-            onPressed: () => Navigator.pop(ctx, true),
-            icon: const Icon(Icons.send, size: 14, color: Colors.white),
-            label: const Text('Certify & Submit', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF065F46)),
-          ),
-        ],
-      ),
+          ],
+        );
+      },
     );
 
     if (confirm != true) return;
@@ -5082,84 +5142,88 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
     final notesController = TextEditingController();
     final confirm = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        title: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(6),
-              decoration: BoxDecoration(color: const Color(0xFFDCFCE7), borderRadius: BorderRadius.circular(6)),
-              child: const Icon(Icons.check_circle_outline, color: Color(0xFF15803D), size: 20),
-            ),
-            const SizedBox(width: 10),
-            const Expanded(
-              child: Text(
-                'Endorse & Sign Off Monthly Report',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+      builder: (ctx) {
+        final dTokens = IcareSurfaceTokens.of(ctx);
+        return AlertDialog(
+          backgroundColor: dTokens.surfaceElevated,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          title: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(color: dTokens.successBg, borderRadius: BorderRadius.circular(6)),
+                child: Icon(Icons.check_circle_outline, color: dTokens.successDot, size: 20),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Endorse & Sign Off Monthly Report',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: dTokens.textPrimary),
+                ),
+              ),
+            ],
+          ),
+          content: Container(
+            constraints: const BoxConstraints(maxWidth: 480),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Branch: ${_selectedBranchName ?? "Current"} • Certified by: ${st.bmName ?? "Branch Manager"}',
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: dTokens.brandPrimary),
+                  ),
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: dTokens.surfaceSubtle,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: dTokens.borderSubtle),
+                    ),
+                    child: Column(
+                      children: [
+                        _buildSnapshotRow('Disbursed Principal', _formatNgn(st.disbursedPrincipal)),
+                        _buildSnapshotRow('Period Loan Collections', _formatNgn(st.collections)),
+                        _buildSnapshotRow('Closing Active Credit', _formatNgn(st.closingCredit), isAccent: true),
+                        _buildSnapshotRow('Closing Savings Balance', _formatNgn(st.closingSavings)),
+                        _buildSnapshotRow('Physical Vault Cash', _formatNgn(st.vaultCashAcct1000)),
+                        _buildSnapshotRow(
+                          'General Ledger Status',
+                          st.isGlBalanced ? 'Balanced (₦0.00)' : 'Variance: ${_formatNgn(st.glVariance)}',
+                          isDanger: !st.isGlBalanced,
+                          isAccent: st.isGlBalanced,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  TextField(
+                    controller: notesController,
+                    decoration: const InputDecoration(
+                      labelText: 'Area Supervisory Remarks (Optional)',
+                      hintText: 'Enter supervisory remarks...',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                    maxLines: 2,
+                  ),
+                ],
               ),
             ),
-          ],
-        ),
-        content: Container(
-          constraints: const BoxConstraints(maxWidth: 480),
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Branch: ${_selectedBranchName ?? "Current"} • Certified by: ${st.bmName ?? "Branch Manager"}',
-                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF0F766E)),
-                ),
-                const SizedBox(height: 12),
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF8FAFC),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: const Color(0xFFE2E8F0)),
-                  ),
-                  child: Column(
-                    children: [
-                      _buildSnapshotRow('Disbursed Principal', _formatNgn(st.disbursedPrincipal)),
-                      _buildSnapshotRow('Period Loan Collections', _formatNgn(st.collections)),
-                      _buildSnapshotRow('Closing Active Credit', _formatNgn(st.closingCredit), isAccent: true),
-                      _buildSnapshotRow('Closing Savings Balance', _formatNgn(st.closingSavings)),
-                      _buildSnapshotRow('Physical Vault Cash', _formatNgn(st.vaultCashAcct1000)),
-                      _buildSnapshotRow(
-                        'General Ledger Status',
-                        st.isGlBalanced ? 'Balanced (₦0.00)' : 'Variance: ${_formatNgn(st.glVariance)}',
-                        isDanger: !st.isGlBalanced,
-                        isAccent: st.isGlBalanced,
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 14),
-                TextField(
-                  controller: notesController,
-                  decoration: const InputDecoration(
-                    labelText: 'Area Supervisory Remarks (Optional)',
-                    hintText: 'Enter supervisory remarks...',
-                    border: OutlineInputBorder(),
-                    isDense: true,
-                  ),
-                  maxLines: 2,
-                ),
-              ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+            ElevatedButton.icon(
+              onPressed: () => Navigator.pop(ctx, true),
+              icon: const Icon(Icons.check, size: 14, color: Colors.white),
+              label: const Text('Confirm Endorsement', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+              style: ElevatedButton.styleFrom(backgroundColor: dTokens.brandPrimaryDark, foregroundColor: Colors.white),
             ),
-          ),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          ElevatedButton.icon(
-            onPressed: () => Navigator.pop(ctx, true),
-            icon: const Icon(Icons.check, size: 14, color: Colors.white),
-            label: const Text('Confirm Endorsement', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF065F46)),
-          ),
-        ],
-      ),
+          ],
+        );
+      },
     );
 
     if (confirm != true) return;
@@ -5197,61 +5261,65 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
     final queryController = TextEditingController();
     final confirm = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        title: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(6),
-              decoration: BoxDecoration(color: const Color(0xFFFEE2E2), borderRadius: BorderRadius.circular(6)),
-              child: const Icon(Icons.assignment_return_outlined, color: Color(0xFFDC2626), size: 20),
-            ),
-            const SizedBox(width: 10),
-            const Expanded(
-              child: Text(
-                'Return Report with Queries',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-              ),
-            ),
-          ],
-        ),
-        content: Container(
-          constraints: const BoxConstraints(maxWidth: 480),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
+      builder: (ctx) {
+        final dTokens = IcareSurfaceTokens.of(ctx);
+        return AlertDialog(
+          backgroundColor: dTokens.surfaceElevated,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          title: Row(
             children: [
-              Text(
-                'Specify corrections or discrepancies required from ${st.bmName ?? "Branch Manager"} before endorsement.',
-                style: const TextStyle(fontSize: 12.5, color: Color(0xFF475569)),
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(color: dTokens.dangerBg, borderRadius: BorderRadius.circular(6)),
+                child: Icon(Icons.assignment_return_outlined, color: dTokens.dangerDot, size: 20),
               ),
-              const SizedBox(height: 14),
-              TextField(
-                controller: queryController,
-                decoration: const InputDecoration(
-                  labelText: 'Supervisory Query Notes (Required)',
-                  hintText: 'Enter supervisory query notes...',
-                  border: OutlineInputBorder(),
-                  isDense: true,
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Return Report with Queries',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: dTokens.textPrimary),
                 ),
-                maxLines: 3,
               ),
             ],
           ),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          ElevatedButton.icon(
-            onPressed: () {
-              if (queryController.text.trim().isEmpty) return;
-              Navigator.pop(ctx, true);
-            },
-            icon: const Icon(Icons.send, size: 14, color: Colors.white),
-            label: const Text('Return to Branch', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFDC2626)),
+          content: Container(
+            constraints: const BoxConstraints(maxWidth: 480),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Specify corrections or discrepancies required from ${st.bmName ?? "Branch Manager"} before endorsement.',
+                  style: TextStyle(fontSize: 12.5, color: dTokens.textSecondary),
+                ),
+                const SizedBox(height: 14),
+                TextField(
+                  controller: queryController,
+                  decoration: const InputDecoration(
+                    labelText: 'Supervisory Query Notes (Required)',
+                    hintText: 'Enter supervisory query notes...',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                  maxLines: 3,
+                ),
+              ],
+            ),
           ),
-        ],
-      ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+            ElevatedButton.icon(
+              onPressed: () {
+                if (queryController.text.trim().isEmpty) return;
+                Navigator.pop(ctx, true);
+              },
+              icon: const Icon(Icons.send, size: 14, color: Colors.white),
+              label: const Text('Return to Branch', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFDC2626), foregroundColor: Colors.white),
+            ),
+          ],
+        );
+      },
     );
 
     if (confirm != true || queryController.text.trim().isEmpty) return;
@@ -5289,58 +5357,65 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
     final notesController = TextEditingController();
     final confirm = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        title: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(6),
-              decoration: BoxDecoration(color: const Color(0xFFE2E8F0), borderRadius: BorderRadius.circular(6)),
-              child: const Icon(Icons.lock, color: Color(0xFF0F172A), size: 20),
-            ),
-            const SizedBox(width: 10),
-            const Expanded(
-              child: Text(
-                'Institutional Lock & Permanent Archival',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-              ),
-            ),
-          ],
-        ),
-        content: Container(
-          constraints: const BoxConstraints(maxWidth: 480),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
+      builder: (ctx) {
+        final dTokens = IcareSurfaceTokens.of(ctx);
+        return AlertDialog(
+          backgroundColor: dTokens.surfaceElevated,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          title: Row(
             children: [
-              const Text(
-                'This executive action permanently locks the monthly statements into institutional archive records. Once locked, no further adjustments or operational entries can be posted.',
-                style: TextStyle(fontSize: 12.5, color: Color(0xFF475569)),
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(color: dTokens.surfaceHover, borderRadius: BorderRadius.circular(6)),
+                child: Icon(Icons.lock, color: dTokens.textPrimary, size: 20),
               ),
-              const SizedBox(height: 14),
-              TextField(
-                controller: notesController,
-                decoration: const InputDecoration(
-                  labelText: 'Executive Archival Remarks (Optional)',
-                  hintText: 'Enter archival remarks...',
-                  border: OutlineInputBorder(),
-                  isDense: true,
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Institutional Lock & Permanent Archival',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: dTokens.textPrimary),
                 ),
-                maxLines: 2,
               ),
             ],
           ),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          ElevatedButton.icon(
-            onPressed: () => Navigator.pop(ctx, true),
-            icon: const Icon(Icons.lock, size: 14, color: Colors.white),
-            label: const Text('Execute Lock', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF0F172A)),
+          content: Container(
+            constraints: const BoxConstraints(maxWidth: 480),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'This executive action permanently locks the monthly statements into institutional archive records. Once locked, no further adjustments or operational entries can be posted.',
+                  style: TextStyle(fontSize: 12.5, color: dTokens.textSecondary),
+                ),
+                const SizedBox(height: 14),
+                TextField(
+                  controller: notesController,
+                  decoration: const InputDecoration(
+                    labelText: 'Executive Archival Remarks (Optional)',
+                    hintText: 'Enter archival remarks...',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                  maxLines: 2,
+                ),
+              ],
+            ),
           ),
-        ],
-      ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+            ElevatedButton.icon(
+              onPressed: () => Navigator.pop(ctx, true),
+              icon: const Icon(Icons.lock, size: 14, color: Colors.white),
+              label: const Text('Execute Lock', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: dTokens.isDark ? const Color(0xFF1E293B) : const Color(0xFF0F172A),
+                foregroundColor: Colors.white,
+              ),
+            ),
+          ],
+        );
+      },
     );
 
     if (confirm != true) return;
@@ -5378,14 +5453,15 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
   // Reusable Component Helpers
   // ---------------------------------------------------------------------------
   Widget _buildMetricCard(String label, String value, {String? subtitle, bool isAccent = false, double? width}) {
+    final tokens = IcareSurfaceTokens.of(context);
     return Container(
       width: width ?? 170,
       constraints: const BoxConstraints(minHeight: 68),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
-        color: isAccent ? const Color(0xFF064E3B) : const Color(0xFFF8FAFC),
+        color: isAccent ? tokens.brandPrimaryDark : tokens.surfaceSubtle,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: isAccent ? const Color(0xFF064E3B) : const Color(0xFFE2E8F0)),
+        border: Border.all(color: isAccent ? tokens.brandPrimaryDark : tokens.borderSubtle),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -5398,7 +5474,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
             style: TextStyle(
               fontSize: 11,
               fontWeight: FontWeight.w600,
-              color: isAccent ? const Color(0xFFA7F3D0) : const Color(0xFF64748B),
+              color: isAccent ? const Color(0xFFA7F3D0) : tokens.textMuted,
             ),
           ),
           const SizedBox(height: 4),
@@ -5413,7 +5489,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                 fontSize: 14,
                 fontWeight: FontWeight.w800,
                 fontFeatures: const [FontFeature.tabularFigures()],
-                color: isAccent ? Colors.white : const Color(0xFF0F172A),
+                color: isAccent ? Colors.white : tokens.textPrimary,
               ),
             ),
           ),
@@ -5425,7 +5501,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 fontSize: 10,
-                color: isAccent ? const Color(0xFFA7F3D0) : const Color(0xFF64748B),
+                color: isAccent ? const Color(0xFFA7F3D0) : tokens.textMuted,
               ),
             ),
           ],
@@ -5439,12 +5515,13 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
     String? hint,
   }) {
     final isMobile = MediaQuery.of(context).size.width < 750;
+    final tokens = IcareSurfaceTokens.of(context);
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: tokens.surface,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: tokens.borderSubtle),
       ),
       clipBehavior: Clip.antiAlias,
       child: Column(
@@ -5453,18 +5530,18 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
           if (isMobile)
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: const BoxDecoration(
-                color: Color(0xFFF8FAFC),
-                border: Border(bottom: BorderSide(color: Color(0xFFE2E8F0))),
+              decoration: BoxDecoration(
+                color: tokens.surfaceSubtle,
+                border: Border(bottom: BorderSide(color: tokens.borderSubtle)),
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.swap_horiz, size: 14, color: Color(0xFF64748B)),
+                  Icon(Icons.swap_horiz, size: 14, color: tokens.textMuted),
                   const SizedBox(width: 6),
                   Expanded(
                     child: Text(
                       hint ?? 'Swipe horizontally to view all columns',
-                      style: const TextStyle(fontSize: 11, color: Color(0xFF64748B), fontWeight: FontWeight.w500),
+                      style: TextStyle(fontSize: 11, color: tokens.textMuted, fontWeight: FontWeight.w500),
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
@@ -5482,29 +5559,31 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
   }
 
   Widget _buildEmptyCard(String message) {
+    final tokens = IcareSurfaceTokens.of(context);
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: tokens.surface,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: tokens.borderSubtle),
       ),
       child: Center(
-        child: Text(message, style: const TextStyle(fontSize: 13, color: Color(0xFF64748B))),
+        child: Text(message, style: TextStyle(fontSize: 13, color: tokens.textMuted)),
       ),
     );
   }
 
   Widget _buildErrorCard(Object error, {VoidCallback? onRetry}) {
     final details = AppErrorDetails.from(error);
+    final tokens = IcareSurfaceTokens.of(context);
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFFFEF2F2),
+        color: tokens.dangerBg,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFFCA5A5)),
+        border: Border.all(color: tokens.dangerBorder),
       ),
       child: Wrap(
         spacing: 12,
@@ -5515,7 +5594,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.error_outline, color: Color(0xFFDC2626), size: 20),
+              Icon(Icons.error_outline, color: tokens.dangerDot, size: 20),
               const SizedBox(width: 8),
               Flexible(
                 child: Column(
@@ -5523,12 +5602,12 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                   children: [
                     Text(
                       details.title,
-                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF991B1B)),
+                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: tokens.dangerText),
                     ),
                     const SizedBox(height: 2),
                     Text(
                       details.message,
-                      style: const TextStyle(fontSize: 12, color: Color(0xFF991B1B)),
+                      style: TextStyle(fontSize: 12, color: tokens.dangerText),
                     ),
                   ],
                 ),
@@ -5537,10 +5616,10 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
           ),
           OutlinedButton.icon(
             onPressed: onRetry ?? _refreshCurrentTabData,
-            icon: const Icon(Icons.refresh, size: 14, color: Color(0xFFDC2626)),
-            label: const Text('Retry', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFFDC2626))),
+            icon: Icon(Icons.refresh, size: 14, color: tokens.dangerText),
+            label: Text('Retry', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: tokens.dangerText)),
             style: OutlinedButton.styleFrom(
-              side: const BorderSide(color: Color(0xFFFCA5A5)),
+              side: BorderSide(color: tokens.dangerBorder),
               visualDensity: VisualDensity.compact,
             ),
           ),
@@ -5550,18 +5629,19 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
   }
 
   InputDecoration _inputDecoration() {
+    final tokens = IcareSurfaceTokens.of(context);
     return InputDecoration(
       isDense: true,
       contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       filled: true,
-      fillColor: const Color(0xFFF8FAFC),
+      fillColor: tokens.surfaceSubtle,
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(6),
-        borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
+        borderSide: BorderSide(color: tokens.borderStrong),
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(6),
-        borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
+        borderSide: BorderSide(color: tokens.borderStrong),
       ),
     );
   }

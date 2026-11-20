@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import '../../../../core/theme/icare_theme_tokens.dart';
 import '../../../../core/utils/currency_formatter.dart';
 import '../data/datasources/am_api_service.dart';
 import '../data/models/am_dashboard_models.dart';
@@ -128,11 +129,12 @@ class _OfficerProductivityModalSheetState extends ConsumerState<OfficerProductiv
   Widget build(BuildContext context) {
     final mediaQuery = MediaQuery.of(context);
     final maxH = mediaQuery.size.height * 0.85;
+    final tokens = IcareSurfaceTokens.of(context);
 
     return Container(
       constraints: BoxConstraints(maxHeight: maxH),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: tokens.surface,
         borderRadius: widget.isDialog
             ? BorderRadius.circular(16)
             : const BorderRadius.vertical(top: Radius.circular(20)),
@@ -149,7 +151,7 @@ class _OfficerProductivityModalSheetState extends ConsumerState<OfficerProductiv
                 width: 36,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: const Color(0xFFCBD5E1),
+                  color: tokens.borderStrong,
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
@@ -170,7 +172,7 @@ class _OfficerProductivityModalSheetState extends ConsumerState<OfficerProductiv
                           Flexible(
                             child: Text(
                               '${widget.branchName} — Officer Productivity',
-                              style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
+                              style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: tokens.textPrimary),
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
@@ -178,46 +180,46 @@ class _OfficerProductivityModalSheetState extends ConsumerState<OfficerProductiv
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
                             decoration: BoxDecoration(
-                              color: const Color(0xFFEFF6FF),
+                              color: tokens.infoBg,
                               borderRadius: BorderRadius.circular(6),
-                              border: Border.all(color: const Color(0xFFBFDBFE)),
+                              border: Border.all(color: tokens.infoBorder),
                             ),
                             child: Text(
                               widget.period,
-                              style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFF1D4ED8)),
+                              style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: tokens.infoText),
                             ),
                           ),
                         ],
                       ),
                       const SizedBox(height: 2),
-                      const Text(
+                      Text(
                         'Productivity breakdown per active Credit Officer in this branch.',
-                        style: TextStyle(fontSize: 11.5, color: Color(0xFF64748B)),
+                        style: TextStyle(fontSize: 11.5, color: tokens.textMuted),
                       ),
                     ],
                   ),
                 ),
                 IconButton(
                   onPressed: () => Navigator.of(context).pop(),
-                  icon: const Icon(Icons.close, size: 20, color: Color(0xFF64748B)),
+                  icon: Icon(Icons.close, size: 20, color: tokens.textMuted),
                 ),
               ],
             ),
           ),
-          const Divider(height: 1, color: Color(0xFFE2E8F0)),
+          Divider(height: 1, color: tokens.borderSubtle),
 
           // Body Content
           Flexible(
             child: _isLoading
-                ? const Center(
+                ? Center(
                     child: Padding(
-                      padding: EdgeInsets.symmetric(vertical: 48),
+                      padding: const EdgeInsets.symmetric(vertical: 48),
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          CircularProgressIndicator(color: Color(0xFF0F766E)),
-                          SizedBox(height: 12),
-                          Text('Loading officer productivity metrics...', style: TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+                          CircularProgressIndicator(color: tokens.brandPrimary),
+                          const SizedBox(height: 12),
+                          Text('Loading officer productivity metrics...', style: TextStyle(fontSize: 12, color: tokens.textMuted)),
                         ],
                       ),
                     ),
@@ -226,14 +228,14 @@ class _OfficerProductivityModalSheetState extends ConsumerState<OfficerProductiv
                     ? Center(
                         child: Padding(
                           padding: const EdgeInsets.all(24),
-                          child: Text('Error: $_errorMessage', style: const TextStyle(color: Color(0xFFDC2626))),
+                          child: Text('Error: $_errorMessage', style: TextStyle(color: tokens.dangerText)),
                         ),
                       )
                     : (_data?.officers.isEmpty ?? true)
-                        ? const Center(
+                        ? Center(
                             child: Padding(
-                              padding: EdgeInsets.all(32),
-                              child: Text('No active Credit Officers found for this branch.', style: TextStyle(color: Color(0xFF64748B))),
+                              padding: const EdgeInsets.all(32),
+                              child: Text('No active Credit Officers found for this branch.', style: TextStyle(color: tokens.textMuted)),
                             ),
                           )
                         : ListView.separated(
@@ -253,18 +255,19 @@ class _OfficerProductivityModalSheetState extends ConsumerState<OfficerProductiv
   }
 
   Widget _buildOfficerCard(OfficerProductivityItemModel o) {
+    final tokens = IcareSurfaceTokens.of(context);
     final isNetPositive = o.netLoanCount >= 0;
-    final netColor = isNetPositive ? const Color(0xFF059669) : const Color(0xFFD97706);
-    final netBg = isNetPositive ? const Color(0xFFECFDF5) : const Color(0xFFFFFBEB);
-    final netBorder = isNetPositive ? const Color(0xFFA7F3D0) : const Color(0xFFFDE68A);
+    final netColor = isNetPositive ? tokens.successText : tokens.warningText;
+    final netBg = isNetPositive ? tokens.successBg : tokens.warningBg;
+    final netBorder = isNetPositive ? tokens.successBorder : tokens.warningBorder;
 
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: tokens.surfaceElevated,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-        boxShadow: const [BoxShadow(color: Color(0x040F172A), blurRadius: 3, offset: Offset(0, 1))],
+        border: Border.all(color: tokens.borderSubtle),
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: tokens.isDark ? 0.18 : 0.02), blurRadius: 3, offset: const Offset(0, 1))],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -277,10 +280,10 @@ class _OfficerProductivityModalSheetState extends ConsumerState<OfficerProductiv
                 children: [
                   CircleAvatar(
                     radius: 16,
-                    backgroundColor: const Color(0xFF0F766E).withValues(alpha: 0.1),
+                    backgroundColor: tokens.brandPrimary.withValues(alpha: 0.14),
                     child: Text(
                       o.fullName.isNotEmpty ? o.fullName.substring(0, 1).toUpperCase() : 'O',
-                      style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF0F766E), fontSize: 13),
+                      style: TextStyle(fontWeight: FontWeight.bold, color: tokens.brandPrimary, fontSize: 13),
                     ),
                   ),
                   const SizedBox(width: 10),
@@ -289,11 +292,11 @@ class _OfficerProductivityModalSheetState extends ConsumerState<OfficerProductiv
                     children: [
                       Text(
                         o.fullName,
-                        style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
+                        style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700, color: tokens.textPrimary),
                       ),
                       Text(
                         '@${o.username}',
-                        style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                        style: TextStyle(fontSize: 11, color: tokens.textMuted),
                       ),
                     ],
                   ),
@@ -304,26 +307,26 @@ class _OfficerProductivityModalSheetState extends ConsumerState<OfficerProductiv
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFF8FAFC),
+                      color: tokens.surfaceSubtle,
                       borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: const Color(0xFFCBD5E1)),
+                      border: Border.all(color: tokens.borderStrong),
                     ),
                     child: Text(
                       '${o.activeClientsCount} Borrowers',
-                      style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: Color(0xFF334155)),
+                      style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: tokens.textSecondary),
                     ),
                   ),
                   const SizedBox(width: 6),
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFF0FDFA),
+                      color: tokens.brandSoftBg,
                       borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: const Color(0xFF99F6E4)),
+                      border: Border.all(color: tokens.brandSoftBorder),
                     ),
                     child: Text(
                       CurrencyFormatter.formatNaira(o.activePortfolio),
-                      style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: Color(0xFF0F766E)),
+                      style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: tokens.brandSoftText),
                     ),
                   ),
                 ],
@@ -339,24 +342,24 @@ class _OfficerProductivityModalSheetState extends ConsumerState<OfficerProductiv
                 child: Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFF0FDF4),
+                    color: tokens.successBg,
                     borderRadius: BorderRadius.circular(6),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
+                      Text(
                         'Principal Disbursed',
-                        style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.w600, color: Color(0xFF166534)),
+                        style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.w600, color: tokens.successText),
                       ),
                       const SizedBox(height: 2),
                       Text(
                         CurrencyFormatter.formatNaira(o.principalDisbursedAmount),
-                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Color(0xFF14532D)),
+                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: tokens.successText),
                       ),
                       Text(
                         '${o.loansDisbursedCount} Loans Disbursed',
-                        style: const TextStyle(fontSize: 9, color: Color(0xFF15803D)),
+                        style: TextStyle(fontSize: 9, color: tokens.successText),
                       ),
                     ],
                   ),
@@ -367,24 +370,24 @@ class _OfficerProductivityModalSheetState extends ConsumerState<OfficerProductiv
                 child: Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFEFF6FF),
+                    color: tokens.infoBg,
                     borderRadius: BorderRadius.circular(6),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
+                      Text(
                         'Full Payments (Closed)',
-                        style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.w600, color: Color(0xFF1E40AF)),
+                        style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.w600, color: tokens.infoText),
                       ),
                       const SizedBox(height: 2),
                       Text(
                         CurrencyFormatter.formatNaira(o.fullPaymentsActiveCredit),
-                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Color(0xFF1E3A8A)),
+                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: tokens.infoText),
                       ),
                       Text(
                         '${o.fullPaymentsCount} Closed Members',
-                        style: const TextStyle(fontSize: 9, color: Color(0xFF2563EB)),
+                        style: TextStyle(fontSize: 9, color: tokens.infoText),
                       ),
                     ],
                   ),
@@ -428,23 +431,23 @@ class _OfficerProductivityModalSheetState extends ConsumerState<OfficerProductiv
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFF8FAFC),
+                    color: tokens.surfaceSubtle,
                     borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                    border: Border.all(color: tokens.borderSubtle),
                   ),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text(
                         '${o.compliancePct.toStringAsFixed(1)}% Comp',
-                        style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: Color(0xFF475569)),
+                        style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: tokens.textSecondary),
                       ),
                       Text(
                         o.parPct,
                         style: TextStyle(
                           fontSize: 10,
                           fontWeight: FontWeight.bold,
-                          color: o.parPct == '0.0%' ? const Color(0xFF16A34A) : const Color(0xFFDC2626),
+                          color: o.parPct == '0.0%' ? tokens.successText : tokens.dangerText,
                         ),
                       ),
                     ],

@@ -7,6 +7,7 @@ import '../../../core/auth/auth_controller.dart';
 import '../../../core/auth/auth_state.dart';
 import '../../../core/theme/icare_colors.dart';
 import '../../../core/theme/icare_spacing.dart';
+import '../../../core/theme/icare_theme_tokens.dart';
 import '../../onboarding/presentation/branch_onboarding_portal_screen.dart';
 import '../../onboarding/presentation/credit_officer_portal_screen.dart';
 import '../../shared/presentation/co_app_scaffold.dart';
@@ -304,9 +305,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
     });
 
     final AuthState authState = ref.watch(authControllerProvider);
+    final tokens = IcareSurfaceTokens.of(context);
 
     return Scaffold(
-      backgroundColor: IcareColors.canvas,
+      backgroundColor: tokens.canvas,
       body: LayoutBuilder(
         builder: (context, constraints) {
           final bool isSplitDesktop =
@@ -399,8 +401,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
   /// Mobile / Compact Portrait Layout:
   /// Emerald Hero Crest Header seamlessly transitioning into crisp high-contrast sheet card.
   Widget _buildMobileLayout(AuthState authState) {
+    final tokens = IcareSurfaceTokens.of(context);
     return Container(
-      color: IcareColors.canvas,
+      color: tokens.canvas,
       child: CustomScrollView(
         keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
         physics: const ClampingScrollPhysics(),
@@ -668,6 +671,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
   }
 
   Widget _buildAnimatedEntryCard(AuthState authState) {
+    final tokens = IcareSurfaceTokens.of(context);
     final bool isLoading = authState is AuthStateLoading ||
         (authState is AuthStateMfaRequired && authState.isSubmitting) ||
         (authState is AuthStatePasswordChangeRequired &&
@@ -678,19 +682,19 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
 
     final Widget card = Container(
       decoration: BoxDecoration(
-        color: IcareColors.surface,
+        color: tokens.surface,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: IcareColors.border, width: 1.0),
-        boxShadow: const [
+        border: Border.all(color: tokens.borderSubtle, width: 1.0),
+        boxShadow: [
           BoxShadow(
-            color: Color(0x0F0F172A),
+            color: Colors.black.withValues(alpha: tokens.isDark ? 0.30 : 0.06),
             blurRadius: 18,
-            offset: Offset(0, 6),
+            offset: const Offset(0, 6),
           ),
           BoxShadow(
-            color: Color(0x060F172A),
+            color: Colors.black.withValues(alpha: tokens.isDark ? 0.16 : 0.02),
             blurRadius: 4,
-            offset: Offset(0, 1),
+            offset: const Offset(0, 1),
           ),
         ],
       ),
@@ -729,27 +733,27 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
           const SizedBox(height: 18),
           Container(
             padding: const EdgeInsets.only(top: 14),
-            decoration: const BoxDecoration(
+            decoration: BoxDecoration(
               border: Border(
-                top: BorderSide(color: IcareColors.border),
+                top: BorderSide(color: tokens.borderSubtle),
               ),
             ),
-            child: const Row(
+            child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Icon(
                   Icons.shield_outlined,
                   size: 14,
-                  color: IcareColors.primaryLight,
+                  color: tokens.brandPrimaryLight,
                 ),
-                SizedBox(width: 6),
+                const SizedBox(width: 6),
                 Flexible(
                   child: Text(
                     'Encrypted Staff Session & Audit Protected Workspace',
                     softWrap: true,
                     textAlign: TextAlign.center,
                     style: TextStyle(
-                      color: IcareColors.textMuted,
+                      color: tokens.textMuted,
                       fontSize: 11,
                       fontWeight: FontWeight.w500,
                     ),
@@ -807,6 +811,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
       badgeIcon = Icons.account_balance_outlined;
     }
 
+    final tokens = IcareSurfaceTokens.of(context);
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -814,11 +819,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
           width: 40,
           height: 40,
           decoration: BoxDecoration(
-            color: IcareColors.statusSuccessBg,
+            color: tokens.brandSoftBg,
             borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: IcareColors.statusSuccessBorder),
+            border: Border.all(color: tokens.brandSoftBorder),
           ),
-          child: Icon(badgeIcon, size: 20, color: IcareColors.primary),
+          child: Icon(badgeIcon, size: 20, color: tokens.brandPrimary),
         ),
         const SizedBox(width: 12),
         Expanded(
@@ -828,10 +833,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
               Text(
                 title,
                 softWrap: true,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.w800,
-                  color: IcareColors.textPrimary,
+                  color: tokens.textPrimary,
                   letterSpacing: -0.3,
                 ),
               ),
@@ -839,9 +844,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
               Text(
                 subtitle,
                 softWrap: true,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 12.5,
-                  color: IcareColors.textMuted,
+                  color: tokens.textMuted,
                   height: 1.35,
                 ),
               ),
@@ -912,10 +917,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
           const SizedBox(height: 8),
           TextButton(
             onPressed: isLoading ? null : _handleCancelChallenge,
-            child: const Text(
+            child: Text(
               'Cancel & Return to Sign-In',
               style: TextStyle(
-                color: IcareColors.textMuted,
+                color: IcareSurfaceTokens.of(context).textMuted,
                 fontSize: 12.5,
                 fontWeight: FontWeight.w600,
               ),
@@ -1013,10 +1018,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
           const SizedBox(height: 8),
           TextButton(
             onPressed: isLoading ? null : _handleCancelChallenge,
-            child: const Text(
+            child: Text(
               'Cancel & Return to Sign-In',
               style: TextStyle(
-                color: IcareColors.textMuted,
+                color: IcareSurfaceTokens.of(context).textMuted,
                 fontSize: 12.5,
                 fontWeight: FontWeight.w600,
               ),
@@ -1105,15 +1110,15 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                         _localValidationError = null;
                       });
                     },
-              icon: const Icon(
+              icon: Icon(
                 Icons.vpn_key_outlined,
                 size: 15,
-                color: IcareColors.primary,
+                color: IcareSurfaceTokens.of(context).brandPrimary,
               ),
-              label: const Text(
+              label: Text(
                 'Have a Branch or Officer Onboarding Token?',
                 style: TextStyle(
-                  color: IcareColors.primary,
+                  color: IcareSurfaceTokens.of(context).brandPrimary,
                   fontSize: 12.5,
                   fontWeight: FontWeight.w600,
                 ),
@@ -1130,12 +1135,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
     required String tooltip,
     required VoidCallback onPressed,
   }) {
+    final tokens = IcareSurfaceTokens.of(context);
     return IconButton(
       tooltip: tooltip,
       icon: Icon(
         obscured ? Icons.visibility_off_outlined : Icons.visibility_outlined,
         size: 18,
-        color: IcareColors.textMuted,
+        color: tokens.textMuted,
       ),
       onPressed: onPressed,
     );
@@ -1146,17 +1152,18 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
     required String title,
     required String description,
   }) {
+    final tokens = IcareSurfaceTokens.of(context);
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: IcareColors.statusSuccessBg,
+        color: tokens.successBg,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: IcareColors.statusSuccessBorder),
+        border: Border.all(color: tokens.successBorder),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, size: 18, color: IcareColors.statusSuccessText),
+          Icon(icon, size: 18, color: tokens.successText),
           const SizedBox(width: 10),
           Expanded(
             child: Column(
@@ -1165,8 +1172,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                 Text(
                   title,
                   softWrap: true,
-                  style: const TextStyle(
-                    color: IcareColors.statusSuccessText,
+                  style: TextStyle(
+                    color: tokens.successText,
                     fontSize: 12.5,
                     fontWeight: FontWeight.w700,
                   ),
@@ -1175,8 +1182,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                 Text(
                   description,
                   softWrap: true,
-                  style: const TextStyle(
-                    color: IcareColors.textSecondary,
+                  style: TextStyle(
+                    color: tokens.textSecondary,
                     fontSize: 12,
                     height: 1.4,
                   ),
@@ -1190,21 +1197,22 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
   }
 
   Widget _buildErrorBanner(String message) {
+    final tokens = IcareSurfaceTokens.of(context);
     return Semantics(
       liveRegion: true,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         decoration: BoxDecoration(
-          color: IcareColors.statusDangerBg,
+          color: tokens.dangerBg,
           borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: IcareColors.statusDangerBorder),
+          border: Border.all(color: tokens.dangerBorder),
         ),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Icon(
+            Icon(
               Icons.error_outline_rounded,
-              color: IcareColors.statusDangerText,
+              color: tokens.dangerText,
               size: 17,
             ),
             const SizedBox(width: 8),
@@ -1212,8 +1220,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
               child: Text(
                 message,
                 softWrap: true,
-                style: const TextStyle(
-                  color: IcareColors.statusDangerText,
+                style: TextStyle(
+                  color: tokens.dangerText,
                   fontSize: 12.5,
                   fontWeight: FontWeight.w500,
                   height: 1.35,
@@ -1227,20 +1235,21 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
   }
 
   Widget _buildMobileInstitutionalFooter() {
-    return const Column(
+    final tokens = IcareSurfaceTokens.of(context);
+    return Column(
       children: [
         Text(
           'Initiative for Community Advancement, Relief and Empowerment',
           textAlign: TextAlign.center,
           softWrap: true,
           style: TextStyle(
-            color: IcareColors.textMuted,
+            color: tokens.textMuted,
             fontSize: 11.5,
             fontWeight: FontWeight.w600,
           ),
         ),
-        SizedBox(height: 8),
-        Wrap(
+        const SizedBox(height: 8),
+        const Wrap(
           spacing: 6,
           runSpacing: 6,
           alignment: WrapAlignment.center,
@@ -1251,13 +1260,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
             _LightValueChip('Teamwork'),
           ],
         ),
-        SizedBox(height: 10),
+        const SizedBox(height: 10),
         Text(
           'HQ: 7 Ibifiele Street, Aiyegbami, Sagamu, Ogun State',
           textAlign: TextAlign.center,
           softWrap: true,
           style: TextStyle(
-            color: IcareColors.textMuted,
+            color: tokens.textMuted,
             fontSize: 11,
           ),
         ),
@@ -1297,17 +1306,18 @@ class _LightValueChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final tokens = IcareSurfaceTokens.of(context);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
-        color: IcareColors.surface,
+        color: tokens.surface,
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: IcareColors.border),
+        border: Border.all(color: tokens.borderSubtle),
       ),
       child: Text(
         label,
-        style: const TextStyle(
-          color: IcareColors.textSecondary,
+        style: TextStyle(
+          color: tokens.textSecondary,
           fontSize: 11,
           fontWeight: FontWeight.w600,
         ),

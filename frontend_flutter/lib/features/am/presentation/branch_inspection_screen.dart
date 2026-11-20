@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../../core/theme/icare_theme_tokens.dart';
 import '../../../../core/utils/currency_formatter.dart';
 import '../data/datasources/am_api_service.dart';
 
@@ -41,15 +42,16 @@ class _BranchInspectionScreenState extends ConsumerState<BranchInspectionScreen>
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
     final isMobile = screenWidth < 600;
+    final tokens = IcareSurfaceTokens.of(context);
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF8FAFC),
+      backgroundColor: tokens.canvas,
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        backgroundColor: tokens.surface,
         elevation: 0,
         surfaceTintColor: Colors.transparent,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Color(0xFF0F172A)),
+          icon: Icon(Icons.arrow_back, color: tokens.textPrimary),
           onPressed: () => Navigator.pop(context),
           tooltip: 'Back to Regional Dashboard',
         ),
@@ -58,30 +60,30 @@ class _BranchInspectionScreenState extends ConsumerState<BranchInspectionScreen>
           children: [
             Text(
               'Branch Inspection — ${widget.branchName}',
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 17,
                 fontWeight: FontWeight.bold,
-                color: Color(0xFF0F172A),
+                color: tokens.textPrimary,
               ),
             ),
             const SizedBox(height: 2),
             Text(
               'Supervisory drill-down as viewed by Branch Manager for ${widget.businessDate}',
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 12,
-                color: Color(0xFF64748B),
+                color: tokens.textMuted,
                 fontWeight: FontWeight.normal,
               ),
             ),
           ],
         ),
-        bottom: const PreferredSize(
-          preferredSize: Size.fromHeight(1),
-          child: Divider(height: 1, color: Color(0xFFE2E8F0)),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(1),
+          child: Divider(height: 1, color: tokens.borderSubtle),
         ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.refresh, color: Color(0xFF475569)),
+            icon: Icon(Icons.refresh, color: tokens.textSecondary),
             tooltip: 'Refresh Inspection Data',
             onPressed: _fetchData,
           ),
@@ -107,23 +109,23 @@ class _BranchInspectionScreenState extends ConsumerState<BranchInspectionScreen>
                 margin: const EdgeInsets.all(24),
                 padding: const EdgeInsets.all(24),
                 decoration: BoxDecoration(
-                  color: Colors.white,
+                  color: tokens.surface,
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: const Color(0xFFFCA5A5)),
+                  border: Border.all(color: tokens.dangerBorder),
                 ),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.error_outline, size: 40, color: Color(0xFFDC2626)),
+                    Icon(Icons.error_outline, size: 40, color: tokens.dangerDot),
                     const SizedBox(height: 12),
-                    const Text(
+                    Text(
                       'Failed to load branch inspection data',
-                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
+                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: tokens.textPrimary),
                     ),
                     const SizedBox(height: 8),
                     Text(
                       '${snapshot.error}',
-                      style: const TextStyle(fontSize: 12.5, color: Color(0xFF64748B)),
+                      style: TextStyle(fontSize: 12.5, color: tokens.textMuted),
                       textAlign: TextAlign.center,
                     ),
                     const SizedBox(height: 16),
@@ -131,7 +133,7 @@ class _BranchInspectionScreenState extends ConsumerState<BranchInspectionScreen>
                       onPressed: _fetchData,
                       icon: const Icon(Icons.refresh, size: 16, color: Colors.white),
                       label: const Text('Try Again', style: TextStyle(color: Colors.white)),
-                      style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF065F46)),
+                      style: ElevatedButton.styleFrom(backgroundColor: tokens.brandPrimaryDark),
                     ),
                   ],
                 ),
@@ -161,14 +163,14 @@ class _BranchInspectionScreenState extends ConsumerState<BranchInspectionScreen>
                       width: double.infinity,
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
-                        color: Colors.white,
+                        color: tokens.surface,
                         borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: const Color(0xFFE2E8F0)),
-                        boxShadow: const [
+                        border: Border.all(color: tokens.borderSubtle),
+                        boxShadow: [
                           BoxShadow(
-                            color: Color(0x06000000),
+                            color: Colors.black.withValues(alpha: tokens.isDark ? 0.16 : 0.03),
                             blurRadius: 6,
-                            offset: Offset(0, 2),
+                            offset: const Offset(0, 2),
                           ),
                         ],
                       ),
@@ -180,10 +182,10 @@ class _BranchInspectionScreenState extends ConsumerState<BranchInspectionScreen>
                               Container(
                                 padding: const EdgeInsets.all(8),
                                 decoration: BoxDecoration(
-                                  color: const Color(0xFFEFF6FF),
+                                  color: tokens.infoBg,
                                   borderRadius: BorderRadius.circular(8),
                                 ),
-                                child: const Icon(Icons.analytics_outlined, color: Color(0xFF2563EB), size: 20),
+                                child: Icon(Icons.analytics_outlined, color: tokens.infoDot, size: 20),
                               ),
                               const SizedBox(width: 12),
                               Expanded(
@@ -192,15 +194,15 @@ class _BranchInspectionScreenState extends ConsumerState<BranchInspectionScreen>
                                   children: [
                                     Text(
                                       '${widget.branchName} Operational Status',
-                                      style: const TextStyle(
+                                      style: TextStyle(
                                         fontSize: 15,
                                         fontWeight: FontWeight.bold,
-                                        color: Color(0xFF0F172A),
+                                        color: tokens.textPrimary,
                                       ),
                                     ),
                                     Text(
                                       'Business Day: ${widget.businessDate}',
-                                      style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                                      style: TextStyle(fontSize: 12, color: tokens.textMuted),
                                     ),
                                   ],
                                 ),
@@ -217,21 +219,21 @@ class _BranchInspectionScreenState extends ConsumerState<BranchInspectionScreen>
                                   'Active Borrowers',
                                   '${summary['active_clients'] ?? 0}',
                                   Icons.people_alt_outlined,
-                                  const Color(0xFF2563EB),
+                                  tokens.infoDot,
                                 ),
                                 const SizedBox(height: 10),
                                 _buildInspectionCard(
                                   'Vault Cash',
                                   CurrencyFormatter.format((cashPos['closing_balance'] as num?)?.toDouble() ?? 0.0),
                                   Icons.account_balance_wallet_outlined,
-                                  const Color(0xFF059669),
+                                  tokens.successDot,
                                 ),
                                 const SizedBox(height: 10),
                                 _buildInspectionCard(
                                   'Cashbook Status',
                                   cashPos['status'] ?? 'Balanced',
                                   Icons.verified_outlined,
-                                  const Color(0xFF0F766E),
+                                  tokens.brandPrimary,
                                   isStatus: true,
                                 ),
                               ],
@@ -244,7 +246,7 @@ class _BranchInspectionScreenState extends ConsumerState<BranchInspectionScreen>
                                     'Active Borrowers',
                                     '${summary['active_clients'] ?? 0}',
                                     Icons.people_alt_outlined,
-                                    const Color(0xFF2563EB),
+                                    tokens.infoDot,
                                   ),
                                 ),
                                 const SizedBox(width: 12),
@@ -253,7 +255,7 @@ class _BranchInspectionScreenState extends ConsumerState<BranchInspectionScreen>
                                     'Vault Cash',
                                     CurrencyFormatter.format((cashPos['closing_balance'] as num?)?.toDouble() ?? 0.0),
                                     Icons.account_balance_wallet_outlined,
-                                    const Color(0xFF059669),
+                                    tokens.successDot,
                                   ),
                                 ),
                                 const SizedBox(width: 12),
@@ -262,7 +264,7 @@ class _BranchInspectionScreenState extends ConsumerState<BranchInspectionScreen>
                                     'Cashbook Status',
                                     cashPos['status'] ?? 'Balanced',
                                     Icons.verified_outlined,
-                                    const Color(0xFF0F766E),
+                                    tokens.brandPrimary,
                                     isStatus: true,
                                   ),
                                 ),
@@ -278,14 +280,14 @@ class _BranchInspectionScreenState extends ConsumerState<BranchInspectionScreen>
                       width: double.infinity,
                       padding: const EdgeInsets.all(20),
                       decoration: BoxDecoration(
-                        color: Colors.white,
+                        color: tokens.surface,
                         borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: const Color(0xFFE2E8F0)),
-                        boxShadow: const [
+                        border: Border.all(color: tokens.borderSubtle),
+                        boxShadow: [
                           BoxShadow(
-                            color: Color(0x06000000),
+                            color: Colors.black.withValues(alpha: tokens.isDark ? 0.16 : 0.03),
                             blurRadius: 6,
-                            offset: Offset(0, 2),
+                            offset: const Offset(0, 2),
                           ),
                         ],
                       ),
@@ -294,26 +296,26 @@ class _BranchInspectionScreenState extends ConsumerState<BranchInspectionScreen>
                         children: [
                           Row(
                             children: [
-                              const Icon(Icons.group_outlined, size: 20, color: Color(0xFF065F46)),
+                              Icon(Icons.group_outlined, size: 20, color: tokens.brandPrimary),
                               const SizedBox(width: 8),
-                              const Text(
+                              Text(
                                 'Credit Officers Scheduled Today',
                                 style: TextStyle(
                                   fontSize: 15,
                                   fontWeight: FontWeight.bold,
-                                  color: Color(0xFF0F172A),
+                                  color: tokens.textPrimary,
                                 ),
                               ),
                               const Spacer(),
                               Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                                 decoration: BoxDecoration(
-                                  color: const Color(0xFFF1F5F9),
+                                  color: tokens.surfaceHover,
                                   borderRadius: BorderRadius.circular(6),
                                 ),
                                 child: Text(
                                   '${officers.length} Assigned',
-                                  style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Color(0xFF475569)),
+                                  style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: tokens.textSecondary),
                                 ),
                               ),
                             ],
@@ -323,13 +325,13 @@ class _BranchInspectionScreenState extends ConsumerState<BranchInspectionScreen>
                             Container(
                               padding: const EdgeInsets.all(24),
                               alignment: Alignment.center,
-                              child: const Column(
+                              child: Column(
                                 children: [
-                                  Icon(Icons.event_busy_outlined, size: 36, color: Color(0xFF94A3B8)),
-                                  SizedBox(height: 8),
+                                  Icon(Icons.event_busy_outlined, size: 36, color: tokens.textLight),
+                                  const SizedBox(height: 8),
                                   Text(
                                     'No credit officers scheduled for this branch today.',
-                                    style: TextStyle(color: Color(0xFF64748B), fontSize: 13),
+                                    style: TextStyle(color: tokens.textMuted, fontSize: 13),
                                   ),
                                 ],
                               ),
@@ -349,15 +351,15 @@ class _BranchInspectionScreenState extends ConsumerState<BranchInspectionScreen>
 
                                 final isHighCompliance = compliance >= 80.0;
                                 final complianceColor = isHighCompliance
-                                    ? const Color(0xFF16A34A)
-                                    : (compliance >= 50.0 ? const Color(0xFFD97706) : const Color(0xFFDC2626));
+                                    ? tokens.successText
+                                    : (compliance >= 50.0 ? tokens.warningText : tokens.dangerText);
 
                                 return Container(
                                   padding: const EdgeInsets.all(14),
                                   decoration: BoxDecoration(
-                                    color: const Color(0xFFF8FAFC),
+                                    color: tokens.surfaceSubtle,
                                     borderRadius: BorderRadius.circular(8),
-                                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                                    border: Border.all(color: tokens.borderSubtle),
                                   ),
                                   child: isMobile
                                       ? Column(
@@ -369,17 +371,17 @@ class _BranchInspectionScreenState extends ConsumerState<BranchInspectionScreen>
                                                 Expanded(
                                                   child: Text(
                                                     officerName,
-                                                    style: const TextStyle(
+                                                    style: TextStyle(
                                                       fontWeight: FontWeight.bold,
                                                       fontSize: 13.5,
-                                                      color: Color(0xFF0F172A),
+                                                      color: tokens.textPrimary,
                                                     ),
                                                   ),
                                                 ),
                                                 Container(
                                                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                                                   decoration: BoxDecoration(
-                                                    color: complianceColor.withValues(alpha: 0.1),
+                                                    color: complianceColor.withValues(alpha: 0.14),
                                                     borderRadius: BorderRadius.circular(4),
                                                   ),
                                                   child: Text(
@@ -398,15 +400,15 @@ class _BranchInspectionScreenState extends ConsumerState<BranchInspectionScreen>
                                               children: [
                                                 Text(
                                                   'Expected: ${CurrencyFormatter.format(expected)}',
-                                                  style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                                                  style: TextStyle(fontSize: 12, color: tokens.textMuted),
                                                 ),
                                                 const SizedBox(width: 12),
                                                 Text(
                                                   'Collected: ${CurrencyFormatter.format(collected)}',
-                                                  style: const TextStyle(
+                                                  style: TextStyle(
                                                     fontSize: 12,
                                                     fontWeight: FontWeight.w600,
-                                                    color: Color(0xFF0F172A),
+                                                    color: tokens.textPrimary,
                                                   ),
                                                 ),
                                               ],
@@ -419,10 +421,10 @@ class _BranchInspectionScreenState extends ConsumerState<BranchInspectionScreen>
                                               flex: 3,
                                               child: Text(
                                                 officerName,
-                                                style: const TextStyle(
+                                                style: TextStyle(
                                                   fontWeight: FontWeight.bold,
                                                   fontSize: 13.5,
-                                                  color: Color(0xFF0F172A),
+                                                  color: tokens.textPrimary,
                                                 ),
                                               ),
                                             ),
@@ -430,10 +432,10 @@ class _BranchInspectionScreenState extends ConsumerState<BranchInspectionScreen>
                                               flex: 2,
                                               child: Text(
                                                 'Expected: ${CurrencyFormatter.format(expected)}',
-                                                style: const TextStyle(
+                                                style: TextStyle(
                                                   fontSize: 12.5,
-                                                  color: Color(0xFF64748B),
-                                                  fontFeatures: [FontFeature.tabularFigures()],
+                                                  color: tokens.textMuted,
+                                                  fontFeatures: const [FontFeature.tabularFigures()],
                                                 ),
                                               ),
                                             ),
@@ -441,18 +443,18 @@ class _BranchInspectionScreenState extends ConsumerState<BranchInspectionScreen>
                                               flex: 2,
                                               child: Text(
                                                 'Collected: ${CurrencyFormatter.format(collected)}',
-                                                style: const TextStyle(
+                                                style: TextStyle(
                                                   fontSize: 12.5,
                                                   fontWeight: FontWeight.w600,
-                                                  color: Color(0xFF0F172A),
-                                                  fontFeatures: [FontFeature.tabularFigures()],
+                                                  color: tokens.textPrimary,
+                                                  fontFeatures: const [FontFeature.tabularFigures()],
                                                 ),
                                               ),
                                             ),
                                             Container(
                                               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                                               decoration: BoxDecoration(
-                                                color: complianceColor.withValues(alpha: 0.1),
+                                                color: complianceColor.withValues(alpha: 0.14),
                                                 borderRadius: BorderRadius.circular(6),
                                               ),
                                               child: Text(
@@ -489,21 +491,22 @@ class _BranchInspectionScreenState extends ConsumerState<BranchInspectionScreen>
     Color accentColor, {
     bool isStatus = false,
   }) {
-    final statusColor = value == 'Balanced' ? const Color(0xFF15803D) : const Color(0xFFDC2626);
+    final tokens = IcareSurfaceTokens.of(context);
+    final statusColor = value == 'Balanced' ? tokens.successText : tokens.dangerText;
 
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
+        color: tokens.surfaceSubtle,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: tokens.borderSubtle),
       ),
       child: Row(
         children: [
           Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: accentColor.withValues(alpha: 0.1),
+              color: accentColor.withValues(alpha: 0.14),
               borderRadius: BorderRadius.circular(6),
             ),
             child: Icon(icon, size: 18, color: accentColor),
@@ -515,7 +518,7 @@ class _BranchInspectionScreenState extends ConsumerState<BranchInspectionScreen>
               children: [
                 Text(
                   label,
-                  style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                  style: TextStyle(fontSize: 11, color: tokens.textMuted),
                 ),
                 const SizedBox(height: 3),
                 Text(
@@ -524,7 +527,7 @@ class _BranchInspectionScreenState extends ConsumerState<BranchInspectionScreen>
                     fontSize: 14,
                     fontWeight: FontWeight.bold,
                     fontFeatures: const [FontFeature.tabularFigures()],
-                    color: isStatus ? statusColor : const Color(0xFF0F172A),
+                    color: isStatus ? statusColor : tokens.textPrimary,
                   ),
                 ),
               ],

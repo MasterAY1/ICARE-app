@@ -7,6 +7,7 @@ import '../../../core/auth/auth_controller.dart';
 import '../../../core/auth/auth_state.dart';
 import '../../shared/utils/file_picker_helper.dart';
 import '../../../core/widgets/icare_skeleton_loader.dart';
+import '../../../core/theme/icare_theme_tokens.dart';
 import '../../../core/errors/app_error_formatter.dart';
 import '../data/datasources/co_api_service.dart';
 
@@ -329,6 +330,16 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
     return baseList;
   }
 
+  void _showErrorSnack(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message, style: const TextStyle(color: Colors.white)),
+        backgroundColor: const Color(0xFFDC2626),
+      ),
+    );
+  }
+
   // ==========================================
   // ACTIONS: REGISTRATION
   // ==========================================
@@ -337,17 +348,13 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
     final phone = _clientPhoneCtrl.text.trim();
 
     if (name.isEmpty || phone.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Name and Phone are required!'), backgroundColor: Colors.red),
-      );
+      _showErrorSnack('Name and Phone are required!');
       return;
     }
 
     if (_selectedGroupMode == '+ Create New Group') {
       if (_newGroupNameCtrl.text.trim().isEmpty || _newGroupNumberCtrl.text.trim().isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Please enter the Group Name and Group Number.'), backgroundColor: Colors.red),
-        );
+        _showErrorSnack('Please enter the Group Name and Group Number.');
         return;
       }
     }
@@ -430,11 +437,7 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
       ref.invalidate(originationGroupsProvider);
 
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(AppErrorDetails.from(e).message), backgroundColor: Colors.red),
-        );
-      }
+      _showErrorSnack(AppErrorDetails.from(e).message);
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
     }
@@ -453,11 +456,7 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
         _appSearchResults = results;
       });
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(AppErrorDetails.from(e).message), backgroundColor: Colors.red),
-        );
-      }
+      _showErrorSnack(AppErrorDetails.from(e).message);
     } finally {
       if (mounted) setState(() => _isAppSearching = false);
     }
@@ -475,11 +474,7 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
       });
       _scheduleRefreshCalculations(immediate: true);
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(AppErrorDetails.from(e).message), backgroundColor: Colors.red),
-        );
-      }
+      _showErrorSnack(AppErrorDetails.from(e).message);
     }
   }
 
@@ -559,25 +554,16 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
 
   Future<void> _handleSubmitLoanApplication() async {
     if (_selectedAppClient == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select a registered client.'), backgroundColor: Colors.red),
-      );
+      _showErrorSnack('Please select a registered client.');
       return;
     }
     if (_eligibilityResult != null && _eligibilityResult!['is_eligible'] == false) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Client does not meet eligibility rules for this loan request.'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      _showErrorSnack('Client does not meet eligibility rules for this loan request.');
       return;
     }
     final amt = _currentAmount;
     if (amt <= 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter a valid loan amount.'), backgroundColor: Colors.red),
-      );
+      _showErrorSnack('Please enter a valid loan amount.');
       return;
     }
 
@@ -590,18 +576,14 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
 
     if (_loanAppCategory == 'Asset') {
       if (savDp > 0 && savBal < savDp) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Cannot submit! Insufficient savings for Asset Downpayment (Available: ${CurrencyFormatter.formatNaira(savBal)}).'), backgroundColor: Colors.red),
-        );
+        _showErrorSnack('Cannot submit! Insufficient savings for Asset Downpayment (Available: ${CurrencyFormatter.formatNaira(savBal)}).');
         return;
       }
     } else {
       final interest = amt * _currentRate;
       final totalUpfront = isCashAndCarry ? 0.0 : (interest + gapFee);
       if (totalUpfront > 0 && savBal < totalUpfront) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Cannot submit! Insufficient savings (Available: ${CurrencyFormatter.formatNaira(savBal)}, Required: ${CurrencyFormatter.formatNaira(totalUpfront)}).'), backgroundColor: Colors.red),
-        );
+        _showErrorSnack('Cannot submit! Insufficient savings (Available: ${CurrencyFormatter.formatNaira(savBal)}, Required: ${CurrencyFormatter.formatNaira(totalUpfront)}).');
         return;
       }
     }
@@ -635,11 +617,7 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
       ref.read(loanOriginationTabProvider.notifier).state = 'Pending Disbursements';
       ref.invalidate(pendingDisbursementsProvider);
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(AppErrorDetails.from(e).message), backgroundColor: Colors.red),
-        );
-      }
+      _showErrorSnack(AppErrorDetails.from(e).message);
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
     }
@@ -650,9 +628,7 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
   // ==========================================
   Future<void> _handleAuthorizeDisbursement() async {
     if (_selectedPendingLoanId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select a pending loan to activate.'), backgroundColor: Colors.red),
-      );
+      _showErrorSnack('Please select a pending loan to activate.');
       return;
     }
 
@@ -675,11 +651,7 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
       });
       ref.invalidate(pendingDisbursementsProvider);
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(AppErrorDetails.from(e).message), backgroundColor: Colors.red),
-        );
-      }
+      _showErrorSnack(AppErrorDetails.from(e).message);
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
     }
@@ -696,11 +668,7 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
       final results = await api.searchClientsForOrigination(query.trim());
       setState(() => _editSearchResults = results);
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(AppErrorDetails.from(e).message), backgroundColor: Colors.red),
-        );
-      }
+      _showErrorSnack(AppErrorDetails.from(e).message);
     } finally {
       if (mounted) setState(() => _isEditSearching = false);
     }
@@ -748,11 +716,7 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
         }
       });
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(AppErrorDetails.from(e).message), backgroundColor: Colors.red),
-        );
-      }
+      _showErrorSnack(AppErrorDetails.from(e).message);
     }
   }
 
@@ -760,9 +724,7 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
     if (_selectedEditClient == null) return;
     final name = _editNameCtrl.text.trim();
     if (name.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Client Name is required.'), backgroundColor: Colors.red),
-      );
+      _showErrorSnack('Client Name is required.');
       return;
     }
 
@@ -800,32 +762,39 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
       if (statusStr == 'PENDING_APPROVAL') {
         showDialog(
           context: context,
-          builder: (ctx) => AlertDialog(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-            title: Row(
-              children: [
-                Icon(Icons.hourglass_top_rounded, color: Colors.amber.shade800, size: 24),
-                const SizedBox(width: 8),
-                const Text('Pending BM Review', style: TextStyle(fontWeight: FontWeight.bold)),
-              ],
-            ),
-            content: Text(
-              res['message'] ?? 'Client profile update request has been submitted and is awaiting Branch Manager approval.',
-              style: const TextStyle(fontSize: 14),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(ctx).pop(),
-                child: const Text('OK'),
+          builder: (ctx) {
+            final dialogTokens = IcareSurfaceTokens.of(ctx);
+            return AlertDialog(
+              backgroundColor: dialogTokens.surfaceElevated,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              title: Row(
+                children: [
+                  Icon(Icons.hourglass_top_rounded, color: dialogTokens.warningDot, size: 24),
+                  const SizedBox(width: 8),
+                  Text('Pending BM Review', style: TextStyle(fontWeight: FontWeight.bold, color: dialogTokens.textPrimary)),
+                ],
               ),
-            ],
-          ),
+              content: Text(
+                res['message'] ?? 'Client profile update request has been submitted and is awaiting Branch Manager approval.',
+                style: TextStyle(fontSize: 14, color: dialogTokens.textSecondary),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(ctx).pop(),
+                  child: const Text('OK'),
+                ),
+              ],
+            );
+          },
         );
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(res['message'] ?? 'Client and Guarantor updated successfully!'),
-            backgroundColor: Colors.green.shade700,
+            content: Text(
+              res['message'] ?? 'Client and Guarantor updated successfully!',
+              style: const TextStyle(color: Colors.white),
+            ),
+            backgroundColor: const Color(0xFF15803D),
           ),
         );
       }
@@ -841,6 +810,7 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
   // ==========================================
   @override
   Widget build(BuildContext context) {
+    final tokens = IcareSurfaceTokens.of(context);
     final activeTab = ref.watch(loanOriginationTabProvider);
 
     final tabs = [
@@ -854,9 +824,9 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
           // Title
-          const Text(
+          Text(
             'Origination & Registration',
-            style: TextStyle(fontSize: 26, fontWeight: FontWeight.w800, color: Color(0xFF0F172A), letterSpacing: -0.5),
+            style: TextStyle(fontSize: 26, fontWeight: FontWeight.w800, color: tokens.textPrimary, letterSpacing: -0.5),
           ),
           const SizedBox(height: 16),
 
@@ -866,22 +836,22 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               margin: const EdgeInsets.only(bottom: 16),
               decoration: BoxDecoration(
-                color: const Color(0xFFECFDF5),
+                color: tokens.successBg,
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: const Color(0xFFA7F3D0)),
+                border: Border.all(color: tokens.successBorder),
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.check_circle_outline, color: Color(0xFF065F46), size: 18),
+                  Icon(Icons.check_circle_outline, color: tokens.successText, size: 18),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
                       _flashMessage!,
-                      style: const TextStyle(color: Color(0xFF065F46), fontWeight: FontWeight.w600, fontSize: 13),
+                      style: TextStyle(color: tokens.successText, fontWeight: FontWeight.w600, fontSize: 13),
                     ),
                   ),
                   IconButton(
-                    icon: const Icon(Icons.close, size: 16, color: Color(0xFF065F46)),
+                    icon: Icon(Icons.close, size: 16, color: tokens.successText),
                     onPressed: () => setState(() => _flashMessage = null),
                   ),
                 ],
@@ -906,13 +876,13 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                       decoration: BoxDecoration(
-                        color: isSel ? const Color(0xFF064E3B) : Colors.white,
-                        border: Border.all(color: isSel ? const Color(0xFF064E3B) : const Color(0xFFE2E8F0)),
+                        color: isSel ? tokens.brandPrimaryDark : tokens.surface,
+                        border: Border.all(color: isSel ? tokens.brandPrimaryDark : tokens.borderSubtle),
                         borderRadius: BorderRadius.circular(12),
                         boxShadow: isSel
                             ? [
                                 BoxShadow(
-                                  color: const Color(0xFF064E3B).withOpacity(0.20),
+                                  color: tokens.brandPrimaryDark.withValues(alpha: tokens.isDark ? 0.35 : 0.20),
                                   blurRadius: 8,
                                   offset: const Offset(0, 3),
                                 ),
@@ -924,7 +894,7 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                         style: TextStyle(
                           fontSize: 12.5,
                           fontWeight: isSel ? FontWeight.w700 : FontWeight.w600,
-                          color: isSel ? Colors.white : const Color(0xFF475569),
+                          color: isSel ? Colors.white : tokens.textSecondary,
                         ),
                       ),
                     ),
@@ -938,7 +908,7 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
           // Subheader (app.py L3235, L3336, etc.)
           Text(
             activeTab,
-            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
+            style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: tokens.textPrimary),
           ),
           const SizedBox(height: 16),
 
@@ -959,6 +929,7 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
   // TAB 1 WIDGET: CLIENT REGISTRATION
   // ==========================================
   Widget _buildRegistrationTab() {
+    final tokens = IcareSurfaceTokens.of(context);
     final groupsAsync = ref.watch(originationGroupsProvider);
     final authState = ref.watch(authControllerProvider);
     final user = authState is AuthStateAuthenticated ? authState.user : null;
@@ -971,9 +942,9 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
         if (isAdmin) ...[
           Row(
             children: [
-              const Text(
+              Text(
                 'Registration Method: ',
-                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF475569)),
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: tokens.textSecondary),
               ),
               const SizedBox(width: 8),
               ...['Single Client', 'Bulk Onboarding'].map((m) {
@@ -986,8 +957,8 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
                       decoration: BoxDecoration(
-                        color: isSel ? const Color(0xFF2E86C1) : const Color(0xFFF1F5F9),
-                        border: Border.all(color: isSel ? const Color(0xFF2E86C1) : const Color(0xFFE2E8F0)),
+                        color: isSel ? const Color(0xFF1D4ED8) : tokens.surfaceSubtle,
+                        border: Border.all(color: isSel ? const Color(0xFF1D4ED8) : tokens.borderSubtle),
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Text(
@@ -995,7 +966,7 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                         style: TextStyle(
                           fontSize: 12.5,
                           fontWeight: isSel ? FontWeight.w700 : FontWeight.w500,
-                          color: isSel ? Colors.white : const Color(0xFF475569),
+                          color: isSel ? Colors.white : tokens.textSecondary,
                         ),
                       ),
                     ),
@@ -1013,9 +984,9 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
             width: double.infinity,
             padding: const EdgeInsets.all(24),
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: tokens.surface,
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: const Color(0xFFE2E8F0)),
+              border: Border.all(color: tokens.borderSubtle),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -1025,18 +996,18 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                   width: double.infinity,
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFEFF6FF),
+                    color: tokens.infoBg,
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: const Color(0xFFBFDBFE)),
+                    border: Border.all(color: tokens.infoBorder),
                   ),
-                  child: const Row(
+                  child: Row(
                     children: [
-                      Icon(Icons.info_outline, color: Color(0xFF1D4ED8), size: 18),
-                      SizedBox(width: 10),
+                      Icon(Icons.info_outline, color: tokens.infoText, size: 18),
+                      const SizedBox(width: 10),
                       Expanded(
                         child: Text(
                           'Upload the standard ICARE Group and Member Onboarding Template.',
-                          style: TextStyle(fontSize: 13, color: Color(0xFF1E40AF), fontWeight: FontWeight.w500),
+                          style: TextStyle(fontSize: 13, color: tokens.infoText, fontWeight: FontWeight.w500),
                         ),
                       ),
                     ],
@@ -1074,18 +1045,18 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                     width: double.infinity,
                     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFECFDF5),
+                      color: tokens.successBg,
                       borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: const Color(0xFFA7F3D0)),
+                      border: Border.all(color: tokens.successBorder),
                     ),
                     child: Row(
                       children: [
-                        const Icon(Icons.check_circle_outline, color: Color(0xFF065F46), size: 18),
+                        Icon(Icons.check_circle_outline, color: tokens.successText, size: 18),
                         const SizedBox(width: 10),
                         Expanded(
                           child: Text(
                             'File parsed! Found $_bulkParsedGroups Groups and $_bulkParsedMembers Members.',
-                            style: const TextStyle(fontSize: 13, color: Color(0xFF065F46), fontWeight: FontWeight.w600),
+                            style: TextStyle(fontSize: 13, color: tokens.successText, fontWeight: FontWeight.w600),
                           ),
                         ),
                       ],
@@ -1102,13 +1073,16 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                               setState(() => _bulkImportConfirmed = true);
                               ScaffoldMessenger.of(context).showSnackBar(
                                 const SnackBar(
-                                  content: Text('Onboarding template verified and queued for import.'),
-                                  backgroundColor: Colors.green,
+                                  content: Text(
+                                    'Onboarding template verified and queued for import.',
+                                    style: TextStyle(color: Colors.white),
+                                  ),
+                                  backgroundColor: Color(0xFF15803D),
                                 ),
                               );
                             },
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF2E86C1),
+                        backgroundColor: const Color(0xFF1D4ED8),
                         foregroundColor: Colors.white,
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
                       ),
@@ -1126,7 +1100,7 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
           // SINGLE CLIENT REGISTRATION MODE (app.py L3343-3630)
           groupsAsync.when(
             loading: () => const LinearProgressIndicator(),
-            error: (err, _) => Text('Error loading groups: ${AppErrorDetails.from(err).message}', style: const TextStyle(color: Colors.red, fontSize: 12)),
+            error: (err, _) => Text('Error loading groups: ${AppErrorDetails.from(err).message}', style: TextStyle(color: tokens.dangerText, fontSize: 12)),
             data: (grpList) {
               final itemEntries = <Map<String, String?>>[
                 {'key': 'Individual (No Group)', 'label': 'Individual (No Group)', 'group_id': null},
@@ -1163,6 +1137,8 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                   DropdownButtonFormField<String>(
                     isExpanded: true,
                     value: currentKey,
+                    dropdownColor: tokens.surfaceElevated,
+                    style: TextStyle(fontSize: 14, color: tokens.textPrimary),
                     decoration: const InputDecoration(
                       labelText: 'Assign to Group',
                       border: OutlineInputBorder(),
@@ -1174,6 +1150,7 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                           alignment: Alignment.centerLeft,
                           child: Text(
                             opt['label'] ?? '',
+                            style: TextStyle(fontSize: 14, color: tokens.textPrimary),
                             overflow: TextOverflow.ellipsis,
                             maxLines: 1,
                           ),
@@ -1206,6 +1183,7 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                       children: [
                         TextField(
                           controller: _newGroupNameCtrl,
+                          style: TextStyle(color: tokens.textPrimary),
                           decoration: const InputDecoration(
                             labelText: 'New Group Name',
                             hintText: 'e.g. Alaba Traders',
@@ -1214,6 +1192,7 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                         ),
                         TextField(
                           controller: _newGroupNumberCtrl,
+                          style: TextStyle(color: tokens.textPrimary),
                           decoration: const InputDecoration(
                             labelText: 'New Group Number (2-digits)',
                             hintText: 'e.g. 01',
@@ -1223,6 +1202,8 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                         DropdownButtonFormField<String>(
                           isExpanded: true,
                           value: _newGroupMeetingDay,
+                          dropdownColor: tokens.surfaceElevated,
+                          style: TextStyle(fontSize: 14, color: tokens.textPrimary),
                           decoration: const InputDecoration(
                             labelText: 'Meeting Day',
                             border: OutlineInputBorder(),
@@ -1246,18 +1227,18 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                       width: double.infinity,
                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFEFF6FF),
+                        color: tokens.infoBg,
                         borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: const Color(0xFFBFDBFE)),
+                        border: Border.all(color: tokens.infoBorder),
                       ),
                       child: Row(
                         children: [
-                          const Icon(Icons.info_outline, color: Color(0xFF1D4ED8), size: 18),
+                          Icon(Icons.info_outline, color: tokens.infoText, size: 18),
                           const SizedBox(width: 10),
                           Expanded(
                             child: Text(
                               "Selected group '${selectedGroupData['name']}' (Code: ${selectedGroupData['group_number'] ?? ''}) meets on ${selectedGroupData['meeting_day'] ?? ''}",
-                              style: const TextStyle(fontSize: 13, color: Color(0xFF1E40AF), fontWeight: FontWeight.w500),
+                              style: TextStyle(fontSize: 13, color: tokens.infoText, fontWeight: FontWeight.w500),
                             ),
                           ),
                         ],
@@ -1276,12 +1257,12 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: tokens.surface,
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: const Color(0xFFE2E8F0)),
+              border: Border.all(color: tokens.borderSubtle),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.02),
+                  color: Colors.black.withValues(alpha: tokens.isDark ? 0.16 : 0.02),
                   blurRadius: 6,
                   offset: const Offset(0, 2),
                 ),
@@ -1295,11 +1276,11 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                   children: [
                     Text(
                       'STEP $_wizardStep OF 4',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.w800,
                         letterSpacing: 0.8,
-                        color: Color(0xFF065F46),
+                        color: tokens.brandPrimary,
                       ),
                     ),
                     Text(
@@ -1310,10 +1291,10 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                               : _wizardStep == 3
                                   ? 'Guarantor Due Diligence'
                                   : 'KYC & Uploads',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
-                        color: Color(0xFF0F172A),
+                        color: tokens.textPrimary,
                       ),
                     ),
                   ],
@@ -1328,7 +1309,7 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                         margin: EdgeInsets.only(right: index < 3 ? 6 : 0),
                         height: 4,
                         decoration: BoxDecoration(
-                          color: isActive ? const Color(0xFF065F46) : const Color(0xFFE2E8F0),
+                          color: isActive ? tokens.brandPrimary : tokens.borderSubtle,
                           borderRadius: BorderRadius.circular(2),
                         ),
                       ),
@@ -1346,12 +1327,12 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
           Container(
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: tokens.surface,
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: const Color(0xFFE2E8F0)),
+              border: Border.all(color: tokens.borderSubtle),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.02),
+                  color: Colors.black.withValues(alpha: tokens.isDark ? 0.18 : 0.02),
                   blurRadius: 8,
                   offset: const Offset(0, 2),
                 ),
@@ -1364,14 +1345,14 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                   // ------------------------------------------
                   // STEP 1: PERSONAL INFO & REGISTRATION DATE
                   // ------------------------------------------
-                  const Text(
+                  Text(
                     '1. Personal Info & Registration Date',
-                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16, color: Color(0xFF0F172A)),
+                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16, color: tokens.textPrimary),
                   ),
                   const SizedBox(height: 4),
-                  const Text(
+                  Text(
                     'Provide client legal identification and contact details.',
-                    style: TextStyle(fontSize: 12.5, color: Color(0xFF64748B)),
+                    style: TextStyle(fontSize: 12.5, color: tokens.textMuted),
                   ),
                   const SizedBox(height: 16),
 
@@ -1396,7 +1377,7 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                         border: OutlineInputBorder(),
                         suffixIcon: Icon(Icons.calendar_today, size: 18),
                       ),
-                      child: Text(_regDate.toIsoformatDate()),
+                      child: Text(_regDate.toIsoformatDate(), style: TextStyle(color: tokens.textPrimary)),
                     ),
                   ),
                   const SizedBox(height: 12),
@@ -1405,6 +1386,7 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                     children: [
                       TextField(
                         controller: _clientNameCtrl,
+                        style: TextStyle(color: tokens.textPrimary),
                         decoration: const InputDecoration(
                           labelText: 'Full Name *',
                           hintText: 'e.g. Aminat Adeleke',
@@ -1413,6 +1395,7 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                       ),
                       TextField(
                         controller: _clientNicknameCtrl,
+                        style: TextStyle(color: tokens.textPrimary),
                         decoration: const InputDecoration(
                           labelText: 'Nickname',
                           hintText: 'e.g. Iya Alaba',
@@ -1421,6 +1404,7 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                       ),
                       TextField(
                         controller: _clientPhoneCtrl,
+                        style: TextStyle(color: tokens.textPrimary),
                         keyboardType: TextInputType.phone,
                         decoration: const InputDecoration(
                           labelText: 'Phone Number *',
@@ -1433,6 +1417,7 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                   const SizedBox(height: 12),
                   TextField(
                     controller: _clientAddressCtrl,
+                    style: TextStyle(color: tokens.textPrimary),
                     decoration: const InputDecoration(
                       labelText: 'Home Address',
                       hintText: 'Enter residential address',
@@ -1443,6 +1428,8 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                   DropdownButtonFormField<String>(
                     isExpanded: true,
                     value: _selectedMarital,
+                    dropdownColor: tokens.surfaceElevated,
+                    style: TextStyle(fontSize: 14, color: tokens.textPrimary),
                     decoration: const InputDecoration(
                       labelText: 'Marital Status',
                       border: OutlineInputBorder(),
@@ -1465,8 +1452,8 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                         if (_clientNameCtrl.text.trim().isEmpty || _clientPhoneCtrl.text.trim().isEmpty) {
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(
-                              content: Text('Please enter Full Name and Phone Number to continue.'),
-                              backgroundColor: Colors.red,
+                              content: Text('Please enter Full Name and Phone Number to continue.', style: TextStyle(color: Colors.white)),
+                              backgroundColor: Color(0xFFDC2626),
                             ),
                           );
                           return;
@@ -1475,8 +1462,8 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                           if (_newGroupNameCtrl.text.trim().isEmpty || _newGroupNumberCtrl.text.trim().isEmpty) {
                             ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(
-                                content: Text('Please enter Group Name and Group Number.'),
-                                backgroundColor: Colors.red,
+                                content: Text('Please enter Group Name and Group Number.', style: TextStyle(color: Colors.white)),
+                                backgroundColor: Color(0xFFDC2626),
                               ),
                             );
                             return;
@@ -1485,7 +1472,7 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                         setState(() => _wizardStep = 2);
                       },
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF064E3B), // Deep Forest Emerald
+                        backgroundColor: tokens.brandPrimaryDark,
                         foregroundColor: Colors.white,
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                       ),
@@ -1503,14 +1490,14 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                   // ------------------------------------------
                   // STEP 2: BUSINESS PROFILE & FINANCIALS
                   // ------------------------------------------
-                  const Text(
+                  Text(
                     '2. Business Profile & Financials',
-                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16, color: Color(0xFF0F172A)),
+                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16, color: tokens.textPrimary),
                   ),
                   const SizedBox(height: 4),
-                  const Text(
+                  Text(
                     'Document client commercial activities, estimated income, and liabilities.',
-                    style: TextStyle(fontSize: 12.5, color: Color(0xFF64748B)),
+                    style: TextStyle(fontSize: 12.5, color: tokens.textMuted),
                   ),
                   const SizedBox(height: 16),
 
@@ -1518,6 +1505,7 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                     children: [
                       TextField(
                         controller: _clientBizTypeCtrl,
+                        style: TextStyle(color: tokens.textPrimary),
                         decoration: const InputDecoration(
                           labelText: 'Business Type',
                           hintText: 'e.g. Trader, Tailor, Provisions',
@@ -1526,6 +1514,7 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                       ),
                       TextField(
                         controller: _clientIncomeCtrl,
+                        style: TextStyle(color: tokens.textPrimary),
                         keyboardType: TextInputType.number,
                         decoration: const InputDecoration(
                           labelText: 'Average Monthly Income (₦)',
@@ -1538,6 +1527,7 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                   const SizedBox(height: 12),
                   TextField(
                     controller: _clientBizAddressCtrl,
+                    style: TextStyle(color: tokens.textPrimary),
                     decoration: const InputDecoration(
                       labelText: 'Business Address',
                       hintText: 'Enter market stall or business shop address',
@@ -1547,6 +1537,7 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                   const SizedBox(height: 12),
                   TextField(
                     controller: _clientObligationsCtrl,
+                    style: TextStyle(color: tokens.textPrimary),
                     decoration: const InputDecoration(
                       labelText: 'Other Financial Obligations (if any)',
                       hintText: 'e.g. Existing coop loans, thrift contributions',
@@ -1564,8 +1555,8 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                           child: OutlinedButton(
                             onPressed: () => setState(() => _wizardStep = 1),
                             style: OutlinedButton.styleFrom(
-                              foregroundColor: const Color(0xFF0F172A),
-                              side: const BorderSide(color: Color(0xFFCBD5E1)),
+                              foregroundColor: tokens.textPrimary,
+                              side: BorderSide(color: tokens.borderStrong),
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                             ),
                             child: const Text('Back', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
@@ -1580,7 +1571,7 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                           child: ElevatedButton(
                             onPressed: () => setState(() => _wizardStep = 3),
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF064E3B),
+                              backgroundColor: tokens.brandPrimaryDark,
                               foregroundColor: Colors.white,
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                             ),
@@ -1601,14 +1592,14 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                   // ------------------------------------------
                   // STEP 3: GUARANTOR DUE DILIGENCE
                   // ------------------------------------------
-                  const Text(
+                  Text(
                     '3. Guarantor Due Diligence',
-                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16, color: Color(0xFF0F172A)),
+                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16, color: tokens.textPrimary),
                   ),
                   const SizedBox(height: 4),
-                  const Text(
+                  Text(
                     'Provide details of the guarantor vouching for this client.',
-                    style: TextStyle(fontSize: 12.5, color: Color(0xFF64748B)),
+                    style: TextStyle(fontSize: 12.5, color: tokens.textMuted),
                   ),
                   const SizedBox(height: 16),
 
@@ -1616,14 +1607,17 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                     children: [
                       TextField(
                         controller: _guarNameCtrl,
+                        style: TextStyle(color: tokens.textPrimary),
                         decoration: const InputDecoration(labelText: 'Guarantor Full Name', border: OutlineInputBorder()),
                       ),
                       TextField(
                         controller: _guarNicknameCtrl,
+                        style: TextStyle(color: tokens.textPrimary),
                         decoration: const InputDecoration(labelText: 'Guarantor Nickname', border: OutlineInputBorder()),
                       ),
                       TextField(
                         controller: _guarPhoneCtrl,
+                        style: TextStyle(color: tokens.textPrimary),
                         keyboardType: TextInputType.phone,
                         decoration: const InputDecoration(labelText: 'Guarantor Phone', border: OutlineInputBorder()),
                       ),
@@ -1632,6 +1626,7 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                   const SizedBox(height: 12),
                   TextField(
                     controller: _guarAddressCtrl,
+                    style: TextStyle(color: tokens.textPrimary),
                     decoration: const InputDecoration(labelText: 'Guarantor Home Address', border: OutlineInputBorder()),
                   ),
                   const SizedBox(height: 12),
@@ -1640,6 +1635,8 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                       DropdownButtonFormField<String>(
                         isExpanded: true,
                         value: _guarMarital,
+                        dropdownColor: tokens.surfaceElevated,
+                        style: TextStyle(fontSize: 14, color: tokens.textPrimary),
                         decoration: const InputDecoration(labelText: 'Guarantor Marital Status', border: OutlineInputBorder()),
                         items: ['Single', 'Married', 'Divorced', 'Widowed']
                             .map((m) => DropdownMenuItem(value: m, child: Text(m, overflow: TextOverflow.ellipsis, maxLines: 1)))
@@ -1650,10 +1647,12 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                       ),
                       TextField(
                         controller: _guarOccupationCtrl,
+                        style: TextStyle(color: tokens.textPrimary),
                         decoration: const InputDecoration(labelText: 'Guarantor Occupation', hintText: 'e.g. Trader, Civil Servant', border: OutlineInputBorder()),
                       ),
                       TextField(
                         controller: _guarRelCtrl,
+                        style: TextStyle(color: tokens.textPrimary),
                         decoration: const InputDecoration(labelText: 'Relationship with Client', border: OutlineInputBorder()),
                       ),
                     ],
@@ -1661,6 +1660,7 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                   const SizedBox(height: 12),
                   TextField(
                     controller: _guarOfficeCtrl,
+                    style: TextStyle(color: tokens.textPrimary),
                     decoration: const InputDecoration(labelText: 'Guarantor Office Address', border: OutlineInputBorder()),
                   ),
                   const SizedBox(height: 24),
@@ -1674,8 +1674,8 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                           child: OutlinedButton(
                             onPressed: () => setState(() => _wizardStep = 2),
                             style: OutlinedButton.styleFrom(
-                              foregroundColor: const Color(0xFF0F172A),
-                              side: const BorderSide(color: Color(0xFFCBD5E1)),
+                              foregroundColor: tokens.textPrimary,
+                              side: BorderSide(color: tokens.borderStrong),
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                             ),
                             child: const Text('Back', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
@@ -1690,7 +1690,7 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                           child: ElevatedButton(
                             onPressed: () => setState(() => _wizardStep = 4),
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF064E3B),
+                              backgroundColor: tokens.brandPrimaryDark,
                               foregroundColor: Colors.white,
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                             ),
@@ -1711,14 +1711,14 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                   // ------------------------------------------
                   // STEP 4: IDENTITY & KYC UPLOADS
                   // ------------------------------------------
-                  const Text(
+                  Text(
                     '4. Identity & KYC Documents',
-                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16, color: Color(0xFF0F172A)),
+                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16, color: tokens.textPrimary),
                   ),
                   const SizedBox(height: 4),
-                  const Text(
+                  Text(
                     'Upload client and guarantor identification documents and passport photographs.',
-                    style: TextStyle(fontSize: 12.5, color: Color(0xFF64748B)),
+                    style: TextStyle(fontSize: 12.5, color: tokens.textMuted),
                   ),
                   const SizedBox(height: 16),
 
@@ -1726,16 +1726,16 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                   Container(
                     padding: const EdgeInsets.all(14),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFF8FAFC),
+                      color: tokens.surfaceSubtle,
                       borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                      border: Border.all(color: tokens.borderSubtle),
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
+                        Text(
                           'Client Identification',
-                          style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5, color: Color(0xFF1E293B)),
+                          style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5, color: tokens.textPrimary),
                         ),
                         const SizedBox(height: 10),
                         _buildResponsiveInputRow(
@@ -1743,12 +1743,14 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                             DropdownButtonFormField<String>(
                               isExpanded: true,
                               value: _selectedIdMeans,
+                              dropdownColor: tokens.surfaceElevated,
+                              style: TextStyle(fontSize: 14, color: tokens.textPrimary),
                               decoration: const InputDecoration(labelText: 'Means of ID', border: OutlineInputBorder()),
                               selectedItemBuilder: (BuildContext context) {
                                 return ['National ID (NIN)', "Voter's Card", "Driver's License", 'International Passport', 'None']
                                     .map<Widget>((i) => Align(
                                           alignment: Alignment.centerLeft,
-                                          child: Text(i, overflow: TextOverflow.ellipsis, maxLines: 1),
+                                          child: Text(i, style: TextStyle(fontSize: 14, color: tokens.textPrimary), overflow: TextOverflow.ellipsis, maxLines: 1),
                                         ))
                                     .toList();
                               },
@@ -1761,6 +1763,7 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                             ),
                             TextField(
                               controller: _clientIdNumberCtrl,
+                              style: TextStyle(color: tokens.textPrimary),
                               decoration: const InputDecoration(
                                 labelText: 'ID Number',
                                 hintText: 'Enter identification number',
@@ -1812,16 +1815,16 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                   Container(
                     padding: const EdgeInsets.all(14),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFF8FAFC),
+                      color: tokens.surfaceSubtle,
                       borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                      border: Border.all(color: tokens.borderSubtle),
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
+                        Text(
                           'Guarantor Identification',
-                          style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5, color: Color(0xFF1E293B)),
+                          style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5, color: tokens.textPrimary),
                         ),
                         const SizedBox(height: 10),
                         _buildResponsiveInputRow(
@@ -1829,12 +1832,14 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                             DropdownButtonFormField<String>(
                               isExpanded: true,
                               value: _guarIdMeans,
+                              dropdownColor: tokens.surfaceElevated,
+                              style: TextStyle(fontSize: 14, color: tokens.textPrimary),
                               decoration: const InputDecoration(labelText: 'Guarantor Means of ID', border: OutlineInputBorder()),
                               selectedItemBuilder: (BuildContext context) {
                                 return ['National ID (NIN)', "Voter's Card", "Driver's License", 'International Passport', 'None']
                                     .map<Widget>((i) => Align(
                                           alignment: Alignment.centerLeft,
-                                          child: Text(i, overflow: TextOverflow.ellipsis, maxLines: 1),
+                                          child: Text(i, style: TextStyle(fontSize: 14, color: tokens.textPrimary), overflow: TextOverflow.ellipsis, maxLines: 1),
                                         ))
                                     .toList();
                               },
@@ -1847,6 +1852,7 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                             ),
                             TextField(
                               controller: _guarIdNumberCtrl,
+                              style: TextStyle(color: tokens.textPrimary),
                               decoration: const InputDecoration(
                                 labelText: 'Guarantor ID Number',
                                 hintText: 'Enter ID number',
@@ -1903,8 +1909,8 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                           child: OutlinedButton(
                             onPressed: _isSubmitting ? null : () => setState(() => _wizardStep = 3),
                             style: OutlinedButton.styleFrom(
-                              foregroundColor: const Color(0xFF0F172A),
-                              side: const BorderSide(color: Color(0xFFCBD5E1)),
+                              foregroundColor: tokens.textPrimary,
+                              side: BorderSide(color: tokens.borderStrong),
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                             ),
                             child: const Text('Back', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
@@ -1919,7 +1925,7 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                           child: ElevatedButton(
                             onPressed: _isSubmitting ? null : _handleRegisterClient,
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF064E3B), // Deep Forest Emerald
+                              backgroundColor: tokens.brandPrimaryDark,
                               foregroundColor: Colors.white,
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                               elevation: 2,
@@ -1958,6 +1964,7 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
     String category = 'passport',
     String? sizeInfo,
   }) {
+    final tokens = IcareSurfaceTokens.of(context);
     final isUploading = _uploadingState[category] == true;
 
     return Column(
@@ -1965,21 +1972,21 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
       children: [
         Text(
           label,
-          style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w500, color: Color(0xFF1E293B)),
+          style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w500, color: tokens.textPrimary),
         ),
         const SizedBox(height: 6),
         Container(
           width: double.infinity,
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
           decoration: BoxDecoration(
-            color: const Color(0xFFF8FAFC),
+            color: tokens.surfaceSubtle,
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: const Color(0xFFCBD5E1)),
+            border: Border.all(color: tokens.borderStrong),
           ),
           child: selectedFileName != null
               ? Row(
                   children: [
-                    const Icon(Icons.insert_drive_file_outlined, size: 20, color: Color(0xFF2563EB)),
+                    Icon(Icons.insert_drive_file_outlined, size: 20, color: tokens.infoText),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Column(
@@ -1987,21 +1994,21 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                         children: [
                           Text(
                             selectedFileName,
-                            style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: Color(0xFF0F172A)),
+                            style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: tokens.textPrimary),
                             overflow: TextOverflow.ellipsis,
                           ),
                           if (sizeInfo != null && sizeInfo.isNotEmpty) ...[
                             const SizedBox(height: 2),
                             Text(
                               sizeInfo,
-                              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500, color: Color(0xFF059669)),
+                              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w500, color: tokens.successText),
                             ),
                           ],
                         ],
                       ),
                     ),
                     IconButton(
-                      icon: const Icon(Icons.close, size: 16, color: Color(0xFF64748B)),
+                      icon: Icon(Icons.close, size: 16, color: tokens.textMuted),
                       onPressed: onRemove,
                       tooltip: 'Remove file',
                       padding: EdgeInsets.zero,
@@ -2021,24 +2028,24 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                             style: TextStyle(
                               fontSize: 12,
                               fontWeight: FontWeight.w500,
-                              color: isUploading ? const Color(0xFF065F46) : const Color(0xFF475569),
+                              color: isUploading ? tokens.brandPrimary : tokens.textSecondary,
                             ),
                           ),
                           const SizedBox(height: 2),
                           Text(
                             isUploading ? 'Optimizing image size (<= 1000px, quality 75)...' : allowedTypesText,
-                            style: const TextStyle(fontSize: 10.5, color: Color(0xFF94A3B8)),
+                            style: TextStyle(fontSize: 10.5, color: tokens.textMuted),
                           ),
                         ],
                       ),
                     ),
                     if (isUploading)
-                      const Padding(
-                        padding: EdgeInsets.symmetric(horizontal: 16),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
                         child: SizedBox(
                           width: 18,
                           height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF065F46)),
+                          child: CircularProgressIndicator(strokeWidth: 2, color: tokens.brandPrimary),
                         ),
                       )
                     else
@@ -2061,8 +2068,8 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                               if (mounted) {
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   SnackBar(
-                                    content: Text('Unsupported file format ".$ext". Allowed: $allowedTypesText'),
-                                    backgroundColor: Colors.red,
+                                    content: Text('Unsupported file format ".$ext". Allowed: $allowedTypesText', style: const TextStyle(color: Colors.white)),
+                                    backgroundColor: const Color(0xFFDC2626),
                                   ),
                                 );
                               }
@@ -2072,8 +2079,8 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                               if (mounted) {
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   const SnackBar(
-                                    content: Text('File exceeds the 10 MB maximum upload limit.'),
-                                    backgroundColor: Colors.red,
+                                    content: Text('File exceeds the 10 MB maximum upload limit.', style: TextStyle(color: Colors.white)),
+                                    backgroundColor: Color(0xFFDC2626),
                                   ),
                                 );
                               }
@@ -2097,7 +2104,7 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                             } catch (e) {
                               if (mounted) {
                                 ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(content: Text(AppErrorDetails.from(e).message), backgroundColor: Colors.red),
+                                  SnackBar(content: Text(AppErrorDetails.from(e).message, style: const TextStyle(color: Colors.white)), backgroundColor: const Color(0xFFDC2626)),
                                 );
                               }
                             } finally {
@@ -2108,9 +2115,9 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                           }
                         },
                         style: OutlinedButton.styleFrom(
-                          backgroundColor: Colors.white,
-                          foregroundColor: const Color(0xFF0F172A),
-                          side: const BorderSide(color: Color(0xFFCBD5E1)),
+                          backgroundColor: tokens.surface,
+                          foregroundColor: tokens.textPrimary,
+                          side: BorderSide(color: tokens.borderStrong),
                           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
                         ),
@@ -2130,18 +2137,22 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
   Widget _buildLoanMetricTile({
     required String label,
     required String value,
-    Color accentColor = const Color(0xFF0F172A),
-    Color bgColor = const Color(0xFFF8FAFC),
-    Color borderColor = const Color(0xFFE2E8F0),
+    Color? accentColor,
+    Color? bgColor,
+    Color? borderColor,
     bool isHero = false,
     String? subtitle,
   }) {
+    final tokens = IcareSurfaceTokens.of(context);
+    final resolvedAccent = accentColor ?? tokens.textPrimary;
+    final resolvedBg = bgColor ?? tokens.surfaceSubtle;
+    final resolvedBorder = borderColor ?? tokens.borderSubtle;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
-        color: bgColor,
+        color: resolvedBg,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: borderColor, width: isHero ? 1.5 : 1.0),
+        border: Border.all(color: resolvedBorder, width: isHero ? 1.5 : 1.0),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2152,7 +2163,7 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
             style: TextStyle(
               fontSize: 11,
               fontWeight: FontWeight.w600,
-              color: isHero ? accentColor : const Color(0xFF64748B),
+              color: isHero ? resolvedAccent : tokens.textMuted,
             ),
             softWrap: true,
             maxLines: 2,
@@ -2169,7 +2180,7 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
               style: TextStyle(
                 fontSize: isHero ? 16 : 14,
                 fontWeight: FontWeight.w800,
-                color: accentColor,
+                color: resolvedAccent,
                 fontFamily: 'monospace',
                 fontFeatures: const [FontFeature.tabularFigures()],
               ),
@@ -2182,7 +2193,7 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
               style: TextStyle(
                 fontSize: 10,
                 fontWeight: FontWeight.w500,
-                color: isHero ? accentColor.withValues(alpha: 0.8) : const Color(0xFF94A3B8),
+                color: isHero ? resolvedAccent.withValues(alpha: 0.85) : tokens.textMuted,
               ),
               softWrap: true,
               maxLines: 1,
@@ -2195,6 +2206,7 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
   }
 
   Widget _buildApplicationTab() {
+    final tokens = IcareSurfaceTokens.of(context);
     final isMobile = MediaQuery.of(context).size.width < 600;
     final authState = ref.watch(authControllerProvider);
     final user = authState is AuthStateAuthenticated ? authState.user : null;
@@ -2237,14 +2249,14 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
     return Container(
       padding: EdgeInsets.all(isMobile ? 14 : 20),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: tokens.surface,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-        boxShadow: const [
+        border: Border.all(color: tokens.borderSubtle),
+        boxShadow: [
           BoxShadow(
-            color: Color(0x05000000),
+            color: Colors.black.withValues(alpha: tokens.isDark ? 0.16 : 0.02),
             blurRadius: 6,
-            offset: Offset(0, 2),
+            offset: const Offset(0, 2),
           ),
         ],
       ),
@@ -2257,16 +2269,16 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
               Container(
                 width: 24,
                 height: 24,
-                decoration: const BoxDecoration(
-                  color: Color(0xFFECFDF5),
+                decoration: BoxDecoration(
+                  color: tokens.brandSoftBg,
                   shape: BoxShape.circle,
                 ),
-                child: const Center(
-                  child: Text('1', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Color(0xFF065F46))),
+                child: Center(
+                  child: Text('1', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: tokens.brandSoftText)),
                 ),
               ),
               const SizedBox(width: 8),
-              const Text('Search & Select Client', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15, color: Color(0xFF0F172A))),
+              Text('Search & Select Client', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15, color: tokens.textPrimary)),
             ],
           ),
           const SizedBox(height: 10),
@@ -2275,15 +2287,16 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
               Expanded(
                 child: TextField(
                   controller: _appSearchCtrl,
+                  style: TextStyle(color: tokens.textPrimary),
                   decoration: InputDecoration(
                     labelText: 'Search Client by Name or Client Code',
                     hintText: 'e.g. Adebayo or CL-001',
-                    prefixIcon: const Icon(Icons.search, size: 20, color: Color(0xFF64748B)),
+                    prefixIcon: Icon(Icons.search, size: 20, color: tokens.textMuted),
                     filled: true,
-                    fillColor: const Color(0xFFF8FAFC),
+                    fillColor: tokens.surfaceSubtle,
                     contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFFCBD5E1))),
-                    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFFCBD5E1))),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: tokens.borderStrong)),
+                    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: tokens.borderStrong)),
                   ),
                   onSubmitted: _handleSearchAppClients,
                 ),
@@ -2292,7 +2305,7 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
               ElevatedButton.icon(
                 onPressed: _isAppSearching ? null : () => _handleSearchAppClients(_appSearchCtrl.text),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF0F172A),
+                  backgroundColor: tokens.brandPrimaryDark,
                   foregroundColor: Colors.white,
                   padding: EdgeInsets.symmetric(horizontal: isMobile ? 12 : 18, vertical: 12),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
@@ -2310,13 +2323,15 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
             DropdownButtonFormField<String>(
               isExpanded: true,
               value: _selectedAppClient?['client_id'],
+              dropdownColor: tokens.surfaceElevated,
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: tokens.textPrimary),
               hint: const Text('Select Client from Search Results', overflow: TextOverflow.ellipsis),
               decoration: InputDecoration(
                 filled: true,
-                fillColor: const Color(0xFFF8FAFC),
+                fillColor: tokens.surfaceSubtle,
                 contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFFCBD5E1))),
-                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFFCBD5E1))),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: tokens.borderStrong)),
+                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: tokens.borderStrong)),
               ),
               selectedItemBuilder: (BuildContext context) {
                 return _appSearchResults.map((c) {
@@ -2326,7 +2341,7 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                     alignment: Alignment.centerLeft,
                     child: Text(
                       '$name ($code)',
-                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF0F172A)),
+                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: tokens.textPrimary),
                       overflow: TextOverflow.ellipsis,
                       maxLines: 1,
                     ),
@@ -2341,7 +2356,7 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                   value: id,
                   child: Text(
                     '$name ($code)',
-                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: tokens.textPrimary),
                     overflow: TextOverflow.ellipsis,
                     maxLines: 1,
                   ),
@@ -2360,9 +2375,9 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: const Color(0xFFF8FAFC),
+                color: tokens.surfaceSubtle,
                 borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: const Color(0xFFCBD5E1)),
+                border: Border.all(color: tokens.borderStrong),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -2374,16 +2389,16 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                         width: 36,
                         height: 36,
                         decoration: BoxDecoration(
-                          color: const Color(0xFFECFDF5),
+                          color: tokens.brandSoftBg,
                           shape: BoxShape.circle,
-                          border: Border.all(color: const Color(0xFFA7F3D0)),
+                          border: Border.all(color: tokens.brandSoftBorder),
                         ),
                         child: Center(
                           child: Text(
                             (_selectedAppClient!['name']?.toString().isNotEmpty == true)
                                 ? _selectedAppClient!['name'].toString().substring(0, 1).toUpperCase()
                                 : 'C',
-                            style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15, color: Color(0xFF065F46)),
+                            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15, color: tokens.brandSoftText),
                           ),
                         ),
                       ),
@@ -2394,7 +2409,7 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                           children: [
                             Text(
                               _selectedAppClient!['name']?.toString() ?? 'Client',
-                              style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: Color(0xFF0F172A)),
+                              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: tokens.textPrimary),
                               softWrap: true,
                               maxLines: 2,
                               overflow: TextOverflow.ellipsis,
@@ -2402,7 +2417,7 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                             const SizedBox(height: 2),
                             Text(
                               'Code: ${_selectedAppClient!['client_code'] ?? 'N/A'}',
-                              style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Color(0xFF64748B)),
+                              style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: tokens.textMuted),
                             ),
                           ],
                         ),
@@ -2418,16 +2433,16 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                         child: Container(
                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                           decoration: BoxDecoration(
-                            color: Colors.white,
+                            color: tokens.surface,
                             borderRadius: BorderRadius.circular(6),
-                            border: Border.all(color: const Color(0xFFCBD5E1)),
+                            border: Border.all(color: tokens.borderStrong),
                           ),
-                          child: const Row(
+                          child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Icon(Icons.sync, size: 12, color: Color(0xFF475569)),
-                              SizedBox(width: 4),
-                              Text('Change', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFF475569))),
+                              Icon(Icons.sync, size: 12, color: tokens.textSecondary),
+                              const SizedBox(width: 4),
+                              Text('Change', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: tokens.textSecondary)),
                             ],
                           ),
                         ),
@@ -2453,18 +2468,18 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                       decoration: BoxDecoration(
-                        color: Colors.white,
+                        color: tokens.surface,
                         borderRadius: BorderRadius.circular(6),
-                        border: Border.all(color: const Color(0xFFE2E8F0)),
+                        border: Border.all(color: tokens.borderSubtle),
                       ),
                       child: Row(
                         children: [
-                          const Icon(Icons.shield_outlined, size: 13, color: Color(0xFF64748B)),
+                          Icon(Icons.shield_outlined, size: 13, color: tokens.textMuted),
                           const SizedBox(width: 6),
                           Expanded(
                             child: Text(
                               'Guarantor: ${_selectedAppClient!['guarantor']['full_name']} (${_selectedAppClient!['guarantor']['relationship'] ?? 'Guarantor'}) • ${_selectedAppClient!['guarantor']['phone'] ?? ''}',
-                              style: const TextStyle(fontSize: 11, color: Color(0xFF475569), fontWeight: FontWeight.w600),
+                              style: TextStyle(fontSize: 11, color: tokens.textSecondary, fontWeight: FontWeight.w600),
                               softWrap: true,
                             ),
                           ),
@@ -2479,18 +2494,18 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                     width: double.infinity,
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFEFF6FF),
+                      color: tokens.infoBg,
                       borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: const Color(0xFFBFDBFE)),
+                      border: Border.all(color: tokens.infoBorder),
                     ),
                     child: Row(
                       children: [
-                        const Icon(Icons.account_balance_wallet_outlined, size: 16, color: Color(0xFF1D4ED8)),
+                        Icon(Icons.account_balance_wallet_outlined, size: 16, color: tokens.infoText),
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
                             'Current Pooled Savings: ${CurrencyFormatter.formatNaira(savBal)}',
-                            style: const TextStyle(color: Color(0xFF1D4ED8), fontWeight: FontWeight.w700, fontSize: 12),
+                            style: TextStyle(color: tokens.infoText, fontWeight: FontWeight.w700, fontSize: 12),
                             softWrap: true,
                           ),
                         ),
@@ -2509,28 +2524,28 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                 Container(
                   width: 24,
                   height: 24,
-                  decoration: const BoxDecoration(
-                    color: Color(0xFFECFDF5),
+                  decoration: BoxDecoration(
+                    color: tokens.brandSoftBg,
                     shape: BoxShape.circle,
                   ),
-                  child: const Center(
-                    child: Text('2', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Color(0xFF065F46))),
+                  child: Center(
+                    child: Text('2', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: tokens.brandSoftText)),
                   ),
                 ),
                 const SizedBox(width: 8),
-                const Text('Loan Product Parameters', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15, color: Color(0xFF0F172A))),
+                Text('Loan Product Parameters', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15, color: tokens.textPrimary)),
                 if (user != null && user.allowedProducts.isNotEmpty) ...[
                   const SizedBox(width: 8),
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFF1F5F9),
+                      color: tokens.surfaceSubtle,
                       borderRadius: BorderRadius.circular(4),
-                      border: Border.all(color: const Color(0xFFCBD5E1)),
+                      border: Border.all(color: tokens.borderStrong),
                     ),
                     child: Text(
                       'Assigned Products (${user.allowedProducts.length})',
-                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF475569)),
+                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: tokens.textSecondary),
                     ),
                   ),
                 ],
@@ -2561,10 +2576,10 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                       child: Container(
                         padding: const EdgeInsets.symmetric(vertical: 9),
                         decoration: BoxDecoration(
-                          color: _loanAppCategory == 'Finance' ? const Color(0xFFECFDF5) : const Color(0xFFF8FAFC),
+                          color: _loanAppCategory == 'Finance' ? tokens.successBg : tokens.surfaceSubtle,
                           borderRadius: BorderRadius.circular(8),
                           border: Border.all(
-                            color: _loanAppCategory == 'Finance' ? const Color(0xFF059669) : const Color(0xFFCBD5E1),
+                            color: _loanAppCategory == 'Finance' ? tokens.successDot : tokens.borderStrong,
                             width: _loanAppCategory == 'Finance' ? 1.5 : 1.0,
                           ),
                         ),
@@ -2574,7 +2589,7 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                             style: TextStyle(
                               fontSize: 12.5,
                               fontWeight: _loanAppCategory == 'Finance' ? FontWeight.w800 : FontWeight.w600,
-                              color: _loanAppCategory == 'Finance' ? const Color(0xFF065F46) : const Color(0xFF475569),
+                              color: _loanAppCategory == 'Finance' ? tokens.successText : tokens.textSecondary,
                             ),
                           ),
                         ),
@@ -2604,10 +2619,10 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                       child: Container(
                         padding: const EdgeInsets.symmetric(vertical: 9),
                         decoration: BoxDecoration(
-                          color: _loanAppCategory == 'Asset' ? const Color(0xFFEFF6FF) : const Color(0xFFF8FAFC),
+                          color: _loanAppCategory == 'Asset' ? tokens.infoBg : tokens.surfaceSubtle,
                           borderRadius: BorderRadius.circular(8),
                           border: Border.all(
-                            color: _loanAppCategory == 'Asset' ? const Color(0xFF2563EB) : const Color(0xFFCBD5E1),
+                            color: _loanAppCategory == 'Asset' ? tokens.infoDot : tokens.borderStrong,
                             width: _loanAppCategory == 'Asset' ? 1.5 : 1.0,
                           ),
                         ),
@@ -2617,7 +2632,7 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                             style: TextStyle(
                               fontSize: 12.5,
                               fontWeight: _loanAppCategory == 'Asset' ? FontWeight.w800 : FontWeight.w600,
-                              color: _loanAppCategory == 'Asset' ? const Color(0xFF1D4ED8) : const Color(0xFF475569),
+                              color: _loanAppCategory == 'Asset' ? tokens.infoText : tokens.textSecondary,
                             ),
                           ),
                         ),
@@ -2636,6 +2651,8 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                   value: currentCategoryProducts.contains(_loanAppProduct)
                       ? _loanAppProduct
                       : (currentCategoryProducts.isNotEmpty ? currentCategoryProducts.first : null),
+                  dropdownColor: tokens.surfaceElevated,
+                  style: TextStyle(fontSize: 14, color: tokens.textPrimary),
                   decoration: InputDecoration(
                     labelText: 'Loan Product',
                     helperText: (user != null && user.allowedProducts.isNotEmpty)
@@ -2656,6 +2673,7 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                 ),
                 TextField(
                   controller: _loanAppAmountCtrl,
+                  style: TextStyle(color: tokens.textPrimary),
                   keyboardType: TextInputType.number,
                   decoration: InputDecoration(
                     labelText: _loanAppCategory == 'Asset' ? 'Asset Cost (₦)' : 'Requested Amount (₦)',
@@ -2681,10 +2699,10 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                 width: double.infinity,
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: _eligibilityResult!['is_eligible'] == true ? const Color(0xFFECFDF5) : const Color(0xFFFEF2F2),
+                  color: _eligibilityResult!['is_eligible'] == true ? tokens.successBg : tokens.dangerBg,
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(
-                    color: _eligibilityResult!['is_eligible'] == true ? const Color(0xFFA7F3D0) : const Color(0xFFFECACA),
+                    color: _eligibilityResult!['is_eligible'] == true ? tokens.successBorder : tokens.dangerBorder,
                   ),
                 ),
                 child: Column(
@@ -2695,7 +2713,7 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                         Icon(
                           _eligibilityResult!['is_eligible'] == true ? Icons.check_circle_outline : Icons.cancel_outlined,
                           size: 16,
-                          color: _eligibilityResult!['is_eligible'] == true ? const Color(0xFF065F46) : const Color(0xFF991B1B),
+                          color: _eligibilityResult!['is_eligible'] == true ? tokens.successText : tokens.dangerText,
                         ),
                         const SizedBox(width: 6),
                         Text(
@@ -2703,7 +2721,7 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                           style: TextStyle(
                             fontWeight: FontWeight.w800,
                             fontSize: 12.5,
-                            color: _eligibilityResult!['is_eligible'] == true ? const Color(0xFF065F46) : const Color(0xFF991B1B),
+                            color: _eligibilityResult!['is_eligible'] == true ? tokens.successText : tokens.dangerText,
                           ),
                         ),
                       ],
@@ -2714,7 +2732,7 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                         padding: const EdgeInsets.only(bottom: 2),
                         child: Text(
                           '• $r',
-                          style: TextStyle(fontSize: 11.5, color: _eligibilityResult!['is_eligible'] == true ? const Color(0xFF065F46) : const Color(0xFF991B1B)),
+                          style: TextStyle(fontSize: 11.5, color: _eligibilityResult!['is_eligible'] == true ? tokens.successText : tokens.dangerText),
                           softWrap: true,
                         ),
                       ),
@@ -2724,7 +2742,7 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                         padding: const EdgeInsets.only(top: 2),
                         child: Text(
                           'Warning: $w',
-                          style: const TextStyle(fontSize: 11.5, color: Color(0xFFB45309), fontWeight: FontWeight.w600),
+                          style: TextStyle(fontSize: 11.5, color: tokens.warningText, fontWeight: FontWeight.w600),
                           softWrap: true,
                         ),
                       ),
@@ -2737,7 +2755,7 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
 
             // Category Specific Form
             if (_loanAppCategory == 'Asset') ...[
-              const Text('Downpayment Source', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: Color(0xFF334155))),
+              Text('Downpayment Source', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: tokens.textSecondary)),
               const SizedBox(height: 6),
               Wrap(
                 spacing: 8,
@@ -2759,10 +2777,10 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                       decoration: BoxDecoration(
-                        color: isSel ? const Color(0xFFEFF6FF) : const Color(0xFFF8FAFC),
+                        color: isSel ? tokens.infoBg : tokens.surfaceSubtle,
                         borderRadius: BorderRadius.circular(6),
                         border: Border.all(
-                          color: isSel ? const Color(0xFF2563EB) : const Color(0xFFCBD5E1),
+                          color: isSel ? tokens.infoDot : tokens.borderStrong,
                           width: isSel ? 1.4 : 1.0,
                         ),
                       ),
@@ -2771,7 +2789,7 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                         style: TextStyle(
                           fontSize: 11.5,
                           fontWeight: isSel ? FontWeight.w700 : FontWeight.w500,
-                          color: isSel ? const Color(0xFF1D4ED8) : const Color(0xFF475569),
+                          color: isSel ? tokens.infoText : tokens.textSecondary,
                         ),
                       ),
                     ),
@@ -2784,6 +2802,7 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                   children: [
                     TextField(
                       controller: _assetCashDpCtrl,
+                      style: TextStyle(color: tokens.textPrimary),
                       keyboardType: TextInputType.number,
                       decoration: const InputDecoration(labelText: 'Cash Downpayment (₦)', hintText: '0', prefixText: '₦ ', border: OutlineInputBorder()),
                       onChanged: (_) {
@@ -2793,6 +2812,7 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                     ),
                     TextField(
                       controller: _assetSavDpCtrl,
+                      style: TextStyle(color: tokens.textPrimary),
                       keyboardType: TextInputType.number,
                       decoration: const InputDecoration(labelText: 'Savings Downpayment (₦)', hintText: '0', prefixText: '₦ ', border: OutlineInputBorder()),
                       onChanged: (_) {
@@ -2805,6 +2825,7 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
               else if (_assetDpMode == 'Cash (Physical Payment)')
                 TextField(
                   controller: _assetCashDpCtrl,
+                  style: TextStyle(color: tokens.textPrimary),
                   keyboardType: TextInputType.number,
                   decoration: const InputDecoration(labelText: 'Cash Downpayment (₦)', hintText: '0', prefixText: '₦ ', border: OutlineInputBorder()),
                   onChanged: (_) {
@@ -2815,6 +2836,7 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
               else
                 TextField(
                   controller: _assetSavDpCtrl,
+                  style: TextStyle(color: tokens.textPrimary),
                   keyboardType: TextInputType.number,
                   decoration: const InputDecoration(labelText: 'Savings Downpayment (₦)', hintText: '0', prefixText: '₦ ', border: OutlineInputBorder()),
                   onChanged: (_) {
@@ -2834,18 +2856,18 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                   final tHeroActive = _buildLoanMetricTile(
                     label: 'ACTIVE LOAN PRINCIPAL',
                     value: CurrencyFormatter.formatNaira(assetActiveLoan),
-                    accentColor: const Color(0xFF1D4ED8),
-                    bgColor: const Color(0xFFEFF6FF),
-                    borderColor: const Color(0xFFBFDBFE),
+                    accentColor: tokens.infoText,
+                    bgColor: tokens.infoBg,
+                    borderColor: tokens.infoBorder,
                     isHero: true,
                   );
                   final tHeroInst = _buildLoanMetricTile(
                     label: 'SCHEDULED REPAYMENT INSTALLMENT',
                     value: CurrencyFormatter.formatNaira(assetInstallment),
                     subtitle: '$dur installments ($cycle)',
-                    accentColor: const Color(0xFF065F46),
-                    bgColor: const Color(0xFFECFDF5),
-                    borderColor: const Color(0xFFA7F3D0),
+                    accentColor: tokens.successText,
+                    bgColor: tokens.successBg,
+                    borderColor: tokens.successBorder,
                     isHero: true,
                   );
 
@@ -2904,10 +2926,10 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                 const SizedBox(height: 10),
                 Container(
                   padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(color: const Color(0xFFFEF2F2), borderRadius: BorderRadius.circular(6), border: Border.all(color: const Color(0xFFFECACA))),
+                  decoration: BoxDecoration(color: tokens.dangerBg, borderRadius: BorderRadius.circular(6), border: Border.all(color: tokens.dangerBorder)),
                   child: Text(
                     'INSUFFICIENT SAVINGS: Client has ${CurrencyFormatter.formatNaira(savBal)} but needs ${CurrencyFormatter.formatNaira(savDp)} from savings.',
-                    style: const TextStyle(color: Color(0xFF991B1B), fontWeight: FontWeight.w600, fontSize: 12),
+                    style: TextStyle(color: tokens.dangerText, fontWeight: FontWeight.w600, fontSize: 12),
                     softWrap: true,
                   ),
                 ),
@@ -2916,6 +2938,7 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
               // Finance Gap Fee
               TextField(
                 controller: _financeGapFeeCtrl,
+                style: TextStyle(color: tokens.textPrimary),
                 keyboardType: TextInputType.number,
                 decoration: const InputDecoration(
                   labelText: 'Gap Fee / Base Savings (₦)',
@@ -2942,18 +2965,18 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                     label: 'ACTIVE CREDIT PRINCIPAL',
                     value: CurrencyFormatter.formatNaira(finActiveCredit),
                     subtitle: 'Disbursed Principal - Gap Fee',
-                    accentColor: const Color(0xFF1D4ED8),
-                    bgColor: const Color(0xFFEFF6FF),
-                    borderColor: const Color(0xFFBFDBFE),
+                    accentColor: tokens.infoText,
+                    bgColor: tokens.infoBg,
+                    borderColor: tokens.infoBorder,
                     isHero: true,
                   );
                   final tHeroInst = _buildLoanMetricTile(
                     label: 'SCHEDULED REPAYMENT INSTALLMENT',
                     value: CurrencyFormatter.formatNaira(finInstallment),
                     subtitle: '$dur installments ($cycle)',
-                    accentColor: const Color(0xFF065F46),
-                    bgColor: const Color(0xFFECFDF5),
-                    borderColor: const Color(0xFFA7F3D0),
+                    accentColor: tokens.successText,
+                    bgColor: tokens.successBg,
+                    borderColor: tokens.successBorder,
                     isHero: true,
                   );
 
@@ -3012,10 +3035,10 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                 const SizedBox(height: 10),
                 Container(
                   padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(color: const Color(0xFFFEF2F2), borderRadius: BorderRadius.circular(6), border: Border.all(color: const Color(0xFFFECACA))),
+                  decoration: BoxDecoration(color: tokens.dangerBg, borderRadius: BorderRadius.circular(6), border: Border.all(color: tokens.dangerBorder)),
                   child: Text(
                     'INSUFFICIENT SAVINGS: Client has ${CurrencyFormatter.formatNaira(savBal)} but needs ${CurrencyFormatter.formatNaira(finTotalUpfront)} to cover upfront requirements.',
-                    style: const TextStyle(color: Color(0xFF991B1B), fontWeight: FontWeight.w600, fontSize: 12),
+                    style: TextStyle(color: tokens.dangerText, fontWeight: FontWeight.w600, fontSize: 12),
                     softWrap: true,
                   ),
                 ),
@@ -3057,11 +3080,12 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                       border: OutlineInputBorder(),
                       suffixIcon: Icon(Icons.calendar_today, size: 18),
                     ),
-                    child: Text(_appDate.toIsoformatDate()),
+                    child: Text(_appDate.toIsoformatDate(), style: TextStyle(color: tokens.textPrimary)),
                   ),
                 ),
                 TextField(
                   controller: _loanAppNotesCtrl,
+                  style: TextStyle(color: tokens.textPrimary),
                   decoration: const InputDecoration(labelText: 'Remarks / Notes', border: OutlineInputBorder()),
                 ),
               ],
@@ -3077,7 +3101,7 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                     ? null
                     : _handleSubmitLoanApplication,
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF065F46),
+                  backgroundColor: tokens.brandPrimaryDark,
                   foregroundColor: Colors.white,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                   elevation: 1,
@@ -3100,21 +3124,22 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
   }
 
   Widget _buildProfileMetaChip(IconData icon, String text) {
+    final tokens = IcareSurfaceTokens.of(context);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: tokens.surface,
         borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: tokens.borderSubtle),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 12, color: const Color(0xFF64748B)),
+          Icon(icon, size: 12, color: tokens.textMuted),
           const SizedBox(width: 4),
           Text(
             text,
-            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF334155)),
+            style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: tokens.textSecondary),
             overflow: TextOverflow.ellipsis,
             maxLines: 1,
           ),
@@ -3127,6 +3152,7 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
   // TAB 3 WIDGET: PENDING DISBURSEMENTS
   // ==========================================
   Widget _buildPendingDisbursementsTab() {
+    final tokens = IcareSurfaceTokens.of(context);
     final pendingAsync = ref.watch(pendingDisbursementsProvider);
 
     final isMobile = MediaQuery.of(context).size.width < 600;
@@ -3134,12 +3160,12 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
     return Container(
       padding: EdgeInsets.all(isMobile ? 14 : 20),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: tokens.surface,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: tokens.borderSubtle),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.02),
+            color: Colors.black.withValues(alpha: tokens.isDark ? 0.16 : 0.02),
             blurRadius: 6,
             offset: const Offset(0, 2),
           ),
@@ -3151,9 +3177,9 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text('Pending Disbursements', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 18, color: Color(0xFF0F172A))),
+              Text('Pending Disbursements', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 18, color: tokens.textPrimary)),
               IconButton(
-                icon: const Icon(Icons.refresh, size: 20),
+                icon: Icon(Icons.refresh, size: 20, color: tokens.textSecondary),
                 onPressed: () => ref.refresh(pendingDisbursementsProvider),
               ),
             ],
@@ -3164,16 +3190,16 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
             Container(
               padding: const EdgeInsets.all(12),
               margin: const EdgeInsets.only(bottom: 12),
-              decoration: BoxDecoration(color: const Color(0xFFECFDF5), borderRadius: BorderRadius.circular(6), border: Border.all(color: const Color(0xFFA7F3D0))),
-              child: Text(_disbSuccessNotice!, style: const TextStyle(color: Color(0xFF065F46), fontWeight: FontWeight.w600, fontSize: 13)),
+              decoration: BoxDecoration(color: tokens.successBg, borderRadius: BorderRadius.circular(6), border: Border.all(color: tokens.successBorder)),
+              child: Text(_disbSuccessNotice!, style: TextStyle(color: tokens.successText, fontWeight: FontWeight.w600, fontSize: 13)),
             ),
           ],
           if (_disbAdjustNotice != null) ...[
             Container(
               padding: const EdgeInsets.all(12),
               margin: const EdgeInsets.only(bottom: 12),
-              decoration: BoxDecoration(color: const Color(0xFFFFFBEB), borderRadius: BorderRadius.circular(6), border: Border.all(color: const Color(0xFFFDE68A))),
-              child: Text('Schedule Adjusted: $_disbAdjustNotice', style: const TextStyle(color: Color(0xFF92400E), fontWeight: FontWeight.w600, fontSize: 13)),
+              decoration: BoxDecoration(color: tokens.warningBg, borderRadius: BorderRadius.circular(6), border: Border.all(color: tokens.warningBorder)),
+              child: Text('Schedule Adjusted: $_disbAdjustNotice', style: TextStyle(color: tokens.warningText, fontWeight: FontWeight.w600, fontSize: 13)),
             ),
           ],
 
@@ -3181,8 +3207,8 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
             loading: () => const IcareTableSkeleton(rowCount: 5, hasFilterBar: false),
             error: (err, _) => Container(
               padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(color: const Color(0xFFFEF2F2), borderRadius: BorderRadius.circular(6)),
-              child: Text('Error loading pending loans: ${AppErrorDetails.from(err).message}', style: const TextStyle(color: Color(0xFF991B1B), fontSize: 13)),
+              decoration: BoxDecoration(color: tokens.dangerBg, borderRadius: BorderRadius.circular(6), border: Border.all(color: tokens.dangerBorder)),
+              child: Text('Error loading pending loans: ${AppErrorDetails.from(err).message}', style: TextStyle(color: tokens.dangerText, fontSize: 13)),
             ),
             data: (data) {
               final loans = (data['pending_loans'] as List<dynamic>?) ?? [];
@@ -3196,28 +3222,30 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                       width: double.infinity,
                       padding: const EdgeInsets.all(12),
                       margin: const EdgeInsets.only(bottom: 16),
-                      decoration: BoxDecoration(color: const Color(0xFFEFF6FF), borderRadius: BorderRadius.circular(6), border: Border.all(color: const Color(0xFFBFDBFE))),
-                      child: const Text('Note: You are a Credit Officer. Only Branch Managers or Area Managers can authorize and activate disbursements.', style: TextStyle(color: Color(0xFF1E3A8A), fontSize: 13)),
+                      decoration: BoxDecoration(color: tokens.infoBg, borderRadius: BorderRadius.circular(6), border: Border.all(color: tokens.infoBorder)),
+                      child: Text('Note: You are a Credit Officer. Only Branch Managers or Area Managers can authorize and activate disbursements.', style: TextStyle(color: tokens.infoText, fontSize: 13)),
                     ),
 
                   if (loans.isEmpty)
                     Container(
                       width: double.infinity,
                       padding: const EdgeInsets.all(24),
-                      child: const Center(
-                        child: Text('No pending loans found.', style: TextStyle(color: Color(0xFF64748B), fontSize: 13)),
+                      child: Center(
+                        child: Text('No pending loans found.', style: TextStyle(color: tokens.textMuted, fontSize: 13)),
                       ),
                     )
                   else
                     Container(
                       width: double.infinity,
-                      decoration: BoxDecoration(border: Border.all(color: const Color(0xFFE2E8F0)), borderRadius: BorderRadius.circular(6)),
+                      decoration: BoxDecoration(border: Border.all(color: tokens.borderSubtle), borderRadius: BorderRadius.circular(6)),
                       child: Scrollbar(
                         thumbVisibility: true,
                         child: SingleChildScrollView(
                           scrollDirection: Axis.horizontal,
                           child: DataTable(
-                            headingRowColor: WidgetStateProperty.all(const Color(0xFFF8FAFC)),
+                            headingRowColor: WidgetStateProperty.all(tokens.surfaceSubtle),
+                            headingTextStyle: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: tokens.textPrimary),
+                            dataTextStyle: TextStyle(fontSize: 12, color: tokens.textSecondary),
                             columns: const [
                               DataColumn(label: Text('Client Name', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
                               DataColumn(label: Text('Group Name', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
@@ -3235,12 +3263,12 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                               final prod = l['loan_product']?.toString() ?? '-';
 
                               return DataRow(cells: [
-                                DataCell(Text(cName, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12))),
-                                DataCell(Text(gName, style: const TextStyle(fontSize: 12))),
-                                DataCell(Text(dDate, style: const TextStyle(fontSize: 12))),
-                                DataCell(Text(off, style: const TextStyle(fontSize: 12))),
-                                DataCell(Text(CurrencyFormatter.formatNaira(amt), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF064E3B), fontFeatures: [FontFeature.tabularFigures()]))),
-                                DataCell(Text(prod, style: const TextStyle(fontSize: 12))),
+                                DataCell(Text(cName, style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12, color: tokens.textPrimary))),
+                                DataCell(Text(gName, style: TextStyle(fontSize: 12, color: tokens.textSecondary))),
+                                DataCell(Text(dDate, style: TextStyle(fontSize: 12, color: tokens.textSecondary))),
+                                DataCell(Text(off, style: TextStyle(fontSize: 12, color: tokens.textSecondary))),
+                                DataCell(Text(CurrencyFormatter.formatNaira(amt), style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: tokens.brandPrimary, fontFeatures: const [FontFeature.tabularFigures()]))),
+                                DataCell(Text(prod, style: TextStyle(fontSize: 12, color: tokens.textSecondary))),
                               ]);
                             }).toList(),
                           ),
@@ -3251,14 +3279,16 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                   // Checker Action: Activate Loan (app.py L3251-3267)
                   if (canAuthorize && loans.isNotEmpty) ...[
                     const SizedBox(height: 24),
-                    const Divider(),
+                    Divider(color: tokens.borderSubtle),
                     const SizedBox(height: 16),
-                    const Text('Checker Action: Activate Loan', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16, color: Color(0xFF0F172A))),
+                    Text('Checker Action: Activate Loan', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16, color: tokens.textPrimary)),
                     const SizedBox(height: 12),
 
                     DropdownButtonFormField<String>(
                       isExpanded: true,
                       value: _selectedPendingLoanId,
+                      dropdownColor: tokens.surfaceElevated,
+                      style: TextStyle(fontSize: 14, color: tokens.textPrimary),
                       hint: const Text('Select Client to Activate', overflow: TextOverflow.ellipsis),
                       decoration: const InputDecoration(labelText: 'Select Client to Activate', border: OutlineInputBorder()),
                       selectedItemBuilder: (BuildContext context) {
@@ -3270,6 +3300,7 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                             alignment: Alignment.centerLeft,
                             child: Text(
                               '$cName — $prod (${CurrencyFormatter.formatNaira(amt)})',
+                              style: TextStyle(color: tokens.textPrimary),
                               overflow: TextOverflow.ellipsis,
                               maxLines: 1,
                             ),
@@ -3302,13 +3333,13 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                         padding: const EdgeInsets.all(12),
                         margin: const EdgeInsets.only(bottom: 12),
                         decoration: BoxDecoration(
-                          color: const Color(0xFFFFFBEB),
+                          color: tokens.warningBg,
                           borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: const Color(0xFFFDE68A)),
+                          border: Border.all(color: tokens.warningBorder),
                         ),
-                        child: const Text(
+                        child: Text(
                           'Escalation Notice: This loan exceeds the Branch Manager authorization limit (₦300,000) and requires Area Manager approval.',
-                          style: TextStyle(color: Color(0xFF92400E), fontWeight: FontWeight.w600, fontSize: 12.5),
+                          style: TextStyle(color: tokens.warningText, fontWeight: FontWeight.w600, fontSize: 12.5),
                         ),
                       ),
                     ],
@@ -3332,7 +3363,7 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                           border: OutlineInputBorder(),
                           suffixIcon: Icon(Icons.calendar_today, size: 18),
                         ),
-                        child: Text(_disbDate.toIsoformatDate()),
+                        child: Text(_disbDate.toIsoformatDate(), style: TextStyle(color: tokens.textPrimary)),
                       ),
                     ),
                     const SizedBox(height: 20),
@@ -3347,7 +3378,7 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                             ? null
                             : _handleAuthorizeDisbursement,
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF065F46),
+                          backgroundColor: tokens.brandPrimaryDark,
                           foregroundColor: Colors.white,
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
                         ),
@@ -3370,16 +3401,17 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
   // TAB 4 WIDGET: EDIT CLIENT & GUARANTOR
   // ==========================================
   Widget _buildEditClientTab() {
+    final tokens = IcareSurfaceTokens.of(context);
     final isMobile = MediaQuery.of(context).size.width < 600;
     return Container(
       padding: EdgeInsets.all(isMobile ? 14 : 20),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: tokens.surface,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: tokens.borderSubtle),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.02),
+            color: Colors.black.withValues(alpha: tokens.isDark ? 0.16 : 0.02),
             blurRadius: 6,
             offset: const Offset(0, 2),
           ),
@@ -3388,9 +3420,9 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Edit Client & Guarantor Details', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 18, color: Color(0xFF0F172A))),
+          Text('Edit Client & Guarantor Details', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 18, color: tokens.textPrimary)),
           const SizedBox(height: 4),
-          const Text('Search for a registered client to update their personal details and their guarantor information.', style: TextStyle(color: Color(0xFF64748B), fontSize: 13)),
+          Text('Search for a registered client to update their personal details and their guarantor information.', style: TextStyle(color: tokens.textMuted, fontSize: 13)),
           const SizedBox(height: 16),
 
           Row(
@@ -3398,6 +3430,7 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
               Expanded(
                 child: TextField(
                   controller: _editSearchCtrl,
+                  style: TextStyle(color: tokens.textPrimary),
                   decoration: const InputDecoration(
                     labelText: 'Search Client by Name or Client ID to Edit',
                     prefixIcon: Icon(Icons.search, size: 20),
@@ -3410,7 +3443,7 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
               ElevatedButton(
                 onPressed: _isEditSearching ? null : () => _handleSearchEditClients(_editSearchCtrl.text),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF0F172A),
+                  backgroundColor: tokens.brandPrimaryDark,
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
@@ -3427,6 +3460,8 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
             DropdownButtonFormField<String>(
               isExpanded: true,
               value: _selectedEditClient?['client_id'],
+              dropdownColor: tokens.surfaceElevated,
+              style: TextStyle(fontSize: 14, color: tokens.textPrimary),
               hint: const Text('Select Client to Edit', overflow: TextOverflow.ellipsis),
               decoration: const InputDecoration(border: OutlineInputBorder()),
               selectedItemBuilder: (BuildContext context) {
@@ -3437,6 +3472,7 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                     alignment: Alignment.centerLeft,
                     child: Text(
                       '$code - $name',
+                      style: TextStyle(color: tokens.textPrimary),
                       overflow: TextOverflow.ellipsis,
                       maxLines: 1,
                     ),
@@ -3464,23 +3500,23 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
 
           if (_selectedEditClient != null) ...[
             const SizedBox(height: 24),
-            const Divider(),
+            Divider(color: tokens.borderSubtle),
             const SizedBox(height: 16),
 
-            const Text('1. Personal Details', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16, color: Color(0xFF0F172A))),
+            Text('1. Personal Details', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16, color: tokens.textPrimary)),
             const SizedBox(height: 12),
             _buildResponsiveInputRow(
               children: [
-                TextField(controller: _editNameCtrl, decoration: const InputDecoration(labelText: 'Full Name *', border: OutlineInputBorder())),
-                TextField(controller: _editNicknameCtrl, decoration: const InputDecoration(labelText: 'Nickname', border: OutlineInputBorder())),
-                TextField(controller: _editPhoneCtrl, decoration: const InputDecoration(labelText: 'Phone Number', border: OutlineInputBorder())),
+                TextField(controller: _editNameCtrl, style: TextStyle(color: tokens.textPrimary), decoration: const InputDecoration(labelText: 'Full Name *', border: OutlineInputBorder())),
+                TextField(controller: _editNicknameCtrl, style: TextStyle(color: tokens.textPrimary), decoration: const InputDecoration(labelText: 'Nickname', border: OutlineInputBorder())),
+                TextField(controller: _editPhoneCtrl, style: TextStyle(color: tokens.textPrimary), decoration: const InputDecoration(labelText: 'Phone Number', border: OutlineInputBorder())),
               ],
             ),
             const SizedBox(height: 12),
             _buildResponsiveInputRow(
               children: [
-                TextField(controller: _editAddressCtrl, decoration: const InputDecoration(labelText: 'Home Address', border: OutlineInputBorder())),
-                TextField(controller: _editBizAddressCtrl, decoration: const InputDecoration(labelText: 'Business / Shop Address', border: OutlineInputBorder())),
+                TextField(controller: _editAddressCtrl, style: TextStyle(color: tokens.textPrimary), decoration: const InputDecoration(labelText: 'Home Address', border: OutlineInputBorder())),
+                TextField(controller: _editBizAddressCtrl, style: TextStyle(color: tokens.textPrimary), decoration: const InputDecoration(labelText: 'Business / Shop Address', border: OutlineInputBorder())),
               ],
             ),
             const SizedBox(height: 12),
@@ -3490,16 +3526,18 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                 DropdownButtonFormField<String>(
                   isExpanded: true,
                   value: ['Married', 'Single', 'Divorced', 'Widowed'].contains(_editMarital) ? _editMarital : 'Married',
+                  dropdownColor: tokens.surfaceElevated,
+                  style: TextStyle(fontSize: 14, color: tokens.textPrimary),
                   decoration: const InputDecoration(labelText: 'Marital Status', border: OutlineInputBorder()),
                   items: ['Married', 'Single', 'Divorced', 'Widowed'].map((m) => DropdownMenuItem(value: m, child: Text(m, overflow: TextOverflow.ellipsis, maxLines: 1))).toList(),
                   onChanged: (val) { if (val != null) setState(() => _editMarital = val); },
                 ),
-                TextField(controller: _editBizTypeCtrl, decoration: const InputDecoration(labelText: 'Business Type', border: OutlineInputBorder())),
-                TextField(controller: _editIncomeCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Average Monthly Income (₦)', border: OutlineInputBorder())),
+                TextField(controller: _editBizTypeCtrl, style: TextStyle(color: tokens.textPrimary), decoration: const InputDecoration(labelText: 'Business Type', border: OutlineInputBorder())),
+                TextField(controller: _editIncomeCtrl, style: TextStyle(color: tokens.textPrimary), keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Average Monthly Income (₦)', border: OutlineInputBorder())),
               ],
             ),
             const SizedBox(height: 12),
-            TextField(controller: _editObligationsCtrl, decoration: const InputDecoration(labelText: 'Other Obligations', border: OutlineInputBorder())),
+            TextField(controller: _editObligationsCtrl, style: TextStyle(color: tokens.textPrimary), decoration: const InputDecoration(labelText: 'Other Obligations', border: OutlineInputBorder())),
             const SizedBox(height: 12),
 
             _buildResponsiveInputRow(
@@ -3507,36 +3545,38 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                 DropdownButtonFormField<String>(
                   isExpanded: true,
                   value: ['National ID (NIN)', "Voter's Card", "Driver's License", 'International Passport', 'None'].contains(_editIdMeans) ? _editIdMeans : 'None',
+                  dropdownColor: tokens.surfaceElevated,
+                  style: TextStyle(fontSize: 14, color: tokens.textPrimary),
                   decoration: const InputDecoration(labelText: 'Means of ID', border: OutlineInputBorder()),
                   selectedItemBuilder: (BuildContext context) {
                     return ['National ID (NIN)', "Voter's Card", "Driver's License", 'International Passport', 'None']
                         .map<Widget>((i) => Align(
                               alignment: Alignment.centerLeft,
-                              child: Text(i, overflow: TextOverflow.ellipsis, maxLines: 1),
+                              child: Text(i, style: TextStyle(color: tokens.textPrimary), overflow: TextOverflow.ellipsis, maxLines: 1),
                             ))
                         .toList();
                   },
                   items: ['National ID (NIN)', "Voter's Card", "Driver's License", 'International Passport', 'None'].map((i) => DropdownMenuItem(value: i, child: Text(i, overflow: TextOverflow.ellipsis, maxLines: 1))).toList(),
                   onChanged: (val) { if (val != null) setState(() => _editIdMeans = val); },
                 ),
-                TextField(controller: _editIdNumberCtrl, decoration: const InputDecoration(labelText: 'ID Number', border: OutlineInputBorder())),
+                TextField(controller: _editIdNumberCtrl, style: TextStyle(color: tokens.textPrimary), decoration: const InputDecoration(labelText: 'ID Number', border: OutlineInputBorder())),
               ],
             ),
             const SizedBox(height: 24),
-            const Divider(),
+            Divider(color: tokens.borderSubtle),
             const SizedBox(height: 16),
 
-            const Text('2. Guarantor Info', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16, color: Color(0xFF0F172A))),
+            Text('2. Guarantor Info', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16, color: tokens.textPrimary)),
             const SizedBox(height: 12),
             _buildResponsiveInputRow(
               children: [
-                TextField(controller: _editGuarNameCtrl, decoration: const InputDecoration(labelText: 'Guarantor Full Name', border: OutlineInputBorder())),
-                TextField(controller: _editGuarNicknameCtrl, decoration: const InputDecoration(labelText: 'Guarantor Nickname', border: OutlineInputBorder())),
-                TextField(controller: _editGuarPhoneCtrl, decoration: const InputDecoration(labelText: 'Guarantor Phone Number', border: OutlineInputBorder())),
+                TextField(controller: _editGuarNameCtrl, style: TextStyle(color: tokens.textPrimary), decoration: const InputDecoration(labelText: 'Guarantor Full Name', border: OutlineInputBorder())),
+                TextField(controller: _editGuarNicknameCtrl, style: TextStyle(color: tokens.textPrimary), decoration: const InputDecoration(labelText: 'Guarantor Nickname', border: OutlineInputBorder())),
+                TextField(controller: _editGuarPhoneCtrl, style: TextStyle(color: tokens.textPrimary), decoration: const InputDecoration(labelText: 'Guarantor Phone Number', border: OutlineInputBorder())),
               ],
             ),
             const SizedBox(height: 12),
-            TextField(controller: _editGuarAddressCtrl, decoration: const InputDecoration(labelText: 'Guarantor Home Address', border: OutlineInputBorder())),
+            TextField(controller: _editGuarAddressCtrl, style: TextStyle(color: tokens.textPrimary), decoration: const InputDecoration(labelText: 'Guarantor Home Address', border: OutlineInputBorder())),
             const SizedBox(height: 12),
 
             _buildResponsiveInputRow(
@@ -3544,16 +3584,18 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                 DropdownButtonFormField<String>(
                   isExpanded: true,
                   value: ['Married', 'Single', 'Divorced', 'Widowed'].contains(_editGuarMarital) ? _editGuarMarital : 'Married',
+                  dropdownColor: tokens.surfaceElevated,
+                  style: TextStyle(fontSize: 14, color: tokens.textPrimary),
                   decoration: const InputDecoration(labelText: 'Guarantor Marital Status', border: OutlineInputBorder()),
                   items: ['Married', 'Single', 'Divorced', 'Widowed'].map((m) => DropdownMenuItem(value: m, child: Text(m, overflow: TextOverflow.ellipsis, maxLines: 1))).toList(),
                   onChanged: (val) { if (val != null) setState(() => _editGuarMarital = val); },
                 ),
-                TextField(controller: _editGuarOccupationCtrl, decoration: const InputDecoration(labelText: 'Guarantor Occupation', border: OutlineInputBorder())),
-                TextField(controller: _editGuarRelCtrl, decoration: const InputDecoration(labelText: 'Relationship with Client', border: OutlineInputBorder())),
+                TextField(controller: _editGuarOccupationCtrl, style: TextStyle(color: tokens.textPrimary), decoration: const InputDecoration(labelText: 'Guarantor Occupation', border: OutlineInputBorder())),
+                TextField(controller: _editGuarRelCtrl, style: TextStyle(color: tokens.textPrimary), decoration: const InputDecoration(labelText: 'Relationship with Client', border: OutlineInputBorder())),
               ],
             ),
             const SizedBox(height: 12),
-            TextField(controller: _editGuarOfficeCtrl, decoration: const InputDecoration(labelText: 'Guarantor Office Address', border: OutlineInputBorder())),
+            TextField(controller: _editGuarOfficeCtrl, style: TextStyle(color: tokens.textPrimary), decoration: const InputDecoration(labelText: 'Guarantor Office Address', border: OutlineInputBorder())),
             const SizedBox(height: 12),
 
             _buildResponsiveInputRow(
@@ -3561,19 +3603,21 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                 DropdownButtonFormField<String>(
                   isExpanded: true,
                   value: ['National ID (NIN)', "Voter's Card", "Driver's License", 'International Passport', 'None'].contains(_editGuarIdMeans) ? _editGuarIdMeans : 'None',
+                  dropdownColor: tokens.surfaceElevated,
+                  style: TextStyle(fontSize: 14, color: tokens.textPrimary),
                   decoration: const InputDecoration(labelText: 'Guarantor Means of ID', border: OutlineInputBorder()),
                   selectedItemBuilder: (BuildContext context) {
                     return ['National ID (NIN)', "Voter's Card", "Driver's License", 'International Passport', 'None']
                         .map<Widget>((i) => Align(
                               alignment: Alignment.centerLeft,
-                              child: Text(i, overflow: TextOverflow.ellipsis, maxLines: 1),
+                              child: Text(i, style: TextStyle(color: tokens.textPrimary), overflow: TextOverflow.ellipsis, maxLines: 1),
                             ))
                         .toList();
                   },
                   items: ['National ID (NIN)', "Voter's Card", "Driver's License", 'International Passport', 'None'].map((i) => DropdownMenuItem(value: i, child: Text(i, overflow: TextOverflow.ellipsis, maxLines: 1))).toList(),
                   onChanged: (val) { if (val != null) setState(() => _editGuarIdMeans = val); },
                 ),
-                TextField(controller: _editGuarIdNumberCtrl, decoration: const InputDecoration(labelText: 'Guarantor ID Number', border: OutlineInputBorder())),
+                TextField(controller: _editGuarIdNumberCtrl, style: TextStyle(color: tokens.textPrimary), decoration: const InputDecoration(labelText: 'Guarantor ID Number', border: OutlineInputBorder())),
               ],
             ),
             const SizedBox(height: 24),
@@ -3584,7 +3628,7 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
               child: ElevatedButton(
                 onPressed: _isSubmitting ? null : _handleSaveEditClient,
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF065F46),
+                  backgroundColor: tokens.brandPrimaryDark,
                   foregroundColor: Colors.white,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
                 ),
@@ -3600,6 +3644,7 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
   }
 
   Widget _buildSchedulePreviewCard(Map<String, dynamic> preview) {
+    final tokens = IcareSurfaceTokens.of(context);
     final installments = (preview['installments'] as List<dynamic>?) ?? [];
     final firstDue = preview['first_due_date']?.toString() ?? '-';
     final endDue = preview['expected_end_date']?.toString() ?? '-';
@@ -3610,9 +3655,9 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
       width: double.infinity,
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
+        color: tokens.surfaceSubtle,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFCBD5E1)),
+        border: Border.all(color: tokens.borderStrong),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -3620,13 +3665,13 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text(
+              Text(
                 'Repayment Schedule Preview',
-                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13.5, color: Color(0xFF0F172A)),
+                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13.5, color: tokens.textPrimary),
               ),
               Text(
                 '$dur installments · $freq',
-                style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Color(0xFF065F46)),
+                style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: tokens.brandPrimary),
               ),
             ],
           ),
@@ -3635,8 +3680,8 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
             spacing: 16,
             runSpacing: 6,
             children: [
-              Text('First Repayment Date: $firstDue', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF334155))),
-              Text('Expected Maturity Date: $endDue', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF334155))),
+              Text('First Repayment Date: $firstDue', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tokens.textSecondary)),
+              Text('Expected Maturity Date: $endDue', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tokens.textSecondary)),
             ],
           ),
           if (installments.isNotEmpty) ...[
@@ -3644,9 +3689,11 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
             ExpansionTile(
               tilePadding: EdgeInsets.zero,
               childrenPadding: const EdgeInsets.only(top: 6),
+              iconColor: tokens.infoText,
+              collapsedIconColor: tokens.infoText,
               title: Text(
                 'View All ${installments.length} Projected Due Dates',
-                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF1D4ED8)),
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: tokens.infoText),
               ),
               children: [
                 ConstrainedBox(
@@ -3658,27 +3705,27 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                         1: FlexColumnWidth(1.5),
                         2: FlexColumnWidth(1.3),
                       },
-                      border: TableBorder.all(color: const Color(0xFFE2E8F0)),
+                      border: TableBorder.all(color: tokens.borderSubtle),
                       children: [
-                        const TableRow(
-                          decoration: BoxDecoration(color: Color(0xFFF1F5F9)),
+                        TableRow(
+                          decoration: BoxDecoration(color: tokens.surface),
                           children: [
-                            Padding(padding: EdgeInsets.all(6), child: Text('#', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 11))),
-                            Padding(padding: EdgeInsets.all(6), child: Text('Due Date', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 11))),
-                            Padding(padding: EdgeInsets.all(6), child: Text('Installment', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 11))),
+                            Padding(padding: const EdgeInsets.all(6), child: Text('#', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 11, color: tokens.textPrimary))),
+                            Padding(padding: const EdgeInsets.all(6), child: Text('Due Date', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 11, color: tokens.textPrimary))),
+                            Padding(padding: const EdgeInsets.all(6), child: Text('Installment', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 11, color: tokens.textPrimary))),
                           ],
                         ),
                         ...installments.map((item) {
                           final row = item as Map<String, dynamic>;
                           return TableRow(
                             children: [
-                              Padding(padding: const EdgeInsets.all(6), child: Text('${row['installment_number']}', style: const TextStyle(fontSize: 11))),
-                              Padding(padding: const EdgeInsets.all(6), child: Text('${row['due_date']}', style: const TextStyle(fontSize: 11))),
+                              Padding(padding: const EdgeInsets.all(6), child: Text('${row['installment_number']}', style: TextStyle(fontSize: 11, color: tokens.textSecondary))),
+                              Padding(padding: const EdgeInsets.all(6), child: Text('${row['due_date']}', style: TextStyle(fontSize: 11, color: tokens.textSecondary))),
                               Padding(
                                 padding: const EdgeInsets.all(6),
                                 child: Text(
                                   CurrencyFormatter.formatNaira((row['total_due'] as num?)?.toDouble() ?? 0.0),
-                                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+                                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: tokens.textPrimary),
                                 ),
                               ),
                             ],

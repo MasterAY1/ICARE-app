@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import '../../../../core/utils/currency_formatter.dart';
+import '../../../core/theme/icare_theme_tokens.dart';
 import '../../../core/widgets/icare_skeleton_loader.dart';
 import '../../../core/offline/connectivity_service.dart';
 import '../../../core/offline/offline_database_service.dart';
@@ -125,6 +126,7 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
   Widget build(BuildContext context) {
     final dashboardAsync = ref.watch(bmDashboardDataProvider);
     final isOnline = ref.watch(isOnlineProvider);
+    final tokens = IcareSurfaceTokens.of(context);
 
     return dashboardAsync.when(
       loading: () => const IcareDashboardSkeleton(),
@@ -143,10 +145,10 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
             margin: const EdgeInsets.all(24),
             padding: const EdgeInsets.all(24),
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: tokens.surface,
               borderRadius: BorderRadius.circular(8),
               border: Border.all(
-                color: isConnectionError ? const Color(0xFFFCD34D) : const Color(0xFFFCA5A5),
+                color: isConnectionError ? tokens.warningBorder : tokens.dangerBorder,
               ),
             ),
             child: Column(
@@ -154,7 +156,7 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
               children: [
                 Icon(
                   isConnectionError ? Icons.cloud_off : Icons.error_outline,
-                  color: isConnectionError ? const Color(0xFFD97706) : const Color(0xFFDC2626),
+                  color: isConnectionError ? tokens.warningDot : tokens.dangerDot,
                   size: 48,
                 ),
                 const SizedBox(height: 16),
@@ -166,7 +168,7 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                   style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.bold,
-                    color: isConnectionError ? const Color(0xFF92400E) : const Color(0xFF991B1B),
+                    color: isConnectionError ? tokens.warningText : tokens.dangerText,
                   ),
                 ),
                 const SizedBox(height: 8),
@@ -175,13 +177,14 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                       ? 'You are currently working offline, but no cached BM dashboard was found on this device. Please connect to the internet once to load current branch operations.'
                       : err.toString(),
                   textAlign: TextAlign.center,
-                  style: const TextStyle(fontSize: 13, color: Color(0xFF64748B)),
+                  style: TextStyle(fontSize: 13, color: tokens.textMuted),
                 ),
                 const SizedBox(height: 16),
                 ElevatedButton(
                   onPressed: _invalidateAllCashbookAndDashboardProviders,
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: isConnectionError ? const Color(0xFFD97706) : const Color(0xFF064E3B),
+                    backgroundColor: isConnectionError ? const Color(0xFFB45309) : tokens.brandPrimaryDark,
+                    foregroundColor: Colors.white,
                   ),
                   child: const Text('Retry', style: TextStyle(color: Colors.white)),
                 ),
@@ -200,18 +203,18 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                 margin: const EdgeInsets.only(bottom: 12),
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFFEF3C7),
+                  color: tokens.warningBg,
                   borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: const Color(0xFFFCD34D)),
+                  border: Border.all(color: tokens.warningBorder),
                 ),
-                child: const Row(
+                child: Row(
                   children: [
-                    Icon(Icons.cloud_off, size: 16, color: Color(0xFF92400E)),
-                    SizedBox(width: 8),
+                    Icon(Icons.cloud_off, size: 16, color: tokens.warningDot),
+                    const SizedBox(width: 8),
                     Expanded(
                       child: Text(
                         'Offline Mode Active — Displaying locally cached branch overview and approvals queue. New financial authorizations require an active server connection.',
-                        style: TextStyle(color: Color(0xFF92400E), fontSize: 11.5, fontWeight: FontWeight.w600),
+                        style: TextStyle(color: tokens.warningText, fontSize: 11.5, fontWeight: FontWeight.w600),
                       ),
                     ),
                   ],
@@ -225,6 +228,7 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
   }
 
   Widget _buildDashboardContent(BmDashboardDataModel data, bool isMobile) {
+    final tokens = IcareSurfaceTokens.of(context);
     final hasLoans = data.pendingLoans.isNotEmpty;
     final hasWrs = data.pendingWithdrawals.isNotEmpty;
     final hasCorrs = data.pendingCorrections.isNotEmpty;
@@ -260,14 +264,14 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
           if (isMobile)
             Row(
               children: [
-                const Expanded(
+                Expanded(
                   child: Text(
                     'Performance & Risk',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: tokens.textPrimary),
                   ),
                 ),
                 IconButton(
-                  icon: const Icon(Icons.refresh, size: 20, color: Color(0xFF334155)),
+                  icon: Icon(Icons.refresh, size: 20, color: tokens.textSecondary),
                   tooltip: 'Refresh Dashboard',
                   onPressed: _invalidateAllCashbookAndDashboardProviders,
                   padding: EdgeInsets.zero,
@@ -278,10 +282,10 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                   onPressed: () {
                     ref.read(activeCoPageProvider.notifier).state = 'Audit Ledger';
                   },
-                  icon: const Icon(Icons.shield_outlined, size: 14, color: Color(0xFF334155)),
-                  label: const Text('Audit', style: TextStyle(color: Color(0xFF334155), fontWeight: FontWeight.w600, fontSize: 12)),
+                  icon: Icon(Icons.shield_outlined, size: 14, color: tokens.textSecondary),
+                  label: Text('Audit', style: TextStyle(color: tokens.textSecondary, fontWeight: FontWeight.w600, fontSize: 12)),
                   style: OutlinedButton.styleFrom(
-                    side: const BorderSide(color: Color(0xFFCBD5E1)),
+                    side: BorderSide(color: tokens.borderStrong),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                   ),
@@ -292,15 +296,15 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text(
+                Text(
                   'Performance & Risk Dashboard',
-                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
+                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800, color: tokens.textPrimary),
                 ),
                 Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     IconButton(
-                      icon: const Icon(Icons.refresh, size: 20, color: Color(0xFF334155)),
+                      icon: Icon(Icons.refresh, size: 20, color: tokens.textSecondary),
                       tooltip: 'Refresh Dashboard',
                       onPressed: _invalidateAllCashbookAndDashboardProviders,
                     ),
@@ -309,10 +313,10 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                       onPressed: () {
                         ref.read(activeCoPageProvider.notifier).state = 'Audit Ledger';
                       },
-                      icon: const Icon(Icons.shield_outlined, size: 16, color: Color(0xFF334155)),
-                      label: const Text('Audit Center', style: TextStyle(color: Color(0xFF334155), fontWeight: FontWeight.w600)),
+                      icon: Icon(Icons.shield_outlined, size: 16, color: tokens.textSecondary),
+                      label: Text('Audit Center', style: TextStyle(color: tokens.textSecondary, fontWeight: FontWeight.w600)),
                       style: OutlinedButton.styleFrom(
-                        side: const BorderSide(color: Color(0xFFCBD5E1)),
+                        side: BorderSide(color: tokens.borderStrong),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
                         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                       ),
@@ -326,7 +330,7 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
           // Subtitle & Caption (app.py L2561-2562)
           Text(
             'Branch Manager Dashboard — ${data.branchName} Branch',
-            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Color(0xFF1E293B)),
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: tokens.textPrimary),
           ),
           const SizedBox(height: 4),
           Wrap(
@@ -334,26 +338,26 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
             spacing: 10,
             runSpacing: 4,
             children: [
-              const Text(
+              Text(
                 'Branch Daily Operations, Officer Status, & Approvals',
-                style: TextStyle(fontSize: 13, color: Color(0xFF64748B)),
+                style: TextStyle(fontSize: 13, color: tokens.textMuted),
               ),
               if (data.businessDate.isNotEmpty)
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFF1F5F9),
+                    color: tokens.surfaceHover,
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: const Color(0xFFCBD5E1)),
+                    border: Border.all(color: tokens.borderStrong),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(Icons.event_outlined, size: 12, color: Color(0xFF475569)),
+                      Icon(Icons.event_outlined, size: 12, color: tokens.textSecondary),
                       const SizedBox(width: 4),
                       Text(
                         'Operations Date: ${data.meetingDay}, ${data.businessDate}',
-                        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF334155)),
+                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: tokens.textPrimary),
                       ),
                     ],
                   ),
@@ -368,22 +372,22 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
               width: double.infinity,
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               decoration: BoxDecoration(
-                color: const Color(0xFFECFDF5),
+                color: tokens.successBg,
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: const Color(0xFFA7F3D0)),
+                border: Border.all(color: tokens.successBorder),
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.check_circle_outline, color: Color(0xFF059669), size: 20),
+                  Icon(Icons.check_circle_outline, color: tokens.successDot, size: 20),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Text(
                       _flashMessage!,
-                      style: const TextStyle(color: Color(0xFF065F46), fontWeight: FontWeight.w600, fontSize: 13.5),
+                      style: TextStyle(color: tokens.successText, fontWeight: FontWeight.w600, fontSize: 13.5),
                     ),
                   ),
                   IconButton(
-                    icon: const Icon(Icons.close, size: 16, color: Color(0xFF059669)),
+                    icon: Icon(Icons.close, size: 16, color: tokens.successDot),
                     onPressed: _clearFlash,
                     padding: EdgeInsets.zero,
                     constraints: const BoxConstraints(),
@@ -400,19 +404,19 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
               width: double.infinity,
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               decoration: BoxDecoration(
-                color: const Color(0xFFFEF3C7),
+                color: tokens.warningBg,
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: const Color(0xFFFDE68A)),
+                border: Border.all(color: tokens.warningBorder),
               ),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Icon(Icons.warning_amber_rounded, color: Color(0xFFD97706), size: 20),
+                  Icon(Icons.warning_amber_rounded, color: tokens.warningDot, size: 20),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Text(
                       'Branch Closed / Holiday (${data.closureReason}): All field collections and group meetings are suspended for ${data.branchName} Branch today.',
-                      style: const TextStyle(color: Color(0xFF92400E), fontSize: 13, fontWeight: FontWeight.w500),
+                      style: TextStyle(color: tokens.warningText, fontSize: 13, fontWeight: FontWeight.w500),
                     ),
                   ),
                 ],
@@ -475,6 +479,7 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
     required int totalOfficers,
     required bool hasApprovals,
   }) {
+    final tokens = IcareSurfaceTokens.of(context);
     final sections = [
       {'key': 'Approvals', 'label': 'Approvals', 'count': totalApprovals, 'icon': Icons.approval_outlined},
       {'key': 'Overview', 'label': 'KPI & Vault', 'count': null, 'icon': Icons.account_balance_wallet_outlined},
@@ -486,9 +491,9 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
       margin: const EdgeInsets.only(bottom: 14),
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
-        color: const Color(0xFFF1F5F9),
+        color: tokens.surfaceHover,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: tokens.borderSubtle),
       ),
       child: Row(
         children: sections.map((s) {
@@ -504,9 +509,9 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                 duration: const Duration(milliseconds: 150),
                 padding: const EdgeInsets.symmetric(vertical: 8),
                 decoration: BoxDecoration(
-                  color: isSel ? Colors.white : Colors.transparent,
+                  color: isSel ? tokens.surface : Colors.transparent,
                   borderRadius: BorderRadius.circular(8),
-                  boxShadow: isSel
+                  boxShadow: (isSel && !tokens.isDark)
                       ? const [BoxShadow(color: Color(0x0C000000), blurRadius: 4, offset: Offset(0, 1))]
                       : null,
                 ),
@@ -520,14 +525,14 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                         Icon(
                           icon,
                           size: 14,
-                          color: isSel ? const Color(0xFF2563EB) : const Color(0xFF64748B),
+                          color: isSel ? tokens.brandPrimary : tokens.textMuted,
                         ),
                         if (count != null && count > 0) ...[
                           const SizedBox(width: 4),
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
                             decoration: BoxDecoration(
-                              color: isSel ? const Color(0xFF2563EB) : const Color(0xFFCBD5E1),
+                              color: isSel ? tokens.brandPrimaryDark : tokens.surfaceElevated,
                               borderRadius: BorderRadius.circular(10),
                             ),
                             child: Text(
@@ -535,7 +540,7 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                               style: TextStyle(
                                 fontSize: 9.5,
                                 fontWeight: FontWeight.w700,
-                                color: isSel ? Colors.white : const Color(0xFF1E293B),
+                                color: isSel ? Colors.white : tokens.textSecondary,
                               ),
                             ),
                           ),
@@ -548,7 +553,7 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                       style: TextStyle(
                         fontSize: 10.5,
                         fontWeight: isSel ? FontWeight.w700 : FontWeight.w500,
-                        color: isSel ? const Color(0xFF1E293B) : const Color(0xFF64748B),
+                        color: isSel ? tokens.textPrimary : tokens.textMuted,
                       ),
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -728,18 +733,21 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
   // BRANCH APPROVALS HUB
   // ==========================================
   Widget _buildApprovalsHub(BmDashboardDataModel data, bool hasLoans, bool hasWrs, bool hasCorrs, bool isMobile) {
+    final tokens = IcareSurfaceTokens.of(context);
     final tabs = ['Loan Disbursements', 'Withdrawals', 'Error Corrections'];
 
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: tokens.surface,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-        boxShadow: const [
-          BoxShadow(color: Color(0x040F172A), blurRadius: 4, offset: Offset(0, 1)),
-        ],
+        border: Border.all(color: tokens.borderSubtle),
+        boxShadow: tokens.isDark
+            ? null
+            : const [
+                BoxShadow(color: Color(0x040F172A), blurRadius: 4, offset: Offset(0, 1)),
+              ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -747,22 +755,22 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Column(
+              Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
                     'Branch Approvals Hub',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: tokens.textPrimary),
                   ),
-                  SizedBox(height: 2),
+                  const SizedBox(height: 2),
                   Text(
                     'Operational disbursement authorization, withdrawals, and error corrections.',
-                    style: TextStyle(fontSize: 12.5, color: Color(0xFF64748B)),
+                    style: TextStyle(fontSize: 12.5, color: tokens.textMuted),
                   ),
                 ],
               ),
               IconButton(
-                icon: const Icon(Icons.refresh, size: 18, color: Color(0xFF64748B)),
+                icon: Icon(Icons.refresh, size: 18, color: tokens.textMuted),
                 tooltip: 'Refresh Approvals',
                 onPressed: _invalidateAllCashbookAndDashboardProviders,
               ),
@@ -786,9 +794,9 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                   decoration: BoxDecoration(
-                    color: isSel ? const Color(0xFF2563EB) : const Color(0xFFF1F5F9),
+                    color: isSel ? tokens.brandPrimaryDark : tokens.surfaceHover,
                     borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: isSel ? const Color(0xFF2563EB) : const Color(0xFFE2E8F0)),
+                    border: Border.all(color: isSel ? tokens.brandPrimaryDark : tokens.borderSubtle),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
@@ -798,14 +806,14 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                         style: TextStyle(
                           fontSize: 12.5,
                           fontWeight: isSel ? FontWeight.w700 : FontWeight.w600,
-                          color: isSel ? Colors.white : const Color(0xFF475569),
+                          color: isSel ? Colors.white : tokens.textSecondary,
                         ),
                       ),
                       const SizedBox(width: 6),
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
                         decoration: BoxDecoration(
-                          color: isSel ? Colors.white.withValues(alpha: 0.25) : (count > 0 ? const Color(0xFFDBEAFE) : const Color(0xFFE2E8F0)),
+                          color: isSel ? Colors.black.withValues(alpha: 0.25) : (count > 0 ? tokens.infoBg : tokens.borderSubtle),
                           borderRadius: BorderRadius.circular(10),
                         ),
                         child: Text(
@@ -813,7 +821,7 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                           style: TextStyle(
                             fontSize: 11,
                             fontWeight: FontWeight.w800,
-                            color: isSel ? Colors.white : (count > 0 ? const Color(0xFF1D4ED8) : const Color(0xFF64748B)),
+                            color: isSel ? Colors.white : (count > 0 ? tokens.infoText : tokens.textMuted),
                             fontFeatures: const [FontFeature.tabularFigures()],
                           ),
                         ),
@@ -825,7 +833,7 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
             }).toList(),
           ),
           const SizedBox(height: 20),
-          const Divider(color: Color(0xFFE2E8F0), height: 1),
+          Divider(color: tokens.borderSubtle, height: 1),
           const SizedBox(height: 16),
 
           if (_activeApprovalTab == 'Loan Disbursements')
@@ -846,34 +854,35 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
   }
 
   Widget _buildEmptyQueueCard(String queueName, IconData icon) {
+    final tokens = IcareSurfaceTokens.of(context);
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 32),
       decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
+        color: tokens.surfaceSubtle,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: tokens.borderSubtle),
       ),
       child: Column(
         children: [
           Container(
             padding: const EdgeInsets.all(12),
-            decoration: const BoxDecoration(
-              color: Color(0xFFEFF6FF),
+            decoration: BoxDecoration(
+              color: tokens.infoBg,
               shape: BoxShape.circle,
             ),
-            child: Icon(icon, size: 28, color: const Color(0xFF2563EB)),
+            child: Icon(icon, size: 28, color: tokens.infoText),
           ),
           const SizedBox(height: 12),
           Text(
             'No Pending $queueName',
-            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
+            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: tokens.textPrimary),
           ),
           const SizedBox(height: 4),
           Text(
             'All operational requests for $queueName in this branch have been reviewed and processed.',
             textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+            style: TextStyle(fontSize: 12, color: tokens.textMuted),
           ),
           const SizedBox(height: 16),
           Row(
@@ -881,10 +890,10 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
             children: [
               OutlinedButton.icon(
                 onPressed: _invalidateAllCashbookAndDashboardProviders,
-                icon: const Icon(Icons.refresh, size: 14, color: Color(0xFF2563EB)),
-                label: const Text('Refresh Queue', style: TextStyle(color: Color(0xFF2563EB), fontSize: 12, fontWeight: FontWeight.w600)),
+                icon: Icon(Icons.refresh, size: 14, color: tokens.infoText),
+                label: Text('Refresh Queue', style: TextStyle(color: tokens.infoText, fontSize: 12, fontWeight: FontWeight.w600)),
                 style: OutlinedButton.styleFrom(
-                  side: const BorderSide(color: Color(0xFFBFDBFE)),
+                  side: BorderSide(color: tokens.infoBorder),
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 ),
               ),
@@ -893,10 +902,10 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                 onPressed: () {
                   ref.read(activeCoPageProvider.notifier).state = 'Audit Ledger';
                 },
-                icon: const Icon(Icons.shield_outlined, size: 14, color: Color(0xFF475569)),
-                label: const Text('Inspect Audit Ledger', style: TextStyle(color: Color(0xFF475569), fontSize: 12, fontWeight: FontWeight.w600)),
+                icon: Icon(Icons.shield_outlined, size: 14, color: tokens.textSecondary),
+                label: Text('Inspect Audit Ledger', style: TextStyle(color: tokens.textSecondary, fontSize: 12, fontWeight: FontWeight.w600)),
                 style: OutlinedButton.styleFrom(
-                  side: const BorderSide(color: Color(0xFFCBD5E1)),
+                  side: BorderSide(color: tokens.borderStrong),
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 ),
               ),
@@ -917,6 +926,7 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
     required ValueChanged<int> onPageChanged,
   }) {
     if (totalCount <= pageSize) return const SizedBox.shrink();
+    final tokens = IcareSurfaceTokens.of(context);
     final totalPages = (totalCount / pageSize).ceil();
     final startItem = (currentPage - 1) * pageSize + 1;
     final endItem = (currentPage * pageSize).clamp(1, totalCount);
@@ -925,16 +935,16 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       margin: const EdgeInsets.only(top: 14),
       decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
+        color: tokens.surfaceSubtle,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: tokens.borderSubtle),
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Text(
             'Showing $startItem-$endItem of $totalCount items',
-            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: Color(0xFF64748B)),
+            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: tokens.textMuted),
           ),
           Row(
             mainAxisSize: MainAxisSize.min,
@@ -944,21 +954,21 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                 style: OutlinedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                   minimumSize: const Size(32, 32),
-                  side: const BorderSide(color: Color(0xFFCBD5E1)),
+                  side: BorderSide(color: tokens.borderStrong),
                 ),
-                child: const Icon(Icons.chevron_left, size: 18, color: Color(0xFF475569)),
+                child: Icon(Icons.chevron_left, size: 18, color: tokens.textSecondary),
               ),
               const SizedBox(width: 8),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                 decoration: BoxDecoration(
-                  color: Colors.white,
+                  color: tokens.surface,
                   borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                  border: Border.all(color: tokens.borderSubtle),
                 ),
                 child: Text(
                   'Page $currentPage of $totalPages',
-                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF1E293B)),
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tokens.textPrimary),
                 ),
               ),
               const SizedBox(width: 8),
@@ -967,9 +977,9 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                 style: OutlinedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                   minimumSize: const Size(32, 32),
-                  side: const BorderSide(color: Color(0xFFCBD5E1)),
+                  side: BorderSide(color: tokens.borderStrong),
                 ),
-                child: const Icon(Icons.chevron_right, size: 18, color: Color(0xFF475569)),
+                child: Icon(Icons.chevron_right, size: 18, color: tokens.textSecondary),
               ),
             ],
           ),
@@ -982,6 +992,7 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
   // TAB 1: LOAN DISBURSEMENTS
   // ==========================================
   Widget _buildLoanApprovalsTab(List<PendingLoanApprovalModel> loans, bool isMobile) {
+    final tokens = IcareSurfaceTokens.of(context);
     final officers = ['All Officers', ...loans.map((l) => l.officer).toSet().toList()..sort()];
     final products = ['All Products', ...loans.map((l) => l.loanProduct).toSet().toList()..sort()];
 
@@ -1003,6 +1014,7 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
     }
     final startIndex = (_loanPage - 1) * pSize;
     final pagedLoans = filtered.skip(startIndex).take(pSize).toList();
+    final loanBatchDisabled = _selectedLoanIds.isEmpty || _isProcessing;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1110,7 +1122,7 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
             ],
           ),
         const SizedBox(height: 12),
-        const Divider(color: Color(0xFFE2E8F0), height: 1),
+        Divider(color: tokens.borderSubtle, height: 1),
         const SizedBox(height: 10),
 
         // Batch controls
@@ -1118,9 +1130,9 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
             decoration: BoxDecoration(
-              color: const Color(0xFFF8FAFC),
+              color: tokens.surfaceSubtle,
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: const Color(0xFFE2E8F0)),
+              border: Border.all(color: tokens.borderSubtle),
             ),
             child: Row(
               children: [
@@ -1139,7 +1151,7 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                   },
                 ),
                 const SizedBox(width: 4),
-                Text('All (${filtered.length})', style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600)),
+                Text('All (${filtered.length})', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: tokens.textPrimary)),
                 const Spacer(),
                 InkWell(
                   onTap: () async {
@@ -1153,31 +1165,30 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                   },
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-                    decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(6), border: Border.all(color: const Color(0xFFCBD5E1))),
+                    decoration: BoxDecoration(color: tokens.surface, borderRadius: BorderRadius.circular(6), border: Border.all(color: tokens.borderStrong)),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(Icons.calendar_today_outlined, size: 11, color: Color(0xFF2563EB)),
+                        Icon(Icons.calendar_today_outlined, size: 11, color: tokens.infoText),
                         const SizedBox(width: 4),
-                        Text(DateFormat('MM/dd').format(_batchLoanDate), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF1E293B))),
+                        Text(DateFormat('MM/dd').format(_batchLoanDate), style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: tokens.textPrimary)),
                       ],
                     ),
                   ),
                 ),
                 const SizedBox(width: 8),
                 ElevatedButton(
-                  onPressed: (_selectedLoanIds.isEmpty || _isProcessing)
-                      ? null
-                      : () => _executeBatchApproveLoans(filtered),
+                  onPressed: loanBatchDisabled ? null : () => _executeBatchApproveLoans(filtered),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF2563EB),
-                    disabledBackgroundColor: const Color(0xFFCBD5E1),
+                    backgroundColor: const Color(0xFF1D4ED8),
+                    foregroundColor: Colors.white,
+                    disabledBackgroundColor: tokens.surfaceHover,
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                     minimumSize: const Size(0, 30),
                   ),
                   child: Text(
                     _isProcessing ? '...' : 'Approve (${_selectedLoanIds.length})',
-                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 11.5),
+                    style: TextStyle(color: loanBatchDisabled ? tokens.textMuted : Colors.white, fontWeight: FontWeight.w600, fontSize: 11.5),
                   ),
                 ),
               ],
@@ -1200,7 +1211,7 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                   },
                   child: InputDecorator(
                     decoration: const InputDecoration(labelText: 'Batch Operational Disbursement Date', contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10)),
-                    child: Text(DateFormat('yyyy-MM-dd').format(_batchLoanDate), style: const TextStyle(fontSize: 13)),
+                    child: Text(DateFormat('yyyy-MM-dd').format(_batchLoanDate), style: TextStyle(fontSize: 13, color: tokens.textPrimary)),
                   ),
                 ),
               ),
@@ -1217,20 +1228,19 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                   });
                 },
               ),
-              Text('Select All (${filtered.length})', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
+              Text('Select All (${filtered.length})', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: tokens.textPrimary)),
               const Spacer(),
               ElevatedButton(
-                onPressed: (_selectedLoanIds.isEmpty || _isProcessing)
-                    ? null
-                    : () => _executeBatchApproveLoans(filtered),
+                onPressed: loanBatchDisabled ? null : () => _executeBatchApproveLoans(filtered),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF2563EB),
-                  disabledBackgroundColor: const Color(0xFFCBD5E1),
+                  backgroundColor: const Color(0xFF1D4ED8),
+                  foregroundColor: Colors.white,
+                  disabledBackgroundColor: tokens.surfaceHover,
                   padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                 ),
                 child: Text(
                   _isProcessing ? 'Processing...' : 'Approve Selected Loans',
-                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 13),
+                  style: TextStyle(color: loanBatchDisabled ? tokens.textMuted : Colors.white, fontWeight: FontWeight.w600, fontSize: 13),
                 ),
               ),
             ],
@@ -1241,9 +1251,9 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
         if (filtered.isEmpty)
           Container(
             padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(color: const Color(0xFFF8FAFC), borderRadius: BorderRadius.circular(8)),
-            child: const Center(
-              child: Text('No pending loan applications matching the selected filters.', style: TextStyle(color: Color(0xFF64748B), fontSize: 13)),
+            decoration: BoxDecoration(color: tokens.surfaceSubtle, borderRadius: BorderRadius.circular(8)),
+            child: Center(
+              child: Text('No pending loan applications matching the selected filters.', style: TextStyle(color: tokens.textMuted, fontSize: 13)),
             ),
           )
         else
@@ -1261,9 +1271,9 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                 return Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                   decoration: BoxDecoration(
-                    color: Colors.white,
+                    color: tokens.surface,
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                    border: Border.all(color: tokens.borderSubtle),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -1290,14 +1300,14 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(pl.clientName, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13), overflow: TextOverflow.ellipsis),
-                                Text('${pl.clientCode} • ${pl.loanProduct}', style: const TextStyle(fontSize: 10.5, color: Color(0xFF64748B))),
+                                Text(pl.clientName, style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: tokens.textPrimary), overflow: TextOverflow.ellipsis),
+                                Text('${pl.clientCode} • ${pl.loanProduct}', style: TextStyle(fontSize: 10.5, color: tokens.textMuted)),
                               ],
                             ),
                           ),
                           Text(
                             CurrencyFormatter.format(pl.loanAmount),
-                            style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800, color: Color(0xFF0F172A), fontFamily: 'monospace'),
+                            style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800, color: tokens.textPrimary, fontFamily: 'monospace'),
                           ),
                         ],
                       ),
@@ -1307,8 +1317,8 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                         children: [
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(color: const Color(0xFFF1F5F9), borderRadius: BorderRadius.circular(4)),
-                            child: Text(pl.officer, style: const TextStyle(fontSize: 10.5, color: Color(0xFF475569))),
+                            decoration: BoxDecoration(color: tokens.surfaceHover, borderRadius: BorderRadius.circular(4)),
+                            child: Text(pl.officer, style: TextStyle(fontSize: 10.5, color: tokens.textSecondary)),
                           ),
                           const SizedBox(width: 6),
                           InkWell(
@@ -1327,18 +1337,18 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                             child: Container(
                               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
                               decoration: BoxDecoration(
-                                color: const Color(0xFFEFF6FF),
+                                color: tokens.infoBg,
                                 borderRadius: BorderRadius.circular(4),
-                                border: Border.all(color: const Color(0xFFBFDBFE)),
+                                border: Border.all(color: tokens.infoBorder),
                               ),
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  const Icon(Icons.calendar_today_outlined, size: 10, color: Color(0xFF2563EB)),
+                                  Icon(Icons.calendar_today_outlined, size: 10, color: tokens.infoDot),
                                   const SizedBox(width: 3),
                                   Text(
                                     DateFormat('MM/dd').format(cardDate),
-                                    style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: Color(0xFF1D4ED8)),
+                                    style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: tokens.infoText),
                                   ),
                                 ],
                               ),
@@ -1348,17 +1358,18 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                           OutlinedButton(
                             onPressed: _isProcessing ? null : () => _rejectSingleLoan(pl.loanId, pl.clientName),
                             style: OutlinedButton.styleFrom(
-                              side: const BorderSide(color: Color(0xFFCBD5E1)),
+                              side: BorderSide(color: tokens.borderStrong),
                               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                               minimumSize: const Size(0, 28),
                             ),
-                            child: const Text('Reject', style: TextStyle(color: Color(0xFF475569), fontSize: 11)),
+                            child: Text('Reject', style: TextStyle(color: tokens.textSecondary, fontSize: 11)),
                           ),
                           const SizedBox(width: 6),
                           ElevatedButton(
                             onPressed: _isProcessing ? null : () => _approveSingleLoan(pl.loanId, pl.clientName, cardDate),
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF2563EB),
+                              backgroundColor: const Color(0xFF1D4ED8),
+                              foregroundColor: Colors.white,
                               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                               minimumSize: const Size(0, 28),
                             ),
@@ -1374,9 +1385,9 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
               return Container(
                 padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
-                  color: Colors.white,
+                  color: tokens.surface,
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                  border: Border.all(color: tokens.borderSubtle),
                 ),
                 child: Row(
                   children: [
@@ -1400,17 +1411,17 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                         children: [
                           Row(
                             children: [
-                              Text(pl.clientName, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
+                              Text(pl.clientName, style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: tokens.textPrimary)),
                               const SizedBox(width: 8),
                               Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                decoration: BoxDecoration(color: const Color(0xFFF1F5F9), borderRadius: BorderRadius.circular(4)),
-                                child: Text(pl.clientCode, style: const TextStyle(fontSize: 11, fontFamily: 'monospace', color: Color(0xFF475569))),
+                                decoration: BoxDecoration(color: tokens.surfaceHover, borderRadius: BorderRadius.circular(4)),
+                                child: Text(pl.clientCode, style: TextStyle(fontSize: 11, fontFamily: 'monospace', color: tokens.textSecondary)),
                               ),
                             ],
                           ),
                           const SizedBox(height: 4),
-                          Text('Product: ${pl.loanProduct} | Officer: ${pl.officer}', style: const TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+                          Text('Product: ${pl.loanProduct} | Officer: ${pl.officer}', style: TextStyle(fontSize: 12, color: tokens.textMuted)),
                         ],
                       ),
                     ),
@@ -1419,8 +1430,8 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(CurrencyFormatter.format(pl.loanAmount), style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: Color(0xFF0F172A))),
-                          const Text('Requested Principal', style: TextStyle(fontSize: 11, color: Color(0xFF64748B))),
+                          Text(CurrencyFormatter.format(pl.loanAmount), style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: tokens.textPrimary)),
+                          Text('Requested Principal', style: TextStyle(fontSize: 11, color: tokens.textMuted)),
                         ],
                       ),
                     ),
@@ -1440,7 +1451,7 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                         },
                         child: InputDecorator(
                           decoration: const InputDecoration(labelText: 'Disbursement Date', contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8)),
-                          child: Text(DateFormat('yyyy-MM-dd').format(cardDate), style: const TextStyle(fontSize: 12)),
+                          child: Text(DateFormat('yyyy-MM-dd').format(cardDate), style: TextStyle(fontSize: 12, color: tokens.textPrimary)),
                         ),
                       ),
                     ),
@@ -1448,7 +1459,8 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                     ElevatedButton(
                       onPressed: _isProcessing ? null : () => _approveSingleLoan(pl.loanId, pl.clientName, cardDate),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF2563EB),
+                        backgroundColor: const Color(0xFF1D4ED8),
+                        foregroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                       ),
                       child: const Text('Approve', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
@@ -1457,10 +1469,10 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                     OutlinedButton(
                       onPressed: _isProcessing ? null : () => _rejectSingleLoan(pl.loanId, pl.clientName),
                       style: OutlinedButton.styleFrom(
-                        side: const BorderSide(color: Color(0xFFCBD5E1)),
+                        side: BorderSide(color: tokens.borderStrong),
                         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                       ),
-                      child: const Text('Reject', style: TextStyle(color: Color(0xFF475569), fontSize: 12)),
+                      child: Text('Reject', style: TextStyle(color: tokens.textSecondary, fontSize: 12)),
                     ),
                   ],
                 ),
@@ -1481,6 +1493,7 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
   // TAB 2: WITHDRAWALS
   // ==========================================
   Widget _buildWithdrawalApprovalsTab(List<PendingWithdrawalApprovalModel> wrs, bool isMobile) {
+    final tokens = IcareSurfaceTokens.of(context);
     final officers = ['All Officers', ...wrs.map((w) => w.requestedBy).toSet().toList()..sort()];
     final types = ['All Types', ...wrs.map((w) => w.savingsType).toSet().toList()..sort()];
 
@@ -1502,6 +1515,7 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
     }
     final startIndex = (_wrPage - 1) * pSize;
     final pagedWrs = filtered.skip(startIndex).take(pSize).toList();
+    final wrBatchDisabled = _selectedWrIds.isEmpty || _isProcessing;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1610,7 +1624,7 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
             ],
           ),
         const SizedBox(height: 12),
-        const Divider(color: Color(0xFFE2E8F0), height: 1),
+        Divider(color: tokens.borderSubtle, height: 1),
         const SizedBox(height: 12),
 
         // Batch controls
@@ -1618,9 +1632,9 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
             decoration: BoxDecoration(
-              color: const Color(0xFFF8FAFC),
+              color: tokens.surfaceSubtle,
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: const Color(0xFFE2E8F0)),
+              border: Border.all(color: tokens.borderSubtle),
             ),
             child: Row(
               children: [
@@ -1639,7 +1653,7 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                   },
                 ),
                 const SizedBox(width: 4),
-                Text('All (${filtered.length})', style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600)),
+                Text('All (${filtered.length})', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: tokens.textPrimary)),
                 const Spacer(),
                 InkWell(
                   onTap: () async {
@@ -1653,31 +1667,30 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                   },
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-                    decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(6), border: Border.all(color: const Color(0xFFCBD5E1))),
+                    decoration: BoxDecoration(color: tokens.surface, borderRadius: BorderRadius.circular(6), border: Border.all(color: tokens.borderStrong)),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(Icons.calendar_today_outlined, size: 11, color: Color(0xFF2563EB)),
+                        Icon(Icons.calendar_today_outlined, size: 11, color: tokens.infoText),
                         const SizedBox(width: 4),
-                        Text(DateFormat('MM/dd').format(_batchWrDate), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF1E293B))),
+                        Text(DateFormat('MM/dd').format(_batchWrDate), style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: tokens.textPrimary)),
                       ],
                     ),
                   ),
                 ),
                 const SizedBox(width: 8),
                 ElevatedButton(
-                  onPressed: (_selectedWrIds.isEmpty || _isProcessing)
-                      ? null
-                      : () => _executeBatchApproveWithdrawals(filtered),
+                  onPressed: wrBatchDisabled ? null : () => _executeBatchApproveWithdrawals(filtered),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF2563EB),
-                    disabledBackgroundColor: const Color(0xFFCBD5E1),
+                    backgroundColor: const Color(0xFF1D4ED8),
+                    foregroundColor: Colors.white,
+                    disabledBackgroundColor: tokens.surfaceHover,
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                     minimumSize: const Size(0, 30),
                   ),
                   child: Text(
                     _isProcessing ? '...' : 'Approve (${_selectedWrIds.length})',
-                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 11.5),
+                    style: TextStyle(color: wrBatchDisabled ? tokens.textMuted : Colors.white, fontWeight: FontWeight.w600, fontSize: 11.5),
                   ),
                 ),
               ],
@@ -1700,7 +1713,7 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                   },
                   child: InputDecorator(
                     decoration: const InputDecoration(labelText: 'Batch Operational Withdrawal Date', contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10)),
-                    child: Text(DateFormat('yyyy-MM-dd').format(_batchWrDate), style: const TextStyle(fontSize: 13)),
+                    child: Text(DateFormat('yyyy-MM-dd').format(_batchWrDate), style: TextStyle(fontSize: 13, color: tokens.textPrimary)),
                   ),
                 ),
               ),
@@ -1717,20 +1730,19 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                   });
                 },
               ),
-              Text('Select All (${filtered.length})', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
+              Text('Select All (${filtered.length})', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: tokens.textPrimary)),
               const Spacer(),
               ElevatedButton(
-                onPressed: (_selectedWrIds.isEmpty || _isProcessing)
-                    ? null
-                    : () => _executeBatchApproveWithdrawals(filtered),
+                onPressed: wrBatchDisabled ? null : () => _executeBatchApproveWithdrawals(filtered),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF2563EB),
-                  disabledBackgroundColor: const Color(0xFFCBD5E1),
+                  backgroundColor: const Color(0xFF1D4ED8),
+                  foregroundColor: Colors.white,
+                  disabledBackgroundColor: tokens.surfaceHover,
                   padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                 ),
                 child: Text(
                   _isProcessing ? 'Processing...' : 'Approve Selected Withdrawals',
-                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 13),
+                  style: TextStyle(color: wrBatchDisabled ? tokens.textMuted : Colors.white, fontWeight: FontWeight.w600, fontSize: 13),
                 ),
               ),
             ],
@@ -1741,9 +1753,9 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
         if (filtered.isEmpty)
           Container(
             padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(color: const Color(0xFFF8FAFC), borderRadius: BorderRadius.circular(8)),
-            child: const Center(
-              child: Text('No pending withdrawal requests matching the selected filters.', style: TextStyle(color: Color(0xFF64748B), fontSize: 13)),
+            decoration: BoxDecoration(color: tokens.surfaceSubtle, borderRadius: BorderRadius.circular(8)),
+            child: Center(
+              child: Text('No pending withdrawal requests matching the selected filters.', style: TextStyle(color: tokens.textMuted, fontSize: 13)),
             ),
           )
         else
@@ -1769,9 +1781,9 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                 return Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                   decoration: BoxDecoration(
-                    color: Colors.white,
+                    color: tokens.surface,
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                    border: Border.all(color: tokens.borderSubtle),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -1797,10 +1809,10 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(wr.clientName, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13), overflow: TextOverflow.ellipsis),
+                                Text(wr.clientName, style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: tokens.textPrimary), overflow: TextOverflow.ellipsis),
                                 Text(
                                   '${wr.savingsType} • ${wr.operationType}',
-                                  style: const TextStyle(fontSize: 10.5, color: Color(0xFF64748B)),
+                                  style: TextStyle(fontSize: 10.5, color: tokens.textMuted),
                                   overflow: TextOverflow.ellipsis,
                                 ),
                               ],
@@ -1808,14 +1820,14 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                           ),
                           Text(
                             CurrencyFormatter.format(wr.amount),
-                            style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800, color: Color(0xFFB91C1C), fontFamily: 'monospace'),
+                            style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800, color: tokens.dangerText, fontFamily: 'monospace'),
                           ),
                         ],
                       ),
                       const SizedBox(height: 6),
                       Row(
                         children: [
-                          Text('Req: ${wr.requestedBy}', style: const TextStyle(fontSize: 10.5, color: Color(0xFF94A3B8))),
+                          Text('Req: ${wr.requestedBy}', style: TextStyle(fontSize: 10.5, color: tokens.textLight)),
                           const Spacer(),
                           InkWell(
                             onTap: () async {
@@ -1832,16 +1844,16 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                             child: Container(
                               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
                               decoration: BoxDecoration(
-                                color: const Color(0xFFF1F5F9),
+                                color: tokens.surfaceHover,
                                 borderRadius: BorderRadius.circular(4),
-                                border: Border.all(color: const Color(0xFFCBD5E1)),
+                                border: Border.all(color: tokens.borderStrong),
                               ),
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  const Icon(Icons.calendar_today_outlined, size: 10, color: Color(0xFF475569)),
+                                  Icon(Icons.calendar_today_outlined, size: 10, color: tokens.textSecondary),
                                   const SizedBox(width: 4),
-                                  Text(DateFormat('MM/dd').format(cardDate), style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: Color(0xFF334155))),
+                                  Text(DateFormat('MM/dd').format(cardDate), style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: tokens.textPrimary)),
                                 ],
                               ),
                             ),
@@ -1850,17 +1862,18 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                           OutlinedButton(
                             onPressed: _isProcessing ? null : () => _promptRejectWithdrawal(wr.id, wr.clientName),
                             style: OutlinedButton.styleFrom(
-                              side: const BorderSide(color: Color(0xFFCBD5E1)),
+                              side: BorderSide(color: tokens.borderStrong),
                               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                               minimumSize: const Size(0, 28),
                             ),
-                            child: const Text('Reject', style: TextStyle(color: Color(0xFF475569), fontSize: 11)),
+                            child: Text('Reject', style: TextStyle(color: tokens.textSecondary, fontSize: 11)),
                           ),
                           const SizedBox(width: 6),
                           ElevatedButton(
                             onPressed: _isProcessing ? null : () => _approveSingleWithdrawal(wr.id, wr.clientName, wr.amount, cardDate),
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF2563EB),
+                              backgroundColor: const Color(0xFF1D4ED8),
+                              foregroundColor: Colors.white,
                               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                               minimumSize: const Size(0, 28),
                             ),
@@ -1876,9 +1889,9 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
               return Container(
                 padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
-                  color: Colors.white,
+                  color: tokens.surface,
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                  border: Border.all(color: tokens.borderSubtle),
                 ),
                 child: Row(
                   children: [
@@ -1902,21 +1915,21 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                         children: [
                           Row(
                             children: [
-                              Text(wr.clientName, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
+                              Text(wr.clientName, style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: tokens.textPrimary)),
                               const SizedBox(width: 8),
                               Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                decoration: BoxDecoration(color: const Color(0xFFF1F5F9), borderRadius: BorderRadius.circular(4)),
-                                child: Text(wr.savingsType, style: const TextStyle(fontSize: 11, color: Color(0xFF475569))),
+                                decoration: BoxDecoration(color: tokens.surfaceHover, borderRadius: BorderRadius.circular(4)),
+                                child: Text(wr.savingsType, style: TextStyle(fontSize: 11, color: tokens.textSecondary)),
                               ),
                             ],
                           ),
                           const SizedBox(height: 4),
-                          Text('Op: ${wr.operationType} | Requested by: ${wr.requestedBy}', style: const TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+                          Text('Op: ${wr.operationType} | Requested by: ${wr.requestedBy}', style: TextStyle(fontSize: 12, color: tokens.textMuted)),
                           if (wr.remarks != null && wr.remarks!.isNotEmpty)
                             Text(
                               wr.remarks!.replaceAll(RegExp(r'\[(?:DEST_ID|DEST_NAME|DEST_TYPE|FEE|LOAN_OFFSET|IDEMPOTENCY):[^\]]*\]\s*', caseSensitive: false), '').trim(),
-                              style: const TextStyle(fontSize: 11, fontStyle: FontStyle.italic, color: Color(0xFF94A3B8)),
+                              style: TextStyle(fontSize: 11, fontStyle: FontStyle.italic, color: tokens.textLight),
                             ),
                         ],
                       ),
@@ -1926,8 +1939,8 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(CurrencyFormatter.format(wr.amount), style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: Color(0xFFB91C1C))),
-                          const Text('Withdrawal Amount', style: TextStyle(fontSize: 11, color: Color(0xFF64748B))),
+                          Text(CurrencyFormatter.format(wr.amount), style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: tokens.dangerText)),
+                          Text('Withdrawal Amount', style: TextStyle(fontSize: 11, color: tokens.textMuted)),
                         ],
                       ),
                     ),
@@ -1947,7 +1960,7 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                         },
                         child: InputDecorator(
                           decoration: const InputDecoration(labelText: 'Operational Date', contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8)),
-                          child: Text(DateFormat('yyyy-MM-dd').format(cardDate), style: const TextStyle(fontSize: 12)),
+                          child: Text(DateFormat('yyyy-MM-dd').format(cardDate), style: TextStyle(fontSize: 12, color: tokens.textPrimary)),
                         ),
                       ),
                     ),
@@ -1955,7 +1968,8 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                     ElevatedButton(
                       onPressed: _isProcessing ? null : () => _approveSingleWithdrawal(wr.id, wr.clientName, wr.amount, cardDate),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF2563EB),
+                        backgroundColor: const Color(0xFF1D4ED8),
+                        foregroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                       ),
                       child: const Text('Approve', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
@@ -1964,10 +1978,10 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                     OutlinedButton(
                       onPressed: _isProcessing ? null : () => _promptRejectWithdrawal(wr.id, wr.clientName),
                       style: OutlinedButton.styleFrom(
-                        side: const BorderSide(color: Color(0xFFCBD5E1)),
+                        side: BorderSide(color: tokens.borderStrong),
                         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                       ),
-                      child: const Text('Reject', style: TextStyle(color: Color(0xFF475569), fontSize: 12)),
+                      child: Text('Reject', style: TextStyle(color: tokens.textSecondary, fontSize: 12)),
                     ),
                   ],
                 ),
@@ -1988,6 +2002,7 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
   // TAB 3: ERROR CORRECTIONS
   // ==========================================
   Widget _buildCorrectionApprovalsTab(List<PendingCorrectionApprovalModel> corrs, bool isMobile) {
+    final tokens = IcareSurfaceTokens.of(context);
     final officers = ['All Officers', ...corrs.map((c) => c.requestedBy).toSet().toList()..sort()];
     final types = ['All Types', ...corrs.map((c) => c.recordType).toSet().toList()..sort()];
 
@@ -2009,6 +2024,7 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
     }
     final startIndex = (_corrPage - 1) * pSize;
     final pagedCorrs = filtered.skip(startIndex).take(pSize).toList();
+    final corrBatchDisabled = _selectedCorrIds.isEmpty || _isProcessing;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -2117,7 +2133,7 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
             ],
           ),
         const SizedBox(height: 12),
-        const Divider(color: Color(0xFFE2E8F0), height: 1),
+        Divider(color: tokens.borderSubtle, height: 1),
         const SizedBox(height: 12),
 
         // Batch controls
@@ -2125,9 +2141,9 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
             decoration: BoxDecoration(
-              color: const Color(0xFFF8FAFC),
+              color: tokens.surfaceSubtle,
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: const Color(0xFFE2E8F0)),
+              border: Border.all(color: tokens.borderSubtle),
             ),
             child: Row(
               children: [
@@ -2146,21 +2162,20 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                   },
                 ),
                 const SizedBox(width: 4),
-                Text('All (${filtered.length})', style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600)),
+                Text('All (${filtered.length})', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: tokens.textPrimary)),
                 const Spacer(),
                 ElevatedButton(
-                  onPressed: (_selectedCorrIds.isEmpty || _isProcessing)
-                      ? null
-                      : () => _executeBatchApproveCorrections(filtered),
+                  onPressed: corrBatchDisabled ? null : () => _executeBatchApproveCorrections(filtered),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF2563EB),
-                    disabledBackgroundColor: const Color(0xFFCBD5E1),
+                    backgroundColor: const Color(0xFF1D4ED8),
+                    foregroundColor: Colors.white,
+                    disabledBackgroundColor: tokens.surfaceHover,
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                     minimumSize: const Size(0, 30),
                   ),
                   child: Text(
                     _isProcessing ? '...' : 'Approve (${_selectedCorrIds.length})',
-                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 11.5),
+                    style: TextStyle(color: corrBatchDisabled ? tokens.textMuted : Colors.white, fontWeight: FontWeight.w600, fontSize: 11.5),
                   ),
                 ),
               ],
@@ -2181,20 +2196,19 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                   });
                 },
               ),
-              Text('Select All (${filtered.length})', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
+              Text('Select All (${filtered.length})', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: tokens.textPrimary)),
               const Spacer(),
               ElevatedButton(
-                onPressed: (_selectedCorrIds.isEmpty || _isProcessing)
-                    ? null
-                    : () => _executeBatchApproveCorrections(filtered),
+                onPressed: corrBatchDisabled ? null : () => _executeBatchApproveCorrections(filtered),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF2563EB),
-                  disabledBackgroundColor: const Color(0xFFCBD5E1),
+                  backgroundColor: const Color(0xFF1D4ED8),
+                  foregroundColor: Colors.white,
+                  disabledBackgroundColor: tokens.surfaceHover,
                   padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                 ),
                 child: Text(
                   _isProcessing ? 'Processing...' : 'Approve Selected Reversals',
-                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 13),
+                  style: TextStyle(color: corrBatchDisabled ? tokens.textMuted : Colors.white, fontWeight: FontWeight.w600, fontSize: 13),
                 ),
               ),
             ],
@@ -2205,9 +2219,9 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
         if (filtered.isEmpty)
           Container(
             padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(color: const Color(0xFFF8FAFC), borderRadius: BorderRadius.circular(8)),
-            child: const Center(
-              child: Text('No pending error correction requests matching the selected filters.', style: TextStyle(color: Color(0xFF64748B), fontSize: 13)),
+            decoration: BoxDecoration(color: tokens.surfaceSubtle, borderRadius: BorderRadius.circular(8)),
+            child: Center(
+              child: Text('No pending error correction requests matching the selected filters.', style: TextStyle(color: tokens.textMuted, fontSize: 13)),
             ),
           )
         else
@@ -2225,9 +2239,9 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                 return Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                   decoration: BoxDecoration(
-                    color: Colors.white,
+                    color: tokens.surface,
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                    border: Border.all(color: tokens.borderSubtle),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -2255,11 +2269,11 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                               children: [
                                 Row(
                                   children: [
-                                    Text('[${corr.recordType}] #$rRef', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12.5)),
+                                    Text('[${corr.recordType}] #$rRef', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12.5, color: tokens.textPrimary)),
                                     const Spacer(),
                                     Text(
                                       CurrencyFormatter.format(corr.amount),
-                                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5, color: Color(0xFFDC2626), fontFamily: 'monospace'),
+                                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5, color: tokens.dangerText, fontFamily: 'monospace'),
                                     ),
                                   ],
                                 ),
@@ -2267,13 +2281,13 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                                   const SizedBox(height: 2),
                                   Text(
                                     '${corr.clientName!} ${corr.clientCode != null && corr.clientCode!.isNotEmpty ? "(${corr.clientCode})" : ""}',
-                                    style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Color(0xFF0F172A)),
+                                    style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: tokens.textPrimary),
                                   ),
                                 ],
                                 const SizedBox(height: 2),
                                 Text(
                                   corr.reason,
-                                  style: const TextStyle(fontSize: 11, fontStyle: FontStyle.italic, color: Color(0xFF475569)),
+                                  style: TextStyle(fontSize: 11, fontStyle: FontStyle.italic, color: tokens.textSecondary),
                                   maxLines: 2,
                                   overflow: TextOverflow.ellipsis,
                                 ),
@@ -2283,30 +2297,31 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                           const SizedBox(width: 6),
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(color: const Color(0xFFFEF3C7), borderRadius: BorderRadius.circular(10)),
-                            child: const Text('Pending', style: TextStyle(color: Color(0xFF92400E), fontSize: 10, fontWeight: FontWeight.w600)),
+                            decoration: BoxDecoration(color: tokens.warningBg, borderRadius: BorderRadius.circular(10)),
+                            child: Text('Pending', style: TextStyle(color: tokens.warningText, fontSize: 10, fontWeight: FontWeight.w600)),
                           ),
                         ],
                       ),
                       const SizedBox(height: 6),
                       Row(
                         children: [
-                          Text('By: ${corr.requestedBy}', style: const TextStyle(fontSize: 10.5, color: Color(0xFF94A3B8))),
+                          Text('By: ${corr.requestedBy}', style: TextStyle(fontSize: 10.5, color: tokens.textLight)),
                           const Spacer(),
                           OutlinedButton(
                             onPressed: _isProcessing ? null : () => _rejectSingleCorrection(corr),
                             style: OutlinedButton.styleFrom(
-                              side: const BorderSide(color: Color(0xFFCBD5E1)),
+                              side: BorderSide(color: tokens.borderStrong),
                               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                               minimumSize: const Size(0, 28),
                             ),
-                            child: const Text('Reject', style: TextStyle(color: Color(0xFF475569), fontSize: 11)),
+                            child: Text('Reject', style: TextStyle(color: tokens.textSecondary, fontSize: 11)),
                           ),
                           const SizedBox(width: 6),
                           ElevatedButton(
                             onPressed: _isProcessing ? null : () => _approveSingleCorrection(corr),
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF2563EB),
+                              backgroundColor: const Color(0xFF1D4ED8),
+                              foregroundColor: Colors.white,
                               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                               minimumSize: const Size(0, 28),
                             ),
@@ -2322,9 +2337,9 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
               return Container(
                 padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
-                  color: Colors.white,
+                  color: tokens.surface,
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                  border: Border.all(color: tokens.borderSubtle),
                 ),
                 child: Row(
                   children: [
@@ -2348,31 +2363,31 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                         children: [
                           Row(
                             children: [
-                              Text('[${corr.recordType}]', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
+                              Text('[${corr.recordType}]', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: tokens.textPrimary)),
                               const SizedBox(width: 8),
                               Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                decoration: BoxDecoration(color: const Color(0xFFF1F5F9), borderRadius: BorderRadius.circular(4)),
-                                child: Text('Ref: #$rRef', style: const TextStyle(fontSize: 11, fontFamily: 'monospace', color: Color(0xFF475569))),
+                                decoration: BoxDecoration(color: tokens.surfaceHover, borderRadius: BorderRadius.circular(4)),
+                                child: Text('Ref: #$rRef', style: TextStyle(fontSize: 11, fontFamily: 'monospace', color: tokens.textSecondary)),
                               ),
                               const SizedBox(width: 10),
                               Text(
                                 CurrencyFormatter.format(corr.amount),
-                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5, color: Color(0xFFDC2626), fontFamily: 'monospace'),
+                                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5, color: tokens.dangerText, fontFamily: 'monospace'),
                               ),
                               if (corr.clientName != null && corr.clientName!.isNotEmpty) ...[
                                 const SizedBox(width: 8),
                                 Text(
                                   '• ${corr.clientName!} ${corr.clientCode != null && corr.clientCode!.isNotEmpty ? "(${corr.clientCode})" : ""}',
-                                  style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: Color(0xFF0F172A)),
+                                  style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: tokens.textPrimary),
                                 ),
                               ],
                             ],
                           ),
                           const SizedBox(height: 4),
-                          Text('Requested by: ${corr.requestedBy} • Submitted: ${corr.createdAt ?? ""}', style: const TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+                          Text('Requested by: ${corr.requestedBy} • Submitted: ${corr.createdAt ?? ""}', style: TextStyle(fontSize: 12, color: tokens.textMuted)),
                           const SizedBox(height: 2),
-                          Text('Reason: ${corr.reason}', style: const TextStyle(fontSize: 12, fontStyle: FontStyle.italic, color: Color(0xFF334155))),
+                          Text('Reason: ${corr.reason}', style: TextStyle(fontSize: 12, fontStyle: FontStyle.italic, color: tokens.textSecondary)),
                         ],
                       ),
                     ),
@@ -2380,11 +2395,11 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                       flex: 2,
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                        decoration: BoxDecoration(color: const Color(0xFFFEF3C7), borderRadius: BorderRadius.circular(9999)),
-                        child: const Text(
+                        decoration: BoxDecoration(color: tokens.warningBg, borderRadius: BorderRadius.circular(9999)),
+                        child: Text(
                           'Pending Approval',
                           textAlign: TextAlign.center,
-                          style: TextStyle(color: Color(0xFF92400E), fontSize: 11, fontWeight: FontWeight.w600),
+                          style: TextStyle(color: tokens.warningText, fontSize: 11, fontWeight: FontWeight.w600),
                         ),
                       ),
                     ),
@@ -2392,7 +2407,8 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                     ElevatedButton(
                       onPressed: _isProcessing ? null : () => _approveSingleCorrection(corr),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF2563EB),
+                        backgroundColor: const Color(0xFF1D4ED8),
+                        foregroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                       ),
                       child: const Text('Approve', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
@@ -2401,10 +2417,10 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                     OutlinedButton(
                       onPressed: _isProcessing ? null : () => _rejectSingleCorrection(corr),
                       style: OutlinedButton.styleFrom(
-                        side: const BorderSide(color: Color(0xFFCBD5E1)),
+                        side: BorderSide(color: tokens.borderStrong),
                         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                       ),
-                      child: const Text('Reject', style: TextStyle(color: Color(0xFF475569), fontSize: 12)),
+                      child: Text('Reject', style: TextStyle(color: tokens.textSecondary, fontSize: 12)),
                     ),
                   ],
                 ),
@@ -2425,25 +2441,26 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
   // SECTION A: BRANCH SUMMARY (4 KPI CARDS)
   // ==========================================
   Widget _buildBranchSummary(BranchSummaryModel bs) {
+    final tokens = IcareSurfaceTokens.of(context);
     final c1 = _buildMetricCard(
       'Active Clients',
       '${bs.activeClients}',
       icon: Icons.people_alt_outlined,
-      accentColor: const Color(0xFF2563EB),
+      accentColor: tokens.infoDot,
       subtitle: 'Registered Borrowers',
     );
     final c2 = _buildMetricCard(
       'Active Savings',
       CurrencyFormatter.format(bs.activeSavings),
       icon: Icons.savings_outlined,
-      accentColor: const Color(0xFF065F46),
+      accentColor: tokens.brandPrimary,
       subtitle: 'Client Vault Savings',
     );
     final c3 = _buildMetricCard(
       'Collection Today',
       CurrencyFormatter.format(bs.collectionToday),
       icon: Icons.payments_outlined,
-      accentColor: const Color(0xFF10B981),
+      accentColor: tokens.successDot,
       isGrand: true,
       subtitle: 'Daily Cash Inflow',
     );
@@ -2453,8 +2470,8 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
       'Portfolio at Risk (PAR)',
       bs.par,
       icon: isParHealthy ? Icons.verified_user_outlined : Icons.warning_amber_rounded,
-      accentColor: isParHealthy ? const Color(0xFF059669) : const Color(0xFFDC2626),
-      deltaColor: isParHealthy ? const Color(0xFF15803D) : const Color(0xFFDC2626),
+      accentColor: isParHealthy ? tokens.successDot : tokens.dangerDot,
+      deltaColor: isParHealthy ? tokens.successText : tokens.dangerText,
       subtitle: isParHealthy ? 'Within 5% Target' : 'Exceeds 5% Target',
     );
 
@@ -2525,19 +2542,22 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
     String? subtitle,
     bool isGrand = false,
   }) {
-    final cardAccent = accentColor ?? (isGrand ? const Color(0xFF10B981) : const Color(0xFF2563EB));
+    final tokens = IcareSurfaceTokens.of(context);
+    final cardAccent = accentColor ?? (isGrand ? tokens.successDot : tokens.infoDot);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: tokens.surface,
         borderRadius: BorderRadius.circular(10),
         border: Border.all(
-          color: isGrand ? const Color(0xFF86EFAC) : const Color(0xFFE2E8F0),
+          color: isGrand ? tokens.successBorder : tokens.borderSubtle,
           width: 1.0,
         ),
-        boxShadow: const [
-          BoxShadow(color: Color(0x040F172A), blurRadius: 4, offset: Offset(0, 1)),
-        ],
+        boxShadow: tokens.isDark
+            ? null
+            : const [
+                BoxShadow(color: Color(0x040F172A), blurRadius: 4, offset: Offset(0, 1)),
+              ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2548,7 +2568,7 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
               Expanded(
                 child: Text(
                   label,
-                  style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B), fontWeight: FontWeight.w600),
+                  style: TextStyle(fontSize: 11.5, color: tokens.textMuted, fontWeight: FontWeight.w600),
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
@@ -2569,7 +2589,7 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
               style: TextStyle(
                 fontSize: 19,
                 fontWeight: FontWeight.w800,
-                color: deltaColor ?? (isGrand ? const Color(0xFF15803D) : const Color(0xFF0F172A)),
+                color: deltaColor ?? (isGrand ? tokens.successText : tokens.textPrimary),
                 fontFamily: 'monospace',
                 fontFeatures: const [FontFeature.tabularFigures()],
               ),
@@ -2579,7 +2599,7 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
             const SizedBox(height: 3),
             Text(
               subtitle,
-              style: const TextStyle(fontSize: 11, color: Color(0xFF94A3B8), fontWeight: FontWeight.w500),
+              style: TextStyle(fontSize: 11, color: tokens.textLight, fontWeight: FontWeight.w500),
               overflow: TextOverflow.ellipsis,
             ),
           ],
@@ -2592,15 +2612,18 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
   // SECTION B: OFFICER COLLECTION STATUS
   // ==========================================
   Widget _buildOfficerCollectionStatus(List<OfficerCollectionStatusModel> officers, bool isMobile) {
+    final tokens = IcareSurfaceTokens.of(context);
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: tokens.surface,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-        boxShadow: const [
-          BoxShadow(color: Color(0x040F172A), blurRadius: 4, offset: Offset(0, 1)),
-        ],
+        border: Border.all(color: tokens.borderSubtle),
+        boxShadow: tokens.isDark
+            ? null
+            : const [
+                BoxShadow(color: Color(0x040F172A), blurRadius: 4, offset: Offset(0, 1)),
+              ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2615,37 +2638,37 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                     Container(
                       padding: const EdgeInsets.all(6),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFEFF6FF),
+                        color: tokens.infoBg,
                         borderRadius: BorderRadius.circular(6),
                       ),
-                      child: const Icon(Icons.badge_outlined, size: 16, color: Color(0xFF2563EB)),
+                      child: Icon(Icons.badge_outlined, size: 16, color: tokens.infoDot),
                     ),
                     const SizedBox(width: 8),
-                    const Text(
+                    Text(
                       'Officer Collection Status',
-                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
+                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: tokens.textPrimary),
                     ),
                   ],
                 ),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFF1F5F9),
+                    color: tokens.surfaceHover,
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Text(
                     '${officers.length} Officers',
-                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF475569)),
+                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: tokens.textSecondary),
                   ),
                 ),
               ],
             ),
           ),
-          const Divider(color: Color(0xFFE2E8F0), height: 1),
+          Divider(color: tokens.borderSubtle, height: 1),
           if (officers.isEmpty)
-            const Padding(
-              padding: EdgeInsets.all(28),
-              child: Center(child: Text('No officer collection activity recorded for today.', style: TextStyle(color: Color(0xFF64748B), fontSize: 13))),
+            Padding(
+              padding: const EdgeInsets.all(28),
+              child: Center(child: Text('No officer collection activity recorded for today.', style: TextStyle(color: tokens.textMuted, fontSize: 13))),
             )
           else if (isMobile)
             Padding(
@@ -2660,18 +2683,18 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
               child: SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
                 child: DataTable(
-                  headingRowColor: WidgetStateProperty.all(const Color(0xFFF8FAFC)),
+                  headingRowColor: WidgetStateProperty.all(tokens.surfaceSubtle),
                   dataRowMinHeight: 48,
                   dataRowMaxHeight: 64,
-                  columns: const [
-                    DataColumn(label: Text('Officer', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
-                    DataColumn(label: Text('Scheduled Groups', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
-                    DataColumn(label: Text('Expected', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
-                    DataColumn(label: Text('Collected', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
-                    DataColumn(label: Text('Outstanding', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
-                    DataColumn(label: Text('Compliance %', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
-                    DataColumn(label: Text('Closing Balance', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
-                    DataColumn(label: Text('Status', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
+                  columns: [
+                    DataColumn(label: Text('Officer', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: tokens.textPrimary))),
+                    DataColumn(label: Text('Scheduled Groups', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: tokens.textPrimary))),
+                    DataColumn(label: Text('Expected', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: tokens.textPrimary))),
+                    DataColumn(label: Text('Collected', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: tokens.textPrimary))),
+                    DataColumn(label: Text('Outstanding', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: tokens.textPrimary))),
+                    DataColumn(label: Text('Compliance %', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: tokens.textPrimary))),
+                    DataColumn(label: Text('Closing Balance', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: tokens.textPrimary))),
+                    DataColumn(label: Text('Status', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: tokens.textPrimary))),
                   ],
                   rows: officers.map((o) {
                     final isAttention = o.status == 'Requires Attention';
@@ -2684,8 +2707,8 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              Text(o.officer, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
-                              Text(o.officerName, style: const TextStyle(fontSize: 11, color: Color(0xFF64748B))),
+                              Text(o.officer, style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: tokens.textPrimary)),
+                              Text(o.officerName, style: TextStyle(fontSize: 11, color: tokens.textMuted)),
                             ],
                           ),
                         ),
@@ -2694,15 +2717,15 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                             width: 220,
                             child: Text(
                               o.scheduledGroups,
-                              style: const TextStyle(fontSize: 11.5, color: Color(0xFF334155)),
+                              style: TextStyle(fontSize: 11.5, color: tokens.textSecondary),
                               overflow: TextOverflow.ellipsis,
                               maxLines: 2,
                             ),
                           ),
                         ),
-                        DataCell(Text(CurrencyFormatter.format(o.expected), style: const TextStyle(fontFamily: 'monospace', fontSize: 12.5, fontFeatures: [FontFeature.tabularFigures()]))),
-                        DataCell(Text(CurrencyFormatter.format(o.collected), style: const TextStyle(fontFamily: 'monospace', fontSize: 12.5, color: Color(0xFF16A34A), fontWeight: FontWeight.w600, fontFeatures: [FontFeature.tabularFigures()]))),
-                        DataCell(Text(CurrencyFormatter.format(o.outstanding), style: const TextStyle(fontFamily: 'monospace', fontSize: 12.5, color: Color(0xFFDC2626), fontFeatures: [FontFeature.tabularFigures()]))),
+                        DataCell(Text(CurrencyFormatter.format(o.expected), style: TextStyle(fontFamily: 'monospace', fontSize: 12.5, color: tokens.textPrimary, fontFeatures: const [FontFeature.tabularFigures()]))),
+                        DataCell(Text(CurrencyFormatter.format(o.collected), style: TextStyle(fontFamily: 'monospace', fontSize: 12.5, color: tokens.successText, fontWeight: FontWeight.w600, fontFeatures: const [FontFeature.tabularFigures()]))),
+                        DataCell(Text(CurrencyFormatter.format(o.outstanding), style: TextStyle(fontFamily: 'monospace', fontSize: 12.5, color: tokens.dangerText, fontFeatures: const [FontFeature.tabularFigures()]))),
                         DataCell(
                           Text(
                             '${o.compliancePct.toStringAsFixed(1)}%',
@@ -2710,17 +2733,17 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                               fontFamily: 'monospace',
                               fontSize: 12.5,
                               fontWeight: FontWeight.w700,
-                              color: o.compliancePct >= 80 ? const Color(0xFF16A34A) : const Color(0xFFDC2626),
+                              color: o.compliancePct >= 80 ? tokens.successText : tokens.dangerText,
                               fontFeatures: const [FontFeature.tabularFigures()],
                             ),
                           ),
                         ),
-                        DataCell(Text(CurrencyFormatter.format(o.closingBalance), style: const TextStyle(fontFamily: 'monospace', fontSize: 12.5, fontWeight: FontWeight.w700, fontFeatures: [FontFeature.tabularFigures()]))),
+                        DataCell(Text(CurrencyFormatter.format(o.closingBalance), style: TextStyle(fontFamily: 'monospace', fontSize: 12.5, fontWeight: FontWeight.w700, color: tokens.textPrimary, fontFeatures: const [FontFeature.tabularFigures()]))),
                         DataCell(
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                             decoration: BoxDecoration(
-                              color: isNormal ? const Color(0xFFDCFCE7) : (isAttention ? const Color(0xFFFEF3C7) : const Color(0xFFF1F5F9)),
+                              color: isNormal ? tokens.successBg : (isAttention ? tokens.warningBg : tokens.surfaceHover),
                               borderRadius: BorderRadius.circular(9999),
                             ),
                             child: Text(
@@ -2728,7 +2751,7 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                               style: TextStyle(
                                 fontSize: 11,
                                 fontWeight: FontWeight.w600,
-                                color: isNormal ? const Color(0xFF15803D) : (isAttention ? const Color(0xFFB45309) : const Color(0xFF475569)),
+                                color: isNormal ? tokens.successText : (isAttention ? tokens.warningText : tokens.textSecondary),
                               ),
                             ),
                           ),
@@ -2745,6 +2768,7 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
   }
 
   Widget _buildMobileOfficerStatusCard(OfficerCollectionStatusModel o) {
+    final tokens = IcareSurfaceTokens.of(context);
     final isNormal = o.status == 'Normal';
     final isAttention = o.status == 'Requires Attention';
     final isHighCompliance = o.compliancePct >= 80.0;
@@ -2753,10 +2777,10 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: tokens.surface,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: isExpanded ? const Color(0xFF93C5FD) : const Color(0xFFE2E8F0)),
-        boxShadow: isExpanded
+        border: Border.all(color: isExpanded ? tokens.infoBorder : tokens.borderSubtle),
+        boxShadow: (isExpanded && !tokens.isDark)
             ? const [BoxShadow(color: Color(0x0C2563EB), blurRadius: 6, offset: Offset(0, 2))]
             : null,
       ),
@@ -2773,13 +2797,13 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                 children: [
                   CircleAvatar(
                     radius: 14,
-                    backgroundColor: isHighCompliance ? const Color(0xFFDCFCE7) : const Color(0xFFFEF3C7),
+                    backgroundColor: isHighCompliance ? tokens.successBg : tokens.warningBg,
                     child: Text(
                       o.officer.length >= 2 ? o.officer.substring(0, 2).toUpperCase() : o.officer.toUpperCase(),
                       style: TextStyle(
                         fontSize: 10,
                         fontWeight: FontWeight.w700,
-                        color: isHighCompliance ? const Color(0xFF15803D) : const Color(0xFFB45309),
+                        color: isHighCompliance ? tokens.successText : tokens.warningText,
                       ),
                     ),
                   ),
@@ -2790,17 +2814,17 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                       children: [
                         Text(
                           o.officerName.isNotEmpty ? o.officerName : o.officer,
-                          style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
+                          style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: tokens.textPrimary),
                           overflow: TextOverflow.ellipsis,
                         ),
                         const SizedBox(height: 1),
                         Row(
                           children: [
-                            Text(o.officer, style: const TextStyle(fontSize: 10.5, color: Color(0xFF64748B), fontFamily: 'monospace')),
-                            const Text(' • ', style: TextStyle(color: Color(0xFFCBD5E1), fontSize: 10)),
+                            Text(o.officer, style: TextStyle(fontSize: 10.5, color: tokens.textMuted, fontFamily: 'monospace')),
+                            Text(' • ', style: TextStyle(color: tokens.borderStrong, fontSize: 10)),
                             Text(
                               '${CurrencyFormatter.format(o.collected)} / ${CurrencyFormatter.format(o.expected)}',
-                              style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: Color(0xFF334155)),
+                              style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: tokens.textSecondary),
                             ),
                           ],
                         ),
@@ -2810,7 +2834,7 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                     decoration: BoxDecoration(
-                      color: isHighCompliance ? const Color(0xFFDCFCE7) : const Color(0xFFFEE2E2),
+                      color: isHighCompliance ? tokens.successBg : tokens.dangerBg,
                       borderRadius: BorderRadius.circular(4),
                     ),
                     child: Text(
@@ -2818,7 +2842,7 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                       style: TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.w800,
-                        color: isHighCompliance ? const Color(0xFF15803D) : const Color(0xFFDC2626),
+                        color: isHighCompliance ? tokens.successText : tokens.dangerText,
                       ),
                     ),
                   ),
@@ -2826,7 +2850,7 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                   Icon(
                     isExpanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
                     size: 18,
-                    color: const Color(0xFF64748B),
+                    color: tokens.textMuted,
                   ),
                 ],
               ),
@@ -2834,7 +2858,7 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
               // Expandable Detail Body
               if (isExpanded) ...[
                 const SizedBox(height: 10),
-                const Divider(color: Color(0xFFF1F5F9), height: 1),
+                Divider(color: tokens.borderSubtle, height: 1),
                 const SizedBox(height: 10),
 
                 // Scheduled Groups
@@ -2842,12 +2866,12 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Icon(Icons.groups_outlined, size: 13, color: Color(0xFF64748B)),
+                      Icon(Icons.groups_outlined, size: 13, color: tokens.textMuted),
                       const SizedBox(width: 4),
                       Expanded(
                         child: Text(
                           'Groups: ${o.scheduledGroups}',
-                          style: const TextStyle(fontSize: 11, color: Color(0xFF475569)),
+                          style: TextStyle(fontSize: 11, color: tokens.textSecondary),
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -2861,9 +2885,9 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                 Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFF8FAFC),
+                    color: tokens.surfaceSubtle,
                     borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                    border: Border.all(color: tokens.borderSubtle),
                   ),
                   child: Row(
                     children: [
@@ -2871,11 +2895,11 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Text('Expected', style: TextStyle(fontSize: 9.5, color: Color(0xFF64748B))),
+                            Text('Expected', style: TextStyle(fontSize: 9.5, color: tokens.textMuted)),
                             const SizedBox(height: 1),
                             Text(
                               CurrencyFormatter.format(o.expected),
-                              style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, fontFamily: 'monospace'),
+                              style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, fontFamily: 'monospace', color: tokens.textPrimary),
                             ),
                           ],
                         ),
@@ -2884,11 +2908,11 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Text('Collected', style: TextStyle(fontSize: 9.5, color: Color(0xFF64748B))),
+                            Text('Collected', style: TextStyle(fontSize: 9.5, color: tokens.textMuted)),
                             const SizedBox(height: 1),
                             Text(
                               CurrencyFormatter.format(o.collected),
-                              style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, fontFamily: 'monospace', color: Color(0xFF16A34A)),
+                              style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, fontFamily: 'monospace', color: tokens.successText),
                             ),
                           ],
                         ),
@@ -2897,11 +2921,11 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Text('Outstanding', style: TextStyle(fontSize: 9.5, color: Color(0xFF64748B))),
+                            Text('Outstanding', style: TextStyle(fontSize: 9.5, color: tokens.textMuted)),
                             const SizedBox(height: 1),
                             Text(
                               CurrencyFormatter.format(o.outstanding),
-                              style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, fontFamily: 'monospace', color: Color(0xFFDC2626)),
+                              style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, fontFamily: 'monospace', color: tokens.dangerText),
                             ),
                           ],
                         ),
@@ -2918,7 +2942,7 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                       decoration: BoxDecoration(
-                        color: isNormal ? const Color(0xFFDCFCE7) : (isAttention ? const Color(0xFFFEF3C7) : const Color(0xFFF1F5F9)),
+                        color: isNormal ? tokens.successBg : (isAttention ? tokens.warningBg : tokens.surfaceHover),
                         borderRadius: BorderRadius.circular(10),
                       ),
                       child: Text(
@@ -2926,16 +2950,16 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                         style: TextStyle(
                           fontSize: 10,
                           fontWeight: FontWeight.w700,
-                          color: isNormal ? const Color(0xFF15803D) : (isAttention ? const Color(0xFFB45309) : const Color(0xFF475569)),
+                          color: isNormal ? tokens.successText : (isAttention ? tokens.warningText : tokens.textSecondary),
                         ),
                       ),
                     ),
                     Row(
                       children: [
-                        const Text('Closing: ', style: TextStyle(fontSize: 10.5, color: Color(0xFF64748B))),
+                        Text('Closing: ', style: TextStyle(fontSize: 10.5, color: tokens.textMuted)),
                         Text(
                           CurrencyFormatter.format(o.closingBalance),
-                          style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, fontFamily: 'monospace', color: Color(0xFF0F172A)),
+                          style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, fontFamily: 'monospace', color: tokens.textPrimary),
                         ),
                       ],
                     ),
@@ -2953,34 +2977,35 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
   // SECTION C: BRANCH CASH POSITION (MASTER CASHBOOK)
   // ==========================================
   Widget _buildBranchCashPosition(BranchCashPositionModel cp) {
+    final tokens = IcareSurfaceTokens.of(context);
     final isBalanced = cp.status == 'Balanced';
 
     final c1 = _buildMetricCard(
       'Opening Balance (B/F)',
       CurrencyFormatter.format(cp.openingBalance),
       icon: Icons.history_toggle_off_outlined,
-      accentColor: const Color(0xFF64748B),
+      accentColor: tokens.textMuted,
       subtitle: 'Vault B/F Balance',
     );
     final c2 = _buildMetricCard(
       'Total Inflows',
       CurrencyFormatter.format(cp.cashIn),
       icon: Icons.south_west_outlined,
-      accentColor: const Color(0xFF10B981),
+      accentColor: tokens.successDot,
       subtitle: 'Collections & Deposits',
     );
     final c3 = _buildMetricCard(
       'Total Outflows',
       CurrencyFormatter.format(cp.cashOut),
       icon: Icons.north_east_outlined,
-      accentColor: const Color(0xFFEF4444),
+      accentColor: tokens.dangerDot,
       subtitle: 'Disbursements & Costs',
     );
     final c4 = _buildMetricCard(
       'Closing Cash Balance',
       CurrencyFormatter.format(cp.closingBalance),
       icon: Icons.account_balance_wallet_outlined,
-      accentColor: const Color(0xFF2563EB),
+      accentColor: tokens.infoDot,
       isGrand: true,
       subtitle: 'Physical Vault Position',
     );
@@ -2989,12 +3014,14 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
       width: double.infinity,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: tokens.surface,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-        boxShadow: const [
-          BoxShadow(color: Color(0x040F172A), blurRadius: 4, offset: Offset(0, 1)),
-        ],
+        border: Border.all(color: tokens.borderSubtle),
+        boxShadow: tokens.isDark
+            ? null
+            : const [
+                BoxShadow(color: Color(0x040F172A), blurRadius: 4, offset: Offset(0, 1)),
+              ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -3007,25 +3034,25 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                   Container(
                     padding: const EdgeInsets.all(6),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFECFDF5),
+                      color: tokens.brandSoftBg,
                       borderRadius: BorderRadius.circular(6),
                     ),
-                    child: const Icon(Icons.account_balance_outlined, size: 16, color: Color(0xFF065F46)),
+                    child: Icon(Icons.account_balance_outlined, size: 16, color: tokens.brandPrimary),
                   ),
                   const SizedBox(width: 8),
-                  const Text(
+                  Text(
                     'Branch Cash Position (Master Cashbook)',
-                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
+                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: tokens.textPrimary),
                   ),
                 ],
               ),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
-                  color: isBalanced ? const Color(0xFFDCFCE7) : const Color(0xFFFEE2E2),
+                  color: isBalanced ? tokens.successBg : tokens.dangerBg,
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(
-                    color: isBalanced ? const Color(0xFF86EFAC) : const Color(0xFFFCA5A5),
+                    color: isBalanced ? tokens.successBorder : tokens.dangerBorder,
                   ),
                 ),
                 child: Row(
@@ -3034,7 +3061,7 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                     Icon(
                       isBalanced ? Icons.check_circle_outline : Icons.error_outline,
                       size: 13,
-                      color: isBalanced ? const Color(0xFF15803D) : const Color(0xFFDC2626),
+                      color: isBalanced ? tokens.successText : tokens.dangerText,
                     ),
                     const SizedBox(width: 4),
                     Text(
@@ -3042,7 +3069,7 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                       style: TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.w700,
-                        color: isBalanced ? const Color(0xFF15803D) : const Color(0xFFDC2626),
+                        color: isBalanced ? tokens.successText : tokens.dangerText,
                       ),
                     ),
                   ],
@@ -3116,10 +3143,10 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
             width: double.infinity,
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             decoration: BoxDecoration(
-              color: isBalanced ? const Color(0xFFF0FDF4) : const Color(0xFFFEF2F2),
+              color: isBalanced ? tokens.successBg : tokens.dangerBg,
               borderRadius: BorderRadius.circular(8),
               border: Border.all(
-                color: isBalanced ? const Color(0xFF86EFAC) : const Color(0xFFFCA5A5),
+                color: isBalanced ? tokens.successBorder : tokens.dangerBorder,
               ),
             ),
             child: Row(
@@ -3127,7 +3154,7 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                 Icon(
                   isBalanced ? Icons.verified_outlined : Icons.warning_amber_rounded,
                   size: 18,
-                  color: isBalanced ? const Color(0xFF15803D) : const Color(0xFFDC2626),
+                  color: isBalanced ? tokens.successDot : tokens.dangerDot,
                 ),
                 const SizedBox(width: 10),
                 Expanded(
@@ -3138,7 +3165,7 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                     style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
-                      color: isBalanced ? const Color(0xFF166534) : const Color(0xFF991B1B),
+                      color: isBalanced ? tokens.successText : tokens.dangerText,
                     ),
                   ),
                 ),
@@ -3228,21 +3255,25 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
     final reasonCtrl = TextEditingController();
     final shouldReject = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('Reject Withdrawal for $clientName'),
-        content: TextField(
-          controller: reasonCtrl,
-          decoration: const InputDecoration(labelText: 'Rejection Reason', hintText: 'Why is this being rejected?'),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFDC2626)),
-            child: const Text('Confirm Rejection', style: TextStyle(color: Colors.white)),
+      builder: (ctx) {
+        final tokens = IcareSurfaceTokens.of(ctx);
+        return AlertDialog(
+          backgroundColor: tokens.surfaceElevated,
+          title: Text('Reject Withdrawal for $clientName', style: TextStyle(color: tokens.textPrimary)),
+          content: TextField(
+            controller: reasonCtrl,
+            decoration: const InputDecoration(labelText: 'Rejection Reason', hintText: 'Why is this being rejected?'),
           ),
-        ],
-      ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFDC2626), foregroundColor: Colors.white),
+              child: const Text('Confirm Rejection', style: TextStyle(color: Colors.white)),
+            ),
+          ],
+        );
+      },
     );
 
     if (shouldReject == true) {
@@ -3290,53 +3321,57 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
     final amtStr = CurrencyFormatter.format(corr.amount);
     final confirm = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('Confirm Reversal — [${corr.recordType}]', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (corr.clientName != null && corr.clientName!.isNotEmpty) ...[
-              Text('Client: ${corr.clientName!} ${corr.clientCode != null && corr.clientCode!.isNotEmpty ? "(${corr.clientCode})" : ""}',
-                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF0F172A))),
-              const SizedBox(height: 4),
-            ],
-            Text('Amount to Reverse: $amtStr', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFFDC2626))),
-            const SizedBox(height: 6),
-            Text('Reason: ${corr.reason}', style: const TextStyle(fontSize: 12, fontStyle: FontStyle.italic, color: Color(0xFF475569))),
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: const Color(0xFFFEF3C7),
-                borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: const Color(0xFFFDE68A)),
-              ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Icon(Icons.info_outline, size: 16, color: Color(0xFFB45309)),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'Approving this reversal will adjust $amtStr from Vault Cash. Ensure physical cash has been counted and aligned.',
-                      style: const TextStyle(fontSize: 11.5, color: Color(0xFF92400E)),
+      builder: (ctx) {
+        final tokens = IcareSurfaceTokens.of(ctx);
+        return AlertDialog(
+          backgroundColor: tokens.surfaceElevated,
+          title: Text('Confirm Reversal — [${corr.recordType}]', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: tokens.textPrimary)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (corr.clientName != null && corr.clientName!.isNotEmpty) ...[
+                Text('Client: ${corr.clientName!} ${corr.clientCode != null && corr.clientCode!.isNotEmpty ? "(${corr.clientCode})" : ""}',
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: tokens.textPrimary)),
+                const SizedBox(height: 4),
+              ],
+              Text('Amount to Reverse: $amtStr', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: tokens.dangerText)),
+              const SizedBox(height: 6),
+              Text('Reason: ${corr.reason}', style: TextStyle(fontSize: 12, fontStyle: FontStyle.italic, color: tokens.textSecondary)),
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: tokens.warningBg,
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: tokens.warningBorder),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(Icons.info_outline, size: 16, color: tokens.warningDot),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Approving this reversal will adjust $amtStr from Vault Cash. Ensure physical cash has been counted and aligned.',
+                        style: TextStyle(fontSize: 11.5, color: tokens.warningText),
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              style: ElevatedButton.styleFrom(backgroundColor: tokens.brandPrimaryDark, foregroundColor: Colors.white),
+              child: const Text('Approve Reversal', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
             ),
           ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF059669)),
-            child: const Text('Approve Reversal', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-          ),
-        ],
-      ),
+        );
+      },
     );
 
     if (confirm != true) return;
@@ -3359,35 +3394,39 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
     final reasonCtrl = TextEditingController();
     final confirm = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Reject Reversal Request', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Are you sure you want to reject this reversal request for [${corr.recordType}] (#${corr.recordId.length >= 8 ? corr.recordId.substring(0, 8) : corr.recordId})?',
-                style: const TextStyle(fontSize: 13, color: Color(0xFF475569))),
-            const SizedBox(height: 12),
-            TextField(
-              controller: reasonCtrl,
-              decoration: const InputDecoration(
-                labelText: 'Rejection Reason (Optional)',
-                hintText: 'e.g. Transaction verified as valid.',
-                border: OutlineInputBorder(),
-                isDense: true,
+      builder: (ctx) {
+        final tokens = IcareSurfaceTokens.of(ctx);
+        return AlertDialog(
+          backgroundColor: tokens.surfaceElevated,
+          title: Text('Reject Reversal Request', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: tokens.textPrimary)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Are you sure you want to reject this reversal request for [${corr.recordType}] (#${corr.recordId.length >= 8 ? corr.recordId.substring(0, 8) : corr.recordId})?',
+                  style: TextStyle(fontSize: 13, color: tokens.textSecondary)),
+              const SizedBox(height: 12),
+              TextField(
+                controller: reasonCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Rejection Reason (Optional)',
+                  hintText: 'e.g. Transaction verified as valid.',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
               ),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFDC2626), foregroundColor: Colors.white),
+              child: const Text('Reject Request', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
             ),
           ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFDC2626)),
-            child: const Text('Reject Request', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-          ),
-        ],
-      ),
+        );
+      },
     );
 
     if (confirm != true) return;
@@ -3416,47 +3455,51 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
 
     final confirm = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('Approve ${selectedCorrs.length} Reversals', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('You are about to batch approve ${selectedCorrs.length} reversal requests totaling $amtStr.',
-                style: const TextStyle(fontSize: 13, color: Color(0xFF0F172A))),
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: const Color(0xFFFEF3C7),
-                borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: const Color(0xFFFDE68A)),
-              ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Icon(Icons.info_outline, size: 16, color: Color(0xFFB45309)),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'Batch approval will atomically adjust $amtStr from Vault Cash. Please verify all physical cash receipts before proceeding.',
-                      style: const TextStyle(fontSize: 11.5, color: Color(0xFF92400E)),
+      builder: (ctx) {
+        final tokens = IcareSurfaceTokens.of(ctx);
+        return AlertDialog(
+          backgroundColor: tokens.surfaceElevated,
+          title: Text('Approve ${selectedCorrs.length} Reversals', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: tokens.textPrimary)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('You are about to batch approve ${selectedCorrs.length} reversal requests totaling $amtStr.',
+                  style: TextStyle(fontSize: 13, color: tokens.textPrimary)),
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: tokens.warningBg,
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: tokens.warningBorder),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(Icons.info_outline, size: 16, color: tokens.warningDot),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Batch approval will atomically adjust $amtStr from Vault Cash. Please verify all physical cash receipts before proceeding.',
+                        style: TextStyle(fontSize: 11.5, color: tokens.warningText),
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              style: ElevatedButton.styleFrom(backgroundColor: tokens.brandPrimaryDark, foregroundColor: Colors.white),
+              child: const Text('Confirm Batch Approval', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
             ),
           ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF059669)),
-            child: const Text('Confirm Batch Approval', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-          ),
-        ],
-      ),
+        );
+      },
     );
 
     if (confirm != true) return;

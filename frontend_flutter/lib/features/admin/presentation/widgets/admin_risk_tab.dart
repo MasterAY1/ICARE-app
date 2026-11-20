@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/errors/app_error_formatter.dart';
+import '../../../../core/theme/icare_theme_tokens.dart';
 import '../../../../core/utils/currency_formatter.dart';
 import '../../../../core/widgets/icare_skeleton_loader.dart';
 import '../../data/datasources/admin_api_service.dart';
@@ -23,6 +24,7 @@ class AdminRiskTab extends ConsumerWidget {
     final riskAsync = ref.watch(adminRiskHealthProvider);
     final year = ref.watch(adminPerformanceYearProvider);
     final perfAsync = ref.watch(institutionPerformanceProvider(year));
+    final tokens = IcareSurfaceTokens.of(context);
 
     return riskAsync.when(
       loading: () => const Column(
@@ -38,24 +40,24 @@ class AdminRiskTab extends ConsumerWidget {
           padding: const EdgeInsets.all(16),
           margin: const EdgeInsets.symmetric(vertical: 8),
           decoration: BoxDecoration(
-            color: const Color(0xFFFEF2F2),
+            color: tokens.dangerBg,
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: const Color(0xFFFCA5A5)),
+            border: Border.all(color: tokens.dangerBorder),
           ),
           child: Row(
             children: [
-              const Icon(
+              Icon(
                 Icons.error_outline,
-                color: Color(0xFFDC2626),
+                color: tokens.dangerDot,
                 size: 20,
               ),
               const SizedBox(width: 12),
               Expanded(
                 child: Text(
                   '${errorDetails.title}: ${errorDetails.message}',
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 12.5,
-                    color: Color(0xFF991B1B),
+                    color: tokens.dangerText,
                   ),
                 ),
               ),
@@ -74,13 +76,14 @@ class AdminRiskTab extends ConsumerWidget {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            _buildHeroRiskCard(risk, size),
+            _buildHeroRiskCard(tokens, risk, size),
             const SizedBox(height: 16),
-            _buildRiskMetricsGrid(risk, size),
+            _buildRiskMetricsGrid(tokens, risk, size),
             const SizedBox(height: 16),
             perfAsync.maybeWhen(
               data: (perf) => _buildBranchRiskBreakdown(
                 context,
+                tokens,
                 perf.branchRankings,
                 size,
               ),
@@ -92,17 +95,12 @@ class AdminRiskTab extends ConsumerWidget {
     );
   }
 
-  Widget _buildHeroRiskCard(AdminRiskHealthModel risk, AdminSize size) {
+  Widget _buildHeroRiskCard(IcareSurfaceTokens tokens, AdminRiskHealthModel risk, AdminSize size) {
     final isElevated = risk.parPct > 10.0;
-    final accentColor = isElevated
-        ? const Color(0xFFDC2626)
-        : const Color(0xFF059669);
-    final badgeBg = isElevated
-        ? const Color(0xFFFEF2F2)
-        : const Color(0xFFECFDF5);
-    final badgeBorder = isElevated
-        ? const Color(0xFFFECACA)
-        : const Color(0xFFA7F3D0);
+    final accentColor = isElevated ? tokens.dangerDot : tokens.successDot;
+    final badgeTextColor = isElevated ? tokens.dangerText : tokens.successText;
+    final badgeBg = isElevated ? tokens.dangerBg : tokens.successBg;
+    final badgeBorder = isElevated ? tokens.dangerBorder : tokens.successBorder;
     final statusLabel = isElevated
         ? 'Needs Attention • Above 10% Limit'
         : 'Healthy • Within 10% Limit';
@@ -110,9 +108,9 @@ class AdminRiskTab extends ConsumerWidget {
     return Container(
       padding: EdgeInsets.all(size.isCompact ? 14 : 18),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: tokens.surface,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: tokens.borderSubtle),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -123,7 +121,7 @@ class AdminRiskTab extends ConsumerWidget {
             spacing: 12,
             runSpacing: 8,
             children: [
-              const Column(
+              Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
@@ -131,13 +129,13 @@ class AdminRiskTab extends ConsumerWidget {
                     style: TextStyle(
                       fontSize: 15,
                       fontWeight: FontWeight.w800,
-                      color: Color(0xFF0F172A),
+                      color: tokens.textPrimary,
                     ),
                   ),
-                  SizedBox(height: 2),
+                  const SizedBox(height: 2),
                   Text(
                     'Share of active loans with late repayments across all branches',
-                    style: TextStyle(fontSize: 11.5, color: Color(0xFF64748B)),
+                    style: TextStyle(fontSize: 11.5, color: tokens.textMuted),
                   ),
                 ],
               ),
@@ -154,7 +152,7 @@ class AdminRiskTab extends ConsumerWidget {
                   style: TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w700,
-                    color: accentColor,
+                    color: badgeTextColor,
                   ),
                 ),
               ),
@@ -179,10 +177,10 @@ class AdminRiskTab extends ConsumerWidget {
                   padding: const EdgeInsets.only(bottom: 4),
                   child: Text(
                     'At-Risk Loans (Late Payments) • Active Loan Book: ${CurrencyFormatter.format(risk.totalActiveCredit)}',
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
-                      color: Color(0xFF475569),
+                      color: tokens.textSecondary,
                     ),
                   ),
                 ),
@@ -195,7 +193,7 @@ class AdminRiskTab extends ConsumerWidget {
             child: LinearProgressIndicator(
               value: (risk.parPct / 30.0).clamp(0.03, 1.0),
               minHeight: 7,
-              backgroundColor: const Color(0xFFF1F5F9),
+              backgroundColor: tokens.surfaceSubtle,
               valueColor: AlwaysStoppedAnimation<Color>(accentColor),
             ),
           ),
@@ -204,7 +202,7 @@ class AdminRiskTab extends ConsumerWidget {
     );
   }
 
-  Widget _buildRiskMetricsGrid(AdminRiskHealthModel risk, AdminSize size) {
+  Widget _buildRiskMetricsGrid(IcareSurfaceTokens tokens, AdminRiskHealthModel risk, AdminSize size) {
     final columns = size.isCompact
         ? 1
         : size.isMedium
@@ -217,28 +215,28 @@ class AdminRiskTab extends ConsumerWidget {
         label: 'Late Repayments Recovered',
         value: CurrencyFormatter.format(risk.totalOverdueRecovered),
         subtitle: '${risk.recoveryEventsCount} recovery payments recorded',
-        color: const Color(0xFF0284C7),
+        color: tokens.infoText,
       ),
       _RiskMetricCardData(
         icon: Icons.task_alt_outlined,
         label: 'Early Full Payoffs',
         value: CurrencyFormatter.format(risk.fullPayoffsSettledAmount),
         subtitle: '${risk.fullPayoffCount} loans paid off early',
-        color: const Color(0xFF047857),
+        color: tokens.successText,
       ),
       _RiskMetricCardData(
         icon: Icons.add_chart_outlined,
         label: 'Extra Cash Collected',
         value: CurrencyFormatter.format(risk.excessCashCollected),
         subtitle: 'Surplus paid above scheduled instalments',
-        color: const Color(0xFF0F766E),
+        color: tokens.brandPrimary,
       ),
       _RiskMetricCardData(
         icon: Icons.verified_user_outlined,
         label: 'Clients Fully Cleared',
         value: '${risk.fullClientRestorations} Borrowers',
         subtitle: 'Moved from overdue back to good standing',
-        color: const Color(0xFF334155),
+        color: tokens.textPrimary,
       ),
     ];
 
@@ -246,17 +244,17 @@ class AdminRiskTab extends ConsumerWidget {
       columns: columns,
       crossAxisSpacing: 12,
       mainAxisSpacing: 12,
-      children: items.map(_buildRiskMetricTile).toList(),
+      children: items.map((item) => _buildRiskMetricTile(tokens, item)).toList(),
     );
   }
 
-  Widget _buildRiskMetricTile(_RiskMetricCardData item) {
+  Widget _buildRiskMetricTile(IcareSurfaceTokens tokens, _RiskMetricCardData item) {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: tokens.surface,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: tokens.borderSubtle),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -269,10 +267,10 @@ class AdminRiskTab extends ConsumerWidget {
               Expanded(
                 child: Text(
                   item.label,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
-                    color: Color(0xFF475569),
+                    color: tokens.textSecondary,
                   ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -297,9 +295,9 @@ class AdminRiskTab extends ConsumerWidget {
           const SizedBox(height: 4),
           Text(
             item.subtitle,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 11,
-              color: Color(0xFF94A3B8),
+              color: tokens.textLight,
               height: 1.25,
             ),
             maxLines: 2,
@@ -312,6 +310,7 @@ class AdminRiskTab extends ConsumerWidget {
 
   Widget _buildBranchRiskBreakdown(
     BuildContext context,
+    IcareSurfaceTokens tokens,
     List<BranchPerformanceItemModel> branches,
     AdminSize size,
   ) {
@@ -329,14 +328,14 @@ class AdminRiskTab extends ConsumerWidget {
     return Container(
       padding: EdgeInsets.all(size.isCompact ? 14 : 18),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: tokens.surface,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: tokens.borderSubtle),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Row(
+          Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Expanded(
@@ -348,21 +347,21 @@ class AdminRiskTab extends ConsumerWidget {
                       style: TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w700,
-                        color: Color(0xFF0F172A),
+                        color: tokens.textPrimary,
                       ),
                     ),
-                    SizedBox(height: 2),
+                    const SizedBox(height: 2),
                     Text(
                       'Branches ordered by late-payment percentage (highest first)',
-                      style: TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                      style: TextStyle(fontSize: 11, color: tokens.textMuted),
                     ),
                   ],
                 ),
               ),
-              SizedBox(width: 8),
+              const SizedBox(width: 8),
               Text(
                 'Tap branch for detail',
-                style: TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                style: TextStyle(fontSize: 11, color: tokens.textMuted),
               ),
             ],
           ),
@@ -372,7 +371,7 @@ class AdminRiskTab extends ConsumerWidget {
             crossAxisSpacing: 12,
             mainAxisSpacing: 10,
             children: sorted
-                .map((b) => _buildBranchRiskRow(context, b))
+                .map((b) => _buildBranchRiskRow(context, tokens, b))
                 .toList(),
           ),
         ],
@@ -382,12 +381,12 @@ class AdminRiskTab extends ConsumerWidget {
 
   Widget _buildBranchRiskRow(
     BuildContext context,
+    IcareSurfaceTokens tokens,
     BranchPerformanceItemModel b,
   ) {
     final isHighRisk = b.parPct > 10.0;
-    final statusColor = isHighRisk
-        ? const Color(0xFFDC2626)
-        : const Color(0xFF059669);
+    final statusColor = isHighRisk ? tokens.dangerText : tokens.successText;
+    final statusDot = isHighRisk ? tokens.dangerDot : tokens.successDot;
 
     return InkWell(
       onTap: () => AdminBranchDetailSheet.show(
@@ -399,12 +398,10 @@ class AdminRiskTab extends ConsumerWidget {
       child: Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: const Color(0xFFF8FAFC),
+          color: tokens.surfaceSubtle,
           borderRadius: BorderRadius.circular(8),
           border: Border.all(
-            color: isHighRisk
-                ? const Color(0xFFFECACA)
-                : const Color(0xFFE2E8F0),
+            color: isHighRisk ? tokens.dangerBorder : tokens.borderSubtle,
           ),
         ),
         child: Column(
@@ -420,18 +417,18 @@ class AdminRiskTab extends ConsumerWidget {
                     children: [
                       Text(
                         b.branchName,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 13.5,
                           fontWeight: FontWeight.w700,
-                          color: Color(0xFF0F172A),
+                          color: tokens.textPrimary,
                         ),
                         overflow: TextOverflow.ellipsis,
                       ),
                       Text(
                         'Manager: ${b.bmName} • ${b.defaultersCount} late borrowers',
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 11,
-                          color: Color(0xFF64748B),
+                          color: tokens.textMuted,
                         ),
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -443,9 +440,7 @@ class AdminRiskTab extends ConsumerWidget {
                   padding:
                       const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
-                    color: isHighRisk
-                        ? const Color(0xFFFEF2F2)
-                        : const Color(0xFFECFDF5),
+                    color: isHighRisk ? tokens.dangerBg : tokens.successBg,
                     borderRadius: BorderRadius.circular(6),
                   ),
                   child: Text(
@@ -459,10 +454,10 @@ class AdminRiskTab extends ConsumerWidget {
                   ),
                 ),
                 const SizedBox(width: 4),
-                const Icon(
+                Icon(
                   Icons.chevron_right,
                   size: 16,
-                  color: Color(0xFF94A3B8),
+                  color: tokens.textLight,
                 ),
               ],
             ),
@@ -472,8 +467,8 @@ class AdminRiskTab extends ConsumerWidget {
               child: LinearProgressIndicator(
                 value: (b.parPct / 25.0).clamp(0.03, 1.0),
                 minHeight: 4,
-                backgroundColor: const Color(0xFFE2E8F0),
-                valueColor: AlwaysStoppedAnimation<Color>(statusColor),
+                backgroundColor: tokens.borderSubtle,
+                valueColor: AlwaysStoppedAnimation<Color>(statusDot),
               ),
             ),
             const SizedBox(height: 8),
@@ -492,21 +487,21 @@ class AdminRiskTab extends ConsumerWidget {
                 ),
                 Text(
                   'Active loans: ${CurrencyFormatter.format(b.activeCreditBook)}',
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w600,
-                    color: Color(0xFF475569),
-                    fontFeatures: [FontFeature.tabularFigures()],
+                    color: tokens.textSecondary,
+                    fontFeatures: const [FontFeature.tabularFigures()],
                   ),
                 ),
                 if (b.overdueRecovered > 0)
                   Text(
                     'Recovered: ${CurrencyFormatter.format(b.overdueRecovered)}',
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.w600,
-                      color: Color(0xFF0284C7),
-                      fontFeatures: [FontFeature.tabularFigures()],
+                      color: tokens.infoText,
+                      fontFeatures: const [FontFeature.tabularFigures()],
                     ),
                   ),
               ],

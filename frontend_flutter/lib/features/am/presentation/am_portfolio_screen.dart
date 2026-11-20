@@ -11,6 +11,7 @@ import '../../reports/presentation/reports_export_screen.dart';
 import 'officer_productivity_sheet.dart';
 import '../../../core/auth/auth_controller.dart';
 import '../../../core/auth/auth_state.dart';
+import '../../../core/theme/icare_theme_tokens.dart';
 
 class AmPortfolioScreen extends ConsumerStatefulWidget {
   const AmPortfolioScreen({super.key});
@@ -131,6 +132,7 @@ class _AmPortfolioScreenState extends ConsumerState<AmPortfolioScreen> {
   }
 
   Widget _buildPortfolioContent(bool isMobile, bool isTablet, bool isDesktop, bool isBm, String branchName) {
+    final tokens = IcareSurfaceTokens.of(context);
     return Column(
       key: const ValueKey('am_portfolio_content'),
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -152,10 +154,10 @@ class _AmPortfolioScreenState extends ConsumerState<AmPortfolioScreen> {
               children: [
                 Text(
                   isBm ? '$branchName Portfolio Operations' : 'Branch Performance Matrix',
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 17,
                     fontWeight: FontWeight.w800,
-                    color: Color(0xFF0F172A),
+                    color: tokens.textPrimary,
                     letterSpacing: -0.2,
                   ),
                 ),
@@ -164,14 +166,14 @@ class _AmPortfolioScreenState extends ConsumerState<AmPortfolioScreen> {
                   isBm
                       ? 'Capital deployment, active credit progress, and officer productivity for $branchName.'
                       : 'Capital deployment, active credit progress, and officer productivity.',
-                  style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                  style: TextStyle(fontSize: 12, color: tokens.textMuted),
                 ),
               ],
             ),
             IconButton(
               tooltip: 'Refresh Portfolio',
               onPressed: _loadPortfolioData,
-              icon: const Icon(Icons.refresh, size: 20, color: Color(0xFF64748B)),
+              icon: Icon(Icons.refresh, size: 20, color: tokens.textMuted),
             ),
           ],
         ),
@@ -190,15 +192,20 @@ class _AmPortfolioScreenState extends ConsumerState<AmPortfolioScreen> {
 
   // 1. Executive Header with Period Selector
   Widget _buildExecutiveHeader(bool isMobile, bool isBm, String branchName) {
+    final tokens = IcareSurfaceTokens.of(context);
     return Container(
       width: double.infinity,
       padding: EdgeInsets.all(isMobile ? 16 : 20),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: tokens.surface,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-        boxShadow: const [
-          BoxShadow(color: Color(0x040F172A), blurRadius: 4, offset: Offset(0, 2)),
+        border: Border.all(color: tokens.borderSubtle),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: tokens.isDark ? 0.18 : 0.03),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
         ],
       ),
       child: Column(
@@ -212,13 +219,13 @@ class _AmPortfolioScreenState extends ConsumerState<AmPortfolioScreen> {
                   Container(
                     padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
-                      color: isBm ? const Color(0xFFEFF6FF) : const Color(0xFFF0FDFA),
+                      color: isBm ? tokens.infoBg : tokens.brandSoftBg,
                       borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: isBm ? const Color(0xFFDBEAFE) : const Color(0xFFCCFBF1)),
+                      border: Border.all(color: isBm ? tokens.infoBorder : tokens.brandSoftBorder),
                     ),
                     child: Icon(
                       Icons.account_balance,
-                      color: isBm ? const Color(0xFF2563EB) : const Color(0xFF0F766E),
+                      color: isBm ? tokens.infoText : tokens.brandPrimary,
                       size: 22,
                     ),
                   ),
@@ -230,13 +237,15 @@ class _AmPortfolioScreenState extends ConsumerState<AmPortfolioScreen> {
                         children: [
                           Text(
                             isBm ? '$branchName Branch Portfolio' : 'Regional Command Center',
-                            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
+                            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: tokens.textPrimary),
                           ),
                           const SizedBox(width: 8),
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
                             decoration: BoxDecoration(
-                              color: isBm ? const Color(0xFF2563EB) : const Color(0xFF0F766E),
+                              color: isBm
+                                  ? (tokens.isDark ? const Color(0xFF1D4ED8) : const Color(0xFF2563EB))
+                                  : tokens.brandPrimaryDark,
                               borderRadius: BorderRadius.circular(6),
                             ),
                             child: Text(
@@ -251,7 +260,7 @@ class _AmPortfolioScreenState extends ConsumerState<AmPortfolioScreen> {
                         isBm
                             ? 'Branch credit portfolio, capital deployment, and officer productivity'
                             : 'Consolidated branch supervision across Ogijo, Ikorodu, and Kola',
-                        style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                        style: TextStyle(fontSize: 12, color: tokens.textMuted),
                       ),
                     ],
                   ),
@@ -270,13 +279,14 @@ class _AmPortfolioScreenState extends ConsumerState<AmPortfolioScreen> {
   }
 
   Widget _buildPeriodSelector() {
+    final tokens = IcareSurfaceTokens.of(context);
     final periods = ['This Month', 'This Week', 'Today'];
     return Container(
       padding: const EdgeInsets.all(3),
       decoration: BoxDecoration(
-        color: const Color(0xFFF1F5F9),
+        color: tokens.surfaceSubtle,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: tokens.borderSubtle),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -288,10 +298,10 @@ class _AmPortfolioScreenState extends ConsumerState<AmPortfolioScreen> {
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               decoration: BoxDecoration(
-                color: isSelected ? Colors.white : Colors.transparent,
+                color: isSelected ? tokens.surface : Colors.transparent,
                 borderRadius: BorderRadius.circular(6),
                 boxShadow: isSelected
-                    ? const [BoxShadow(color: Color(0x0D0F172A), blurRadius: 3, offset: Offset(0, 1))]
+                    ? [BoxShadow(color: Colors.black.withValues(alpha: tokens.isDark ? 0.2 : 0.05), blurRadius: 3, offset: const Offset(0, 1))]
                     : null,
               ),
               child: Text(
@@ -299,7 +309,7 @@ class _AmPortfolioScreenState extends ConsumerState<AmPortfolioScreen> {
                 style: TextStyle(
                   fontSize: 11.5,
                   fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                  color: isSelected ? const Color(0xFF0F766E) : const Color(0xFF64748B),
+                  color: isSelected ? tokens.brandPrimary : tokens.textMuted,
                 ),
               ),
             ),
@@ -312,13 +322,14 @@ class _AmPortfolioScreenState extends ConsumerState<AmPortfolioScreen> {
   // 2. Portfolio Share Segmented Bar
   Widget _buildPortfolioShareBar(List<BranchPerformanceItemModel> branches, bool isMobile) {
     if (branches.isEmpty) return const SizedBox.shrink();
+    final tokens = IcareSurfaceTokens.of(context);
 
     // Palette for branches
     final palette = [
-      const Color(0xFF0F766E), // Emerald/Teal for Branch 1
-      const Color(0xFF2563EB), // Royal Blue for Branch 2
-      const Color(0xFF7C3AED), // Purple for Branch 3
-      const Color(0xFFD97706), // Amber for Branch 4
+      tokens.brandPrimary,
+      tokens.infoDot,
+      tokens.isDark ? const Color(0xFFA78BFA) : const Color(0xFF7C3AED),
+      tokens.warningDot,
     ];
 
     double totalActiveCredit = branches.fold(0.0, (sum, b) => sum + (b.activeCreditDisbursedAmount > 0 ? b.activeCreditDisbursedAmount : 1.0));
@@ -328,9 +339,9 @@ class _AmPortfolioScreenState extends ConsumerState<AmPortfolioScreen> {
       width: double.infinity,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: tokens.surface,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: tokens.borderSubtle),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -338,13 +349,13 @@ class _AmPortfolioScreenState extends ConsumerState<AmPortfolioScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text(
+              Text(
                 'Regional Loan Book Distribution',
-                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: tokens.textPrimary),
               ),
               Text(
                 'Period: $_selectedPeriod',
-                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF64748B)),
+                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: tokens.textMuted),
               ),
             ],
           ),
@@ -385,7 +396,7 @@ class _AmPortfolioScreenState extends ConsumerState<AmPortfolioScreen> {
                   const SizedBox(width: 6),
                   Text(
                     '${b.branchName}: $pct% (${CurrencyFormatter.formatNaira(vol)})',
-                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF475569)),
+                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: tokens.textSecondary),
                   ),
                 ],
               );
@@ -398,13 +409,15 @@ class _AmPortfolioScreenState extends ConsumerState<AmPortfolioScreen> {
 
   // 3. 6 Regional KPI Summary Cards
   Widget _buildRegionalKpis(RegionalSummaryModel reg, bool isMobile, bool isTablet, bool isDesktop) {
+    final tokens = IcareSurfaceTokens.of(context);
+    final borrowerPurple = tokens.isDark ? const Color(0xFFA78BFA) : const Color(0xFF7C3AED);
     final kpis = [
-      _KpiItem('Active Portfolio', CurrencyFormatter.formatNaira(reg.outstandingPortfolio), 'Total Outstanding Principal', Icons.account_balance_wallet_outlined, const Color(0xFF0F766E), const Color(0xFFF0FDFA)),
-      _KpiItem('Total Savings Reserve', CurrencyFormatter.formatNaira(reg.totalSavings), 'Client Savings Reserves', Icons.savings_outlined, const Color(0xFF2563EB), const Color(0xFFEFF6FF)),
-      _KpiItem('Active Borrowers', '${reg.activeClients}', 'Clients with active credit', Icons.people_outline, const Color(0xFF7C3AED), const Color(0xFFF5F3FF)),
-      _KpiItem('Regional PAR > 30d', reg.par, 'Delinquency Rate', Icons.warning_amber_rounded, const Color(0xFFDC2626), const Color(0xFFFEF2F2)),
-      _KpiItem('Collection Compliance', '${reg.compliancePct.toStringAsFixed(1)}%', 'Period Collection Rate', Icons.verified_outlined, const Color(0xFF059669), const Color(0xFFECFDF5)),
-      _KpiItem('Vault Cash Reserve', CurrencyFormatter.formatNaira(reg.vaultCashAcct1000), 'Consolidated Physical Cash', Icons.store_mall_directory_outlined, const Color(0xFFD97706), const Color(0xFFFFFBEB)),
+      _KpiItem('Active Portfolio', CurrencyFormatter.formatNaira(reg.outstandingPortfolio), 'Total Outstanding Principal', Icons.account_balance_wallet_outlined, tokens.brandPrimary, tokens.brandSoftBg),
+      _KpiItem('Total Savings Reserve', CurrencyFormatter.formatNaira(reg.totalSavings), 'Client Savings Reserves', Icons.savings_outlined, tokens.infoDot, tokens.infoBg),
+      _KpiItem('Active Borrowers', '${reg.activeClients}', 'Clients with active credit', Icons.people_outline, borrowerPurple, borrowerPurple.withValues(alpha: tokens.isDark ? 0.18 : 0.09)),
+      _KpiItem('Regional PAR > 30d', reg.par, 'Delinquency Rate', Icons.warning_amber_rounded, tokens.dangerDot, tokens.dangerBg),
+      _KpiItem('Collection Compliance', '${reg.compliancePct.toStringAsFixed(1)}%', 'Period Collection Rate', Icons.verified_outlined, tokens.successDot, tokens.successBg),
+      _KpiItem('Vault Cash Reserve', CurrencyFormatter.formatNaira(reg.vaultCashAcct1000), 'Consolidated Physical Cash', Icons.store_mall_directory_outlined, tokens.warningDot, tokens.warningBg),
     ];
 
     final crossAxisCount = isDesktop ? 6 : (isTablet ? 3 : 2);
@@ -423,13 +436,14 @@ class _AmPortfolioScreenState extends ConsumerState<AmPortfolioScreen> {
   }
 
   Widget _buildKpiCard(_KpiItem kpi) {
+    final tokens = IcareSurfaceTokens.of(context);
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: tokens.surface,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-        boxShadow: const [BoxShadow(color: Color(0x040F172A), blurRadius: 3, offset: Offset(0, 1))],
+        border: Border.all(color: tokens.borderSubtle),
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: tokens.isDark ? 0.16 : 0.025), blurRadius: 3, offset: const Offset(0, 1))],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -441,7 +455,7 @@ class _AmPortfolioScreenState extends ConsumerState<AmPortfolioScreen> {
               Expanded(
                 child: Text(
                   kpi.label,
-                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF64748B)),
+                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: tokens.textMuted),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -458,18 +472,18 @@ class _AmPortfolioScreenState extends ConsumerState<AmPortfolioScreen> {
             alignment: Alignment.centerLeft,
             child: Text(
               kpi.value,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.w800,
-                color: Color(0xFF0F172A),
+                color: tokens.textPrimary,
                 letterSpacing: -0.3,
-                fontFeatures: [FontFeature.tabularFigures()],
+                fontFeatures: const [FontFeature.tabularFigures()],
               ),
             ),
           ),
           Text(
             kpi.caption,
-            style: const TextStyle(fontSize: 10, color: Color(0xFF94A3B8)),
+            style: TextStyle(fontSize: 10, color: tokens.textLight),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
@@ -480,17 +494,18 @@ class _AmPortfolioScreenState extends ConsumerState<AmPortfolioScreen> {
 
   // 4. Branch Summary Cards Grid
   Widget _buildBranchCardsGrid(List<BranchPerformanceItemModel> branches, bool isMobile, bool isTablet, bool isDesktop) {
+    final tokens = IcareSurfaceTokens.of(context);
     if (branches.isEmpty) {
       return Container(
         width: double.infinity,
         padding: const EdgeInsets.all(32),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: tokens.surface,
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: const Color(0xFFE2E8F0)),
+          border: Border.all(color: tokens.borderSubtle),
         ),
-        child: const Center(
-          child: Text('No supervised branches found for this Area Manager.', style: TextStyle(color: Color(0xFF64748B))),
+        child: Center(
+          child: Text('No supervised branches found for this Area Manager.', style: TextStyle(color: tokens.textMuted)),
         ),
       );
     }
@@ -518,32 +533,42 @@ class _AmPortfolioScreenState extends ConsumerState<AmPortfolioScreen> {
 
   // Individual Branch Card
   Widget _buildBranchCard(BranchPerformanceItemModel b) {
+    final tokens = IcareSurfaceTokens.of(context);
     final isClosed = b.isClosed;
     final statusColor = isClosed
-        ? const Color(0xFFDC2626)
+        ? tokens.dangerText
         : (b.eodStatus == 'BRANCH_CONFIRMED' || b.eodStatus == 'AREA_LOCKED'
-            ? const Color(0xFF16A34A)
-            : const Color(0xFF0F766E));
+            ? tokens.successText
+            : tokens.brandPrimary);
     final statusBg = isClosed
-        ? const Color(0xFFFEF2F2)
+        ? tokens.dangerBg
         : (b.eodStatus == 'BRANCH_CONFIRMED' || b.eodStatus == 'AREA_LOCKED'
-            ? const Color(0xFFF0FDF4)
-            : const Color(0xFFF0FDFA));
+            ? tokens.successBg
+            : tokens.brandSoftBg);
+    final statusBorder = isClosed
+        ? tokens.dangerBorder
+        : (b.eodStatus == 'BRANCH_CONFIRMED' || b.eodStatus == 'AREA_LOCKED'
+            ? tokens.successBorder
+            : tokens.brandSoftBorder);
     final statusLabel = isClosed ? 'Branch Closed' : (b.eodStatus == 'BRANCH_CONFIRMED' ? 'EOD Confirmed' : 'Active Operations');
 
     final isNetPositive = b.netLoanCount >= 0;
-    final netColor = isNetPositive ? const Color(0xFF059669) : const Color(0xFFD97706);
-    final netBg = isNetPositive ? const Color(0xFFECFDF5) : const Color(0xFFFFFBEB);
-    final netBorder = isNetPositive ? const Color(0xFFA7F3D0) : const Color(0xFFFDE68A);
+    final netColor = isNetPositive ? tokens.successText : tokens.warningText;
+    final netBg = isNetPositive ? tokens.successBg : tokens.warningBg;
+    final netBorder = isNetPositive ? tokens.successBorder : tokens.warningBorder;
 
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: tokens.surface,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-        boxShadow: const [
-          BoxShadow(color: Color(0x060F172A), blurRadius: 6, offset: Offset(0, 2)),
+        border: Border.all(color: tokens.borderSubtle),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: tokens.isDark ? 0.2 : 0.03),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
         ],
       ),
       child: Column(
@@ -560,10 +585,10 @@ class _AmPortfolioScreenState extends ConsumerState<AmPortfolioScreen> {
                     width: 38,
                     height: 38,
                     decoration: BoxDecoration(
-                      color: const Color(0xFFF1F5F9),
+                      color: tokens.surfaceHover,
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    child: const Icon(Icons.location_city, color: Color(0xFF0F172A), size: 20),
+                    child: Icon(Icons.location_city, color: tokens.textPrimary, size: 20),
                   ),
                   const SizedBox(width: 10),
                   Column(
@@ -571,11 +596,11 @@ class _AmPortfolioScreenState extends ConsumerState<AmPortfolioScreen> {
                     children: [
                       Text(
                         '${b.branchName} Branch',
-                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
+                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: tokens.textPrimary),
                       ),
                       Text(
                         'BM: ${b.bmName}',
-                        style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B)),
+                        style: TextStyle(fontSize: 11.5, color: tokens.textMuted),
                       ),
                     ],
                   ),
@@ -586,7 +611,7 @@ class _AmPortfolioScreenState extends ConsumerState<AmPortfolioScreen> {
                 decoration: BoxDecoration(
                   color: statusBg,
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: statusColor.withValues(alpha: 0.3)),
+                  border: Border.all(color: statusBorder),
                 ),
                 child: Text(
                   statusLabel,
@@ -595,33 +620,33 @@ class _AmPortfolioScreenState extends ConsumerState<AmPortfolioScreen> {
               ),
             ],
           ),
-          const Divider(height: 18, color: Color(0xFFF1F5F9)),
+          Divider(height: 18, color: tokens.borderSubtle),
 
           // 2. Capital Deployed (Principal Cash Disbursed)
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
             decoration: BoxDecoration(
-              color: const Color(0xFFF8FAFC),
+              color: tokens.surfaceSubtle,
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: const Color(0xFFE2E8F0)),
+              border: Border.all(color: tokens.borderSubtle),
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Row(
                   children: [
-                    const Icon(Icons.account_balance_wallet_outlined, size: 16, color: Color(0xFF0F766E)),
+                    Icon(Icons.account_balance_wallet_outlined, size: 16, color: tokens.brandPrimary),
                     const SizedBox(width: 8),
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
+                        Text(
                           'Principal Cash Disbursed',
-                          style: TextStyle(fontSize: 10.5, color: Color(0xFF64748B), fontWeight: FontWeight.w500),
+                          style: TextStyle(fontSize: 10.5, color: tokens.textMuted, fontWeight: FontWeight.w500),
                         ),
                         Text(
                           CurrencyFormatter.formatNaira(b.principalDisbursedAmount),
-                          style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
+                          style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800, color: tokens.textPrimary),
                         ),
                       ],
                     ),
@@ -630,12 +655,12 @@ class _AmPortfolioScreenState extends ConsumerState<AmPortfolioScreen> {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2.5),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFE2E8F0),
+                    color: tokens.surfaceHover,
                     borderRadius: BorderRadius.circular(6),
                   ),
                   child: Text(
                     '${b.loansDisbursedCount} Loans',
-                    style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: Color(0xFF334155)),
+                    style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: tokens.textSecondary),
                   ),
                 ),
               ],
@@ -650,25 +675,25 @@ class _AmPortfolioScreenState extends ConsumerState<AmPortfolioScreen> {
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFF0FDF4),
+                    color: tokens.successBg,
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: const Color(0xFFDCFCE7)),
+                    border: Border.all(color: tokens.successBorder),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
+                      Text(
                         'Active Loans Disbursed',
-                        style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: Color(0xFF166534)),
+                        style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: tokens.successText),
                       ),
                       const SizedBox(height: 2),
                       Text(
                         CurrencyFormatter.formatNaira(b.activeCreditDisbursedAmount),
-                        style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: Color(0xFF14532D)),
+                        style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: tokens.successText),
                       ),
                       Text(
                         '${b.loansDisbursedCount} Active Loans',
-                        style: const TextStyle(fontSize: 9.5, color: Color(0xFF15803D)),
+                        style: TextStyle(fontSize: 9.5, color: tokens.successText.withValues(alpha: 0.85)),
                       ),
                     ],
                   ),
@@ -679,25 +704,25 @@ class _AmPortfolioScreenState extends ConsumerState<AmPortfolioScreen> {
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFEFF6FF),
+                    color: tokens.infoBg,
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: const Color(0xFFDBEAFE)),
+                    border: Border.all(color: tokens.infoBorder),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
+                      Text(
                         'Full Payments (Closed)',
-                        style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: Color(0xFF1E40AF)),
+                        style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: tokens.infoText),
                       ),
                       const SizedBox(height: 2),
                       Text(
                         CurrencyFormatter.formatNaira(b.fullPaymentsActiveCredit),
-                        style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: Color(0xFF1E3A8A)),
+                        style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: tokens.infoText),
                       ),
                       Text(
                         '${b.fullPaymentsCount} Closed Members',
-                        style: const TextStyle(fontSize: 9.5, color: Color(0xFF2563EB)),
+                        style: TextStyle(fontSize: 9.5, color: tokens.infoText.withValues(alpha: 0.85)),
                       ),
                     ],
                   ),
@@ -749,7 +774,7 @@ class _AmPortfolioScreenState extends ConsumerState<AmPortfolioScreen> {
                   'Compliance Rate',
                   '${b.compliancePct.toStringAsFixed(1)}%',
                   Icons.verified_outlined,
-                  color: b.compliancePct >= 80 ? const Color(0xFF16A34A) : const Color(0xFFD97706),
+                  color: b.compliancePct >= 80 ? tokens.successText : tokens.warningText,
                 ),
               ),
               const SizedBox(width: 8),
@@ -758,7 +783,7 @@ class _AmPortfolioScreenState extends ConsumerState<AmPortfolioScreen> {
                   'PAR > 30d',
                   b.par,
                   Icons.warning_amber_rounded,
-                  color: b.par == '0.0%' ? const Color(0xFF16A34A) : const Color(0xFFDC2626),
+                  color: b.par == '0.0%' ? tokens.successText : tokens.dangerText,
                 ),
               ),
             ],
@@ -775,7 +800,8 @@ class _AmPortfolioScreenState extends ConsumerState<AmPortfolioScreen> {
                   icon: const Icon(Icons.people_outline, size: 15, color: Colors.white),
                   label: const Text('Inspect Officers', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white)),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF0F766E),
+                    backgroundColor: tokens.brandPrimaryDark,
+                    foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(vertical: 10),
                     elevation: 0,
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
@@ -790,11 +816,11 @@ class _AmPortfolioScreenState extends ConsumerState<AmPortfolioScreen> {
                     ref.read(reportsTargetBranchProvider.notifier).state = b.branchName;
                     ref.read(activeCoPageProvider.notifier).state = 'Reports & Export';
                   },
-                  icon: const Icon(Icons.bar_chart_outlined, size: 14, color: Color(0xFF475569)),
-                  label: const Text('Reports', style: TextStyle(fontSize: 11.5, color: Color(0xFF475569), fontWeight: FontWeight.w600)),
+                  icon: Icon(Icons.bar_chart_outlined, size: 14, color: tokens.textSecondary),
+                  label: Text('Reports', style: TextStyle(fontSize: 11.5, color: tokens.textSecondary, fontWeight: FontWeight.w600)),
                   style: OutlinedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 10),
-                    side: const BorderSide(color: Color(0xFFCBD5E1)),
+                    side: BorderSide(color: tokens.borderStrong),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                   ),
                 ),
@@ -818,24 +844,25 @@ class _AmPortfolioScreenState extends ConsumerState<AmPortfolioScreen> {
   }
 
   Widget _buildMetricTile(String label, String value, IconData icon, {Color? color}) {
+    final tokens = IcareSurfaceTokens.of(context);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
       decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
+        color: tokens.surfaceSubtle,
         borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: const Color(0xFFF1F5F9)),
+        border: Border.all(color: tokens.borderSubtle),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Icon(icon, size: 12, color: const Color(0xFF94A3B8)),
+              Icon(icon, size: 12, color: tokens.textLight),
               const SizedBox(width: 4),
               Expanded(
                 child: Text(
                   label,
-                  style: const TextStyle(fontSize: 10, color: Color(0xFF64748B), overflow: TextOverflow.ellipsis),
+                  style: TextStyle(fontSize: 10, color: tokens.textMuted, overflow: TextOverflow.ellipsis),
                 ),
               ),
             ],
@@ -846,7 +873,7 @@ class _AmPortfolioScreenState extends ConsumerState<AmPortfolioScreen> {
             style: TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.w700,
-              color: color ?? const Color(0xFF0F172A),
+              color: color ?? tokens.textPrimary,
             ),
           ),
         ],
@@ -855,20 +882,21 @@ class _AmPortfolioScreenState extends ConsumerState<AmPortfolioScreen> {
   }
 
   Widget _buildGovernanceCard(bool isBm) {
+    final tokens = IcareSurfaceTokens.of(context);
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
+        color: tokens.surfaceSubtle,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: tokens.borderSubtle),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Icon(
             isBm ? Icons.shield_outlined : Icons.info_outline,
-            color: isBm ? const Color(0xFF2563EB) : const Color(0xFF475569),
+            color: isBm ? tokens.infoText : tokens.textSecondary,
             size: 20,
           ),
           const SizedBox(width: 12),
@@ -878,14 +906,14 @@ class _AmPortfolioScreenState extends ConsumerState<AmPortfolioScreen> {
               children: [
                 Text(
                   isBm ? 'Branch Portfolio Operational Invariant' : 'Regional Portfolio Governance Invariant',
-                  style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
+                  style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: tokens.textPrimary),
                 ),
                 const SizedBox(height: 3),
                 Text(
                   isBm
                       ? 'Individual borrower schedules, collection sheets, and dossier management are performed at the branch level by Credit Officers and the Branch Manager. The Branch Manager oversees officer loan book growth, portfolio quality, and daily collections.'
                       : 'Individual borrower schedules, collection sheets, and dossier management are performed at the branch level by Credit Officers and Branch Managers. The Area Manager command center maintains executive supervision, capital deployment oversight, and net portfolio growth tracking.',
-                  style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B), height: 1.4),
+                  style: TextStyle(fontSize: 11.5, color: tokens.textMuted, height: 1.4),
                 ),
               ],
             ),
@@ -896,18 +924,19 @@ class _AmPortfolioScreenState extends ConsumerState<AmPortfolioScreen> {
   }
 
   Widget _buildErrorState() {
+    final tokens = IcareSurfaceTokens.of(context);
     return Center(
       key: const ValueKey('am_portfolio_error'),
       child: Padding(
         padding: const EdgeInsets.all(32),
         child: Column(
           children: [
-            const Icon(Icons.error_outline, size: 48, color: Color(0xFFDC2626)),
+            Icon(Icons.error_outline, size: 48, color: tokens.dangerDot),
             const SizedBox(height: 12),
             Text(
               'Failed to load Regional Portfolio: $_errorMessage',
               textAlign: TextAlign.center,
-              style: const TextStyle(color: Color(0xFF991B1B), fontSize: 14),
+              style: TextStyle(color: tokens.dangerText, fontSize: 14),
             ),
             const SizedBox(height: 16),
             ElevatedButton.icon(

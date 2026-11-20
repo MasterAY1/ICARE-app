@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../theme/icare_theme_tokens.dart';
 
 /// Standard governance widget to declare a missing backend HTTP API contract
 /// per MIGRATION_AUTHORITY.md and ZERO_REDESIGN_CONSTITUTION.md.
@@ -25,14 +26,15 @@ class MissingApiContractBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final tokens = IcareSurfaceTokens.of(context);
     return Container(
       width: double.infinity,
       margin: const EdgeInsets.only(bottom: 20),
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: const Color(0xFFFFFBEB),
+        color: tokens.warningBg,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFFDE68A), width: 1.5),
+        border: Border.all(color: tokens.warningBorder, width: 1.5),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -42,7 +44,7 @@ class MissingApiContractBanner extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFD97706),
+                  color: tokens.warningDot,
                   borderRadius: BorderRadius.circular(4),
                 ),
                 child: const Text(
@@ -54,32 +56,32 @@ class MissingApiContractBanner extends StatelessWidget {
               Expanded(
                 child: Text(
                   '$pageTitle — Backend HTTP Endpoint Required',
-                  style: const TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF92400E), fontSize: 13.5),
+                  style: TextStyle(fontWeight: FontWeight.w700, color: tokens.warningText, fontSize: 13.5),
                 ),
               ),
             ],
           ),
           const SizedBox(height: 12),
-          const Text(
+          Text(
             'The Streamlit implementation executes this workflow directly against Python domain services and Supabase repositories. No mock or hardcoded data is permitted in Flutter. To activate live data, implement the following backend API contract:',
-            style: TextStyle(fontSize: 12, color: Color(0xFF78350F)),
+            style: TextStyle(fontSize: 12, color: tokens.warningText),
           ),
           const SizedBox(height: 12),
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: tokens.surface,
               borderRadius: BorderRadius.circular(6),
-              border: Border.all(color: const Color(0xFFFCD34D)),
+              border: Border.all(color: tokens.warningBorder),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _buildRow('Required Endpoint:', '$httpMethod $requiredEndpoint'),
-                _buildRow('Streamlit Service:', pythonService),
-                _buildRow('Database Tables:', targetTables),
-                _buildRow('RBAC Scope:', rbacRequirement),
-                _buildRow('Contract Payload:', payloadSummary),
+                _buildRow(tokens, 'Required Endpoint:', '$httpMethod $requiredEndpoint'),
+                _buildRow(tokens, 'Streamlit Service:', pythonService),
+                _buildRow(tokens, 'Database Tables:', targetTables),
+                _buildRow(tokens, 'RBAC Scope:', rbacRequirement),
+                _buildRow(tokens, 'Contract Payload:', payloadSummary),
               ],
             ),
           ),
@@ -88,7 +90,7 @@ class MissingApiContractBanner extends StatelessWidget {
     );
   }
 
-  Widget _buildRow(String label, String value) {
+  Widget _buildRow(IcareSurfaceTokens tokens, String label, String value) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 2.5),
       child: Row(
@@ -98,13 +100,13 @@ class MissingApiContractBanner extends StatelessWidget {
             width: 130,
             child: Text(
               label,
-              style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 11.5, color: Color(0xFF451A03)),
+              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 11.5, color: tokens.warningText),
             ),
           ),
           Expanded(
             child: Text(
               value,
-              style: const TextStyle(fontFamily: 'monospace', fontSize: 11.5, color: Color(0xFF0F172A), fontWeight: FontWeight.w600),
+              style: TextStyle(fontFamily: 'monospace', fontSize: 11.5, color: tokens.textPrimary, fontWeight: FontWeight.w600),
             ),
           ),
         ],

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/errors/app_error_formatter.dart';
+import '../../../core/theme/icare_theme_tokens.dart';
 import '../../../core/utils/currency_formatter.dart';
 import '../../../core/widgets/icare_skeleton_loader.dart';
 import '../data/datasources/admin_api_service.dart';
@@ -48,11 +49,12 @@ class AdminBranchDetailSheet extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final detailAsync = ref.watch(adminBranchDetailProvider(branchId));
+    final tokens = IcareSurfaceTokens.of(context);
 
     return Container(
-      decoration: const BoxDecoration(
-        color: Color(0xFFF8FAFC),
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      decoration: BoxDecoration(
+        color: tokens.canvas,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -64,7 +66,7 @@ class AdminBranchDetailSheet extends ConsumerWidget {
               width: 36,
               height: 4,
               decoration: BoxDecoration(
-                color: const Color(0xFFCBD5E1),
+                color: tokens.borderStrong,
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
@@ -78,10 +80,10 @@ class AdminBranchDetailSheet extends ConsumerWidget {
                 Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFE2E8F0),
+                    color: tokens.surfaceHover,
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: const Icon(Icons.domain_outlined, size: 20, color: Color(0xFF1E293B)),
+                  child: Icon(Icons.domain_outlined, size: 20, color: tokens.textPrimary),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -90,31 +92,31 @@ class AdminBranchDetailSheet extends ConsumerWidget {
                     children: [
                       Text(
                         initialBranchName ?? 'Operational Branch Detail',
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.w700,
-                          color: Color(0xFF0F172A),
+                          color: tokens.textPrimary,
                         ),
                         softWrap: true,
                       ),
                       const SizedBox(height: 2),
-                      const Text(
+                      Text(
                         'Operational pulse, vault liquidity & credit quality',
-                        style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                        style: TextStyle(fontSize: 12, color: tokens.textMuted),
                       ),
                     ],
                   ),
                 ),
                 IconButton(
                   onPressed: () => Navigator.of(context).pop(),
-                  icon: const Icon(Icons.close, color: Color(0xFF64748B), size: 20),
+                  icon: Icon(Icons.close, color: tokens.textMuted, size: 20),
                   splashRadius: 20,
                   tooltip: 'Close',
                 ),
               ],
             ),
           ),
-          const Divider(height: 1, color: Color(0xFFE2E8F0)),
+          Divider(height: 1, color: tokens.borderSubtle),
 
           // Body Content
           Expanded(
@@ -139,23 +141,23 @@ class AdminBranchDetailSheet extends ConsumerWidget {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(Icons.error_outline, size: 36, color: Color(0xFFDC2626)),
+                        Icon(Icons.error_outline, size: 36, color: tokens.dangerDot),
                         const SizedBox(height: 12),
                         Text(
                           errorDetails.title.isNotEmpty ? errorDetails.title : 'Unable to load branch details',
-                          style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: Color(0xFF0F172A)),
+                          style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: tokens.textPrimary),
                         ),
                         const SizedBox(height: 6),
                         Text(
                           errorDetails.message,
                           textAlign: TextAlign.center,
-                          style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                          style: TextStyle(fontSize: 12, color: tokens.textMuted),
                         ),
                         const SizedBox(height: 16),
                         ElevatedButton(
                           onPressed: () => ref.invalidate(adminBranchDetailProvider(branchId)),
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF022C22),
+                            backgroundColor: tokens.brandPrimaryDark,
                             foregroundColor: Colors.white,
                           ),
                           child: const Text('Retry'),
@@ -165,7 +167,7 @@ class AdminBranchDetailSheet extends ConsumerWidget {
                   ),
                 );
               },
-              data: (data) => _buildDetailContent(context, data),
+              data: (data) => _buildDetailContent(context, tokens, data),
             ),
           ),
         ],
@@ -173,7 +175,8 @@ class AdminBranchDetailSheet extends ConsumerWidget {
     );
   }
 
-  Widget _buildDetailContent(BuildContext context, AdminBranchDetailModel data) {
+  Widget _buildDetailContent(
+      BuildContext context, IcareSurfaceTokens tokens, AdminBranchDetailModel data) {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(20),
       physics: const BouncingScrollPhysics(),
@@ -184,16 +187,16 @@ class AdminBranchDetailSheet extends ConsumerWidget {
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: tokens.surface,
               borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: const Color(0xFFE2E8F0)),
+              border: Border.all(color: tokens.borderSubtle),
             ),
             child: Row(
               children: [
-                const CircleAvatar(
+                CircleAvatar(
                   radius: 20,
-                  backgroundColor: Color(0xFFF1F5F9),
-                  child: Icon(Icons.person_outline, color: Color(0xFF475569)),
+                  backgroundColor: tokens.surfaceHover,
+                  child: Icon(Icons.person_outline, color: tokens.textSecondary),
                 ),
                 const SizedBox(width: 14),
                 Expanded(
@@ -202,17 +205,17 @@ class AdminBranchDetailSheet extends ConsumerWidget {
                     children: [
                       Text(
                         data.managerName,
-                        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
+                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: tokens.textPrimary),
                       ),
                       const SizedBox(height: 2),
                       Text(
                         'Branch Manager • ${data.branchName}',
-                        style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                        style: TextStyle(fontSize: 12, color: tokens.textMuted),
                       ),
                     ],
                   ),
                 ),
-                _buildStatusPill(data.operationalStatus),
+                _buildStatusPill(tokens, data.operationalStatus),
               ],
             ),
           ),
@@ -222,41 +225,41 @@ class AdminBranchDetailSheet extends ConsumerWidget {
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: tokens.surface,
               borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: const Color(0xFFE2E8F0)),
+              border: Border.all(color: tokens.borderSubtle),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Row(
+                Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(
                       'Primary Vault Reserve',
-                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF64748B)),
+                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tokens.textMuted),
                     ),
-                    Icon(Icons.account_balance_wallet_outlined, size: 16, color: Color(0xFF64748B)),
+                    Icon(Icons.account_balance_wallet_outlined, size: 16, color: tokens.textMuted),
                   ],
                 ),
                 const SizedBox(height: 6),
                 Text(
                   CurrencyFormatter.format(data.vaultCashInCustody),
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 22,
                     fontWeight: FontWeight.w800,
-                    color: Color(0xFF022C22),
-                    fontFeatures: [FontFeature.tabularFigures()],
+                    color: tokens.brandPrimary,
+                    fontFeatures: const [FontFeature.tabularFigures()],
                   ),
                 ),
                 const SizedBox(height: 12),
-                const Divider(height: 1, color: Color(0xFFF1F5F9)),
+                Divider(height: 1, color: tokens.borderSubtle),
                 const SizedBox(height: 12),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    _buildSubMetric('Collections Today', CurrencyFormatter.format(data.todayCollections)),
-                    _buildSubMetric('Disbursed YTD', CurrencyFormatter.format(data.totalDisbursedYtd)),
+                    _buildSubMetric(tokens, 'Collections Today', CurrencyFormatter.format(data.todayCollections)),
+                    _buildSubMetric(tokens, 'Disbursed YTD', CurrencyFormatter.format(data.totalDisbursedYtd)),
                   ],
                 ),
               ],
@@ -275,14 +278,14 @@ class AdminBranchDetailSheet extends ConsumerWidget {
                   branchName: data.branchName,
                 );
               },
-              icon: const Icon(Icons.account_balance_outlined, size: 16, color: Color(0xFF0F766E)),
-              label: const Text(
+              icon: Icon(Icons.account_balance_outlined, size: 16, color: tokens.brandSoftText),
+              label: Text(
                 'Branch Statutory Reconciliation & Opening B/F',
-                style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: Color(0xFF0F766E)),
+                style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: tokens.brandSoftText),
               ),
               style: OutlinedButton.styleFrom(
-                backgroundColor: const Color(0xFFF0FDFA),
-                side: const BorderSide(color: Color(0xFF99F6E4)),
+                backgroundColor: tokens.brandSoftBg,
+                side: BorderSide(color: tokens.brandSoftBorder),
                 padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
               ),
@@ -294,35 +297,37 @@ class AdminBranchDetailSheet extends ConsumerWidget {
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: tokens.surface,
               borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: const Color(0xFFE2E8F0)),
+              border: Border.all(color: tokens.borderSubtle),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
+                Text(
                   'Portfolio & Credit Risk Overview',
-                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: tokens.textPrimary),
                 ),
                 const SizedBox(height: 14),
                 Row(
                   children: [
                     Expanded(
                       child: _buildRiskTile(
+                        tokens,
                         'Active Credit Book',
                         CurrencyFormatter.format(data.activeCreditBook),
                         '${data.activeBorrowersCount} active borrowers',
-                        const Color(0xFF0F172A),
+                        tokens.textPrimary,
                       ),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
                       child: _buildRiskTile(
+                        tokens,
                         'Portfolio at Risk (PAR)',
                         '${data.parPct.toStringAsFixed(1)}%',
                         '${data.defaultersCount} overdue contracts',
-                        data.parPct > 10.0 ? const Color(0xFFDC2626) : const Color(0xFF059669),
+                        data.parPct > 10.0 ? tokens.dangerText : tokens.successText,
                       ),
                     ),
                   ],
@@ -332,19 +337,21 @@ class AdminBranchDetailSheet extends ConsumerWidget {
                   children: [
                     Expanded(
                       child: _buildRiskTile(
+                        tokens,
                         'Overdue Arrears Pool',
                         CurrencyFormatter.format(data.overdueAmount),
                         'Past contractual maturity',
-                        const Color(0xFFB45309),
+                        tokens.warningText,
                       ),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
                       child: _buildRiskTile(
+                        tokens,
                         'Overdue Recovered',
                         CurrencyFormatter.format(data.overdueRecovered),
                         '${data.fullRecoveriesCount} full rehabilitations',
-                        const Color(0xFF0284C7),
+                        tokens.infoText,
                       ),
                     ),
                   ],
@@ -358,9 +365,9 @@ class AdminBranchDetailSheet extends ConsumerWidget {
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: tokens.surface,
               borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: const Color(0xFFE2E8F0)),
+              border: Border.all(color: tokens.borderSubtle),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -368,24 +375,24 @@ class AdminBranchDetailSheet extends ConsumerWidget {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    const Text(
+                    Text(
                       'Field Credit Officers',
-                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
+                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: tokens.textPrimary),
                     ),
                     Text(
                       '${data.officersCount} assigned',
-                      style: const TextStyle(fontSize: 12, color: Color(0xFF64748B), fontWeight: FontWeight.w500),
+                      style: TextStyle(fontSize: 12, color: tokens.textMuted, fontWeight: FontWeight.w500),
                     ),
                   ],
                 ),
                 const SizedBox(height: 12),
                 if (data.officers.isEmpty) ...[
-                  const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 12),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
                     child: Center(
                       child: Text(
                         'No field officers currently stationed.',
-                        style: TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
+                        style: TextStyle(fontSize: 12, color: tokens.textLight),
                       ),
                     ),
                   ),
@@ -397,22 +404,22 @@ class AdminBranchDetailSheet extends ConsumerWidget {
                         Container(
                           width: 28,
                           height: 28,
-                          decoration: const BoxDecoration(
-                            color: Color(0xFFF1F5F9),
+                          decoration: BoxDecoration(
+                            color: tokens.surfaceHover,
                             shape: BoxShape.circle,
                           ),
-                          child: const Icon(Icons.person_pin, size: 16, color: Color(0xFF475569)),
+                          child: Icon(Icons.person_pin, size: 16, color: tokens.textSecondary),
                         ),
                         const SizedBox(width: 10),
                         Expanded(
                           child: Text(
                             co.name,
-                            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF1E293B)),
+                            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: tokens.textPrimary),
                           ),
                         ),
                         Text(
                           '@${co.username}',
-                          style: const TextStyle(fontSize: 11.5, color: Color(0xFF94A3B8)),
+                          style: TextStyle(fontSize: 11.5, color: tokens.textLight),
                         ),
                       ],
                     ),
@@ -426,23 +433,23 @@ class AdminBranchDetailSheet extends ConsumerWidget {
     );
   }
 
-  Widget _buildStatusPill(String status) {
-    Color bg = const Color(0xFFF1F5F9);
-    Color fg = const Color(0xFF475569);
+  Widget _buildStatusPill(IcareSurfaceTokens tokens, String status) {
+    Color bg = tokens.neutralBg;
+    Color fg = tokens.neutralText;
     String label = 'Open';
 
     final st = status.toUpperCase();
     if (st == 'OPEN') {
-      bg = const Color(0xFFECFDF5);
-      fg = const Color(0xFF047857);
+      bg = tokens.successBg;
+      fg = tokens.successText;
       label = 'Active Open';
     } else if (st == 'EOD_PENDING') {
-      bg = const Color(0xFFFFFBEB);
-      fg = const Color(0xFFB45309);
+      bg = tokens.warningBg;
+      fg = tokens.warningText;
       label = 'EOD Pending';
     } else if (st == 'CLOSED') {
-      bg = const Color(0xFFF1F5F9);
-      fg = const Color(0xFF64748B);
+      bg = tokens.neutralBg;
+      fg = tokens.neutralText;
       label = 'Day Closed';
     }
 
@@ -459,37 +466,38 @@ class AdminBranchDetailSheet extends ConsumerWidget {
     );
   }
 
-  Widget _buildSubMetric(String label, String value) {
+  Widget _buildSubMetric(IcareSurfaceTokens tokens, String label, String value) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B))),
+        Text(label, style: TextStyle(fontSize: 11.5, color: tokens.textMuted)),
         const SizedBox(height: 2),
         Text(
           value,
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 13.5,
             fontWeight: FontWeight.w700,
-            color: Color(0xFF0F172A),
-            fontFeatures: [FontFeature.tabularFigures()],
+            color: tokens.textPrimary,
+            fontFeatures: const [FontFeature.tabularFigures()],
           ),
         ),
       ],
     );
   }
 
-  Widget _buildRiskTile(String label, String value, String subtext, Color valueColor) {
+  Widget _buildRiskTile(
+      IcareSurfaceTokens tokens, String label, String value, String subtext, Color valueColor) {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
+        color: tokens.surfaceSubtle,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: tokens.borderSubtle),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label, style: const TextStyle(fontSize: 11, color: Color(0xFF64748B), fontWeight: FontWeight.w500)),
+          Text(label, style: TextStyle(fontSize: 11, color: tokens.textMuted, fontWeight: FontWeight.w500)),
           const SizedBox(height: 4),
           Text(
             value,
@@ -501,7 +509,7 @@ class AdminBranchDetailSheet extends ConsumerWidget {
             ),
           ),
           const SizedBox(height: 2),
-          Text(subtext, style: const TextStyle(fontSize: 10.5, color: Color(0xFF94A3B8))),
+          Text(subtext, style: TextStyle(fontSize: 10.5, color: tokens.textLight)),
         ],
       ),
     );

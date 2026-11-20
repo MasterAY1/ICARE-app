@@ -4,8 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
-import '../../../../core/theme/icare_colors.dart';
-import '../../../../core/theme/icare_typography.dart';
+import '../../../../core/theme/icare_theme_tokens.dart';
 import '../../../../core/utils/currency_formatter.dart';
 import '../../../../core/utils/platform_file_picker.dart';
 import '../../auth/presentation/login_screen.dart';
@@ -331,54 +330,91 @@ class _BranchOnboardingPortalScreenState
 
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Submit Roster to Branch Manager', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Are you sure you want to submit your completed roster to your Branch Manager for review and branch sign-off?',
-              style: TextStyle(fontSize: 13, color: Color(0xFF0F172A)),
+      builder: (ctx) {
+        final tokens = IcareSurfaceTokens.of(ctx);
+        return AlertDialog(
+          backgroundColor: tokens.surfaceElevated,
+          title: Text(
+            'Submit Roster to Branch Manager',
+            style: TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.bold,
+              color: tokens.textPrimary,
             ),
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF8FAFC),
-                borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: const Color(0xFFE2E8F0)),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Are you sure you want to submit your completed roster to your Branch Manager for review and branch sign-off?',
+                style: TextStyle(fontSize: 13, color: tokens.textPrimary),
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Officer: $_scopedOfficer', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 2),
-                  Text('Solidarity Groups: ${myGroups.length}', style: const TextStyle(fontSize: 12)),
-                  const SizedBox(height: 2),
-                  Text('Registered Members: ${myMembers.length}', style: const TextStyle(fontSize: 12)),
-                  const SizedBox(height: 2),
-                  Text('Portfolio Savings: ${CurrencyFormatter.formatNaira(_displayTotalSavings)}',
-                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF059669))),
-                ],
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: tokens.surfaceSubtle,
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: tokens.borderSubtle),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Officer: $_scopedOfficer',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: tokens.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Solidarity Groups: ${myGroups.length}',
+                      style: TextStyle(fontSize: 12, color: tokens.textSecondary),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Registered Members: ${myMembers.length}',
+                      style: TextStyle(fontSize: 12, color: tokens.textSecondary),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Portfolio Savings: ${CurrencyFormatter.formatNaira(_displayTotalSavings)}',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: tokens.successText,
+                      ),
+                    ),
+                  ],
+                ),
               ),
+              const SizedBox(height: 12),
+              Text(
+                'Once submitted, your roster will be locked for review by the Branch Manager.',
+                style: TextStyle(fontSize: 11.5, color: tokens.textMuted),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              style: TextButton.styleFrom(foregroundColor: tokens.textSecondary),
+              child: const Text('Cancel'),
             ),
-            const SizedBox(height: 12),
-            const Text(
-              'Once submitted, your roster will be locked for review by the Branch Manager.',
-              style: TextStyle(fontSize: 11.5, color: Color(0xFF64748B)),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: tokens.brandPrimaryDark,
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('Confirm & Submit to BM'),
             ),
           ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: IcareColors.primary, foregroundColor: Colors.white),
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Confirm & Submit to BM'),
-          ),
-        ],
-      ),
+        );
+      },
     );
 
     if (confirmed != true) return;
@@ -424,24 +460,35 @@ class _BranchOnboardingPortalScreenState
 
     final confirm = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Confirm Submission to Area Manager'),
-        content: Text(
-          'You are about to submit ${_groups.length} groups, ${_members.length} members, and ${_officers.length} credit officers to the Area Manager for final sign-off and database posting.$warningNotice',
-          style: const TextStyle(fontSize: 13),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Cancel'),
+      builder: (ctx) {
+        final tokens = IcareSurfaceTokens.of(ctx);
+        return AlertDialog(
+          backgroundColor: tokens.surfaceElevated,
+          title: Text(
+            'Confirm Submission to Area Manager',
+            style: TextStyle(color: tokens.textPrimary),
           ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: IcareColors.primary),
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Submit to Area Manager', style: TextStyle(color: Colors.white)),
+          content: Text(
+            'You are about to submit ${_groups.length} groups, ${_members.length} members, and ${_officers.length} credit officers to the Area Manager for final sign-off and database posting.$warningNotice',
+            style: TextStyle(fontSize: 13, color: tokens.textSecondary),
           ),
-        ],
-      ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              style: TextButton.styleFrom(foregroundColor: tokens.textSecondary),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: tokens.brandPrimaryDark,
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('Submit to Area Manager'),
+            ),
+          ],
+        );
+      },
     );
 
     if (confirm != true) return;
@@ -476,40 +523,51 @@ class _BranchOnboardingPortalScreenState
     final notesCtrl = TextEditingController();
     final confirm = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Confirm Area Manager Sign-Off'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'You are about to commit ${_groups.length} groups, ${_members.length} members, and ${_officers.length} officers directly into the live core banking database. This operation is permanent.',
-              style: const TextStyle(fontSize: 13),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: notesCtrl,
-              decoration: const InputDecoration(
-                labelText: 'Approval Notes (Optional)',
-                hintText: 'e.g. Verified and approved by Area Manager',
-                border: OutlineInputBorder(),
+      builder: (ctx) {
+        final tokens = IcareSurfaceTokens.of(ctx);
+        return AlertDialog(
+          backgroundColor: tokens.surfaceElevated,
+          title: Text(
+            'Confirm Area Manager Sign-Off',
+            style: TextStyle(color: tokens.textPrimary),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'You are about to commit ${_groups.length} groups, ${_members.length} members, and ${_officers.length} officers directly into the live core banking database. This operation is permanent.',
+                style: TextStyle(fontSize: 13, color: tokens.textSecondary),
               ),
-              style: const TextStyle(fontSize: 13),
+              const SizedBox(height: 12),
+              TextField(
+                controller: notesCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Approval Notes (Optional)',
+                  hintText: 'e.g. Verified and approved by Area Manager',
+                  border: OutlineInputBorder(),
+                ),
+                style: TextStyle(fontSize: 13, color: tokens.textPrimary),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              style: TextButton.styleFrom(foregroundColor: tokens.textSecondary),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: tokens.brandPrimaryDark,
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('Approve & Commit'),
             ),
           ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF059669)),
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Approve & Commit', style: TextStyle(color: Colors.white)),
-          ),
-        ],
-      ),
+        );
+      },
     );
 
     if (confirm != true) return;
@@ -610,11 +668,12 @@ class _BranchOnboardingPortalScreenState
       context: context,
       barrierDismissible: false,
       builder: (ctx) {
+        final tokens = IcareSurfaceTokens.of(ctx);
         return StatefulBuilder(
           builder: (context, setModalState) {
             final isMobileModal = MediaQuery.of(ctx).size.width < 500;
             return Dialog(
-              backgroundColor: Colors.white,
+              backgroundColor: tokens.surfaceElevated,
               insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               child: Container(
@@ -633,10 +692,10 @@ class _BranchOnboardingPortalScreenState
                             Container(
                               padding: const EdgeInsets.all(8),
                               decoration: BoxDecoration(
-                                color: const Color(0xFFEFF6FF),
+                                color: tokens.infoBg,
                                 borderRadius: BorderRadius.circular(8),
                               ),
-                              child: const Icon(Icons.hub_outlined, color: Color(0xFF2563EB), size: 20),
+                              child: Icon(Icons.hub_outlined, color: tokens.infoDot, size: 20),
                             ),
                             const SizedBox(width: 12),
                             Expanded(
@@ -645,26 +704,26 @@ class _BranchOnboardingPortalScreenState
                                 children: [
                                   Text(
                                     isEditing ? 'Edit Solidarity Group' : 'Add Solidarity Group',
-                                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
+                                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: tokens.textPrimary),
                                   ),
                                   const SizedBox(height: 2),
-                                  const Text(
+                                  Text(
                                     'Define group identity, meeting schedule, and leadership',
-                                    style: TextStyle(fontSize: 11.5, color: Color(0xFF64748B)),
+                                    style: TextStyle(fontSize: 11.5, color: tokens.textMuted),
                                   ),
                                 ],
                               ),
                             ),
                             IconButton(
                               onPressed: () => Navigator.of(ctx).pop(),
-                              icon: const Icon(Icons.close, size: 20, color: Color(0xFF94A3B8)),
+                              icon: Icon(Icons.close, size: 20, color: tokens.textMuted),
                               padding: EdgeInsets.zero,
                               constraints: const BoxConstraints(),
                             ),
                           ],
                         ),
                         const SizedBox(height: 16),
-                        const Divider(height: 1, color: Color(0xFFE2E8F0)),
+                        Divider(height: 1, color: tokens.borderSubtle),
                         const SizedBox(height: 16),
 
                         if (isMobileModal) ...[
@@ -680,7 +739,7 @@ class _BranchOnboardingPortalScreenState
                               contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
                               border: OutlineInputBorder(),
                             ),
-                            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+                            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: tokens.textPrimary),
                             validator: (val) {
                               if (val == null || val.trim().isEmpty) return 'Required';
                               final clean = val.trim().toUpperCase();
@@ -702,13 +761,15 @@ class _BranchOnboardingPortalScreenState
                               contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
                               border: OutlineInputBorder(),
                             ),
-                            style: const TextStyle(fontSize: 13),
+                            style: TextStyle(fontSize: 13, color: tokens.textPrimary),
                             validator: (val) =>
                                 (val == null || val.trim().isEmpty) ? 'Please enter a group name' : null,
                           ),
                           const SizedBox(height: 14),
                           DropdownButtonFormField<String>(
                             initialValue: selectedDay,
+                            dropdownColor: tokens.surfaceElevated,
+                            style: TextStyle(fontSize: 13, color: tokens.textPrimary),
                             decoration: const InputDecoration(
                               labelText: 'Meeting Day *',
                               labelStyle: TextStyle(fontSize: 12),
@@ -716,7 +777,7 @@ class _BranchOnboardingPortalScreenState
                               border: OutlineInputBorder(),
                             ),
                             items: availableDays.map((d) {
-                              return DropdownMenuItem(value: d, child: Text(d, style: const TextStyle(fontSize: 13)));
+                              return DropdownMenuItem(value: d, child: Text(d, style: TextStyle(fontSize: 13, color: tokens.textPrimary)));
                             }).toList(),
                             onChanged: (val) {
                               if (val != null) setModalState(() => selectedDay = val);
@@ -733,25 +794,27 @@ class _BranchOnboardingPortalScreenState
                               contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
                               border: OutlineInputBorder(),
                             ),
-                            style: const TextStyle(fontSize: 13),
+                            style: TextStyle(fontSize: 13, color: tokens.textPrimary),
                           ),
                           if (_scopedOfficer != null && _scopedOfficer!.isNotEmpty) ...[
                             TextFormField(
                               controller: officerCtrl,
                               enabled: false,
-                              decoration: const InputDecoration(
+                              decoration: InputDecoration(
                                 labelText: 'Assigned Credit Officer (Your Workspace)',
-                                labelStyle: TextStyle(fontSize: 12),
-                                contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
-                                border: OutlineInputBorder(),
+                                labelStyle: const TextStyle(fontSize: 12),
+                                contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+                                border: const OutlineInputBorder(),
                                 filled: true,
-                                fillColor: Color(0xFFF1F5F9),
+                                fillColor: tokens.surfaceSubtle,
                               ),
-                              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF334155)),
+                              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: tokens.textSecondary),
                             ),
                           ] else if (officerNames.isNotEmpty) ...[
                             DropdownButtonFormField<String>(
                               initialValue: selectedOfficerDropdown,
+                              dropdownColor: tokens.surfaceElevated,
+                              style: TextStyle(fontSize: 13, color: tokens.textPrimary),
                               decoration: const InputDecoration(
                                 labelText: 'Assigned Credit Officer',
                                 labelStyle: TextStyle(fontSize: 12),
@@ -761,11 +824,11 @@ class _BranchOnboardingPortalScreenState
                               items: [
                                 ...officerNames.map((name) => DropdownMenuItem(
                                   value: name,
-                                  child: Text(name, style: const TextStyle(fontSize: 13)),
+                                  child: Text(name, style: TextStyle(fontSize: 13, color: tokens.textPrimary)),
                                 )),
-                                const DropdownMenuItem(
+                                DropdownMenuItem(
                                   value: '__custom__',
-                                  child: Text('+ Custom / Enter New Officer', style: TextStyle(fontSize: 13, color: Color(0xFF2563EB))),
+                                  child: Text('+ Custom / Enter New Officer', style: TextStyle(fontSize: 13, color: tokens.infoText)),
                                 ),
                               ],
                               onChanged: (val) {
@@ -799,7 +862,7 @@ class _BranchOnboardingPortalScreenState
                                   contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
                                   border: OutlineInputBorder(),
                                 ),
-                                style: const TextStyle(fontSize: 13),
+                                style: TextStyle(fontSize: 13, color: tokens.textPrimary),
                               ),
                             ],
                           ] else ...[
@@ -813,7 +876,7 @@ class _BranchOnboardingPortalScreenState
                                 contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
                                 border: OutlineInputBorder(),
                               ),
-                              style: const TextStyle(fontSize: 13),
+                              style: TextStyle(fontSize: 13, color: tokens.textPrimary),
                             ),
                           ],
                           const SizedBox(height: 14),
@@ -827,7 +890,7 @@ class _BranchOnboardingPortalScreenState
                               contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
                               border: OutlineInputBorder(),
                             ),
-                            style: const TextStyle(fontSize: 13),
+                            style: TextStyle(fontSize: 13, color: tokens.textPrimary),
                           ),
                         ] else ...[
                           // Group Reference & Name
@@ -845,7 +908,7 @@ class _BranchOnboardingPortalScreenState
                                     contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
                                     border: OutlineInputBorder(),
                                   ),
-                                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+                                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: tokens.textPrimary),
                                   validator: (val) {
                                     if (val == null || val.trim().isEmpty) return 'Required';
                                     final clean = val.trim().toUpperCase();
@@ -869,7 +932,7 @@ class _BranchOnboardingPortalScreenState
                                     contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
                                     border: OutlineInputBorder(),
                                   ),
-                                  style: const TextStyle(fontSize: 13),
+                                  style: TextStyle(fontSize: 13, color: tokens.textPrimary),
                                   validator: (val) =>
                                       (val == null || val.trim().isEmpty) ? 'Please enter a group name' : null,
                                 ),
@@ -884,6 +947,8 @@ class _BranchOnboardingPortalScreenState
                               Expanded(
                                 child: DropdownButtonFormField<String>(
                                   initialValue: selectedDay,
+                                  dropdownColor: tokens.surfaceElevated,
+                                  style: TextStyle(fontSize: 13, color: tokens.textPrimary),
                                   decoration: const InputDecoration(
                                     labelText: 'Meeting Day *',
                                     labelStyle: TextStyle(fontSize: 12),
@@ -891,7 +956,7 @@ class _BranchOnboardingPortalScreenState
                                     border: OutlineInputBorder(),
                                   ),
                                   items: availableDays.map((d) {
-                                    return DropdownMenuItem(value: d, child: Text(d, style: const TextStyle(fontSize: 13)));
+                                    return DropdownMenuItem(value: d, child: Text(d, style: TextStyle(fontSize: 13, color: tokens.textPrimary)));
                                   }).toList(),
                                   onChanged: (val) {
                                     if (val != null) setModalState(() => selectedDay = val);
@@ -910,7 +975,7 @@ class _BranchOnboardingPortalScreenState
                                     contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
                                     border: OutlineInputBorder(),
                                   ),
-                                  style: const TextStyle(fontSize: 13),
+                                  style: TextStyle(fontSize: 13, color: tokens.textPrimary),
                                 ),
                               ),
                             ],
@@ -929,19 +994,21 @@ class _BranchOnboardingPortalScreenState
                                       TextFormField(
                                         controller: officerCtrl,
                                         enabled: false,
-                                        decoration: const InputDecoration(
+                                        decoration: InputDecoration(
                                           labelText: 'Assigned Credit Officer (Your Workspace)',
-                                          labelStyle: TextStyle(fontSize: 12),
-                                          contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
-                                          border: OutlineInputBorder(),
+                                          labelStyle: const TextStyle(fontSize: 12),
+                                          contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+                                          border: const OutlineInputBorder(),
                                           filled: true,
-                                          fillColor: Color(0xFFF1F5F9),
+                                          fillColor: tokens.surfaceSubtle,
                                         ),
-                                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF334155)),
+                                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: tokens.textSecondary),
                                       ),
                                     ] else if (officerNames.isNotEmpty) ...[
                                       DropdownButtonFormField<String>(
                                         initialValue: selectedOfficerDropdown,
+                                        dropdownColor: tokens.surfaceElevated,
+                                        style: TextStyle(fontSize: 13, color: tokens.textPrimary),
                                         decoration: const InputDecoration(
                                           labelText: 'Assigned Credit Officer',
                                           labelStyle: TextStyle(fontSize: 12),
@@ -951,11 +1018,11 @@ class _BranchOnboardingPortalScreenState
                                         items: [
                                           ...officerNames.map((name) => DropdownMenuItem(
                                             value: name,
-                                            child: Text(name, style: const TextStyle(fontSize: 13)),
+                                            child: Text(name, style: TextStyle(fontSize: 13, color: tokens.textPrimary)),
                                           )),
-                                          const DropdownMenuItem(
+                                          DropdownMenuItem(
                                             value: '__custom__',
-                                            child: Text('+ Custom / Enter New Officer', style: TextStyle(fontSize: 13, color: Color(0xFF2563EB))),
+                                            child: Text('+ Custom / Enter New Officer', style: TextStyle(fontSize: 13, color: tokens.infoText)),
                                           ),
                                         ],
                                         onChanged: (val) {
@@ -989,7 +1056,7 @@ class _BranchOnboardingPortalScreenState
                                             contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
                                             border: OutlineInputBorder(),
                                           ),
-                                          style: const TextStyle(fontSize: 13),
+                                          style: TextStyle(fontSize: 13, color: tokens.textPrimary),
                                         ),
                                       ],
                                     ] else ...[
@@ -1003,7 +1070,7 @@ class _BranchOnboardingPortalScreenState
                                           contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
                                           border: OutlineInputBorder(),
                                         ),
-                                        style: const TextStyle(fontSize: 13),
+                                        style: TextStyle(fontSize: 13, color: tokens.textPrimary),
                                       ),
                                     ],
                                   ],
@@ -1021,7 +1088,7 @@ class _BranchOnboardingPortalScreenState
                                     contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
                                     border: OutlineInputBorder(),
                                   ),
-                                  style: const TextStyle(fontSize: 13),
+                                  style: TextStyle(fontSize: 13, color: tokens.textPrimary),
                                 ),
                               ),
                             ],
@@ -1041,7 +1108,7 @@ class _BranchOnboardingPortalScreenState
                             contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
                             border: OutlineInputBorder(),
                           ),
-                          style: const TextStyle(fontSize: 13),
+                          style: TextStyle(fontSize: 13, color: tokens.textPrimary),
                         ),
                         const SizedBox(height: 20),
 
@@ -1050,13 +1117,17 @@ class _BranchOnboardingPortalScreenState
                           mainAxisAlignment: MainAxisAlignment.end,
                           children: [
                             OutlinedButton(
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: tokens.textSecondary,
+                                side: BorderSide(color: tokens.borderStrong),
+                              ),
                               onPressed: () => Navigator.of(ctx).pop(),
                               child: const Text('Cancel', style: TextStyle(fontSize: 12)),
                             ),
                             const SizedBox(width: 12),
                             ElevatedButton.icon(
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: IcareColors.primary,
+                                backgroundColor: tokens.brandPrimaryDark,
                                 foregroundColor: Colors.white,
                                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                               ),
@@ -1149,40 +1220,45 @@ class _BranchOnboardingPortalScreenState
     if (availableGroups.isEmpty) {
       showDialog(
         context: context,
-        builder: (ctx) => AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          title: const Row(
-            children: [
-              Icon(Icons.info_outline, color: Color(0xFF2563EB), size: 20),
-              SizedBox(width: 8),
-              Text('Create a Group First', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
-            ],
-          ),
-          content: Text(
-            _scopedOfficer != null
-                ? 'You do not have any solidarity groups created yet for your portfolio ($_scopedOfficer). Please add at least one solidarity group before registering members.'
-                : 'Members must belong to a Solidarity Group. Please add at least one group before registering members.',
-            style: const TextStyle(fontSize: 13, color: Color(0xFF475569)),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: const Text('Cancel'),
+        builder: (ctx) {
+          final tokens = IcareSurfaceTokens.of(ctx);
+          return AlertDialog(
+            backgroundColor: tokens.surfaceElevated,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            title: Row(
+              children: [
+                Icon(Icons.info_outline, color: tokens.infoDot, size: 20),
+                const SizedBox(width: 8),
+                Text('Create a Group First', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: tokens.textPrimary)),
+              ],
             ),
-            ElevatedButton.icon(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: IcareColors.primary,
-                foregroundColor: Colors.white,
+            content: Text(
+              _scopedOfficer != null
+                  ? 'You do not have any solidarity groups created yet for your portfolio ($_scopedOfficer). Please add at least one solidarity group before registering members.'
+                  : 'Members must belong to a Solidarity Group. Please add at least one group before registering members.',
+              style: TextStyle(fontSize: 13, color: tokens.textSecondary),
+            ),
+            actions: [
+              TextButton(
+                style: TextButton.styleFrom(foregroundColor: tokens.textSecondary),
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text('Cancel'),
               ),
-              onPressed: () {
-                Navigator.of(ctx).pop();
-                _showGroupModal();
-              },
-              icon: const Icon(Icons.add, size: 16),
-              label: const Text('Add Group Now'),
-            ),
-          ],
-        ),
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: tokens.brandPrimaryDark,
+                  foregroundColor: Colors.white,
+                ),
+                onPressed: () {
+                  Navigator.of(ctx).pop();
+                  _showGroupModal();
+                },
+                icon: const Icon(Icons.add, size: 16),
+                label: const Text('Add Group Now'),
+              ),
+            ],
+          );
+        },
       );
       return;
     }
@@ -1253,6 +1329,7 @@ class _BranchOnboardingPortalScreenState
       context: context,
       barrierDismissible: false,
       builder: (ctx) {
+        final tokens = IcareSurfaceTokens.of(ctx);
         return StatefulBuilder(
           builder: (context, setModalState) {
             final isMobileModal = MediaQuery.of(ctx).size.width < 500;
@@ -1276,7 +1353,7 @@ class _BranchOnboardingPortalScreenState
             final calcInstallment = prodInstallments > 0 ? (enteredCred / prodInstallments) : 0.0;
             final estRemainingCount = calcInstallment > 0 ? (enteredBal / calcInstallment).ceil() : 0;
             return Dialog(
-              backgroundColor: Colors.white,
+              backgroundColor: tokens.surfaceElevated,
               insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               child: Container(
@@ -1295,12 +1372,12 @@ class _BranchOnboardingPortalScreenState
                             Container(
                               padding: const EdgeInsets.all(8),
                               decoration: BoxDecoration(
-                                color: const Color(0xFFF0FDF4),
+                                color: tokens.brandSoftBg,
                                 borderRadius: BorderRadius.circular(8),
                               ),
                               child: Icon(
                                 isEditing ? Icons.edit_outlined : Icons.person_add_alt_1,
-                                color: const Color(0xFF059669),
+                                color: tokens.brandSoftText,
                                 size: 20,
                               ),
                             ),
@@ -1311,32 +1388,34 @@ class _BranchOnboardingPortalScreenState
                                 children: [
                                   Text(
                                     isEditing ? 'Edit Member Details' : 'Register New Member',
-                                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
+                                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: tokens.textPrimary),
                                   ),
                                   const SizedBox(height: 2),
-                                  const Text(
+                                  Text(
                                     'Solidarity group membership, savings, and loan balances',
-                                    style: TextStyle(fontSize: 11.5, color: Color(0xFF64748B)),
+                                    style: TextStyle(fontSize: 11.5, color: tokens.textMuted),
                                   ),
                                 ],
                               ),
                             ),
                             IconButton(
                               onPressed: () => Navigator.of(ctx).pop(),
-                              icon: const Icon(Icons.close, size: 20, color: Color(0xFF94A3B8)),
+                              icon: Icon(Icons.close, size: 20, color: tokens.textMuted),
                               padding: EdgeInsets.zero,
                               constraints: const BoxConstraints(),
                             ),
                           ],
                         ),
                         const SizedBox(height: 16),
-                        const Divider(height: 1, color: Color(0xFFE2E8F0)),
+                        Divider(height: 1, color: tokens.borderSubtle),
                         const SizedBox(height: 16),
 
                         // Section 1: Group Assignment & Code
                         if (isMobileModal) ...[
                           DropdownButtonFormField<String>(
                             initialValue: selectedGroupRef,
+                            dropdownColor: tokens.surfaceElevated,
+                            style: TextStyle(fontSize: 13, color: tokens.textPrimary),
                             decoration: const InputDecoration(
                               labelText: 'Solidarity Group *',
                               labelStyle: TextStyle(fontSize: 12),
@@ -1350,7 +1429,7 @@ class _BranchOnboardingPortalScreenState
                                 value: gRef.toString(),
                                 child: Text(
                                   '$gRef ($gName)',
-                                  style: const TextStyle(fontSize: 13),
+                                  style: TextStyle(fontSize: 13, color: tokens.textPrimary),
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                 ),
@@ -1378,7 +1457,7 @@ class _BranchOnboardingPortalScreenState
                               contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
                               border: OutlineInputBorder(),
                             ),
-                            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+                            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: tokens.textPrimary),
                             validator: (val) {
                               if (val == null || val.trim().isEmpty) return 'Required';
                               final clean = val.trim().toUpperCase();
@@ -1396,6 +1475,8 @@ class _BranchOnboardingPortalScreenState
                                 flex: 3,
                                 child: DropdownButtonFormField<String>(
                                   initialValue: selectedGroupRef,
+                                  dropdownColor: tokens.surfaceElevated,
+                                  style: TextStyle(fontSize: 13, color: tokens.textPrimary),
                                   decoration: const InputDecoration(
                                     labelText: 'Solidarity Group *',
                                     labelStyle: TextStyle(fontSize: 12),
@@ -1409,7 +1490,7 @@ class _BranchOnboardingPortalScreenState
                                       value: gRef.toString(),
                                       child: Text(
                                         '$gRef ($gName)',
-                                        style: const TextStyle(fontSize: 13),
+                                        style: TextStyle(fontSize: 13, color: tokens.textPrimary),
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
                                       ),
@@ -1440,7 +1521,7 @@ class _BranchOnboardingPortalScreenState
                                     contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
                                     border: OutlineInputBorder(),
                                   ),
-                                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+                                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: tokens.textPrimary),
                                   validator: (val) {
                                     if (val == null || val.trim().isEmpty) return 'Required';
                                     final clean = val.trim().toUpperCase();
@@ -1468,7 +1549,7 @@ class _BranchOnboardingPortalScreenState
                             contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
                             border: OutlineInputBorder(),
                           ),
-                          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: tokens.textPrimary),
                           validator: (val) =>
                               (val == null || val.trim().isEmpty) ? 'Please enter client name' : null,
                         ),
@@ -1486,7 +1567,7 @@ class _BranchOnboardingPortalScreenState
                               contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
                               border: OutlineInputBorder(),
                             ),
-                            style: const TextStyle(fontSize: 13),
+                            style: TextStyle(fontSize: 13, color: tokens.textPrimary),
                           ),
                           const SizedBox(height: 14),
                           TextFormField(
@@ -1498,7 +1579,7 @@ class _BranchOnboardingPortalScreenState
                               contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
                               border: OutlineInputBorder(),
                             ),
-                            style: const TextStyle(fontSize: 13),
+                            style: TextStyle(fontSize: 13, color: tokens.textPrimary),
                           ),
                         ] else ...[
                           Row(
@@ -1514,7 +1595,7 @@ class _BranchOnboardingPortalScreenState
                                     contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
                                     border: OutlineInputBorder(),
                                   ),
-                                  style: const TextStyle(fontSize: 13),
+                                  style: TextStyle(fontSize: 13, color: tokens.textPrimary),
                                 ),
                               ),
                               const SizedBox(width: 12),
@@ -1528,7 +1609,7 @@ class _BranchOnboardingPortalScreenState
                                     contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
                                     border: OutlineInputBorder(),
                                   ),
-                                  style: const TextStyle(fontSize: 13),
+                                  style: TextStyle(fontSize: 13, color: tokens.textPrimary),
                                 ),
                               ),
                             ],
@@ -1548,7 +1629,7 @@ class _BranchOnboardingPortalScreenState
                             contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
                             border: OutlineInputBorder(),
                           ),
-                          style: const TextStyle(fontSize: 13),
+                          style: TextStyle(fontSize: 13, color: tokens.textPrimary),
                         ),
                         const SizedBox(height: 16),
 
@@ -1556,36 +1637,36 @@ class _BranchOnboardingPortalScreenState
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                           decoration: BoxDecoration(
-                            color: hasActiveLoan ? const Color(0xFFEFF6FF) : const Color(0xFFF8FAFC),
+                            color: hasActiveLoan ? tokens.infoBg : tokens.surfaceSubtle,
                             borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: hasActiveLoan ? const Color(0xFFBFDBFE) : const Color(0xFFE2E8F0)),
+                            border: Border.all(color: hasActiveLoan ? tokens.infoBorder : tokens.borderSubtle),
                           ),
                           child: Row(
                             children: [
                               Icon(
                                 Icons.credit_card_outlined,
                                 size: 18,
-                                color: hasActiveLoan ? const Color(0xFF2563EB) : const Color(0xFF64748B),
+                                color: hasActiveLoan ? tokens.infoDot : tokens.textMuted,
                               ),
                               const SizedBox(width: 10),
-                              const Expanded(
+                              Expanded(
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
                                       'Client Has Pre-Existing / Active Loan',
-                                      style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
+                                      style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: tokens.textPrimary),
                                     ),
                                     Text(
                                       'Enable to migrate an existing active loan running before onboarding.',
-                                      style: TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                                      style: TextStyle(fontSize: 11, color: tokens.textMuted),
                                     ),
                                   ],
                                 ),
                               ),
                               Switch(
                                 value: hasActiveLoan,
-                                activeThumbColor: const Color(0xFF2563EB),
+                                activeThumbColor: tokens.brandAccent,
                                 onChanged: (val) {
                                   setModalState(() {
                                     hasActiveLoan = val;
@@ -1607,15 +1688,17 @@ class _BranchOnboardingPortalScreenState
                           Container(
                             padding: const EdgeInsets.all(12),
                             decoration: BoxDecoration(
-                              color: const Color(0xFFF8FAFC),
+                              color: tokens.surfaceSubtle,
                               borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: const Color(0xFFE2E8F0)),
+                              border: Border.all(color: tokens.borderSubtle),
                             ),
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 DropdownButtonFormField<String>(
                                   initialValue: selectedProduct,
+                                  dropdownColor: tokens.surfaceElevated,
+                                  style: TextStyle(fontSize: 13, color: tokens.textPrimary),
                                   decoration: const InputDecoration(
                                     labelText: 'Loan Product *',
                                     labelStyle: TextStyle(fontSize: 12),
@@ -1623,7 +1706,7 @@ class _BranchOnboardingPortalScreenState
                                     border: OutlineInputBorder(),
                                   ),
                                   items: productOptions.map((prod) {
-                                    return DropdownMenuItem(value: prod, child: Text(prod, style: const TextStyle(fontSize: 13)));
+                                    return DropdownMenuItem(value: prod, child: Text(prod, style: TextStyle(fontSize: 13, color: tokens.textPrimary)));
                                   }).toList(),
                                   onChanged: (val) {
                                     if (val != null) setModalState(() => selectedProduct = val);
@@ -1644,7 +1727,7 @@ class _BranchOnboardingPortalScreenState
                                       contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
                                       border: OutlineInputBorder(),
                                     ),
-                                    style: const TextStyle(fontSize: 13),
+                                    style: TextStyle(fontSize: 13, color: tokens.textPrimary),
                                     validator: (val) {
                                       if (!hasActiveLoan) return null;
                                       if (val == null || val.trim().isEmpty) return 'Required';
@@ -1667,7 +1750,7 @@ class _BranchOnboardingPortalScreenState
                                       contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
                                       border: OutlineInputBorder(),
                                     ),
-                                    style: const TextStyle(fontSize: 13),
+                                    style: TextStyle(fontSize: 13, color: tokens.textPrimary),
                                     onChanged: (_) => setModalState(() {}),
                                     validator: (val) {
                                       if (!hasActiveLoan) return null;
@@ -1694,7 +1777,7 @@ class _BranchOnboardingPortalScreenState
                                           contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
                                           border: OutlineInputBorder(),
                                         ),
-                                        style: const TextStyle(fontSize: 13),
+                                        style: TextStyle(fontSize: 13, color: tokens.textPrimary),
                                         validator: (val) {
                                           if (!hasActiveLoan) return null;
                                           if (val == null || val.trim().isEmpty) return 'Required';
@@ -1719,7 +1802,7 @@ class _BranchOnboardingPortalScreenState
                                           contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
                                           border: OutlineInputBorder(),
                                         ),
-                                        style: const TextStyle(fontSize: 13),
+                                        style: TextStyle(fontSize: 13, color: tokens.textPrimary),
                                         onChanged: (_) => setModalState(() {}),
                                         validator: (val) {
                                           if (!hasActiveLoan) return null;
@@ -1747,7 +1830,7 @@ class _BranchOnboardingPortalScreenState
                                     contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
                                     border: OutlineInputBorder(),
                                   ),
-                                  style: const TextStyle(fontSize: 13),
+                                  style: TextStyle(fontSize: 13, color: tokens.textPrimary),
                                   onChanged: (_) => setModalState(() {}),
                                   validator: (val) {
                                     if (!hasActiveLoan) return null;
@@ -1764,23 +1847,23 @@ class _BranchOnboardingPortalScreenState
                                   Container(
                                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                                     decoration: BoxDecoration(
-                                      color: const Color(0xFFEFF6FF),
+                                      color: tokens.infoBg,
                                       borderRadius: BorderRadius.circular(6),
-                                      border: Border.all(color: const Color(0xFFDBEAFE)),
+                                      border: Border.all(color: tokens.infoBorder),
                                     ),
                                     child: Row(
                                       children: [
-                                        const Icon(Icons.calculate_outlined, size: 16, color: Color(0xFF2563EB)),
+                                        Icon(Icons.calculate_outlined, size: 16, color: tokens.infoDot),
                                         const SizedBox(width: 8),
                                         Expanded(
                                           child: Text(
                                             'Scheduled Installment: ${CurrencyFormatter.formatNaira(calcInstallment)} / period ($prodInstallments total)'
                                             '${enteredBal > 0 ? ' • ~$estRemainingCount remaining' : ''}',
-                                            style: const TextStyle(
+                                            style: TextStyle(
                                               fontSize: 11,
                                               fontWeight: FontWeight.w600,
-                                              color: Color(0xFF1D4ED8),
-                                              fontFeatures: [FontFeature.tabularFigures()],
+                                              color: tokens.infoText,
+                                              fontFeatures: const [FontFeature.tabularFigures()],
                                             ),
                                           ),
                                         ),
@@ -1799,13 +1882,17 @@ class _BranchOnboardingPortalScreenState
                           mainAxisAlignment: MainAxisAlignment.end,
                           children: [
                             OutlinedButton(
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: tokens.textSecondary,
+                                side: BorderSide(color: tokens.borderStrong),
+                              ),
                               onPressed: () => Navigator.of(ctx).pop(),
                               child: const Text('Cancel', style: TextStyle(fontSize: 12)),
                             ),
                             const SizedBox(width: 12),
                             ElevatedButton.icon(
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: IcareColors.primary,
+                                backgroundColor: tokens.brandPrimaryDark,
                                 foregroundColor: Colors.white,
                                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                               ),
@@ -1892,36 +1979,47 @@ class _BranchOnboardingPortalScreenState
 
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        title: const Row(
-          children: [
-            Icon(Icons.delete_outline, color: Color(0xFFDC2626), size: 20),
-            SizedBox(width: 8),
-            Text('Remove Member', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+      builder: (ctx) {
+        final tokens = IcareSurfaceTokens.of(ctx);
+        return AlertDialog(
+          backgroundColor: tokens.surfaceElevated,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          title: Row(
+            children: [
+              Icon(Icons.delete_outline, color: tokens.dangerDot, size: 20),
+              const SizedBox(width: 8),
+              Text(
+                'Remove Member',
+                style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: tokens.textPrimary),
+              ),
+            ],
+          ),
+          content: Text(
+            'Are you sure you want to remove "$name" ($refCode) from this branch onboarding package?',
+            style: TextStyle(fontSize: 13, color: tokens.textSecondary),
+          ),
+          actions: [
+            TextButton(
+              style: TextButton.styleFrom(foregroundColor: tokens.textSecondary),
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFDC2626),
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () {
+                Navigator.of(ctx).pop();
+                setState(() => _members.remove(m));
+                _saveDraft();
+                _showBanner('Member "$name" removed.', isSuccess: true);
+              },
+              child: const Text('Delete Member'),
+            ),
           ],
-        ),
-        content: Text(
-          'Are you sure you want to remove "$name" ($refCode) from this branch onboarding package?',
-          style: const TextStyle(fontSize: 13, color: Color(0xFF475569)),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFDC2626)),
-            onPressed: () {
-              Navigator.of(ctx).pop();
-              setState(() => _members.remove(m));
-              _saveDraft();
-              _showBanner('Member "$name" removed.', isSuccess: true);
-            },
-            child: const Text('Delete Member', style: TextStyle(color: Colors.white)),
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 
@@ -1932,44 +2030,55 @@ class _BranchOnboardingPortalScreenState
 
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        title: const Row(
-          children: [
-            Icon(Icons.warning_amber_rounded, color: Color(0xFFDC2626), size: 20),
-            SizedBox(width: 8),
-            Text('Delete Solidarity Group', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+      builder: (ctx) {
+        final tokens = IcareSurfaceTokens.of(ctx);
+        return AlertDialog(
+          backgroundColor: tokens.surfaceElevated,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          title: Row(
+            children: [
+              Icon(Icons.warning_amber_rounded, color: tokens.dangerDot, size: 20),
+              const SizedBox(width: 8),
+              Text(
+                'Delete Solidarity Group',
+                style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: tokens.textPrimary),
+              ),
+            ],
+          ),
+          content: Text(
+            memberCount > 0
+                ? 'Warning: Group "$gName" ($gRef) currently has $memberCount member(s) registered. Deleting this group will also remove all $memberCount member(s) from the roster.\n\nAre you sure you want to proceed?'
+                : 'Are you sure you want to delete group "$gName" ($gRef)?',
+            style: TextStyle(fontSize: 13, color: tokens.textSecondary),
+          ),
+          actions: [
+            TextButton(
+              style: TextButton.styleFrom(foregroundColor: tokens.textSecondary),
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFDC2626),
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () {
+                Navigator.of(ctx).pop();
+                setState(() {
+                  _members.removeWhere((m) => m['group_reference'] == gRef);
+                  _groups.remove(g);
+                  if (_selectedGroupFilter == gRef) {
+                    _selectedGroupFilter = 'All';
+                  }
+                });
+                _saveDraft();
+                _showBanner('Group "$gName" and assigned members removed.', isSuccess: true);
+              },
+              child: const Text('Delete Group'),
+            ),
           ],
-        ),
-        content: Text(
-          memberCount > 0
-              ? 'Warning: Group "$gName" ($gRef) currently has $memberCount member(s) registered. Deleting this group will also remove all $memberCount member(s) from the roster.\n\nAre you sure you want to proceed?'
-              : 'Are you sure you want to delete group "$gName" ($gRef)?',
-          style: const TextStyle(fontSize: 13, color: Color(0xFF475569)),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFDC2626)),
-            onPressed: () {
-              Navigator.of(ctx).pop();
-              setState(() {
-                _members.removeWhere((m) => m['group_reference'] == gRef);
-                _groups.remove(g);
-                if (_selectedGroupFilter == gRef) {
-                  _selectedGroupFilter = 'All';
-                }
-              });
-              _saveDraft();
-              _showBanner('Group "$gName" and assigned members removed.', isSuccess: true);
-            },
-            child: const Text('Delete Group', style: TextStyle(color: Colors.white)),
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 
@@ -2065,16 +2174,17 @@ class _BranchOnboardingPortalScreenState
 
   @override
   Widget build(BuildContext context) {
+    final tokens = IcareSurfaceTokens.of(context);
     if (_isLoading) {
-      return const Scaffold(
-        backgroundColor: IcareColors.canvas,
+      return Scaffold(
+        backgroundColor: tokens.canvas,
         body: Center(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              CircularProgressIndicator(color: IcareColors.primary),
-              SizedBox(height: 16),
-              Text('Connecting to Branch Onboarding Session...', style: TextStyle(color: IcareColors.textMuted)),
+              CircularProgressIndicator(color: tokens.brandPrimary),
+              const SizedBox(height: 16),
+              Text('Connecting to Branch Onboarding Session...', style: TextStyle(color: tokens.textMuted)),
             ],
           ),
         ),
@@ -2083,7 +2193,7 @@ class _BranchOnboardingPortalScreenState
 
     if (_errorMessage != null) {
       return Scaffold(
-        backgroundColor: IcareColors.canvas,
+        backgroundColor: tokens.canvas,
         body: Center(
           child: SingleChildScrollView(
             padding: const EdgeInsets.all(24),
@@ -2091,9 +2201,9 @@ class _BranchOnboardingPortalScreenState
               constraints: const BoxConstraints(maxWidth: 480),
               padding: const EdgeInsets.all(28),
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: tokens.surfaceElevated,
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: const Color(0xFFE2E8F0)),
+                border: Border.all(color: tokens.borderSubtle),
                 boxShadow: const [
                   BoxShadow(
                     color: Color(0x0A000000),
@@ -2109,38 +2219,39 @@ class _BranchOnboardingPortalScreenState
                     width: 52,
                     height: 52,
                     decoration: BoxDecoration(
-                      color: const Color(0xFFFEF2F2),
+                      color: tokens.dangerBg,
                       shape: BoxShape.circle,
-                      border: Border.all(color: const Color(0xFFFECACA)),
+                      border: Border.all(color: tokens.dangerBorder),
                     ),
-                    child: const Icon(
+                    child: Icon(
                       Icons.lock_outline,
                       size: 26,
-                      color: Color(0xFFDC2626),
+                      color: tokens.dangerDot,
                     ),
                   ),
                   const SizedBox(height: 16),
-                  const Text(
+                  Text(
                     'Branch Onboarding Access',
                     style: TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
-                      color: Color(0xFF0F172A),
+                      color: tokens.textPrimary,
                     ),
                   ),
                   const SizedBox(height: 8),
                   Text(
                     _errorMessage!,
                     textAlign: TextAlign.center,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 13,
-                      color: Color(0xFF475569),
+                      color: tokens.textSecondary,
                       height: 1.4,
                     ),
                   ),
                   const SizedBox(height: 20),
                   TextField(
                     controller: _tokenCtrl,
+                    style: TextStyle(color: tokens.textPrimary),
                     decoration: InputDecoration(
                       labelText: 'Branch Manager or Officer Token',
                       hintText: 'e.g. onb_branch_... or onb_co_...',
@@ -2160,7 +2271,7 @@ class _BranchOnboardingPortalScreenState
                     height: 42,
                     child: ElevatedButton.icon(
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: IcareColors.primary,
+                        backgroundColor: tokens.brandPrimaryDark,
                         foregroundColor: Colors.white,
                       ),
                       onPressed: () {
@@ -2190,10 +2301,10 @@ class _BranchOnboardingPortalScreenState
                         MaterialPageRoute(builder: (_) => const LoginScreen()),
                       );
                     },
-                    icon: const Icon(Icons.arrow_back, size: 14),
-                    label: const Text(
+                    icon: Icon(Icons.arrow_back, size: 14, color: tokens.textMuted),
+                    label: Text(
                       'Return to Staff Login',
-                      style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                      style: TextStyle(fontSize: 12, color: tokens.textMuted),
                     ),
                   ),
                 ],
@@ -2210,7 +2321,7 @@ class _BranchOnboardingPortalScreenState
     final isSubmitted = status == 'submitted' || status == 'approved';
 
     return Scaffold(
-      backgroundColor: IcareColors.canvas,
+      backgroundColor: tokens.canvas,
       body: SafeArea(
         child: Column(
           children: [
@@ -2222,13 +2333,13 @@ class _BranchOnboardingPortalScreenState
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                color: _isSuccessBanner ? const Color(0xFFECFDF5) : const Color(0xFFFEF2F2),
+                color: _isSuccessBanner ? tokens.successBg : tokens.dangerBg,
                 child: Row(
                   children: [
                     Icon(
                       _isSuccessBanner ? Icons.check_circle_outline : Icons.error_outline,
                       size: 16,
-                      color: _isSuccessBanner ? const Color(0xFF065F46) : const Color(0xFF991B1B),
+                      color: _isSuccessBanner ? tokens.successText : tokens.dangerText,
                     ),
                     const SizedBox(width: 8),
                     Expanded(
@@ -2237,12 +2348,12 @@ class _BranchOnboardingPortalScreenState
                         style: TextStyle(
                           fontSize: 12.5,
                           fontWeight: FontWeight.w600,
-                          color: _isSuccessBanner ? const Color(0xFF065F46) : const Color(0xFF991B1B),
+                          color: _isSuccessBanner ? tokens.successText : tokens.dangerText,
                         ),
                       ),
                     ),
                     IconButton(
-                      icon: const Icon(Icons.close, size: 14),
+                      icon: Icon(Icons.close, size: 14, color: tokens.textMuted),
                       onPressed: () => setState(() => _bannerMessage = null),
                       padding: EdgeInsets.zero,
                       constraints: const BoxConstraints(),
@@ -2263,18 +2374,18 @@ class _BranchOnboardingPortalScreenState
                     return Container(
                       width: double.infinity,
                       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                      color: const Color(0xFFEFF6FF),
+                      color: tokens.infoBg,
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Row(
                             children: [
-                              const Icon(Icons.person_pin_outlined, size: 15, color: Color(0xFF1E40AF)),
+                              Icon(Icons.person_pin_outlined, size: 15, color: tokens.infoText),
                               const SizedBox(width: 6),
                               Expanded(
                                 child: Text(
                                   'Workspace: $_scopedOfficer',
-                                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF1E40AF)),
+                                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: tokens.infoText),
                                   overflow: TextOverflow.ellipsis,
                                 ),
                               ),
@@ -2285,14 +2396,14 @@ class _BranchOnboardingPortalScreenState
                                   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                                 ),
                                 onPressed: () => setState(() => _scopedOfficer = null),
-                                child: const Text('Show All (AM)', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF2563EB))),
+                                child: Text('Show All (AM)', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: tokens.infoText)),
                               ),
                             ],
                           ),
                           const SizedBox(height: 2),
-                          const Text(
+                          Text(
                             'Showing your assigned groups and members. Uploads and edits are merged safely.',
-                            style: TextStyle(fontSize: 10.5, color: Color(0xFF3B82F6)),
+                            style: TextStyle(fontSize: 10.5, color: tokens.infoText),
                           ),
                         ],
                       ),
@@ -2301,32 +2412,33 @@ class _BranchOnboardingPortalScreenState
                   return Container(
                     width: double.infinity,
                     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    color: const Color(0xFFEFF6FF),
+                    color: tokens.infoBg,
                     child: Row(
                       children: [
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                           decoration: BoxDecoration(
-                            color: const Color(0xFFDBEAFE),
+                            color: tokens.surfaceElevated,
                             borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: tokens.infoBorder),
                           ),
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              const Icon(Icons.person_pin_outlined, size: 14, color: Color(0xFF1E40AF)),
+                              Icon(Icons.person_pin_outlined, size: 14, color: tokens.infoText),
                               const SizedBox(width: 4),
                               Text(
                                 'Credit Officer Workspace: $_scopedOfficer',
-                                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF1E40AF)),
+                                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: tokens.infoText),
                               ),
                             ],
                           ),
                         ),
                         const SizedBox(width: 12),
-                        const Expanded(
+                        Expanded(
                           child: Text(
                             'Showing groups and members assigned to your portfolio. Edits and uploads merge safely without clobbering other officers.',
-                            style: TextStyle(fontSize: 11.5, color: Color(0xFF3B82F6)),
+                            style: TextStyle(fontSize: 11.5, color: tokens.infoText),
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
@@ -2337,8 +2449,8 @@ class _BranchOnboardingPortalScreenState
                               minimumSize: Size.zero,
                               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                             ),
-                            icon: const Icon(Icons.remove_red_eye_outlined, size: 13, color: Color(0xFF2563EB)),
-                            label: const Text('View All Branch Data (AM Mode)', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF2563EB))),
+                            icon: Icon(Icons.remove_red_eye_outlined, size: 13, color: tokens.infoText),
+                            label: Text('View All Branch Data (AM Mode)', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: tokens.infoText)),
                             onPressed: () {
                               setState(() {
                                 _scopedOfficer = null;
@@ -2355,9 +2467,9 @@ class _BranchOnboardingPortalScreenState
 
             // Tab Navigation Header
             Container(
-              decoration: const BoxDecoration(
-                color: Colors.white,
-                border: Border(bottom: BorderSide(color: Color(0xFFE2E8F0))),
+              decoration: BoxDecoration(
+                color: tokens.surface,
+                border: Border(bottom: BorderSide(color: tokens.borderSubtle)),
               ),
               child: LayoutBuilder(
                 builder: (context, tabConstraints) {
@@ -2367,9 +2479,9 @@ class _BranchOnboardingPortalScreenState
                     controller: _tabController,
                     isScrollable: isTabScrollable,
                     tabAlignment: isTabScrollable ? TabAlignment.start : TabAlignment.fill,
-                    labelColor: IcareColors.primary,
-                    unselectedLabelColor: const Color(0xFF64748B),
-                    indicatorColor: IcareColors.primary,
+                    labelColor: tokens.brandPrimary,
+                    unselectedLabelColor: tokens.textMuted,
+                    indicatorColor: tokens.brandPrimary,
                     indicatorWeight: 2.5,
                     labelStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
                     onTap: (index) => _tabController.animateTo(index),
@@ -2446,11 +2558,12 @@ class _BranchOnboardingPortalScreenState
   }
 
   Widget _buildInstitutionalHeader(String branchName, String branchCode, String status, bool isSubmitted) {
+    final tokens = IcareSurfaceTokens.of(context);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        border: Border(bottom: BorderSide(color: Color(0xFFE2E8F0))),
+      decoration: BoxDecoration(
+        color: tokens.surface,
+        border: Border(bottom: BorderSide(color: tokens.borderSubtle)),
       ),
       child: LayoutBuilder(
         builder: (context, constraints) {
@@ -2462,11 +2575,11 @@ class _BranchOnboardingPortalScreenState
               Container(
                 padding: const EdgeInsets.all(7),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF0FDF4),
+                  color: tokens.brandSoftBg,
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: const Color(0xFFBBF7D0)),
+                  border: Border.all(color: tokens.brandSoftBorder),
                 ),
-                child: const Icon(Icons.account_balance, size: 18, color: Color(0xFF0F766E)),
+                child: Icon(Icons.account_balance, size: 18, color: tokens.brandSoftText),
               ),
               const SizedBox(width: 10),
               Flexible(
@@ -2479,8 +2592,8 @@ class _BranchOnboardingPortalScreenState
                       children: [
                         Text(
                           'ICARE Core Banking',
-                          style: IcareTypography.caption.copyWith(
-                            color: const Color(0xFF64748B),
+                          style: TextStyle(
+                            color: tokens.textMuted,
                             fontWeight: FontWeight.w600,
                             fontSize: 11,
                           ),
@@ -2489,10 +2602,10 @@ class _BranchOnboardingPortalScreenState
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
                           decoration: BoxDecoration(
-                            color: isSubmitted ? const Color(0xFFECFDF5) : const Color(0xFFEFF6FF),
+                            color: isSubmitted ? tokens.successBg : tokens.infoBg,
                             borderRadius: BorderRadius.circular(4),
                             border: Border.all(
-                              color: isSubmitted ? const Color(0xFFA7F3D0) : const Color(0xFFBFDBFE),
+                              color: isSubmitted ? tokens.successBorder : tokens.infoBorder,
                             ),
                           ),
                           child: Text(
@@ -2500,7 +2613,7 @@ class _BranchOnboardingPortalScreenState
                             style: TextStyle(
                               fontSize: 9.5,
                               fontWeight: FontWeight.w700,
-                              color: isSubmitted ? const Color(0xFF065F46) : const Color(0xFF1D4ED8),
+                              color: isSubmitted ? tokens.successText : tokens.infoText,
                             ),
                           ),
                         ),
@@ -2509,7 +2622,7 @@ class _BranchOnboardingPortalScreenState
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
                             decoration: BoxDecoration(
-                              color: const Color(0xFF0F2744),
+                              color: tokens.brandPrimaryDark,
                               borderRadius: BorderRadius.circular(4),
                             ),
                             child: const Text(
@@ -2529,10 +2642,10 @@ class _BranchOnboardingPortalScreenState
                       _scopedOfficer == null
                           ? '$branchName ($branchCode) — Branch Manager Portal'
                           : '$branchName ($branchCode) — Credit Officer: $_scopedOfficer',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w800,
-                        color: Color(0xFF0F172A),
+                        color: tokens.textPrimary,
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -2552,11 +2665,13 @@ class _BranchOnboardingPortalScreenState
                     padding: const EdgeInsets.only(right: 8),
                     child: Text(
                       'Saved ${DateFormat('HH:mm').format(_lastSavedTime!)}',
-                      style: const TextStyle(fontSize: 11, color: Color(0xFF64748B), fontFeatures: [FontFeature.tabularFigures()]),
+                      style: TextStyle(fontSize: 11, color: tokens.textMuted, fontFeatures: const [FontFeature.tabularFigures()]),
                     ),
                   ),
                 OutlinedButton.icon(
                   style: OutlinedButton.styleFrom(
+                    foregroundColor: tokens.textSecondary,
+                    side: BorderSide(color: tokens.borderStrong),
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                     visualDensity: VisualDensity.compact,
                   ),
@@ -2570,7 +2685,7 @@ class _BranchOnboardingPortalScreenState
                   const SizedBox(width: 6),
                   ElevatedButton.icon(
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: IcareColors.primary,
+                      backgroundColor: tokens.brandPrimaryDark,
                       foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                       visualDensity: VisualDensity.compact,
@@ -2583,7 +2698,7 @@ class _BranchOnboardingPortalScreenState
                   const SizedBox(width: 6),
                   ElevatedButton.icon(
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: IcareColors.primary,
+                      backgroundColor: tokens.brandPrimaryDark,
                       foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                       visualDensity: VisualDensity.compact,
@@ -2597,7 +2712,7 @@ class _BranchOnboardingPortalScreenState
                 if (_scopedOfficer == null && _isAmOrAdmin) ...[
                   ElevatedButton.icon(
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF059669),
+                      backgroundColor: tokens.brandPrimaryDark,
                       foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                       visualDensity: VisualDensity.compact,
@@ -2610,16 +2725,16 @@ class _BranchOnboardingPortalScreenState
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFF1F5F9),
+                      color: tokens.surfaceSubtle,
                       borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: const Color(0xFFCBD5E1)),
+                      border: Border.all(color: tokens.borderStrong),
                     ),
-                    child: const Row(
+                    child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(Icons.check_circle, size: 13, color: Color(0xFF059669)),
-                        SizedBox(width: 4),
-                        Text('Submitted to AM', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFF334155))),
+                        Icon(Icons.check_circle, size: 13, color: tokens.successDot),
+                        const SizedBox(width: 4),
+                        Text('Submitted to AM', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: tokens.textSecondary)),
                       ],
                     ),
                   ),
@@ -2628,16 +2743,16 @@ class _BranchOnboardingPortalScreenState
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFECFDF5),
+                    color: tokens.successBg,
                     borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: const Color(0xFFA7F3D0)),
+                    border: Border.all(color: tokens.successBorder),
                   ),
-                  child: const Row(
+                  child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.verified, size: 13, color: Color(0xFF059669)),
-                      SizedBox(width: 4),
-                      Text('Committed to Core Banking', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFF065F46))),
+                      Icon(Icons.verified, size: 13, color: tokens.successDot),
+                      const SizedBox(width: 4),
+                      Text('Committed to Core Banking', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: tokens.successText)),
                     ],
                   ),
                 ),
@@ -2673,9 +2788,10 @@ class _BranchOnboardingPortalScreenState
   }
 
   Widget _buildSummaryMetricsBar() {
+    final tokens = IcareSurfaceTokens.of(context);
     return Container(
       width: double.infinity,
-      color: Colors.white,
+      color: tokens.surface,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       child: Center(
         child: Container(
@@ -2684,37 +2800,36 @@ class _BranchOnboardingPortalScreenState
             builder: (context, constraints) {
               final isNarrow = constraints.maxWidth < 800;
               final isScoped = _scopedOfficer != null && _scopedOfficer!.isNotEmpty;
-
               final isFiltered = _isGroupFiltered;
 
               final items = <Widget>[
                 if (isScoped)
-                  _buildMetricCardChip('Portfolio Officer', _scopedOfficer!, Icons.badge_outlined, const Color(0xFF0F766E), const Color(0xFFF0FDFA))
+                  _buildMetricCardChip('Portfolio Officer', _scopedOfficer!, Icons.badge_outlined, tokens.brandAccent)
                 else if (!isFiltered)
-                  _buildMetricCardChip('Officers', _officers.length.toString(), Icons.badge_outlined, const Color(0xFF0F766E), const Color(0xFFF0FDFA)),
+                  _buildMetricCardChip('Officers', _officers.length.toString(), Icons.badge_outlined, tokens.brandAccent),
 
                 if (isFiltered)
-                  _buildMetricCardChip('Filtered Group', _selectedGroupFilter, Icons.filter_alt_outlined, const Color(0xFF2563EB), const Color(0xFFEFF6FF))
+                  _buildMetricCardChip('Filtered Group', _selectedGroupFilter, Icons.filter_alt_outlined, tokens.infoDot)
                 else
-                  _buildMetricCardChip(isScoped ? 'My Groups' : 'Groups', _currentFilteredGroups.length.toString(), Icons.hub_outlined, const Color(0xFF475569), const Color(0xFFF1F5F9)),
+                  _buildMetricCardChip(isScoped ? 'My Groups' : 'Groups', _currentFilteredGroups.length.toString(), Icons.hub_outlined, tokens.textPrimary),
 
-                _buildMetricCardChip(isFiltered ? 'Group Members' : (isScoped ? 'My Members' : 'Members'), _currentFilteredMembers.length.toString(), Icons.people_outline, const Color(0xFF475569), const Color(0xFFF1F5F9)),
+                _buildMetricCardChip(isFiltered ? 'Group Members' : (isScoped ? 'My Members' : 'Members'), _currentFilteredMembers.length.toString(), Icons.people_outline, tokens.textPrimary),
 
                 if (isFiltered) ...[
-                  _buildMetricCardChip('Group Savings', CurrencyFormatter.formatNaira(_displayGroupSavings), Icons.savings_outlined, const Color(0xFF0D9488), const Color(0xFFCCFBF1)),
-                  _buildMetricCardChip('Member Savings', CurrencyFormatter.formatNaira(_displayMemberSavings), Icons.savings_outlined, const Color(0xFF10B981), const Color(0xFFECFDF5)),
+                  _buildMetricCardChip('Group Savings', CurrencyFormatter.formatNaira(_displayGroupSavings), Icons.savings_outlined, tokens.brandAccent),
+                  _buildMetricCardChip('Member Savings', CurrencyFormatter.formatNaira(_displayMemberSavings), Icons.savings_outlined, tokens.successDot),
                 ],
 
-                _buildMetricCardChip(isFiltered ? 'Total Group Savings' : 'Total Savings', CurrencyFormatter.formatNaira(_displayTotalSavings), Icons.savings_outlined, const Color(0xFF059669), const Color(0xFFECFDF5)),
+                _buildMetricCardChip(isFiltered ? 'Total Group Savings' : 'Total Savings', CurrencyFormatter.formatNaira(_displayTotalSavings), Icons.savings_outlined, tokens.successText),
 
                 if (!isFiltered && _scopedOfficer == null && _miscSavings > 0)
-                  _buildMetricCardChip('Misc Savings', CurrencyFormatter.formatNaira(_miscSavings), Icons.account_balance_wallet_outlined, const Color(0xFF0D9488), const Color(0xFFCCFBF1)),
+                  _buildMetricCardChip('Misc Savings', CurrencyFormatter.formatNaira(_miscSavings), Icons.account_balance_wallet_outlined, tokens.brandAccent),
 
                 if (_displayPrincipalLoan > 0)
-                  _buildMetricCardChip('Principal Disbursed', CurrencyFormatter.formatNaira(_displayPrincipalLoan), Icons.account_balance_outlined, const Color(0xFF4F46E5), const Color(0xFFEEF2FF)),
+                  _buildMetricCardChip('Principal Disbursed', CurrencyFormatter.formatNaira(_displayPrincipalLoan), Icons.account_balance_outlined, const Color(0xFF6366F1)),
 
-                _buildMetricCardChip('Active Credit', CurrencyFormatter.formatNaira(_displayActiveCredit), Icons.credit_card_outlined, const Color(0xFF2563EB), const Color(0xFFEFF6FF)),
-                _buildMetricCardChip('Outstanding Balance', CurrencyFormatter.formatNaira(_displayCurrentBalance), Icons.account_balance_wallet_outlined, const Color(0xFFD97706), const Color(0xFFFFFBEB)),
+                _buildMetricCardChip('Active Credit', CurrencyFormatter.formatNaira(_displayActiveCredit), Icons.credit_card_outlined, tokens.infoDot),
+                _buildMetricCardChip('Outstanding Balance', CurrencyFormatter.formatNaira(_displayCurrentBalance), Icons.account_balance_wallet_outlined, tokens.warningText),
               ];
 
               if (isNarrow) {
@@ -2736,13 +2851,14 @@ class _BranchOnboardingPortalScreenState
     );
   }
 
-  Widget _buildMetricCardChip(String label, String value, IconData icon, Color color, Color bgIcon) {
+  Widget _buildMetricCardChip(String label, String value, IconData icon, Color color) {
+    final tokens = IcareSurfaceTokens.of(context);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
+        color: tokens.surfaceSubtle,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: tokens.borderSubtle),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -2750,7 +2866,7 @@ class _BranchOnboardingPortalScreenState
           Container(
             padding: const EdgeInsets.all(6),
             decoration: BoxDecoration(
-              color: bgIcon,
+              color: color.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(6),
             ),
             child: Icon(icon, size: 16, color: color),
@@ -2763,7 +2879,7 @@ class _BranchOnboardingPortalScreenState
               children: [
                 Text(
                   label.toUpperCase(),
-                  style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w700, color: Color(0xFF64748B), letterSpacing: 0.3),
+                  style: TextStyle(fontSize: 9, fontWeight: FontWeight.w700, color: tokens.textMuted, letterSpacing: 0.3),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -2791,6 +2907,7 @@ class _BranchOnboardingPortalScreenState
   // =========================================================================
 
   Widget _buildMembersGridTab(bool isSubmitted) {
+    final tokens = IcareSurfaceTokens.of(context);
     final availableGroups = _scopedGroups;
     final baseMembers = _scopedMembers;
 
@@ -2827,16 +2944,17 @@ class _BranchOnboardingPortalScreenState
                   ? Container(
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
                       decoration: BoxDecoration(
-                        color: Colors.white,
+                        color: tokens.surface,
                         borderRadius: BorderRadius.circular(6),
-                        border: Border.all(color: const Color(0xFFCBD5E1)),
+                        border: Border.all(color: tokens.borderStrong),
                       ),
                       child: DropdownButtonHideUnderline(
                         child: DropdownButton<String>(
                           value: _selectedOfficerFilter,
                           isExpanded: isNarrow,
-                          icon: const Icon(Icons.arrow_drop_down, size: 18),
-                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF1E293B)),
+                          dropdownColor: tokens.surfaceElevated,
+                          icon: Icon(Icons.arrow_drop_down, size: 18, color: tokens.textMuted),
+                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tokens.textPrimary),
                           items: [
                             const DropdownMenuItem(value: 'All', child: Text('All Officers')),
                             ...officerNames.map((n) => DropdownMenuItem(value: n, child: Text(n))),
@@ -2857,16 +2975,17 @@ class _BranchOnboardingPortalScreenState
               final groupDropdown = Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
                 decoration: BoxDecoration(
-                  color: Colors.white,
+                  color: tokens.surface,
                   borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: const Color(0xFFCBD5E1)),
+                  border: Border.all(color: tokens.borderStrong),
                 ),
                 child: DropdownButtonHideUnderline(
                   child: DropdownButton<String>(
                     value: _selectedGroupFilter,
                     isExpanded: isNarrow,
-                    icon: const Icon(Icons.arrow_drop_down, size: 18),
-                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF1E293B)),
+                    dropdownColor: tokens.surfaceElevated,
+                    icon: Icon(Icons.arrow_drop_down, size: 18, color: tokens.textMuted),
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tokens.textPrimary),
                     items: [
                       const DropdownMenuItem(value: 'All', child: Text('All Groups')),
                       ...availableGroups.map((g) => DropdownMenuItem(
@@ -2886,15 +3005,16 @@ class _BranchOnboardingPortalScreenState
                 child: TextField(
                   controller: _searchCtrl,
                   onChanged: (_) => setState(() {}),
+                  style: TextStyle(fontSize: 13, color: tokens.textPrimary),
                   decoration: InputDecoration(
                     hintText: 'Search members by name, phone or code...',
-                    hintStyle: const TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
-                    prefixIcon: const Icon(Icons.search, size: 16, color: Color(0xFF94A3B8)),
+                    hintStyle: TextStyle(fontSize: 12, color: tokens.textMuted),
+                    prefixIcon: Icon(Icons.search, size: 16, color: tokens.textMuted),
                     contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 10),
                     filled: true,
-                    fillColor: Colors.white,
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(6), borderSide: const BorderSide(color: Color(0xFFCBD5E1))),
-                    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(6), borderSide: const BorderSide(color: Color(0xFFCBD5E1))),
+                    fillColor: tokens.surface,
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(6), borderSide: BorderSide(color: tokens.borderStrong)),
+                    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(6), borderSide: BorderSide(color: tokens.borderStrong)),
                   ),
                 ),
               );
@@ -2902,7 +3022,7 @@ class _BranchOnboardingPortalScreenState
               final addMemberBtn = ifBtn(!isSubmitted, () {
                 return ElevatedButton.icon(
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: IcareColors.primary,
+                    backgroundColor: tokens.brandPrimaryDark,
                     foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                   ),
@@ -2976,7 +3096,7 @@ class _BranchOnboardingPortalScreenState
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(Icons.people_outline, size: 40, color: Color(0xFF94A3B8)),
+                        Icon(Icons.people_outline, size: 40, color: tokens.textMuted),
                         const SizedBox(height: 8),
                         Text(
                           _members.isEmpty
@@ -2984,12 +3104,15 @@ class _BranchOnboardingPortalScreenState
                               : (_scopedOfficer != null
                                   ? 'No members found for $_scopedOfficer matching current filters.'
                                   : 'No members match the current search or filter criteria.'),
-                          style: const TextStyle(fontSize: 13, color: Color(0xFF64748B)),
+                          style: TextStyle(fontSize: 13, color: tokens.textMuted),
                         ),
                         if (_members.isEmpty && !isSubmitted) ...[
                           const SizedBox(height: 12),
                           ElevatedButton.icon(
-                            style: ElevatedButton.styleFrom(backgroundColor: IcareColors.primary, foregroundColor: Colors.white),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: tokens.brandPrimaryDark,
+                              foregroundColor: Colors.white,
+                            ),
                             onPressed: _addMember,
                             icon: const Icon(Icons.person_add_alt_1, size: 16),
                             label: const Text('Add First Member', style: TextStyle(fontSize: 12)),
@@ -3015,15 +3138,15 @@ class _BranchOnboardingPortalScreenState
 
                       return Container(
                         decoration: BoxDecoration(
-                          color: Colors.white,
+                          color: tokens.surface,
                           borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: const Color(0xFFE2E8F0)),
+                          border: Border.all(color: tokens.borderSubtle),
                         ),
                         child: ClipRRect(
                           borderRadius: BorderRadius.circular(8),
                           child: ListView.separated(
                             itemCount: filtered.length,
-                            separatorBuilder: (_, __) => const Divider(height: 1, color: Color(0xFFF1F5F9)),
+                            separatorBuilder: (_, __) => Divider(height: 1, color: tokens.borderSubtle),
                             itemBuilder: (context, idx) {
                               final m = filtered[idx];
                               return _buildMemberRowDesktop(m, isSubmitted);
@@ -3044,6 +3167,7 @@ class _BranchOnboardingPortalScreenState
   }
 
   Widget _buildMemberCardMobile(Map<String, dynamic> m, bool isSubmitted) {
+    final tokens = IcareSurfaceTokens.of(context);
     final refCode = m['member_reference'] ?? 'Pending';
     final gRef = m['group_reference'] ?? 'GRP-01';
     final name = m['full_name'] ?? '';
@@ -3057,9 +3181,9 @@ class _BranchOnboardingPortalScreenState
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: tokens.surface,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: tokens.borderSubtle),
         boxShadow: const [
           BoxShadow(
             color: Color(0x04000000),
@@ -3077,26 +3201,26 @@ class _BranchOnboardingPortalScreenState
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF1F5F9),
+                  color: tokens.surfaceSubtle,
                   borderRadius: BorderRadius.circular(4),
-                  border: Border.all(color: const Color(0xFFCBD5E1)),
+                  border: Border.all(color: tokens.borderStrong),
                 ),
-                child: Text(refCode, style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: Color(0xFF1E293B))),
+                child: Text(refCode, style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: tokens.textPrimary)),
               ),
               const SizedBox(width: 6),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFEFF6FF),
+                  color: tokens.infoBg,
                   borderRadius: BorderRadius.circular(4),
-                  border: Border.all(color: const Color(0xFFBFDBFE)),
+                  border: Border.all(color: tokens.infoBorder),
                 ),
-                child: Text(gRef, style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: Color(0xFF1D4ED8))),
+                child: Text(gRef, style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: tokens.infoText)),
               ),
               const Spacer(),
               if (!isSubmitted) ...[
                 IconButton(
-                  icon: const Icon(Icons.edit_outlined, size: 16, color: Color(0xFF2563EB)),
+                  icon: Icon(Icons.edit_outlined, size: 16, color: tokens.infoDot),
                   tooltip: 'Edit member',
                   onPressed: () => _showMemberModal(memberToEdit: m),
                   visualDensity: VisualDensity.compact,
@@ -3105,7 +3229,7 @@ class _BranchOnboardingPortalScreenState
                 ),
                 const SizedBox(width: 8),
                 IconButton(
-                  icon: const Icon(Icons.delete_outline, size: 16, color: Color(0xFFDC2626)),
+                  icon: Icon(Icons.delete_outline, size: 16, color: tokens.dangerDot),
                   tooltip: 'Remove member',
                   onPressed: () => _confirmDeleteMember(m),
                   visualDensity: VisualDensity.compact,
@@ -3118,27 +3242,27 @@ class _BranchOnboardingPortalScreenState
           const SizedBox(height: 8),
 
           // Name & Phone
-          Text(name, style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700, color: Color(0xFF0F172A))),
+          Text(name, style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700, color: tokens.textPrimary)),
           const SizedBox(height: 2),
           Row(
             children: [
-              Icon(Icons.phone_outlined, size: 12, color: phone.isNotEmpty ? const Color(0xFF64748B) : const Color(0xFFDC2626)),
+              Icon(Icons.phone_outlined, size: 12, color: phone.isNotEmpty ? tokens.textMuted : tokens.dangerText),
               const SizedBox(width: 4),
               Text(
                 phone.isNotEmpty ? phone : 'No phone entered',
                 style: TextStyle(
                   fontSize: 11.5,
-                  color: phone.isNotEmpty ? const Color(0xFF64748B) : const Color(0xFFDC2626),
+                  color: phone.isNotEmpty ? tokens.textMuted : tokens.dangerText,
                 ),
               ),
               if (activeCred > 0) ...[
                 const SizedBox(width: 8),
-                const Text('•', style: TextStyle(color: Color(0xFF94A3B8))),
+                Text('•', style: TextStyle(color: tokens.textMuted)),
                 const SizedBox(width: 6),
                 Flexible(
                   child: Text(
                     prod,
-                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF2563EB)),
+                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: tokens.infoText),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -3155,17 +3279,17 @@ class _BranchOnboardingPortalScreenState
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFF0FDF4),
+                    color: tokens.successBg,
                     borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: const Color(0xFFDCFCE7)),
+                    border: Border.all(color: tokens.successBorder),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text('SAVINGS', style: TextStyle(fontSize: 8.5, fontWeight: FontWeight.w700, color: Color(0xFF059669))),
+                      Text('SAVINGS', style: TextStyle(fontSize: 8.5, fontWeight: FontWeight.w700, color: tokens.successText)),
                       Text(
                         CurrencyFormatter.formatNaira(savings),
-                        style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: Color(0xFF059669), fontFeatures: [FontFeature.tabularFigures()]),
+                        style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: tokens.successText, fontFeatures: const [FontFeature.tabularFigures()]),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -3178,20 +3302,20 @@ class _BranchOnboardingPortalScreenState
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFEFF6FF),
+                    color: tokens.infoBg,
                     borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: const Color(0xFFDBEAFE)),
+                    border: Border.all(color: tokens.infoBorder),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text('ACTIVE CREDIT', style: TextStyle(fontSize: 8.5, fontWeight: FontWeight.w700, color: Color(0xFF2563EB))),
+                      Text('ACTIVE CREDIT', style: TextStyle(fontSize: 8.5, fontWeight: FontWeight.w700, color: tokens.infoText)),
                       Text(
                         activeCred > 0 ? CurrencyFormatter.formatNaira(activeCred) : 'None',
                         style: TextStyle(
                           fontSize: 11.5,
                           fontWeight: FontWeight.w800,
-                          color: activeCred > 0 ? const Color(0xFF1E293B) : const Color(0xFF94A3B8),
+                          color: activeCred > 0 ? tokens.textPrimary : tokens.textMuted,
                           fontFeatures: const [FontFeature.tabularFigures()],
                         ),
                         maxLines: 1,
@@ -3200,11 +3324,11 @@ class _BranchOnboardingPortalScreenState
                       if (activeCred > 0 && princLoan > 0)
                         Text(
                           'Prin: ${CurrencyFormatter.formatNaira(princLoan)}',
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 9,
                             fontWeight: FontWeight.w600,
-                            color: Color(0xFF64748B),
-                            fontFeatures: [FontFeature.tabularFigures()],
+                            color: tokens.textMuted,
+                            fontFeatures: const [FontFeature.tabularFigures()],
                           ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
@@ -3218,20 +3342,20 @@ class _BranchOnboardingPortalScreenState
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFFFFBEB),
+                    color: tokens.warningBg,
                     borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: const Color(0xFFFEF3C7)),
+                    border: Border.all(color: tokens.warningBorder),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text('REMAINING', style: TextStyle(fontSize: 8.5, fontWeight: FontWeight.w700, color: Color(0xFFD97706))),
+                      Text('REMAINING', style: TextStyle(fontSize: 8.5, fontWeight: FontWeight.w700, color: tokens.warningText)),
                       Text(
                         curBal > 0 ? CurrencyFormatter.formatNaira(curBal) : '₦0.00',
                         style: TextStyle(
                           fontSize: 11.5,
                           fontWeight: FontWeight.w800,
-                          color: curBal > 0 ? const Color(0xFFD97706) : const Color(0xFF94A3B8),
+                          color: curBal > 0 ? tokens.warningText : tokens.textMuted,
                           fontFeatures: const [FontFeature.tabularFigures()],
                         ),
                         maxLines: 1,
@@ -3249,6 +3373,7 @@ class _BranchOnboardingPortalScreenState
   }
 
   Widget _buildMemberRowDesktop(Map<String, dynamic> m, bool isSubmitted) {
+    final tokens = IcareSurfaceTokens.of(context);
     final refCode = m['member_reference'] ?? 'Pending Code';
     final gRef = m['group_reference'] ?? 'GRP-01';
     final name = m['full_name'] ?? '';
@@ -3269,15 +3394,15 @@ class _BranchOnboardingPortalScreenState
             width: 100,
             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
             decoration: BoxDecoration(
-              color: const Color(0xFFF8FAFC),
+              color: tokens.surfaceSubtle,
               borderRadius: BorderRadius.circular(4),
-              border: Border.all(color: const Color(0xFFE2E8F0)),
+              border: Border.all(color: tokens.borderSubtle),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(refCode, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFF1E293B))),
-                Text(gRef, style: const TextStyle(fontSize: 9.5, color: Color(0xFF64748B))),
+                Text(refCode, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: tokens.textPrimary)),
+                Text(gRef, style: TextStyle(fontSize: 9.5, color: tokens.textMuted)),
               ],
             ),
           ),
@@ -3289,12 +3414,12 @@ class _BranchOnboardingPortalScreenState
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(name, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF0F172A))),
+                Text(name, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: tokens.textPrimary)),
                 Text(
                   phone.isNotEmpty ? phone : 'No phone entered',
                   style: TextStyle(
                     fontSize: 11,
-                    color: phone.isNotEmpty ? const Color(0xFF64748B) : const Color(0xFFDC2626),
+                    color: phone.isNotEmpty ? tokens.textMuted : tokens.dangerText,
                   ),
                 ),
               ],
@@ -3308,10 +3433,10 @@ class _BranchOnboardingPortalScreenState
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                const Text('SAVINGS', style: TextStyle(fontSize: 8.5, fontWeight: FontWeight.w700, color: Color(0xFF94A3B8))),
+                Text('SAVINGS', style: TextStyle(fontSize: 8.5, fontWeight: FontWeight.w700, color: tokens.textMuted)),
                 Text(
                   CurrencyFormatter.formatNaira(savings),
-                  style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: Color(0xFF059669), fontFeatures: [FontFeature.tabularFigures()]),
+                  style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: tokens.successText, fontFeatures: const [FontFeature.tabularFigures()]),
                 ),
               ],
             ),
@@ -3326,7 +3451,7 @@ class _BranchOnboardingPortalScreenState
               children: [
                 Text(
                   prod,
-                  style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Color(0xFF2563EB)),
+                  style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: tokens.infoText),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -3335,18 +3460,18 @@ class _BranchOnboardingPortalScreenState
                   style: TextStyle(
                     fontSize: 12.5,
                     fontWeight: FontWeight.w700,
-                    color: activeCred > 0 ? const Color(0xFF1E293B) : const Color(0xFF94A3B8),
+                    color: activeCred > 0 ? tokens.textPrimary : tokens.textMuted,
                     fontFeatures: const [FontFeature.tabularFigures()],
                   ),
                 ),
                 if (activeCred > 0 && princLoan > 0)
                   Text(
                     'Prin: ${CurrencyFormatter.formatNaira(princLoan)}',
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 10,
                       fontWeight: FontWeight.w600,
-                      color: Color(0xFF64748B),
-                      fontFeatures: [FontFeature.tabularFigures()],
+                      color: tokens.textMuted,
+                      fontFeatures: const [FontFeature.tabularFigures()],
                     ),
                   ),
               ],
@@ -3360,13 +3485,13 @@ class _BranchOnboardingPortalScreenState
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                const Text('REMAINING', style: TextStyle(fontSize: 8.5, fontWeight: FontWeight.w700, color: Color(0xFF94A3B8))),
+                Text('REMAINING', style: TextStyle(fontSize: 8.5, fontWeight: FontWeight.w700, color: tokens.textMuted)),
                 Text(
                   curBal > 0 ? CurrencyFormatter.formatNaira(curBal) : '₦0.00',
                   style: TextStyle(
                     fontSize: 12.5,
                     fontWeight: FontWeight.w800,
-                    color: curBal > 0 ? const Color(0xFFD97706) : const Color(0xFF94A3B8),
+                    color: curBal > 0 ? tokens.warningText : tokens.textMuted,
                     fontFeatures: const [FontFeature.tabularFigures()],
                   ),
                 ),
@@ -3377,12 +3502,12 @@ class _BranchOnboardingPortalScreenState
           if (!isSubmitted) ...[
             const SizedBox(width: 8),
             IconButton(
-              icon: const Icon(Icons.edit_outlined, size: 16, color: Color(0xFF2563EB)),
+              icon: Icon(Icons.edit_outlined, size: 16, color: tokens.infoDot),
               tooltip: 'Edit member',
               onPressed: () => _showMemberModal(memberToEdit: m),
             ),
             IconButton(
-              icon: const Icon(Icons.delete_outline, size: 16, color: Color(0xFFDC2626)),
+              icon: Icon(Icons.delete_outline, size: 16, color: tokens.dangerDot),
               tooltip: 'Remove member',
               onPressed: () => _confirmDeleteMember(m),
             ),
@@ -3397,6 +3522,7 @@ class _BranchOnboardingPortalScreenState
   // =========================================================================
 
   Widget _buildGroupsTab(bool isSubmitted) {
+    final tokens = IcareSurfaceTokens.of(context);
     final displayedGroups = _scopedGroups;
 
     final officerNames = _officers
@@ -3417,11 +3543,11 @@ class _BranchOnboardingPortalScreenState
                 _scopedOfficer != null
                     ? 'Solidarity Groups ($_scopedOfficer)'
                     : 'Branch Solidarity Groups',
-                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
+                style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: tokens.textPrimary),
               ),
               if (!isSubmitted)
                 ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(backgroundColor: IcareColors.primary, foregroundColor: Colors.white),
+                  style: ElevatedButton.styleFrom(backgroundColor: tokens.brandPrimaryDark, foregroundColor: Colors.white),
                   onPressed: _addGroup,
                   icon: const Icon(Icons.add, size: 15),
                   label: const Text('Add Group', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
@@ -3468,7 +3594,7 @@ class _BranchOnboardingPortalScreenState
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(Icons.hub_outlined, size: 40, color: Color(0xFF94A3B8)),
+                        Icon(Icons.hub_outlined, size: 40, color: tokens.textMuted),
                         const SizedBox(height: 8),
                         Text(
                           _scopedOfficer != null
@@ -3476,12 +3602,12 @@ class _BranchOnboardingPortalScreenState
                               : (_selectedOfficerFilter != 'All'
                                   ? 'No groups assigned to $_selectedOfficerFilter.'
                                   : 'No groups added yet. Create your first solidarity group.'),
-                          style: const TextStyle(fontSize: 13, color: Color(0xFF64748B)),
+                          style: TextStyle(fontSize: 13, color: tokens.textMuted),
                         ),
                         if (!isSubmitted) ...[
                           const SizedBox(height: 12),
                           ElevatedButton.icon(
-                            style: ElevatedButton.styleFrom(backgroundColor: IcareColors.primary, foregroundColor: Colors.white),
+                            style: ElevatedButton.styleFrom(backgroundColor: tokens.brandPrimaryDark, foregroundColor: Colors.white),
                             onPressed: _addGroup,
                             icon: const Icon(Icons.add, size: 16),
                             label: const Text('Add First Group', style: TextStyle(fontSize: 12)),
@@ -3513,6 +3639,7 @@ class _BranchOnboardingPortalScreenState
   }
 
   Widget _buildGroupCardMobile(Map<String, dynamic> g, bool isSubmitted) {
+    final tokens = IcareSurfaceTokens.of(context);
     final gRef = g['group_reference'] ?? 'GRP-01';
     final gName = g['group_name'] ?? '';
     final mDay = g['meeting_day'] ?? 'Daily';
@@ -3523,9 +3650,9 @@ class _BranchOnboardingPortalScreenState
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: tokens.surface,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: tokens.borderSubtle),
         boxShadow: const [
           BoxShadow(
             color: Color(0x04000000),
@@ -3542,25 +3669,25 @@ class _BranchOnboardingPortalScreenState
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFEFF6FF),
+                  color: tokens.infoBg,
                   borderRadius: BorderRadius.circular(4),
-                  border: Border.all(color: const Color(0xFFBFDBFE)),
+                  border: Border.all(color: tokens.infoBorder),
                 ),
-                child: Text(gRef, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF1D4ED8))),
+                child: Text(gRef, style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: tokens.infoText)),
               ),
               const SizedBox(width: 8),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF8FAFC),
+                  color: tokens.surfaceSubtle,
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: Text('$memberCount Members', style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: Color(0xFF475569))),
+                child: Text('$memberCount Members', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: tokens.textSecondary)),
               ),
               const Spacer(),
               if (!isSubmitted) ...[
                 IconButton(
-                  icon: const Icon(Icons.edit_outlined, size: 16, color: Color(0xFF2563EB)),
+                  icon: Icon(Icons.edit_outlined, size: 16, color: tokens.infoDot),
                   tooltip: 'Edit group',
                   onPressed: () => _showGroupModal(groupToEdit: g),
                   visualDensity: VisualDensity.compact,
@@ -3569,7 +3696,7 @@ class _BranchOnboardingPortalScreenState
                 ),
                 const SizedBox(width: 8),
                 IconButton(
-                  icon: const Icon(Icons.delete_outline, size: 16, color: Color(0xFFDC2626)),
+                  icon: Icon(Icons.delete_outline, size: 16, color: tokens.dangerDot),
                   tooltip: 'Delete group',
                   onPressed: () => _confirmDeleteGroup(g),
                   visualDensity: VisualDensity.compact,
@@ -3580,20 +3707,20 @@ class _BranchOnboardingPortalScreenState
             ],
           ),
           const SizedBox(height: 8),
-          Text(gName, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFF0F172A))),
+          Text(gName, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: tokens.textPrimary)),
           const SizedBox(height: 4),
           Row(
             children: [
-              const Icon(Icons.calendar_today_outlined, size: 12, color: Color(0xFF64748B)),
+              Icon(Icons.calendar_today_outlined, size: 12, color: tokens.textMuted),
               const SizedBox(width: 4),
-              Text('Meeting: $mDay', style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B))),
+              Text('Meeting: $mDay', style: TextStyle(fontSize: 11.5, color: tokens.textMuted)),
               const SizedBox(width: 12),
-              const Icon(Icons.person_outline, size: 12, color: Color(0xFF64748B)),
+              Icon(Icons.person_outline, size: 12, color: tokens.textMuted),
               const SizedBox(width: 4),
               Expanded(
                 child: Text(
                   'Officer: $officer',
-                  style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B)),
+                  style: TextStyle(fontSize: 11.5, color: tokens.textMuted),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -3604,10 +3731,10 @@ class _BranchOnboardingPortalScreenState
             const SizedBox(height: 8),
             Row(
               children: [
-                const Text('Group Savings: ', style: TextStyle(fontSize: 11, color: Color(0xFF64748B))),
+                Text('Group Savings: ', style: TextStyle(fontSize: 11, color: tokens.textMuted)),
                 Text(
                   CurrencyFormatter.formatNaira(gSav),
-                  style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: Color(0xFF059669), fontFeatures: [FontFeature.tabularFigures()]),
+                  style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: tokens.successText, fontFeatures: const [FontFeature.tabularFigures()]),
                 ),
               ],
             ),
@@ -3618,6 +3745,7 @@ class _BranchOnboardingPortalScreenState
   }
 
   Widget _buildGroupRowDesktop(Map<String, dynamic> g, bool isSubmitted) {
+    final tokens = IcareSurfaceTokens.of(context);
     final gRef = g['group_reference'] ?? 'GRP-01';
     final gName = g['group_name'] ?? '';
     final mDay = g['meeting_day'] ?? 'Daily';
@@ -3628,20 +3756,20 @@ class _BranchOnboardingPortalScreenState
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: tokens.surface,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: tokens.borderSubtle),
       ),
       child: Row(
         children: [
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             decoration: BoxDecoration(
-              color: const Color(0xFFEFF6FF),
+              color: tokens.infoBg,
               borderRadius: BorderRadius.circular(4),
-              border: Border.all(color: const Color(0xFFBFDBFE)),
+              border: Border.all(color: tokens.infoBorder),
             ),
-            child: Text(gRef, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF1D4ED8))),
+            child: Text(gRef, style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: tokens.infoText)),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -3649,39 +3777,39 @@ class _BranchOnboardingPortalScreenState
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(gName, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF0F172A))),
-                Text('Meeting: $mDay • Officer: $officer', style: const TextStyle(fontSize: 11, color: Color(0xFF64748B))),
+                Text(gName, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: tokens.textPrimary)),
+                Text('Meeting: $mDay • Officer: $officer', style: TextStyle(fontSize: 11, color: tokens.textMuted)),
               ],
             ),
           ),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
             decoration: BoxDecoration(
-              color: const Color(0xFFF8FAFC),
+              color: tokens.surfaceSubtle,
               borderRadius: BorderRadius.circular(12),
             ),
-            child: Text('$memberCount Members', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF475569))),
+            child: Text('$memberCount Members', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: tokens.textSecondary)),
           ),
           const SizedBox(width: 16),
           Column(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              const Text('GROUP SAVINGS', style: TextStyle(fontSize: 9, fontWeight: FontWeight.w700, color: Color(0xFF94A3B8))),
+              Text('GROUP SAVINGS', style: TextStyle(fontSize: 9, fontWeight: FontWeight.w700, color: tokens.textMuted)),
               Text(
                 CurrencyFormatter.formatNaira(gSav),
-                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF059669), fontFeatures: [FontFeature.tabularFigures()]),
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: tokens.successText, fontFeatures: const [FontFeature.tabularFigures()]),
               ),
             ],
           ),
           if (!isSubmitted) ...[
             const SizedBox(width: 12),
             IconButton(
-              icon: const Icon(Icons.edit_outlined, size: 16, color: Color(0xFF2563EB)),
+              icon: Icon(Icons.edit_outlined, size: 16, color: tokens.infoDot),
               tooltip: 'Edit group',
               onPressed: () => _showGroupModal(groupToEdit: g),
             ),
             IconButton(
-              icon: const Icon(Icons.delete_outline, size: 16, color: Color(0xFFDC2626)),
+              icon: Icon(Icons.delete_outline, size: 16, color: tokens.dangerDot),
               tooltip: 'Delete group',
               onPressed: () => _confirmDeleteGroup(g),
             ),
@@ -3696,7 +3824,7 @@ class _BranchOnboardingPortalScreenState
   // =========================================================================
 
   Widget _buildOfficersAndReservesTab(bool isSubmitted) {
-    // Find designated misc manager name
+    final tokens = IcareSurfaceTokens.of(context);
     String? designatedMgrName;
     for (final o in _officers) {
       if (o['is_misc_savings_manager'] == true) {
@@ -3722,20 +3850,20 @@ class _BranchOnboardingPortalScreenState
                   Container(
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFEFF6FF),
+                      color: tokens.infoBg,
                       borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: const Color(0xFFBFDBFE)),
+                      border: Border.all(color: tokens.infoBorder),
                     ),
-                    child: const Icon(Icons.account_balance_wallet_outlined, color: Color(0xFF1D4ED8), size: 20),
+                    child: Icon(Icons.account_balance_wallet_outlined, color: tokens.infoDot, size: 20),
                   ),
                   const SizedBox(width: 12),
-                  const Expanded(
+                  Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
                           'Branch Pooled Reserves & Accounting Buffers',
-                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
+                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: tokens.textPrimary),
                         ),
                       ],
                     ),
@@ -3744,7 +3872,7 @@ class _BranchOnboardingPortalScreenState
               ),
               const SizedBox(height: 16),
 
-              // 2. Branch Pooled Reserves Cards (Misc Savings & LAPS)
+              // 2. Branch Pooled Reserves Cards
               LayoutBuilder(
                 builder: (context, constraints) {
                   final isWide = constraints.maxWidth >= 600;
@@ -3753,16 +3881,16 @@ class _BranchOnboardingPortalScreenState
                   final miscCard = _buildReserveCard(
                     title: 'Branch Misc Savings',
                     badge: 'Branch Reserve',
-                    badgeColor: const Color(0xFF059669),
-                    badgeBg: const Color(0xFFECFDF5),
+                    badgeColor: tokens.successText,
+                    badgeBg: tokens.successBg,
                     amount: _miscSavings,
                     subtitle: isOfficerScoped
                         ? 'Managed by Area Manager & Designated Officer'
                         : 'Exclusive managing officer: $designatedMgrName',
                     description: '',
                     icon: Icons.savings_outlined,
-                    iconColor: const Color(0xFF059669),
-                    iconBg: const Color(0xFFECFDF5),
+                    iconColor: tokens.successDot,
+                    iconBg: tokens.successBg,
                     isSubmitted: isSubmitted || isOfficerScoped,
                     onEdit: isOfficerScoped ? () {} : () => _openEditReserveDialog(
                       'Branch Misc Savings',
@@ -3775,14 +3903,14 @@ class _BranchOnboardingPortalScreenState
                   final lapsCard = _buildReserveCard(
                     title: 'Branch LAPS Risk Reserve',
                     badge: 'Risk Reserve Buffer',
-                    badgeColor: const Color(0xFF2563EB),
-                    badgeBg: const Color(0xFFEFF6FF),
+                    badgeColor: tokens.infoText,
+                    badgeBg: tokens.infoBg,
                     amount: _lapsSavings,
                     subtitle: 'Official Risk Protection Reserve',
                     description: '',
                     icon: Icons.shield_outlined,
-                    iconColor: const Color(0xFF2563EB),
-                    iconBg: const Color(0xFFEFF6FF),
+                    iconColor: tokens.infoDot,
+                    iconBg: tokens.infoBg,
                     isSubmitted: isSubmitted || isOfficerScoped,
                     onEdit: isOfficerScoped ? () {} : () => _openEditReserveDialog(
                       'Branch LAPS Risk Reserve',
@@ -3823,11 +3951,11 @@ class _BranchOnboardingPortalScreenState
                       Container(
                         padding: const EdgeInsets.all(8),
                         decoration: BoxDecoration(
-                          color: const Color(0xFFF1F5F9),
+                          color: tokens.surfaceSubtle,
                           borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: const Color(0xFFE2E8F0)),
+                          border: Border.all(color: tokens.borderSubtle),
                         ),
-                        child: const Icon(Icons.badge_outlined, color: Color(0xFF334155), size: 20),
+                        child: Icon(Icons.badge_outlined, color: tokens.textSecondary, size: 20),
                       ),
                       const SizedBox(width: 12),
                       Column(
@@ -3835,16 +3963,15 @@ class _BranchOnboardingPortalScreenState
                         children: [
                           Text(
                             'Credit Officers Roster (${_officers.length})',
-                            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
+                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: tokens.textPrimary),
                           ),
                         ],
                       ),
-
                     ],
                   ),
                   if (!isSubmitted)
                     ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(backgroundColor: IcareColors.primary, foregroundColor: Colors.white),
+                      style: ElevatedButton.styleFrom(backgroundColor: tokens.brandPrimaryDark, foregroundColor: Colors.white),
                       onPressed: () => _openOfficerDialog(),
                       icon: const Icon(Icons.person_add_alt, size: 16),
                       label: const Text('Add Credit Officer', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
@@ -3859,27 +3986,31 @@ class _BranchOnboardingPortalScreenState
                   width: double.infinity,
                   padding: const EdgeInsets.all(32),
                   decoration: BoxDecoration(
-                    color: Colors.white,
+                    color: tokens.surface,
                     borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                    border: Border.all(color: tokens.borderSubtle),
                   ),
                   child: Column(
                     children: [
-                      const Icon(Icons.person_outline, size: 40, color: Color(0xFF94A3B8)),
+                      Icon(Icons.person_outline, size: 40, color: tokens.textMuted),
                       const SizedBox(height: 12),
-                      const Text(
+                      Text(
                         'No Credit Officers Registered Yet',
-                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF334155)),
+                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: tokens.textPrimary),
                       ),
                       const SizedBox(height: 6),
-                      const Text(
+                      Text(
                         'You can add credit officers manually here or upload your branch Excel template. Assigned officers in groups will also be auto-registered.',
                         textAlign: TextAlign.center,
-                        style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                        style: TextStyle(fontSize: 12, color: tokens.textMuted),
                       ),
                       if (!isSubmitted) ...[
                         const SizedBox(height: 16),
                         OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: tokens.brandPrimary,
+                            side: BorderSide(color: tokens.borderStrong),
+                          ),
                           onPressed: () => _openOfficerDialog(),
                           icon: const Icon(Icons.add, size: 16),
                           label: const Text('Add First Credit Officer'),
@@ -3900,7 +4031,6 @@ class _BranchOnboardingPortalScreenState
                     final phone = (off['phone'] ?? off['phone_number'] ?? '').toString();
                     final isMiscMgr = off['is_misc_savings_manager'] == true;
 
-                    // Compute assigned groups count
                     final assignedGroups = _groups.where((g) {
                       final gOff = (g['officer_name'] ?? '').toString().trim().toLowerCase();
                       return gOff.isNotEmpty && gOff == name.trim().toLowerCase();
@@ -3912,13 +4042,13 @@ class _BranchOnboardingPortalScreenState
 
                         final avatarWidget = CircleAvatar(
                           radius: 20,
-                          backgroundColor: isMiscMgr ? const Color(0xFFECFDF5) : const Color(0xFFEFF6FF),
+                          backgroundColor: isMiscMgr ? tokens.successBg : tokens.infoBg,
                           child: Text(
                             name.isNotEmpty ? name.substring(0, 1).toUpperCase() : 'CO',
                             style: TextStyle(
                               fontSize: 13,
                               fontWeight: FontWeight.bold,
-                              color: isMiscMgr ? const Color(0xFF059669) : const Color(0xFF1D4ED8),
+                              color: isMiscMgr ? tokens.successText : tokens.infoText,
                             ),
                           ),
                         );
@@ -3931,28 +4061,28 @@ class _BranchOnboardingPortalScreenState
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                               decoration: BoxDecoration(
-                                color: const Color(0xFFEFF6FF),
+                                color: tokens.infoBg,
                                 borderRadius: BorderRadius.circular(4),
-                                border: Border.all(color: const Color(0xFFBFDBFE)),
+                                border: Border.all(color: tokens.infoBorder),
                               ),
-                              child: const Text(
+                              child: Text(
                                 'Credit Officer',
-                                style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: Color(0xFF1D4ED8)),
+                                style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: tokens.infoText),
                               ),
                             ),
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                               decoration: BoxDecoration(
-                                color: (off['status'] == 'submitted') ? const Color(0xFFEFF6FF) : const Color(0xFFFFFBEB),
+                                color: (off['status'] == 'submitted') ? tokens.infoBg : tokens.warningBg,
                                 borderRadius: BorderRadius.circular(4),
-                                border: Border.all(color: (off['status'] == 'submitted') ? const Color(0xFFBFDBFE) : const Color(0xFFFDE68A)),
+                                border: Border.all(color: (off['status'] == 'submitted') ? tokens.infoBorder : tokens.warningBorder),
                               ),
                               child: Text(
                                 (off['status'] == 'submitted') ? 'SUBMITTED TO BM' : 'DRAFTING',
                                 style: TextStyle(
                                   fontSize: 9.5,
                                   fontWeight: FontWeight.bold,
-                                  color: (off['status'] == 'submitted') ? const Color(0xFF1D4ED8) : const Color(0xFFB45309),
+                                  color: (off['status'] == 'submitted') ? tokens.infoText : tokens.warningText,
                                 ),
                               ),
                             ),
@@ -3960,18 +4090,18 @@ class _BranchOnboardingPortalScreenState
                               Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                 decoration: BoxDecoration(
-                                  color: const Color(0xFFECFDF5),
+                                  color: tokens.successBg,
                                   borderRadius: BorderRadius.circular(4),
-                                  border: Border.all(color: const Color(0xFFA7F3D0)),
+                                  border: Border.all(color: tokens.successBorder),
                                 ),
-                                child: const Row(
+                                child: Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
-                                    Icon(Icons.verified_user, size: 12, color: Color(0xFF059669)),
-                                    SizedBox(width: 4),
+                                    Icon(Icons.verified_user, size: 12, color: tokens.successDot),
+                                    const SizedBox(width: 4),
                                     Text(
                                       'Designated Misc Manager',
-                                      style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Color(0xFF059669)),
+                                      style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: tokens.successText),
                                     ),
                                   ],
                                 ),
@@ -3979,18 +4109,18 @@ class _BranchOnboardingPortalScreenState
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                               decoration: BoxDecoration(
-                                color: const Color(0xFFF1F5F9),
+                                color: tokens.surfaceSubtle,
                                 borderRadius: BorderRadius.circular(4),
-                                border: Border.all(color: const Color(0xFFCBD5E1)),
+                                border: Border.all(color: tokens.borderSubtle),
                               ),
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  const Icon(Icons.hub_outlined, size: 11, color: Color(0xFF475569)),
+                                  Icon(Icons.hub_outlined, size: 11, color: tokens.textMuted),
                                   const SizedBox(width: 4),
                                   Text(
                                     '$assignedGroups assigned groups',
-                                    style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: Color(0xFF334155)),
+                                    style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: tokens.textSecondary),
                                   ),
                                 ],
                               ),
@@ -4003,7 +4133,7 @@ class _BranchOnboardingPortalScreenState
                           children: [
                             if (!isSubmitted && _scopedOfficer == null) ...[
                               IconButton(
-                                icon: const Icon(Icons.edit_outlined, size: 16, color: Color(0xFF2563EB)),
+                                icon: Icon(Icons.edit_outlined, size: 16, color: tokens.infoDot),
                                 visualDensity: VisualDensity.compact,
                                 padding: EdgeInsets.zero,
                                 constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
@@ -4011,7 +4141,7 @@ class _BranchOnboardingPortalScreenState
                                 onPressed: () => _openOfficerDialog(officerToEdit: off),
                               ),
                               IconButton(
-                                icon: const Icon(Icons.delete_outline, size: 16, color: Color(0xFFDC2626)),
+                                icon: Icon(Icons.delete_outline, size: 16, color: tokens.dangerDot),
                                 visualDensity: VisualDensity.compact,
                                 padding: EdgeInsets.zero,
                                 constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
@@ -4026,6 +4156,8 @@ class _BranchOnboardingPortalScreenState
                           children: [
                             OutlinedButton.icon(
                               style: OutlinedButton.styleFrom(
+                                foregroundColor: tokens.textPrimary,
+                                side: BorderSide(color: tokens.borderStrong),
                                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                                 visualDensity: VisualDensity.compact,
                               ),
@@ -4045,8 +4177,8 @@ class _BranchOnboardingPortalScreenState
                               const SizedBox(width: 8),
                               OutlinedButton.icon(
                                 style: OutlinedButton.styleFrom(
-                                  foregroundColor: const Color(0xFFD97706),
-                                  side: const BorderSide(color: Color(0xFFFCD34D)),
+                                  foregroundColor: tokens.warningText,
+                                  side: BorderSide(color: tokens.warningBorder),
                                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                                   visualDensity: VisualDensity.compact,
                                 ),
@@ -4073,6 +4205,7 @@ class _BranchOnboardingPortalScreenState
                             if (!isSubmitted && !isMiscMgr && _scopedOfficer == null)
                               TextButton.icon(
                                 style: TextButton.styleFrom(
+                                  foregroundColor: tokens.brandAccent,
                                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                                   visualDensity: VisualDensity.compact,
                                 ),
@@ -4092,15 +4225,14 @@ class _BranchOnboardingPortalScreenState
                           ],
                         );
 
-
                         if (isMobileCard) {
                           return Container(
                             padding: const EdgeInsets.all(12),
                             decoration: BoxDecoration(
-                              color: Colors.white,
+                              color: tokens.surface,
                               borderRadius: BorderRadius.circular(10),
                               border: Border.all(
-                                color: isMiscMgr ? const Color(0xFF86EFAC) : const Color(0xFFE2E8F0),
+                                color: isMiscMgr ? tokens.successBorder : tokens.borderSubtle,
                                 width: isMiscMgr ? 1.5 : 1.0,
                               ),
                             ),
@@ -4117,14 +4249,14 @@ class _BranchOnboardingPortalScreenState
                                         children: [
                                           Text(
                                             name,
-                                            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
+                                            style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: tokens.textPrimary),
                                             maxLines: 2,
                                             overflow: TextOverflow.ellipsis,
                                           ),
                                           const SizedBox(height: 2),
                                           Text(
                                             phone.isNotEmpty ? phone : 'No phone registered',
-                                            style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B)),
+                                            style: TextStyle(fontSize: 11.5, color: tokens.textMuted),
                                           ),
                                         ],
                                       ),
@@ -4144,10 +4276,10 @@ class _BranchOnboardingPortalScreenState
                         return Container(
                           padding: const EdgeInsets.all(14),
                           decoration: BoxDecoration(
-                            color: Colors.white,
+                            color: tokens.surface,
                             borderRadius: BorderRadius.circular(10),
                             border: Border.all(
-                              color: isMiscMgr ? const Color(0xFF86EFAC) : const Color(0xFFE2E8F0),
+                              color: isMiscMgr ? tokens.successBorder : tokens.borderSubtle,
                               width: isMiscMgr ? 1.5 : 1.0,
                             ),
                           ),
@@ -4165,7 +4297,7 @@ class _BranchOnboardingPortalScreenState
                                           children: [
                                             Text(
                                               name,
-                                              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
+                                              style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: tokens.textPrimary),
                                             ),
                                             const SizedBox(width: 12),
                                             Expanded(child: badgesWrap),
@@ -4174,11 +4306,11 @@ class _BranchOnboardingPortalScreenState
                                         const SizedBox(height: 4),
                                         Row(
                                           children: [
-                                            const Icon(Icons.phone_outlined, size: 13, color: Color(0xFF64748B)),
+                                            Icon(Icons.phone_outlined, size: 13, color: tokens.textMuted),
                                             const SizedBox(width: 4),
                                             Text(
                                               phone.isNotEmpty ? phone : 'No phone registered',
-                                              style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                                              style: TextStyle(fontSize: 12, color: tokens.textMuted),
                                             ),
                                           ],
                                         ),
@@ -4218,12 +4350,13 @@ class _BranchOnboardingPortalScreenState
     required bool isSubmitted,
     required VoidCallback onEdit,
   }) {
+    final tokens = IcareSurfaceTokens.of(context);
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: tokens.surface,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: tokens.borderSubtle),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -4242,7 +4375,7 @@ class _BranchOnboardingPortalScreenState
               Expanded(
                 child: Text(
                   title,
-                  style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
+                  style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold, color: tokens.textPrimary),
                 ),
               ),
               Container(
@@ -4261,18 +4394,18 @@ class _BranchOnboardingPortalScreenState
           const SizedBox(height: 12),
           Text(
             CurrencyFormatter.formatNaira(amount),
-            style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: Color(0xFF0F172A), fontFeatures: [FontFeature.tabularFigures()]),
+            style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: tokens.textPrimary, fontFeatures: const [FontFeature.tabularFigures()]),
           ),
           const SizedBox(height: 4),
           Text(
             subtitle,
-            style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Color(0xFF475569)),
+            style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: tokens.textSecondary),
           ),
           if (description.isNotEmpty) ...[
             const SizedBox(height: 8),
             Text(
               description,
-              style: const TextStyle(fontSize: 11, color: Color(0xFF64748B), height: 1.3),
+              style: TextStyle(fontSize: 11, color: tokens.textMuted, height: 1.3),
             ),
           ],
 
@@ -4280,6 +4413,8 @@ class _BranchOnboardingPortalScreenState
             const SizedBox(height: 12),
             OutlinedButton.icon(
               style: OutlinedButton.styleFrom(
+                foregroundColor: tokens.textPrimary,
+                side: BorderSide(color: tokens.borderStrong),
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 visualDensity: VisualDensity.compact,
               ),
@@ -4299,52 +4434,64 @@ class _BranchOnboardingPortalScreenState
 
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(title, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
-        content: Form(
-          key: formKey,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(ruleDescription, style: const TextStyle(fontSize: 12, color: Color(0xFF64748B))),
-              const SizedBox(height: 14),
-              TextFormField(
-                controller: ctrl,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                decoration: const InputDecoration(
-                  labelText: 'Opening Balance (₦) *',
-                  prefixText: '₦ ',
-                  border: OutlineInputBorder(),
-                  contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      builder: (ctx) {
+        final tokens = IcareSurfaceTokens.of(ctx);
+        return AlertDialog(
+          backgroundColor: tokens.surfaceElevated,
+          title: Text(title, style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: tokens.textPrimary)),
+          content: Form(
+            key: formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(ruleDescription, style: TextStyle(fontSize: 12, color: tokens.textMuted)),
+                const SizedBox(height: 14),
+                TextFormField(
+                  controller: ctrl,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  style: TextStyle(color: tokens.textPrimary),
+                  decoration: const InputDecoration(
+                    labelText: 'Opening Balance (₦) *',
+                    prefixText: '₦ ',
+                    border: OutlineInputBorder(),
+                    contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  ),
+                  validator: (val) {
+                    if (val == null || val.trim().isEmpty) return 'Enter amount';
+                    final numVal = double.tryParse(val.replaceAll(',', '').trim());
+                    if (numVal == null || numVal < 0) return 'Enter a valid positive number';
+                    return null;
+                  },
                 ),
-                validator: (val) {
-                  if (val == null || val.trim().isEmpty) return 'Enter amount';
-                  final numVal = double.tryParse(val.replaceAll(',', '').trim());
-                  if (numVal == null || numVal < 0) return 'Enter a valid positive number';
-                  return null;
-                },
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              style: TextButton.styleFrom(foregroundColor: tokens.textSecondary),
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: tokens.brandPrimaryDark,
+                foregroundColor: Colors.white,
               ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Cancel')),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: IcareColors.primary, foregroundColor: Colors.white),
-            onPressed: () {
-              if (formKey.currentState!.validate()) {
-                final numVal = double.parse(ctrl.text.replaceAll(',', '').trim());
-                onSave(numVal);
-                Navigator.of(ctx).pop();
-                _saveDraft();
-                _showBanner('$title updated to ${CurrencyFormatter.formatNaira(numVal)}.');
-              }
-            },
-            child: const Text('Save Fund'),
-          ),
-        ],
-      ),
+              onPressed: () {
+                if (formKey.currentState!.validate()) {
+                  final numVal = double.parse(ctrl.text.replaceAll(',', '').trim());
+                  onSave(numVal);
+                  Navigator.of(ctx).pop();
+                  _saveDraft();
+                  _showBanner('$title updated to ${CurrencyFormatter.formatNaira(numVal)}.');
+                }
+              },
+              child: const Text('Save Fund'),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -4358,206 +4505,241 @@ class _BranchOnboardingPortalScreenState
 
     showDialog(
       context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: Text(isEditing ? 'Edit Credit Officer' : 'Add Credit Officer', style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
-          content: Form(
-            key: formKey,
-            child: Container(
-              constraints: const BoxConstraints(maxWidth: 420),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('Enter credit officer credentials for branch field operations.', style: TextStyle(fontSize: 12, color: Color(0xFF64748B))),
-                  const SizedBox(height: 14),
-                  TextFormField(
-                    controller: nameCtrl,
-                    textCapitalization: TextCapitalization.words,
-                    decoration: const InputDecoration(
-                      labelText: 'Full Name *',
-                      hintText: 'e.g. Babatunde Lawal',
-                      border: OutlineInputBorder(),
-                      contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      builder: (ctx) {
+        final tokens = IcareSurfaceTokens.of(ctx);
+        return StatefulBuilder(
+          builder: (context, setDialogState) => AlertDialog(
+            backgroundColor: tokens.surfaceElevated,
+            title: Text(
+              isEditing ? 'Edit Credit Officer' : 'Add Credit Officer',
+              style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: tokens.textPrimary),
+            ),
+            content: Form(
+              key: formKey,
+              child: Container(
+                constraints: const BoxConstraints(maxWidth: 420),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Enter credit officer credentials for branch field operations.',
+                      style: TextStyle(fontSize: 12, color: tokens.textMuted),
                     ),
-                    validator: (val) => (val == null || val.trim().isEmpty) ? 'Full Name is required' : null,
-                  ),
-                  const SizedBox(height: 12),
-                  TextFormField(
-                    controller: phoneCtrl,
-                    keyboardType: TextInputType.phone,
-                    decoration: const InputDecoration(
-                      labelText: 'Phone Number',
-                      hintText: 'e.g. 08012345678',
-                      border: OutlineInputBorder(),
-                      contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    const SizedBox(height: 14),
+                    TextFormField(
+                      controller: nameCtrl,
+                      textCapitalization: TextCapitalization.words,
+                      style: TextStyle(color: tokens.textPrimary),
+                      decoration: const InputDecoration(
+                        labelText: 'Full Name *',
+                        hintText: 'e.g. Babatunde Lawal',
+                        border: OutlineInputBorder(),
+                        contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      ),
+                      validator: (val) => (val == null || val.trim().isEmpty) ? 'Full Name is required' : null,
                     ),
-                  ),
-                  const SizedBox(height: 14),
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF8FAFC),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: phoneCtrl,
+                      keyboardType: TextInputType.phone,
+                      style: TextStyle(color: tokens.textPrimary),
+                      decoration: const InputDecoration(
+                        labelText: 'Phone Number',
+                        hintText: 'e.g. 08012345678',
+                        border: OutlineInputBorder(),
+                        contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      ),
                     ),
-                    child: Row(
-                      children: [
-                        const Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text('Designated Misc Savings Manager', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF0F172A))),
-                              SizedBox(height: 2),
-                              Text('Assigns exclusive custody of branch internal misc savings pool.', style: TextStyle(fontSize: 10.5, color: Color(0xFF64748B))),
-                            ],
+                    const SizedBox(height: 14),
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: tokens.surfaceSubtle,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: tokens.borderSubtle),
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Designated Misc Savings Manager',
+                                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: tokens.textPrimary),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  'Assigns exclusive custody of branch internal misc savings pool.',
+                                  style: TextStyle(fontSize: 10.5, color: tokens.textMuted),
+                                ),
+                              ],
+                            ),
                           ),
-                        ),
-                        Switch(
-                          value: isMiscMgr,
-                          activeThumbColor: IcareColors.primary,
-                          onChanged: (val) => setDialogState(() => isMiscMgr = val),
-                        ),
-                      ],
+                          Switch(
+                            value: isMiscMgr,
+                            activeThumbColor: tokens.brandAccent,
+                            onChanged: (val) => setDialogState(() => isMiscMgr = val),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Cancel')),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: IcareColors.primary, foregroundColor: Colors.white),
-              onPressed: () {
-                if (formKey.currentState!.validate()) {
-                  final cleanName = nameCtrl.text.trim();
-                  final cleanPhone = phoneCtrl.text.trim();
+            actions: [
+              TextButton(
+                style: TextButton.styleFrom(foregroundColor: tokens.textSecondary),
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: tokens.brandPrimaryDark,
+                  foregroundColor: Colors.white,
+                ),
+                onPressed: () {
+                  if (formKey.currentState!.validate()) {
+                    final cleanName = nameCtrl.text.trim();
+                    final cleanPhone = phoneCtrl.text.trim();
 
-                  String? generatedCoId;
-                  setState(() {
-                    if (isMiscMgr) {
-                      for (var o in _officers) {
-                        o['is_misc_savings_manager'] = false;
+                    String? generatedCoId;
+                    setState(() {
+                      if (isMiscMgr) {
+                        for (var o in _officers) {
+                          o['is_misc_savings_manager'] = false;
+                        }
                       }
-                    }
 
-                    if (isEditing) {
-                      officerToEdit['name'] = cleanName;
-                      officerToEdit['officer_name'] = cleanName;
-                      officerToEdit['phone'] = cleanPhone;
-                      officerToEdit['phone_number'] = cleanPhone;
-                      officerToEdit['is_misc_savings_manager'] = isMiscMgr;
-                    } else {
-                      final coId = 'onb_co_${DateTime.now().millisecondsSinceEpoch.toRadixString(16)}';
-                      generatedCoId = coId;
-                      _officers.add({
-                        'id': coId,
-                        'officer_id': coId,
-                        'name': cleanName,
-                        'officer_name': cleanName,
-                        'phone': cleanPhone,
-                        'phone_number': cleanPhone,
-                        'role': 'Credit Officer',
-                        'is_misc_savings_manager': isMiscMgr,
-                        'token': coId,
-                        'co_token': coId,
-                        'status': 'drafting',
-                      });
-                    }
-                  });
+                      if (isEditing) {
+                        officerToEdit['name'] = cleanName;
+                        officerToEdit['officer_name'] = cleanName;
+                        officerToEdit['phone'] = cleanPhone;
+                        officerToEdit['phone_number'] = cleanPhone;
+                        officerToEdit['is_misc_savings_manager'] = isMiscMgr;
+                      } else {
+                        final coId = 'onb_co_${DateTime.now().millisecondsSinceEpoch.toRadixString(16)}';
+                        generatedCoId = coId;
+                        _officers.add({
+                          'id': coId,
+                          'officer_id': coId,
+                          'name': cleanName,
+                          'officer_name': cleanName,
+                          'phone': cleanPhone,
+                          'phone_number': cleanPhone,
+                          'role': 'Credit Officer',
+                          'is_misc_savings_manager': isMiscMgr,
+                          'token': coId,
+                          'co_token': coId,
+                          'status': 'drafting',
+                        });
+                      }
+                    });
 
-                  Navigator.of(ctx).pop();
-                  _saveDraft();
-                  _showBanner(isEditing ? 'Officer updated successfully.' : 'Officer added successfully.');
-                  if (!isEditing && generatedCoId != null) {
-                    final origin = getAppPublicOrigin();
-                    final coUrl = '$origin/#/onboarding/officer?token=$generatedCoId';
-                    _showOfficerLinkModal(cleanName, coUrl);
+                    Navigator.of(ctx).pop();
+                    _saveDraft();
+                    _showBanner(isEditing ? 'Officer updated successfully.' : 'Officer added successfully.');
+                    if (!isEditing && generatedCoId != null) {
+                      final origin = getAppPublicOrigin();
+                      final coUrl = '$origin/#/onboarding/officer?token=$generatedCoId';
+                      _showOfficerLinkModal(cleanName, coUrl);
+                    }
                   }
-                }
-              },
-              child: Text(isEditing ? 'Save Changes' : 'Add Officer'),
-            ),
-          ],
-        ),
-      ),
+                },
+                child: Text(isEditing ? 'Save Changes' : 'Add Officer'),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 
   void _showOfficerLinkModal(String name, String coUrl) {
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(6),
-              decoration: BoxDecoration(
-                color: const Color(0xFFEFF6FF),
-                borderRadius: BorderRadius.circular(6),
+      builder: (ctx) {
+        final tokens = IcareSurfaceTokens.of(ctx);
+        return AlertDialog(
+          backgroundColor: tokens.surfaceElevated,
+          title: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: tokens.infoBg,
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Icon(Icons.link, size: 18, color: tokens.infoDot),
               ),
-              child: const Icon(Icons.link, size: 18, color: Color(0xFF1D4ED8)),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Dedicated Link for $name',
+                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: tokens.textPrimary),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'A dedicated, cryptographically isolated onboarding workspace has been created for $name. Copy and deliver this link to the officer:',
+                style: TextStyle(fontSize: 12.5, color: tokens.textSecondary),
+              ),
+              const SizedBox(height: 12),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: tokens.surfaceSubtle,
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: tokens.borderStrong),
+                ),
+                child: SelectableText(
+                  coUrl,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontFamily: 'monospace',
+                    fontWeight: FontWeight.w600,
+                    color: tokens.textPrimary,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'When the officer opens this link, they will see strictly their own groups and members, with zero visibility into other officers.',
+                style: TextStyle(fontSize: 11, color: tokens.textMuted),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              style: TextButton.styleFrom(foregroundColor: tokens.textSecondary),
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Close'),
             ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                'Dedicated Link for $name',
-                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
-                overflow: TextOverflow.ellipsis,
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: tokens.brandPrimaryDark,
+                foregroundColor: Colors.white,
               ),
+              onPressed: () {
+                Clipboard.setData(ClipboardData(text: coUrl));
+                Navigator.of(ctx).pop();
+                _showBanner('Dedicated officer link for $name copied to clipboard!', isSuccess: true);
+              },
+              icon: const Icon(Icons.copy, size: 14),
+              label: const Text('Copy Officer Link'),
             ),
           ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'A dedicated, cryptographically isolated onboarding workspace has been created for $name. Copy and deliver this link to the officer:',
-              style: const TextStyle(fontSize: 12.5, color: Color(0xFF475569)),
-            ),
-            const SizedBox(height: 12),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF8FAFC),
-                borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: const Color(0xFFCBD5E1)),
-              ),
-              child: SelectableText(
-                coUrl,
-                style: const TextStyle(fontSize: 12, fontFamily: 'monospace', fontWeight: FontWeight.w600, color: Color(0xFF0F172A)),
-              ),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'When the officer opens this link, they will see strictly their own groups and members, with zero visibility into other officers.',
-              style: TextStyle(fontSize: 11, color: Color(0xFF64748B)),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Close'),
-          ),
-          ElevatedButton.icon(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: IcareColors.primary,
-              foregroundColor: Colors.white,
-            ),
-            onPressed: () {
-              Clipboard.setData(ClipboardData(text: coUrl));
-              Navigator.of(ctx).pop();
-              _showBanner('Dedicated officer link for $name copied to clipboard!', isSuccess: true);
-            },
-            icon: const Icon(Icons.copy, size: 14),
-            label: const Text('Copy Officer Link'),
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 
@@ -4565,25 +4747,36 @@ class _BranchOnboardingPortalScreenState
     final name = (officer['name'] ?? officer['officer_name'] ?? 'Officer').toString();
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Confirm Officer Removal'),
-        content: Text('Are you sure you want to remove credit officer "$name"? Any assigned groups will remain but will require re-assignment.', style: const TextStyle(fontSize: 13)),
-        actions: [
-          TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Cancel')),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFDC2626), foregroundColor: Colors.white),
-            onPressed: () {
-              setState(() {
-                _officers.remove(officer);
-              });
-              Navigator.of(ctx).pop();
-              _saveDraft();
-              _showBanner('Officer "$name" removed.');
-            },
-            child: const Text('Remove Officer'),
+      builder: (ctx) {
+        final tokens = IcareSurfaceTokens.of(ctx);
+        return AlertDialog(
+          backgroundColor: tokens.surfaceElevated,
+          title: Text('Confirm Officer Removal', style: TextStyle(color: tokens.textPrimary)),
+          content: Text(
+            'Are you sure you want to remove credit officer "$name"? Any assigned groups will remain but will require re-assignment.',
+            style: TextStyle(fontSize: 13, color: tokens.textSecondary),
           ),
-        ],
-      ),
+          actions: [
+            TextButton(
+              style: TextButton.styleFrom(foregroundColor: tokens.textSecondary),
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFDC2626), foregroundColor: Colors.white),
+              onPressed: () {
+                setState(() {
+                  _officers.remove(officer);
+                });
+                Navigator.of(ctx).pop();
+                _saveDraft();
+                _showBanner('Officer "$name" removed.');
+              },
+              child: const Text('Remove Officer'),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -4592,6 +4785,7 @@ class _BranchOnboardingPortalScreenState
   // =========================================================================
 
   Widget _buildExcelUploaderTab(bool isSubmitted) {
+    final tokens = IcareSurfaceTokens.of(context);
     return Center(
       child: Container(
         constraints: const BoxConstraints(maxWidth: 640),
@@ -4602,44 +4796,44 @@ class _BranchOnboardingPortalScreenState
             Container(
               padding: const EdgeInsets.all(24),
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: tokens.surface,
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: const Color(0xFFCBD5E1), style: BorderStyle.solid),
+                border: Border.all(color: tokens.borderStrong, style: BorderStyle.solid),
                 boxShadow: const [BoxShadow(color: Color(0x05000000), blurRadius: 10, offset: Offset(0, 4))],
               ),
               child: Column(
                 children: [
-                  const Icon(Icons.cloud_upload_outlined, size: 54, color: IcareColors.primary),
+                  Icon(Icons.cloud_upload_outlined, size: 54, color: tokens.brandPrimary),
                   const SizedBox(height: 16),
-                  const Text(
+                  Text(
                     'Direct Excel Workbook Ingestion',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: tokens.textPrimary),
                   ),
                   const SizedBox(height: 8),
-                  const Text(
+                  Text(
                     'Upload your completed "icare-group-member-onboarding-template.xlsx" workbook. '
                     'The system will parse Groups and Members sheets instantly, run automated validation, and populate your digital onboarding roster.',
                     textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 12.5, color: Color(0xFF64748B), height: 1.4),
+                    style: TextStyle(fontSize: 12.5, color: tokens.textMuted, height: 1.4),
                   ),
                   if (_scopedOfficer != null) ...[
                     const SizedBox(height: 12),
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFEFF6FF),
+                        color: tokens.infoBg,
                         borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: const Color(0xFFBFDBFE)),
+                        border: Border.all(color: tokens.infoBorder),
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          const Icon(Icons.person_pin_outlined, size: 14, color: Color(0xFF1E40AF)),
+                          Icon(Icons.person_pin_outlined, size: 14, color: tokens.infoText),
                           const SizedBox(width: 6),
                           Flexible(
                             child: Text(
                               'Scoped Ingestion Mode: Groups and members in your workbook will be attributed to $_scopedOfficer.',
-                              style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Color(0xFF1E40AF)),
+                              style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: tokens.infoText),
                               textAlign: TextAlign.center,
                             ),
                           ),
@@ -4651,7 +4845,7 @@ class _BranchOnboardingPortalScreenState
                   if (!isSubmitted)
                     ElevatedButton.icon(
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: IcareColors.primary,
+                        backgroundColor: tokens.brandPrimaryDark,
                         foregroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
                       ),
@@ -4660,7 +4854,7 @@ class _BranchOnboardingPortalScreenState
                       label: const Text('Choose Excel File (.xlsx)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
                     )
                   else
-                    const Text('Onboarding package is already submitted.', style: TextStyle(fontSize: 12, color: Color(0xFF059669))),
+                    Text('Onboarding package is already submitted.', style: TextStyle(fontSize: 12, color: tokens.successText)),
                 ],
               ),
             ),
@@ -4669,13 +4863,17 @@ class _BranchOnboardingPortalScreenState
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: tokens.textSecondary,
+                    side: BorderSide(color: tokens.borderStrong),
+                  ),
                   onPressed: () => _tabController.animateTo(0),
                   icon: const Icon(Icons.arrow_back, size: 14),
                   label: const Text('View Member Roster', style: TextStyle(fontSize: 12)),
                 ),
                 ElevatedButton.icon(
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: IcareColors.primary,
+                    backgroundColor: tokens.brandPrimaryDark,
                     foregroundColor: Colors.white,
                   ),
                   onPressed: () => _tabController.animateTo(3),
@@ -4695,6 +4893,7 @@ class _BranchOnboardingPortalScreenState
   // =========================================================================
 
   Widget _buildReviewSignOffTab(bool isSubmitted) {
+    final tokens = IcareSurfaceTokens.of(context);
     final status = (_sessionData?['status'] as String? ?? 'draft').toLowerCase();
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
@@ -4704,71 +4903,71 @@ class _BranchOnboardingPortalScreenState
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('Onboarding Pre-Flight Verification', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF0F172A))),
+              Text('Onboarding Pre-Flight Verification', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: tokens.textPrimary)),
               const SizedBox(height: 6),
-              const Text('Review your branch data totals before submitting for administrative activation.', style: TextStyle(fontSize: 12.5, color: Color(0xFF64748B))),
+              Text('Review your branch data totals before submitting for administrative activation.', style: TextStyle(fontSize: 12.5, color: tokens.textMuted)),
               const SizedBox(height: 16),
 
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: Colors.white,
+                  color: tokens.surface,
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                  border: Border.all(color: tokens.borderSubtle),
                 ),
                 child: Column(
                   children: [
                     if (_scopedOfficer != null) ...[
                       _buildReviewRow('Portfolio Credit Officer', _scopedOfficer!),
-                      const Divider(height: 16, color: Color(0xFFF1F5F9)),
+                      Divider(height: 16, color: tokens.borderSubtle),
                       _buildReviewRow('Solidarity Groups', '${_scopedGroups.length} groups'),
-                      const Divider(height: 16, color: Color(0xFFF1F5F9)),
+                      Divider(height: 16, color: tokens.borderSubtle),
                       _buildReviewRow('Registered Members', '${_scopedMembers.length} clients'),
-                      const Divider(height: 16, color: Color(0xFFF1F5F9)),
+                      Divider(height: 16, color: tokens.borderSubtle),
                       _buildReviewRow('Individual Member Savings', CurrencyFormatter.formatNaira(_displayMemberSavings)),
                       if (_displayGroupSavings > 0) ...[
-                        const Divider(height: 16, color: Color(0xFFF1F5F9)),
+                        Divider(height: 16, color: tokens.borderSubtle),
                         _buildReviewRow('Group Savings Pool', CurrencyFormatter.formatNaira(_displayGroupSavings)),
                       ],
-                      const Divider(height: 16, color: Color(0xFFF1F5F9)),
+                      Divider(height: 16, color: tokens.borderSubtle),
                       _buildReviewRow('Total Portfolio Savings', CurrencyFormatter.formatNaira(_displayTotalSavings)),
                       if (_displayPrincipalLoan > 0) ...[
-                        const Divider(height: 16, color: Color(0xFFF1F5F9)),
+                        Divider(height: 16, color: tokens.borderSubtle),
                         _buildReviewRow('Total Principal Disbursed', CurrencyFormatter.formatNaira(_displayPrincipalLoan)),
                       ],
-                      const Divider(height: 16, color: Color(0xFFF1F5F9)),
+                      Divider(height: 16, color: tokens.borderSubtle),
                       _buildReviewRow('Total Active Credit (With Interest)', CurrencyFormatter.formatNaira(_displayActiveCredit)),
-                      const Divider(height: 16, color: Color(0xFFF1F5F9)),
+                      Divider(height: 16, color: tokens.borderSubtle),
                       _buildReviewRow('Total Current Balance', CurrencyFormatter.formatNaira(_displayCurrentBalance)),
                     ] else ...[
                       _buildReviewRow('Credit Officers Provisioned', '${_officers.length} officers'),
-                      const Divider(height: 16, color: Color(0xFFF1F5F9)),
+                      Divider(height: 16, color: tokens.borderSubtle),
                       _buildReviewRow('Solidarity Groups', '${_groups.length} groups created'),
-                      const Divider(height: 16, color: Color(0xFFF1F5F9)),
+                      Divider(height: 16, color: tokens.borderSubtle),
                       _buildReviewRow('Registered Members', '${_members.length} clients'),
-                      const Divider(height: 16, color: Color(0xFFF1F5F9)),
+                      Divider(height: 16, color: tokens.borderSubtle),
                       _buildReviewRow('Individual Member Savings', CurrencyFormatter.formatNaira(_totalMemberSavings)),
                       if (_totalGroupSavings > 0) ...[
-                        const Divider(height: 16, color: Color(0xFFF1F5F9)),
+                        Divider(height: 16, color: tokens.borderSubtle),
                         _buildReviewRow('Group Savings Pool', CurrencyFormatter.formatNaira(_totalGroupSavings)),
                       ],
                       if (_miscSavings > 0) ...[
-                        const Divider(height: 16, color: Color(0xFFF1F5F9)),
+                        Divider(height: 16, color: tokens.borderSubtle),
                         _buildReviewRow('Branch Misc Savings', CurrencyFormatter.formatNaira(_miscSavings)),
                       ],
-                      const Divider(height: 16, color: Color(0xFFF1F5F9)),
+                      Divider(height: 16, color: tokens.borderSubtle),
                       _buildReviewRow('Total Combined Savings', CurrencyFormatter.formatNaira(_totalSavings)),
                       if (_lapsSavings > 0) ...[
-                        const Divider(height: 16, color: Color(0xFFF1F5F9)),
+                        Divider(height: 16, color: tokens.borderSubtle),
                         _buildReviewRow('Branch LAPS Risk Reserve', CurrencyFormatter.formatNaira(_lapsSavings)),
                       ],
                       if (_totalPrincipalLoan > 0) ...[
-                        const Divider(height: 16, color: Color(0xFFF1F5F9)),
+                        Divider(height: 16, color: tokens.borderSubtle),
                         _buildReviewRow('Total Principal Disbursed', CurrencyFormatter.formatNaira(_totalPrincipalLoan)),
                       ],
-                      const Divider(height: 16, color: Color(0xFFF1F5F9)),
+                      Divider(height: 16, color: tokens.borderSubtle),
                       _buildReviewRow('Total Active Credit (With Interest)', CurrencyFormatter.formatNaira(_totalActiveCredit)),
-                      const Divider(height: 16, color: Color(0xFFF1F5F9)),
+                      Divider(height: 16, color: tokens.borderSubtle),
                       _buildReviewRow('Total Current Balance', CurrencyFormatter.formatNaira(_totalCurrentBalance)),
                     ],
                   ],
@@ -4782,21 +4981,21 @@ class _BranchOnboardingPortalScreenState
                     width: double.infinity,
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFEFF6FF),
+                      color: tokens.infoBg,
                       borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: const Color(0xFFBFDBFE)),
+                      border: Border.all(color: tokens.infoBorder),
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
+                        Text(
                           'Credit Officer Workspace Status',
-                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF1E40AF)),
+                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: tokens.infoText),
                         ),
                         const SizedBox(height: 4),
                         Text(
                           'You are viewing your scoped roster ($_scopedOfficer). Your groups and members are saved to the branch draft. Final administrative submission and branch sign-off is completed by the Area Manager once all officers have completed their rosters.',
-                          style: const TextStyle(fontSize: 11.5, color: Color(0xFF3B82F6)),
+                          style: TextStyle(fontSize: 11.5, color: tokens.infoText),
                         ),
                       ],
                     ),
@@ -4809,7 +5008,8 @@ class _BranchOnboardingPortalScreenState
                           height: 44,
                           child: OutlinedButton.icon(
                             style: OutlinedButton.styleFrom(
-                              side: const BorderSide(color: Color(0xFFCBD5E1)),
+                              foregroundColor: tokens.textSecondary,
+                              side: BorderSide(color: tokens.borderStrong),
                             ),
                             onPressed: _isSaving ? null : _saveDraft,
                             icon: const Icon(Icons.save_outlined, size: 16),
@@ -4823,7 +5023,7 @@ class _BranchOnboardingPortalScreenState
                         child: SizedBox(
                           height: 44,
                           child: ElevatedButton.icon(
-                            style: ElevatedButton.styleFrom(backgroundColor: IcareColors.primary, foregroundColor: Colors.white),
+                            style: ElevatedButton.styleFrom(backgroundColor: tokens.brandPrimaryDark, foregroundColor: Colors.white),
                             onPressed: (_isSaving || isSubmitted) ? null : _submitScopedOfficerRoster,
                             icon: const Icon(Icons.send_outlined, size: 16),
                             label: const Text('Confirm & Submit to BM', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
@@ -4837,7 +5037,7 @@ class _BranchOnboardingPortalScreenState
                     width: double.infinity,
                     height: 44,
                     child: ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(backgroundColor: IcareColors.primary, foregroundColor: Colors.white),
+                      style: ElevatedButton.styleFrom(backgroundColor: tokens.brandPrimaryDark, foregroundColor: Colors.white),
                       onPressed: _isSaving ? null : _submitPackage,
                       icon: const Icon(Icons.send_outlined, size: 18),
                       label: const Text('Confirm Totals & Submit to Area Manager', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
@@ -4849,34 +5049,34 @@ class _BranchOnboardingPortalScreenState
                     width: double.infinity,
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFF0FDF4),
+                      color: tokens.successBg,
                       borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: const Color(0xFFBBF7D0)),
+                      border: Border.all(color: tokens.successBorder),
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Row(
+                        Row(
                           children: [
-                            Icon(Icons.verified_user_outlined, size: 20, color: Color(0xFF16A34A)),
-                            SizedBox(width: 8),
+                            Icon(Icons.verified_user_outlined, size: 20, color: tokens.successDot),
+                            const SizedBox(width: 8),
                             Text(
                               'Area Manager Review & Commitment',
-                              style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF166534)),
+                              style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: tokens.successText),
                             ),
                           ],
                         ),
                         const SizedBox(height: 6),
-                        const Text(
+                        Text(
                           'Branch Manager has verified officer rosters and combined balances. As Area Manager, you can complete the final review and commit all groups, members, savings, and loan portfolios into the live core database.',
-                          style: TextStyle(fontSize: 12, color: Color(0xFF15803D)),
+                          style: TextStyle(fontSize: 12, color: tokens.successText),
                         ),
                         const SizedBox(height: 14),
                         SizedBox(
                           width: double.infinity,
                           height: 44,
                           child: ElevatedButton.icon(
-                            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF059669), foregroundColor: Colors.white),
+                            style: ElevatedButton.styleFrom(backgroundColor: tokens.brandPrimaryDark, foregroundColor: Colors.white),
                             onPressed: _isSaving ? null : _amApprovePackage,
                             icon: const Icon(Icons.check_circle_outline, size: 18),
                             label: const Text('Approve & Commit to Live Core Database', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
@@ -4890,27 +5090,27 @@ class _BranchOnboardingPortalScreenState
                     width: double.infinity,
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFEFF6FF),
+                      color: tokens.infoBg,
                       borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: const Color(0xFFBFDBFE)),
+                      border: Border.all(color: tokens.infoBorder),
                     ),
-                    child: const Column(
+                    child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Row(
                           children: [
-                            Icon(Icons.hourglass_top_outlined, size: 18, color: Color(0xFF1D4ED8)),
-                            SizedBox(width: 8),
+                            Icon(Icons.hourglass_top_outlined, size: 18, color: tokens.infoDot),
+                            const SizedBox(width: 8),
                             Text(
                               'Submitted to Area Manager',
-                              style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF1E40AF)),
+                              style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: tokens.infoText),
                             ),
                           ],
                         ),
-                        SizedBox(height: 6),
+                        const SizedBox(height: 6),
                         Text(
                           'Your branch onboarding package has been confirmed and submitted to your Area Manager for final supervisory sign-off and live database activation. Your workspace is locked while awaiting approval.',
-                          style: TextStyle(fontSize: 12.5, color: Color(0xFF1D4ED8), height: 1.4),
+                          style: TextStyle(fontSize: 12.5, color: tokens.infoText, height: 1.4),
                         ),
                       ],
                     ),
@@ -4921,26 +5121,26 @@ class _BranchOnboardingPortalScreenState
                   width: double.infinity,
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFECFDF5),
+                    color: tokens.successBg,
                     borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: const Color(0xFFA7F3D0)),
+                    border: Border.all(color: tokens.successBorder),
                   ),
-                  child: const Row(
+                  child: Row(
                     children: [
-                      Icon(Icons.verified, size: 24, color: Color(0xFF059669)),
-                      SizedBox(width: 12),
+                      Icon(Icons.verified, size: 24, color: tokens.successDot),
+                      const SizedBox(width: 12),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
                               'Branch Onboarding Completed',
-                              style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF065F46)),
+                              style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: tokens.successText),
                             ),
-                            SizedBox(height: 2),
+                            const SizedBox(height: 2),
                             Text(
                               'All solidarity groups, member accounts, savings reserves, and active loan balances have been committed to the live database.',
-                              style: TextStyle(fontSize: 12, color: Color(0xFF047857)),
+                              style: TextStyle(fontSize: 12, color: tokens.successText),
                             ),
                           ],
                         ),
@@ -4953,8 +5153,8 @@ class _BranchOnboardingPortalScreenState
               Center(
                 child: TextButton.icon(
                   onPressed: () => _tabController.animateTo(0),
-                  icon: const Icon(Icons.arrow_back, size: 14),
-                  label: const Text('Return to Member Roster', style: TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+                  icon: Icon(Icons.arrow_back, size: 14, color: tokens.textMuted),
+                  label: Text('Return to Member Roster', style: TextStyle(fontSize: 12, color: tokens.textMuted)),
                 ),
               ),
             ],
@@ -4965,11 +5165,12 @@ class _BranchOnboardingPortalScreenState
   }
 
   Widget _buildReviewRow(String label, String value) {
+    final tokens = IcareSurfaceTokens.of(context);
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(label, style: const TextStyle(fontSize: 13, color: Color(0xFF475569))),
-        Text(value, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF0F172A), fontFeatures: [FontFeature.tabularFigures()])),
+        Text(label, style: TextStyle(fontSize: 13, color: tokens.textSecondary)),
+        Text(value, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: tokens.textPrimary, fontFeatures: const [FontFeature.tabularFigures()])),
       ],
     );
   }

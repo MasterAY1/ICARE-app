@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/errors/app_error_formatter.dart';
+import '../../../../core/theme/icare_theme_tokens.dart';
 import '../../../../core/utils/currency_formatter.dart';
 import '../../../../core/widgets/icare_skeleton_loader.dart';
 import '../../data/datasources/admin_api_service.dart';
@@ -33,11 +34,12 @@ class _AdminRankingsTabState extends ConsumerState<AdminRankingsTab> {
     final perfAsync = ref.watch(institutionPerformanceProvider(year));
     final currentYear = DateTime.now().year;
     final availableYears = [currentYear, currentYear - 1, currentYear - 2];
+    final tokens = IcareSurfaceTokens.of(context);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _buildToolbar(year, availableYears),
+        _buildToolbar(tokens, year, availableYears),
         const SizedBox(height: 14),
         perfAsync.when(
           loading: () => const Column(
@@ -52,24 +54,24 @@ class _AdminRankingsTabState extends ConsumerState<AdminRankingsTab> {
             return Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: const Color(0xFFFEF2F2),
+                color: tokens.dangerBg,
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: const Color(0xFFFCA5A5)),
+                border: Border.all(color: tokens.dangerBorder),
               ),
               child: Row(
                 children: [
-                  const Icon(
+                  Icon(
                     Icons.error_outline,
-                    color: Color(0xFFDC2626),
+                    color: tokens.dangerDot,
                     size: 20,
                   ),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Text(
                       '${errorDetails.title}: ${errorDetails.message}',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 12.5,
-                        color: Color(0xFF991B1B),
+                        color: tokens.dangerText,
                       ),
                     ),
                   ),
@@ -85,19 +87,20 @@ class _AdminRankingsTabState extends ConsumerState<AdminRankingsTab> {
               ),
             );
           },
-          data: (data) => _buildRankingsContent(context, data, widget.size),
+          data: (data) => _buildRankingsContent(context, tokens, data, widget.size),
         ),
       ],
     );
   }
 
-  Widget _buildToolbar(int selectedYear, List<int> availableYears) {
+  Widget _buildToolbar(
+      IcareSurfaceTokens tokens, int selectedYear, List<int> availableYears) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: tokens.surface,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: tokens.borderSubtle),
       ),
       child: Wrap(
         alignment: WrapAlignment.spaceBetween,
@@ -105,7 +108,7 @@ class _AdminRankingsTabState extends ConsumerState<AdminRankingsTab> {
         spacing: 12,
         runSpacing: 8,
         children: [
-          const Column(
+          Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
@@ -113,25 +116,25 @@ class _AdminRankingsTabState extends ConsumerState<AdminRankingsTab> {
                 style: TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w700,
-                  color: Color(0xFF0F172A),
+                  color: tokens.textPrimary,
                 ),
               ),
-              SizedBox(height: 2),
+              const SizedBox(height: 2),
               Text(
                 'Ranked by loans disbursed, on-time payments, and overdue recovery',
-                style: TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                style: TextStyle(fontSize: 11, color: tokens.textMuted),
               ),
             ],
           ),
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Text(
+              Text(
                 'Year:',
                 style: TextStyle(
                   fontSize: 11.5,
                   fontWeight: FontWeight.w600,
-                  color: Color(0xFF64748B),
+                  color: tokens.textMuted,
                 ),
               ),
               const SizedBox(width: 6),
@@ -150,13 +153,13 @@ class _AdminRankingsTabState extends ConsumerState<AdminRankingsTab> {
                       ),
                       decoration: BoxDecoration(
                         color: y == selectedYear
-                            ? const Color(0xFF022C22)
-                            : const Color(0xFFF1F5F9),
+                            ? tokens.brandPrimaryDark
+                            : tokens.surfaceSubtle,
                         borderRadius: BorderRadius.circular(6),
                         border: Border.all(
                           color: y == selectedYear
-                              ? const Color(0xFF022C22)
-                              : const Color(0xFFE2E8F0),
+                              ? tokens.brandPrimaryDark
+                              : tokens.borderSubtle,
                         ),
                       ),
                       child: Text(
@@ -166,7 +169,7 @@ class _AdminRankingsTabState extends ConsumerState<AdminRankingsTab> {
                           fontWeight: FontWeight.w700,
                           color: y == selectedYear
                               ? Colors.white
-                              : const Color(0xFF475569),
+                              : tokens.textSecondary,
                         ),
                       ),
                     ),
@@ -182,6 +185,7 @@ class _AdminRankingsTabState extends ConsumerState<AdminRankingsTab> {
 
   Widget _buildRankingsContent(
     BuildContext context,
+    IcareSurfaceTokens tokens,
     InstitutionPerformanceModel data,
     AdminSize size,
   ) {
@@ -192,12 +196,12 @@ class _AdminRankingsTabState extends ConsumerState<AdminRankingsTab> {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _buildCompactSubToggle(branches.length, officers.length),
+          _buildCompactSubToggle(tokens, branches.length, officers.length),
           const SizedBox(height: 12),
           if (_compactSectionIndex == 0)
-            _buildBranchesCardSection(context, branches, columns: 1)
+            _buildBranchesCardSection(context, tokens, branches, columns: 1)
           else
-            _buildOfficersCardSection(officers, columns: 1, initialLimit: 5),
+            _buildOfficersCardSection(tokens, officers, columns: 1, initialLimit: 5),
         ],
       );
     }
@@ -206,9 +210,9 @@ class _AdminRankingsTabState extends ConsumerState<AdminRankingsTab> {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _buildBranchesCardSection(context, branches, columns: 2),
+          _buildBranchesCardSection(context, tokens, branches, columns: 2),
           const SizedBox(height: 18),
-          _buildOfficersCardSection(officers, columns: 2, initialLimit: 6),
+          _buildOfficersCardSection(tokens, officers, columns: 2, initialLimit: 6),
         ],
       );
     }
@@ -218,11 +222,12 @@ class _AdminRankingsTabState extends ConsumerState<AdminRankingsTab> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Expanded(
-          child: _buildBranchesCardSection(context, branches, columns: 1),
+          child: _buildBranchesCardSection(context, tokens, branches, columns: 1),
         ),
         const SizedBox(width: 18),
         Expanded(
           child: _buildOfficersCardSection(
+            tokens,
             officers,
             columns: 1,
             initialLimit: 10,
@@ -232,13 +237,14 @@ class _AdminRankingsTabState extends ConsumerState<AdminRankingsTab> {
     );
   }
 
-  Widget _buildCompactSubToggle(int branchCount, int officerCount) {
+  Widget _buildCompactSubToggle(
+      IcareSurfaceTokens tokens, int branchCount, int officerCount) {
     return Container(
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
-        color: const Color(0xFFF1F5F9),
+        color: tokens.surfaceSubtle,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: tokens.borderSubtle),
       ),
       child: Row(
         children: [
@@ -250,7 +256,7 @@ class _AdminRankingsTabState extends ConsumerState<AdminRankingsTab> {
                 padding: const EdgeInsets.symmetric(vertical: 8),
                 decoration: BoxDecoration(
                   color: _compactSectionIndex == 0
-                      ? Colors.white
+                      ? tokens.surface
                       : Colors.transparent,
                   borderRadius: BorderRadius.circular(6),
                 ),
@@ -263,8 +269,8 @@ class _AdminRankingsTabState extends ConsumerState<AdminRankingsTab> {
                         ? FontWeight.w700
                         : FontWeight.w500,
                     color: _compactSectionIndex == 0
-                        ? const Color(0xFF0F172A)
-                        : const Color(0xFF64748B),
+                        ? tokens.textPrimary
+                        : tokens.textMuted,
                   ),
                 ),
               ),
@@ -278,7 +284,7 @@ class _AdminRankingsTabState extends ConsumerState<AdminRankingsTab> {
                 padding: const EdgeInsets.symmetric(vertical: 8),
                 decoration: BoxDecoration(
                   color: _compactSectionIndex == 1
-                      ? Colors.white
+                      ? tokens.surface
                       : Colors.transparent,
                   borderRadius: BorderRadius.circular(6),
                 ),
@@ -291,8 +297,8 @@ class _AdminRankingsTabState extends ConsumerState<AdminRankingsTab> {
                         ? FontWeight.w700
                         : FontWeight.w500,
                     color: _compactSectionIndex == 1
-                        ? const Color(0xFF0F172A)
-                        : const Color(0xFF64748B),
+                        ? tokens.textPrimary
+                        : tokens.textMuted,
                   ),
                 ),
               ),
@@ -305,20 +311,21 @@ class _AdminRankingsTabState extends ConsumerState<AdminRankingsTab> {
 
   Widget _buildBranchesCardSection(
     BuildContext context,
+    IcareSurfaceTokens tokens,
     List<BranchPerformanceItemModel> branches, {
     required int columns,
   }) {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: tokens.surface,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: tokens.borderSubtle),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Row(
+          Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Expanded(
@@ -327,24 +334,24 @@ class _AdminRankingsTabState extends ConsumerState<AdminRankingsTab> {
                   style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w700,
-                    color: Color(0xFF0F172A),
+                    color: tokens.textPrimary,
                   ),
                 ),
               ),
               Text(
                 'Tap branch for detail',
-                style: TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                style: TextStyle(fontSize: 11, color: tokens.textMuted),
               ),
             ],
           ),
           const SizedBox(height: 12),
           if (branches.isEmpty)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 16),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 16),
               child: Center(
                 child: Text(
                   'No branch rankings available for this year.',
-                  style: TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
+                  style: TextStyle(fontSize: 12, color: tokens.textLight),
                 ),
               ),
             )
@@ -354,7 +361,7 @@ class _AdminRankingsTabState extends ConsumerState<AdminRankingsTab> {
               crossAxisSpacing: 12,
               mainAxisSpacing: 10,
               children: branches
-                  .map((b) => _buildBranchRankCard(context, b))
+                  .map((b) => _buildBranchRankCard(context, tokens, b))
                   .toList(),
             ),
         ],
@@ -364,6 +371,7 @@ class _AdminRankingsTabState extends ConsumerState<AdminRankingsTab> {
 
   Widget _buildBranchRankCard(
     BuildContext context,
+    IcareSurfaceTokens tokens,
     BranchPerformanceItemModel b,
   ) {
     final score = b.compositeScore.clamp(0.0, 100.0);
@@ -379,9 +387,9 @@ class _AdminRankingsTabState extends ConsumerState<AdminRankingsTab> {
       child: Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: const Color(0xFFF8FAFC),
+          color: tokens.surfaceSubtle,
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: const Color(0xFFE2E8F0)),
+          border: Border.all(color: tokens.borderSubtle),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -394,8 +402,8 @@ class _AdminRankingsTabState extends ConsumerState<AdminRankingsTab> {
                   height: 26,
                   decoration: BoxDecoration(
                     color: b.rank <= 3
-                        ? const Color(0xFF022C22)
-                        : const Color(0xFFE2E8F0),
+                        ? tokens.brandPrimaryDark
+                        : tokens.borderSubtle,
                     shape: BoxShape.circle,
                   ),
                   child: Center(
@@ -406,7 +414,7 @@ class _AdminRankingsTabState extends ConsumerState<AdminRankingsTab> {
                         fontWeight: FontWeight.w800,
                         color: b.rank <= 3
                             ? Colors.white
-                            : const Color(0xFF475569),
+                            : tokens.textSecondary,
                       ),
                     ),
                   ),
@@ -418,18 +426,18 @@ class _AdminRankingsTabState extends ConsumerState<AdminRankingsTab> {
                     children: [
                       Text(
                         b.branchName,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 13.5,
                           fontWeight: FontWeight.w700,
-                          color: Color(0xFF0F172A),
+                          color: tokens.textPrimary,
                         ),
                         overflow: TextOverflow.ellipsis,
                       ),
                       Text(
                         'Manager: ${b.bmName} • ${b.activeMembers} clients',
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 11,
-                          color: Color(0xFF64748B),
+                          color: tokens.textMuted,
                         ),
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -441,25 +449,25 @@ class _AdminRankingsTabState extends ConsumerState<AdminRankingsTab> {
                   padding:
                       const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFECFDF5),
+                    color: tokens.successBg,
                     borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: const Color(0xFFA7F3D0)),
+                    border: Border.all(color: tokens.successBorder),
                   ),
                   child: Text(
                     'Overall ${score.toStringAsFixed(0)}/100',
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.w700,
-                      color: Color(0xFF047857),
-                      fontFeatures: [FontFeature.tabularFigures()],
+                      color: tokens.successText,
+                      fontFeatures: const [FontFeature.tabularFigures()],
                     ),
                   ),
                 ),
                 const SizedBox(width: 4),
-                const Icon(
+                Icon(
                   Icons.chevron_right,
                   size: 16,
-                  color: Color(0xFF94A3B8),
+                  color: tokens.textLight,
                 ),
               ],
             ),
@@ -469,9 +477,9 @@ class _AdminRankingsTabState extends ConsumerState<AdminRankingsTab> {
               child: LinearProgressIndicator(
                 value: (score / 100.0).clamp(0.05, 1.0),
                 minHeight: 5,
-                backgroundColor: const Color(0xFFE2E8F0),
+                backgroundColor: tokens.borderSubtle,
                 valueColor:
-                    const AlwaysStoppedAnimation<Color>(Color(0xFF059669)),
+                    AlwaysStoppedAnimation<Color>(tokens.successDot),
               ),
             ),
             const SizedBox(height: 10),
@@ -480,27 +488,29 @@ class _AdminRankingsTabState extends ConsumerState<AdminRankingsTab> {
               runSpacing: 6,
               children: [
                 _buildMetricInline(
+                  tokens,
                   'Disbursed',
                   CurrencyFormatter.format(b.disbPrincipal),
-                  const Color(0xFF0F172A),
+                  tokens.textPrimary,
                 ),
                 _buildMetricInline(
+                  tokens,
                   'Late %',
                   '${b.parPct.toStringAsFixed(1)}%',
-                  isParHigh
-                      ? const Color(0xFFDC2626)
-                      : const Color(0xFF059669),
+                  isParHigh ? tokens.dangerText : tokens.successText,
                 ),
                 _buildMetricInline(
+                  tokens,
                   'Paid on time',
                   '${b.compliancePct.toStringAsFixed(0)}%',
-                  const Color(0xFF0F766E),
+                  tokens.brandPrimary,
                 ),
                 if (b.overdueRecovered > 0)
                   _buildMetricInline(
+                    tokens,
                     'Recovered',
                     CurrencyFormatter.format(b.overdueRecovered),
-                    const Color(0xFF0284C7),
+                    tokens.infoText,
                   ),
               ],
             ),
@@ -508,10 +518,10 @@ class _AdminRankingsTabState extends ConsumerState<AdminRankingsTab> {
               const SizedBox(height: 6),
               Text(
                 'Top officer: ${b.topOfficerName}',
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 11,
                   fontWeight: FontWeight.w500,
-                  color: Color(0xFF64748B),
+                  color: tokens.textMuted,
                 ),
                 overflow: TextOverflow.ellipsis,
               ),
@@ -523,6 +533,7 @@ class _AdminRankingsTabState extends ConsumerState<AdminRankingsTab> {
   }
 
   Widget _buildOfficersCardSection(
+    IcareSurfaceTokens tokens,
     List<OfficerPerformanceItemModel> officers, {
     required int columns,
     required int initialLimit,
@@ -535,9 +546,9 @@ class _AdminRankingsTabState extends ConsumerState<AdminRankingsTab> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: tokens.surface,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: tokens.borderSubtle),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -545,34 +556,34 @@ class _AdminRankingsTabState extends ConsumerState<AdminRankingsTab> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Expanded(
+              Expanded(
                 child: Text(
                   'Credit Officer Rankings',
                   style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w700,
-                    color: Color(0xFF0F172A),
+                    color: tokens.textPrimary,
                   ),
                 ),
               ),
               Text(
                 '${officers.length} Officers',
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 11,
                   fontWeight: FontWeight.w600,
-                  color: Color(0xFF64748B),
+                  color: tokens.textMuted,
                 ),
               ),
             ],
           ),
           const SizedBox(height: 12),
           if (officers.isEmpty)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 16),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 16),
               child: Center(
                 child: Text(
                   'No officer rankings available for this year.',
-                  style: TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
+                  style: TextStyle(fontSize: 12, color: tokens.textLight),
                 ),
               ),
             )
@@ -581,7 +592,9 @@ class _AdminRankingsTabState extends ConsumerState<AdminRankingsTab> {
               columns: columns,
               crossAxisSpacing: 12,
               mainAxisSpacing: 10,
-              children: displayed.map(_buildOfficerRankCard).toList(),
+              children: displayed
+                  .map((o) => _buildOfficerRankCard(tokens, o))
+                  .toList(),
             ),
             if (hasMore) ...[
               const SizedBox(height: 12),
@@ -603,7 +616,7 @@ class _AdminRankingsTabState extends ConsumerState<AdminRankingsTab> {
                     ),
                   ),
                   style: TextButton.styleFrom(
-                    foregroundColor: const Color(0xFF0F766E),
+                    foregroundColor: tokens.brandPrimary,
                   ),
                 ),
               ),
@@ -614,16 +627,17 @@ class _AdminRankingsTabState extends ConsumerState<AdminRankingsTab> {
     );
   }
 
-  Widget _buildOfficerRankCard(OfficerPerformanceItemModel o) {
+  Widget _buildOfficerRankCard(
+      IcareSurfaceTokens tokens, OfficerPerformanceItemModel o) {
     final score = o.compositeScore.clamp(0.0, 100.0);
     final isParHigh = o.parPct > 10.0;
 
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
+        color: tokens.surfaceSubtle,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: tokens.borderSubtle),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -636,8 +650,8 @@ class _AdminRankingsTabState extends ConsumerState<AdminRankingsTab> {
                     const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
                 decoration: BoxDecoration(
                   color: o.rank <= 3
-                      ? const Color(0xFF022C22)
-                      : const Color(0xFFE2E8F0),
+                      ? tokens.brandPrimaryDark
+                      : tokens.borderSubtle,
                   borderRadius: BorderRadius.circular(5),
                 ),
                 child: Text(
@@ -647,7 +661,7 @@ class _AdminRankingsTabState extends ConsumerState<AdminRankingsTab> {
                     fontWeight: FontWeight.w800,
                     color: o.rank <= 3
                         ? Colors.white
-                        : const Color(0xFF475569),
+                        : tokens.textSecondary,
                   ),
                 ),
               ),
@@ -658,18 +672,18 @@ class _AdminRankingsTabState extends ConsumerState<AdminRankingsTab> {
                   children: [
                     Text(
                       o.officerName,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w700,
-                        color: Color(0xFF0F172A),
+                        color: tokens.textPrimary,
                       ),
                       overflow: TextOverflow.ellipsis,
                     ),
                     Text(
                       '${o.branchName} • ${o.activeClients} borrowers',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 11,
-                        color: Color(0xFF64748B),
+                        color: tokens.textMuted,
                       ),
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -679,11 +693,11 @@ class _AdminRankingsTabState extends ConsumerState<AdminRankingsTab> {
               const SizedBox(width: 8),
               Text(
                 'Overall ${score.toStringAsFixed(0)}/100',
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 11.5,
                   fontWeight: FontWeight.w700,
-                  color: Color(0xFF047857),
-                  fontFeatures: [FontFeature.tabularFigures()],
+                  color: tokens.successText,
+                  fontFeatures: const [FontFeature.tabularFigures()],
                 ),
               ),
             ],
@@ -694,9 +708,9 @@ class _AdminRankingsTabState extends ConsumerState<AdminRankingsTab> {
             child: LinearProgressIndicator(
               value: (score / 100.0).clamp(0.05, 1.0),
               minHeight: 4,
-              backgroundColor: const Color(0xFFE2E8F0),
+              backgroundColor: tokens.borderSubtle,
               valueColor:
-                  const AlwaysStoppedAnimation<Color>(Color(0xFF059669)),
+                  AlwaysStoppedAnimation<Color>(tokens.successDot),
             ),
           ),
           const SizedBox(height: 8),
@@ -705,21 +719,22 @@ class _AdminRankingsTabState extends ConsumerState<AdminRankingsTab> {
             runSpacing: 4,
             children: [
               _buildMetricInline(
+                tokens,
                 'Disbursed',
                 CurrencyFormatter.format(o.disbPrincipal),
-                const Color(0xFF0F172A),
+                tokens.textPrimary,
               ),
               _buildMetricInline(
+                tokens,
                 'Late %',
                 '${o.parPct.toStringAsFixed(1)}%',
-                isParHigh
-                    ? const Color(0xFFDC2626)
-                    : const Color(0xFF059669),
+                isParHigh ? tokens.dangerText : tokens.successText,
               ),
               _buildMetricInline(
+                tokens,
                 'Paid on time',
                 '${o.compliancePct.toStringAsFixed(0)}%',
-                const Color(0xFF0F766E),
+                tokens.brandPrimary,
               ),
             ],
           ),
@@ -728,13 +743,14 @@ class _AdminRankingsTabState extends ConsumerState<AdminRankingsTab> {
     );
   }
 
-  Widget _buildMetricInline(String label, String value, Color valueColor) {
+  Widget _buildMetricInline(
+      IcareSurfaceTokens tokens, String label, String value, Color valueColor) {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
         Text(
           '$label: ',
-          style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+          style: TextStyle(fontSize: 11, color: tokens.textMuted),
         ),
         Text(
           value,

@@ -3,7 +3,7 @@ Authentication schemas for ICARE Core Banking.
 Supports standard username/password authentication and RFC 6238 Multi-Factor Authentication.
 Strict Zero-Emoji Governance.
 """
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 
 
@@ -22,6 +22,15 @@ class UserInfo(BaseModel):
     assigned_branches: List[str] = []
     assigned_branch_ids: List[str] = []
     allowed_products: List[str] = []
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    avatar_url: Optional[str] = None
+    bio: Optional[str] = None
+    mfa_enabled: bool = False
+    is_misc_savings_manager: bool = False
+    created_at: Optional[str] = None
+    last_login: Optional[str] = None
+    preferences: Dict[str, Any] = {}
 
 
 class LoginResponse(BaseModel):
@@ -80,3 +89,62 @@ class MFAStatusResponse(BaseModel):
 class GenericMFAActionResponse(BaseModel):
     success: bool
     message: str
+
+
+class UserPreferencesPayload(BaseModel):
+    theme_mode: Optional[str] = Field(None, description="UI brightness preference: system, light, or dark")
+    accent_preset: Optional[str] = Field(None, description="Brand palette preset: emerald, sapphire, teal, or indigo")
+    compact_density: Optional[bool] = None
+    reduce_motion: Optional[bool] = None
+    haptics_enabled: Optional[bool] = None
+
+
+class ProfileUpdateRequest(BaseModel):
+    phone: Optional[str] = Field(None, max_length=30, description="Staff contact phone number")
+    email: Optional[str] = Field(None, max_length=120, description="Staff email address")
+    bio: Optional[str] = Field(None, max_length=280, description="Short personal role bio or desk note")
+    emergency_contact: Optional[str] = Field(None, max_length=120, description="Emergency contact name & phone")
+    preferences: Optional[UserPreferencesPayload] = None
+
+
+class ProfileLoginActivityItem(BaseModel):
+    login_time: str
+    status: str
+    device_name: Optional[str] = None
+    browser: Optional[str] = None
+    operating_system: Optional[str] = None
+
+
+class ProfileResponse(BaseModel):
+    user: UserInfo
+    emergency_contact: Optional[str] = None
+    can_self_change_password: bool = False
+    remaining_backup_codes: int = 0
+    mfa_enrolled_at: Optional[str] = None
+    recent_activity: List[ProfileLoginActivityItem] = []
+
+
+class ProfileUpdateResponse(BaseModel):
+    success: bool
+    message: str
+    user: UserInfo
+    emergency_contact: Optional[str] = None
+
+
+class AvatarUploadResponse(BaseModel):
+    success: bool
+    message: str
+    avatar_url: str
+    size_kb: float = 0.0
+
+
+class ChangeOwnPasswordRequest(BaseModel):
+    current_password: str = Field(..., min_length=1, description="Current account password")
+    new_password: str = Field(..., min_length=8, description="New strong password (minimum 8 characters)")
+
+
+class ChangeOwnPasswordResponse(BaseModel):
+    success: bool
+    message: str
+    access_token: Optional[str] = None
+    csrf_token: Optional[str] = None

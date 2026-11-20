@@ -336,6 +336,10 @@ class ApiClient {
     return _dio.put(path, data: data, queryParameters: queryParameters, options: options, cancelToken: cancelToken);
   }
 
+  Future<Response> patch(String path, {dynamic data, Map<String, dynamic>? queryParameters, Options? options, CancelToken? cancelToken}) async {
+    return _dio.patch(path, data: data, queryParameters: queryParameters, options: options, cancelToken: cancelToken);
+  }
+
   Future<Response> delete(String path, {dynamic data, Map<String, dynamic>? queryParameters, Options? options, CancelToken? cancelToken}) async {
     return _dio.delete(path, data: data, queryParameters: queryParameters, options: options, cancelToken: cancelToken);
   }

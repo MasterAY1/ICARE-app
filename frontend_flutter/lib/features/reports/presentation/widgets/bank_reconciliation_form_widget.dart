@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
 import '../../../../core/errors/app_error_formatter.dart';
+import '../../../../core/theme/icare_theme_tokens.dart';
 import '../../data/datasources/reports_api_service.dart';
 import '../../data/models/report_models.dart';
 
@@ -416,6 +417,7 @@ class _BankReconciliationFormWidgetState extends ConsumerState<BankReconciliatio
     String? badgeText,
   }) {
     final effectiveReadOnly = widget.isReadOnly || readOnly;
+    final tokens = IcareSurfaceTokens.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -427,7 +429,7 @@ class _BankReconciliationFormWidgetState extends ConsumerState<BankReconciliatio
                 label,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF334155)),
+                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: tokens.textSecondary),
               ),
             ),
             if (badgeText != null)
@@ -435,16 +437,16 @@ class _BankReconciliationFormWidgetState extends ConsumerState<BankReconciliatio
                 margin: const EdgeInsets.only(left: 4),
                 padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
                 decoration: BoxDecoration(
-                  color: effectiveReadOnly ? const Color(0xFFF1F5F9) : const Color(0xFFECFDF5),
+                  color: effectiveReadOnly ? tokens.surfaceHover : tokens.brandSoftBg,
                   borderRadius: BorderRadius.circular(4),
-                  border: Border.all(color: effectiveReadOnly ? const Color(0xFFE2E8F0) : const Color(0xFFA7F3D0)),
+                  border: Border.all(color: effectiveReadOnly ? tokens.borderSubtle : tokens.brandSoftBorder),
                 ),
                 child: Text(
                   badgeText,
                   style: TextStyle(
                     fontSize: 9,
                     fontWeight: FontWeight.w700,
-                    color: effectiveReadOnly ? const Color(0xFF64748B) : const Color(0xFF0F766E),
+                    color: effectiveReadOnly ? tokens.textMuted : tokens.brandSoftText,
                   ),
                 ),
               ),
@@ -457,7 +459,7 @@ class _BankReconciliationFormWidgetState extends ConsumerState<BankReconciliatio
           keyboardType: isNumber ? const TextInputType.numberWithOptions(decimal: true) : TextInputType.text,
           style: TextStyle(
             fontSize: 12,
-            color: effectiveReadOnly ? const Color(0xFF64748B) : const Color(0xFF0F172A),
+            color: effectiveReadOnly ? tokens.textMuted : tokens.textPrimary,
             fontWeight: effectiveReadOnly ? FontWeight.w600 : FontWeight.normal,
             fontFeatures: isNumber ? const [FontFeature.tabularFigures()] : null,
           ),
@@ -465,18 +467,18 @@ class _BankReconciliationFormWidgetState extends ConsumerState<BankReconciliatio
             isDense: true,
             contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
             filled: true,
-            fillColor: effectiveReadOnly ? const Color(0xFFF1F5F9) : Colors.white,
+            fillColor: effectiveReadOnly ? tokens.surfaceSubtle : tokens.surface,
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(6),
-              borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
+              borderSide: BorderSide(color: tokens.borderStrong),
             ),
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(6),
-              borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
+              borderSide: BorderSide(color: tokens.borderStrong),
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(6),
-              borderSide: const BorderSide(color: Color(0xFF0F766E), width: 1.5),
+              borderSide: BorderSide(color: tokens.brandPrimary, width: 1.5),
             ),
           ),
         ),
@@ -492,13 +494,14 @@ class _BankReconciliationFormWidgetState extends ConsumerState<BankReconciliatio
     required Widget child,
   }) {
     final isExpanded = _sectionExpanded[sectionIndex] ?? false;
+    final tokens = IcareSurfaceTokens.of(context);
 
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: tokens.surface,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: tokens.borderSubtle),
       ),
       clipBehavior: Clip.antiAlias,
       child: Column(
@@ -514,7 +517,7 @@ class _BankReconciliationFormWidgetState extends ConsumerState<BankReconciliatio
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
               child: Row(
                 children: [
-                  Icon(icon, size: 18, color: const Color(0xFF0F766E)),
+                  Icon(icon, size: 18, color: tokens.brandPrimary),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Column(
@@ -522,13 +525,13 @@ class _BankReconciliationFormWidgetState extends ConsumerState<BankReconciliatio
                       children: [
                         Text(
                           title,
-                          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
+                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: tokens.textPrimary),
                         ),
                         if (subtitle != null && subtitle.isNotEmpty) ...[
                           const SizedBox(height: 2),
                           Text(
                             subtitle,
-                            style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                            style: TextStyle(fontSize: 11, color: tokens.textMuted),
                           ),
                         ],
                       ],
@@ -537,14 +540,14 @@ class _BankReconciliationFormWidgetState extends ConsumerState<BankReconciliatio
                   Icon(
                     isExpanded ? Icons.expand_less : Icons.expand_more,
                     size: 20,
-                    color: const Color(0xFF64748B),
+                    color: tokens.textMuted,
                   ),
                 ],
               ),
             ),
           ),
           if (isExpanded) ...[
-            const Divider(height: 1, color: Color(0xFFE2E8F0)),
+            Divider(height: 1, color: tokens.borderSubtle),
             Padding(
               padding: const EdgeInsets.all(12),
               child: child,
@@ -564,20 +567,21 @@ class _BankReconciliationFormWidgetState extends ConsumerState<BankReconciliatio
     TextEditingController intC,
     TextEditingController closeC,
   ) {
+    final tokens = IcareSurfaceTokens.of(context);
     return LayoutBuilder(
       builder: (context, cardConstraints) {
         final stackVertically = cardConstraints.maxWidth < 420;
         return Container(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
-            color: const Color(0xFFF8FAFC),
+            color: tokens.surfaceSubtle,
             borderRadius: BorderRadius.circular(6),
-            border: Border.all(color: const Color(0xFFE2E8F0)),
+            border: Border.all(color: tokens.borderSubtle),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF1E293B))),
+              Text(title, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: tokens.textPrimary)),
               const SizedBox(height: 10),
               if (stackVertically) ...[
                 _buildField('Bank Name', nameC, isNumber: false, badgeText: 'Commercial'),
@@ -713,25 +717,30 @@ class _BankReconciliationFormWidgetState extends ConsumerState<BankReconciliatio
                     },
                   ),
                   const SizedBox(height: 12),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF0FDF4),
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: const Color(0xFFBBF7D0)),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.check_circle_outline, size: 16, color: Color(0xFF16A34A)),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            'Annex-1 Monthly Expenses: ${_formatNgn(annex1ExpenseSum)} (Linked to Operational Outflows & Trial Balance)',
-                            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF166534)),
-                          ),
+                  Builder(
+                    builder: (context) {
+                      final tokens = IcareSurfaceTokens.of(context);
+                      return Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: tokens.successBg,
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: tokens.successBorder),
                         ),
-                      ],
-                    ),
+                        child: Row(
+                          children: [
+                            Icon(Icons.check_circle_outline, size: 16, color: tokens.successDot),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'Annex-1 Monthly Expenses: ${_formatNgn(annex1ExpenseSum)} (Linked to Operational Outflows & Trial Balance)',
+                                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: tokens.successText),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
                   ),
                 ],
               ),
@@ -765,25 +774,30 @@ class _BankReconciliationFormWidgetState extends ConsumerState<BankReconciliatio
                     },
                   ),
                   const SizedBox(height: 12),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFEFF6FF),
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: const Color(0xFFBFDBFE)),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.info_outline, size: 16, color: Color(0xFF2563EB)),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            'Annex-1 Sundry Receipts: ${_formatNgn(annex1InflowSum)} (Linked to Auxiliary Cash Inflows)',
-                            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF1E40AF)),
-                          ),
+                  Builder(
+                    builder: (context) {
+                      final tokens = IcareSurfaceTokens.of(context);
+                      return Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: tokens.infoBg,
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: tokens.infoBorder),
                         ),
-                      ],
-                    ),
+                        child: Row(
+                          children: [
+                            Icon(Icons.info_outline, size: 16, color: tokens.infoDot),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'Annex-1 Sundry Receipts: ${_formatNgn(annex1InflowSum)} (Linked to Auxiliary Cash Inflows)',
+                                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: tokens.infoText),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
                   ),
                 ],
               ),
@@ -796,75 +810,78 @@ class _BankReconciliationFormWidgetState extends ConsumerState<BankReconciliatio
               title: '4. Operational Collections & Cashbook Remittances',
               subtitle: 'Delinquent portfolio closing balance and automated central remittances',
               icon: Icons.sync_alt,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Dedicated Card for Overdue Portfolio (Actionable Input)
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF8FAFC),
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: const Color(0xFFE2E8F0)),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Row(
+              child: Builder(
+                builder: (context) {
+                  final tokens = IcareSurfaceTokens.of(context);
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Dedicated Card for Overdue Portfolio (Actionable Input)
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: tokens.surfaceSubtle,
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: tokens.borderSubtle),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Icon(Icons.assignment_late_outlined, size: 16, color: Color(0xFFB45309)),
-                            SizedBox(width: 8),
-                            Text('Overdue Delinquency Portfolio Review', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF92400E))),
+                            Row(
+                              children: [
+                                Icon(Icons.assignment_late_outlined, size: 16, color: tokens.warningDot),
+                                const SizedBox(width: 8),
+                                Text('Overdue Delinquency Portfolio Review', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: tokens.warningText)),
+                              ],
+                            ),
+                            const SizedBox(height: 10),
+                            LayoutBuilder(
+                              builder: (context, odConstraints) {
+                                if (odConstraints.maxWidth < 500) {
+                                  return Column(
+                                    children: [
+                                      _buildField('Opening Overdue Portfolio (B/F) (₦)', _overdueBfController, readOnly: true, badgeText: 'Rollover'),
+                                      const SizedBox(height: 8),
+                                      _buildField('Month-End Overdue Portfolio (C/F) (₦)', _overdueCfController, badgeText: 'Required Input'),
+                                    ],
+                                  );
+                                }
+                                return Row(
+                                  children: [
+                                    Expanded(child: _buildField('Opening Overdue Portfolio (B/F) (₦)', _overdueBfController, readOnly: true, badgeText: 'Rollover')),
+                                    const SizedBox(width: 12),
+                                    Expanded(child: _buildField('Month-End Overdue Portfolio (C/F) (₦)', _overdueCfController, badgeText: 'Required Input')),
+                                  ],
+                                );
+                              },
+                            ),
                           ],
                         ),
-                        const SizedBox(height: 10),
-                        LayoutBuilder(
-                          builder: (context, odConstraints) {
-                            if (odConstraints.maxWidth < 500) {
-                              return Column(
-                                children: [
-                                  _buildField('Opening Overdue Portfolio (B/F) (₦)', _overdueBfController, readOnly: true, badgeText: 'Rollover'),
-                                  const SizedBox(height: 8),
-                                  _buildField('Month-End Overdue Portfolio (C/F) (₦)', _overdueCfController, badgeText: 'Required Input'),
-                                ],
-                              );
-                            }
-                            return Row(
-                              children: [
-                                Expanded(child: _buildField('Opening Overdue Portfolio (B/F) (₦)', _overdueBfController, readOnly: true, badgeText: 'Rollover')),
-                                const SizedBox(width: 12),
-                                Expanded(child: _buildField('Month-End Overdue Portfolio (C/F) (₦)', _overdueCfController, badgeText: 'Required Input')),
-                              ],
-                            );
-                          },
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 14),
+                      ),
+                      const SizedBox(height: 14),
 
-                  // Information banner for automated feeds
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF1F5F9),
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: const Color(0xFFCBD5E1)),
-                    ),
-                    child: const Row(
-                      children: [
-                        Icon(Icons.bolt, size: 16, color: Color(0xFF0F766E)),
-                        SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            'Automated Ledger Feeds: The metrics below are synchronized dynamically from daily loan disbursements, repayments, savings, and master cashbook transfers.',
-                            style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF334155)),
-                          ),
+                      // Information banner for automated feeds
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: tokens.surfaceHover,
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: tokens.borderStrong),
                         ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 12),
+                        child: Row(
+                          children: [
+                            Icon(Icons.bolt, size: 16, color: tokens.brandPrimary),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'Automated Ledger Feeds: The metrics below are synchronized dynamically from daily loan disbursements, repayments, savings, and master cashbook transfers.',
+                                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: tokens.textSecondary),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 12),
 
                   LayoutBuilder(
                     builder: (context, s4Constraints) {
@@ -898,6 +915,8 @@ class _BankReconciliationFormWidgetState extends ConsumerState<BankReconciliatio
                     },
                   ),
                 ],
+              );
+                },
               ),
             ),
             const SizedBox(height: 16),
@@ -939,50 +958,60 @@ class _BankReconciliationFormWidgetState extends ConsumerState<BankReconciliatio
 
             // Submit Button or Read-Only Banner
             if (widget.isReadOnly)
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF8FAFC),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: const Color(0xFFCBD5E1)),
-                ),
-                child: const Row(
-                  children: [
-                    Icon(Icons.lock_outline, size: 20, color: Color(0xFF64748B)),
-                    SizedBox(width: 12),
-                    Expanded(
-                      child: Text(
-                        'Read-Only Mode: Statements and treasury reconciliations are locked for inspection. Modifications can only be performed by the Branch Manager (while in Draft or Returned status) or Head Office.',
-                        style: TextStyle(fontSize: 12, color: Color(0xFF475569), fontWeight: FontWeight.w600),
-                      ),
+              Builder(
+                builder: (context) {
+                  final tokens = IcareSurfaceTokens.of(context);
+                  return Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    decoration: BoxDecoration(
+                      color: tokens.surfaceSubtle,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: tokens.borderStrong),
                     ),
-                  ],
-                ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.lock_outline, size: 20, color: tokens.textMuted),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            'Read-Only Mode: Statements and treasury reconciliations are locked for inspection. Modifications can only be performed by the Branch Manager (while in Draft or Returned status) or Head Office.',
+                            style: TextStyle(fontSize: 12, color: tokens.textSecondary, fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                },
               )
             else
-              SizedBox(
-                width: double.infinity,
-                height: 48,
-                child: ElevatedButton.icon(
-                  onPressed: _isSaving ? null : _handleSave,
-                  icon: _isSaving
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                        )
-                      : const Icon(Icons.save, size: 20, color: Colors.white),
-                  label: Text(
-                    _isSaving ? 'Saving & Recalculating...' : 'Save & Recalculate Statements',
-                    style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.white),
-                  ),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF0F766E),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                    elevation: 1,
-                  ),
-                ),
+              Builder(
+                builder: (context) {
+                  final tokens = IcareSurfaceTokens.of(context);
+                  return SizedBox(
+                    width: double.infinity,
+                    height: 48,
+                    child: ElevatedButton.icon(
+                      onPressed: _isSaving ? null : _handleSave,
+                      icon: _isSaving
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                            )
+                          : const Icon(Icons.save, size: 20, color: Colors.white),
+                      label: Text(
+                        _isSaving ? 'Saving & Recalculating...' : 'Save & Recalculate Statements',
+                        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.white),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: tokens.brandPrimaryDark,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        elevation: 1,
+                      ),
+                    ),
+                  );
+                },
               ),
             const SizedBox(height: 32),
           ],

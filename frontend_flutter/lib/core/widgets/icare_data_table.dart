@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import '../theme/icare_colors.dart';
 import '../theme/icare_typography.dart';
 import '../theme/icare_spacing.dart';
+import '../theme/icare_theme_tokens.dart';
 
 /// Institutional Banking Data Table
 /// Features persistent horizontal scrollbar, zebra striping, and clean typography.
@@ -36,19 +36,21 @@ class _IcareDataTableState extends State<IcareDataTable> {
 
   @override
   Widget build(BuildContext context) {
+    final tokens = IcareSurfaceTokens.of(context);
+
     if (widget.rows.isEmpty) {
       return Container(
         width: double.infinity,
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
         decoration: BoxDecoration(
-          color: IcareColors.surface,
+          color: tokens.surface,
           borderRadius: IcareSpacing.roundedMd,
-          border: Border.all(color: IcareColors.border),
+          border: Border.all(color: tokens.borderSubtle),
         ),
         child: Center(
           child: Text(
             widget.emptyMessage ?? 'No records available.',
-            style: IcareTypography.body.copyWith(color: IcareColors.textMuted),
+            style: IcareTypography.body.copyWith(color: tokens.textMuted),
           ),
         ),
       );
@@ -60,7 +62,8 @@ class _IcareDataTableState extends State<IcareDataTable> {
       final row = entry.value;
 
       final isEven = index % 2 == 0;
-      final defaultBg = isEven ? IcareColors.surface : const Color(0xFFFBFDFA);
+      final zebraAlt = tokens.isDark ? tokens.surfaceSubtle : const Color(0xFFFBFDFA);
+      final defaultBg = isEven ? tokens.surface : (widget.zebra ? zebraAlt : tokens.surface);
 
       return DataRow(
         key: row.key,
@@ -73,14 +76,14 @@ class _IcareDataTableState extends State<IcareDataTable> {
 
     return Container(
       decoration: BoxDecoration(
-        color: IcareColors.surface,
+        color: tokens.surface,
         borderRadius: IcareSpacing.roundedMd,
-        border: Border.all(color: IcareColors.border, width: 1),
-        boxShadow: const [
+        border: Border.all(color: tokens.borderSubtle, width: 1),
+        boxShadow: [
           BoxShadow(
-            color: Color(0x060F172A),
+            color: tokens.isDark ? const Color(0x20000000) : const Color(0x060F172A),
             blurRadius: 4,
-            offset: Offset(0, 1),
+            offset: const Offset(0, 1),
           ),
         ],
       ),
@@ -97,16 +100,16 @@ class _IcareDataTableState extends State<IcareDataTable> {
           child: ConstrainedBox(
             constraints: BoxConstraints(minWidth: widget.minWidth),
             child: DataTable(
-              headingRowColor: const WidgetStatePropertyAll(IcareColors.canvas),
+              headingRowColor: WidgetStatePropertyAll(tokens.canvas),
               headingRowHeight: 40,
               dataRowMinHeight: 42,
               dataRowMaxHeight: 52,
               horizontalMargin: 16,
               columnSpacing: 18,
-              headingTextStyle: IcareTypography.tableHeader,
-              dataTextStyle: IcareTypography.body,
-              border: const TableBorder(
-                horizontalInside: BorderSide(color: IcareColors.border, width: 0.8),
+              headingTextStyle: IcareTypography.tableHeader.copyWith(color: tokens.textSecondary),
+              dataTextStyle: IcareTypography.body.copyWith(color: tokens.textSecondary),
+              border: TableBorder(
+                horizontalInside: BorderSide(color: tokens.borderSubtle, width: 0.8),
               ),
               columns: widget.columns,
               rows: styledRows,

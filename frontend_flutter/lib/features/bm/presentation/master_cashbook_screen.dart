@@ -6,6 +6,7 @@ import '../../../core/utils/currency_formatter.dart';
 import '../data/datasources/master_cashbook_api_service.dart';
 import '../data/models/master_cashbook_models.dart';
 import '../../shared/utils/file_download_helper.dart';
+import '../../../core/theme/icare_theme_tokens.dart';
 import '../../../core/widgets/icare_skeleton_loader.dart';
 import '../../../core/auth/auth_controller.dart';
 import '../../../core/auth/auth_state.dart';
@@ -115,8 +116,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
 
   // Banner & submitting states
   String? _bannerMessage;
-  Color _bannerColor = const Color(0xFF065F46);
-  Color _bannerBg = const Color(0xFFECFDF5);
+  String _bannerSeverity = 'success';
   IconData _bannerIcon = Icons.check_circle_outline;
 
   bool _isSubmittingManual = false;
@@ -166,12 +166,11 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
     super.dispose();
   }
 
-  void _showBanner(String message, Color color, Color bg, IconData icon) {
+  void _showBanner(String message, String severity, IconData icon) {
     if (!mounted) return;
     setState(() {
       _bannerMessage = message;
-      _bannerColor = color;
-      _bannerBg = bg;
+      _bannerSeverity = severity;
       _bannerIcon = icon;
     });
     Future.delayed(const Duration(seconds: 5), () {
@@ -204,9 +203,9 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
       final monthName = DateFormat('MMMM').format(DateTime(2026, _selectedMonth, 1));
       final fileName = 'ICARE_Master_Cashbook_${branch}_${monthName}_$_selectedYear.xlsx';
       downloadBlobFile(bytes, fileName, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-      _showBanner('Downloaded $fileName successfully', const Color(0xFF065F46), const Color(0xFFECFDF5), Icons.check_circle_outline);
+      _showBanner('Downloaded $fileName successfully', 'success', Icons.check_circle_outline);
     } catch (e) {
-      _showBanner('Failed to download Excel ledger: $e', const Color(0xFFDC2626), const Color(0xFFFEF2F2), Icons.error_outline);
+      _showBanner('Failed to download Excel ledger: $e', 'error', Icons.error_outline);
     } finally {
       setState(() => _isDownloadingExcel = false);
     }
@@ -239,8 +238,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
     if (!isOpen) {
       _showBanner(
         'Cannot save manual entries: Operational Activity Suspended ($openReason).',
-        const Color(0xFFDC2626),
-        const Color(0xFFFEF2F2),
+        'error',
         Icons.error_outline,
       );
       return;
@@ -267,8 +265,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
       final res = await api.saveManualEntries(payload);
       _showBanner(
         res['message'] ?? 'Master Cashbook manual entries saved and projection rebuilt.',
-        const Color(0xFF065F46),
-        const Color(0xFFECFDF5),
+        'success',
         Icons.check_circle_outline,
       );
       _lastLoadedTab1Key = null;
@@ -278,8 +275,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
     } catch (e) {
       _showBanner(
         'Failed to save manual entries: $e',
-        const Color(0xFFDC2626),
-        const Color(0xFFFEF2F2),
+        'error',
         Icons.error_outline,
       );
     } finally {
@@ -291,53 +287,57 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
     final amtStr = CurrencyFormatter.format(req.amount);
     final confirm = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('Confirm Reversal — [${req.recordType}]', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (req.clientName != null && req.clientName!.isNotEmpty) ...[
-              Text('Client / Entity: ${req.clientName!} ${req.clientCode != null && req.clientCode!.isNotEmpty ? "(${req.clientCode})" : ""}',
-                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF0F172A))),
-              const SizedBox(height: 4),
-            ],
-            Text('Amount to Reverse: $amtStr', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFFDC2626))),
-            const SizedBox(height: 6),
-            Text('Reason: ${req.reason}', style: const TextStyle(fontSize: 12, fontStyle: FontStyle.italic, color: Color(0xFF475569))),
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: const Color(0xFFFEF3C7),
-                borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: const Color(0xFFFDE68A)),
-              ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Icon(Icons.info_outline, size: 16, color: Color(0xFFB45309)),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'Approving this reversal will deduct $amtStr from Vault Cash. Ensure physical cash has been counted and aligned.',
-                      style: const TextStyle(fontSize: 11.5, color: Color(0xFF92400E)),
+      builder: (ctx) {
+        final tokens = IcareSurfaceTokens.of(ctx);
+        return AlertDialog(
+          backgroundColor: tokens.surfaceElevated,
+          title: Text('Confirm Reversal — [${req.recordType}]', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: tokens.textPrimary)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (req.clientName != null && req.clientName!.isNotEmpty) ...[
+                Text('Client / Entity: ${req.clientName!} ${req.clientCode != null && req.clientCode!.isNotEmpty ? "(${req.clientCode})" : ""}',
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: tokens.textPrimary)),
+                const SizedBox(height: 4),
+              ],
+              Text('Amount to Reverse: $amtStr', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: tokens.dangerText)),
+              const SizedBox(height: 6),
+              Text('Reason: ${req.reason}', style: TextStyle(fontSize: 12, fontStyle: FontStyle.italic, color: tokens.textSecondary)),
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: tokens.warningBg,
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: tokens.warningBorder),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(Icons.info_outline, size: 16, color: tokens.warningDot),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Approving this reversal will deduct $amtStr from Vault Cash. Ensure physical cash has been counted and aligned.',
+                        style: TextStyle(fontSize: 11.5, color: tokens.warningText),
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              style: ElevatedButton.styleFrom(backgroundColor: tokens.brandPrimaryDark, foregroundColor: Colors.white),
+              child: const Text('Approve Reversal', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
             ),
           ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF059669)),
-            child: const Text('Approve Reversal', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-          ),
-        ],
-      ),
+        );
+      },
     );
 
     if (confirm != true) return;
@@ -347,16 +347,14 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
       final res = await api.approveReversal(req.id);
       _showBanner(
         res['message'] ?? 'Reversal approved and executed atomically!',
-        const Color(0xFF065F46),
-        const Color(0xFFECFDF5),
+        'success',
         Icons.check_circle_outline,
       );
       ref.invalidate(masterDailyCashbookProvider);
     } catch (e) {
       _showBanner(
         'Approval failed: $e',
-        const Color(0xFFDC2626),
-        const Color(0xFFFEF2F2),
+        'error',
         Icons.error_outline,
       );
     }
@@ -365,19 +363,23 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
   Future<void> _handleRejectReversal(MasterPendingReversalData req) async {
     final confirm = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Reject Reversal Request', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-        content: Text('Are you sure you want to reject this reversal request for [${req.recordType}] (Ref: #${req.recordId.length > 8 ? req.recordId.substring(0, 8) : req.recordId})?',
-            style: const TextStyle(fontSize: 13, color: Color(0xFF475569))),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFDC2626)),
-            child: const Text('Reject Request', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-          ),
-        ],
-      ),
+      builder: (ctx) {
+        final tokens = IcareSurfaceTokens.of(ctx);
+        return AlertDialog(
+          backgroundColor: tokens.surfaceElevated,
+          title: Text('Reject Reversal Request', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: tokens.textPrimary)),
+          content: Text('Are you sure you want to reject this reversal request for [${req.recordType}] (Ref: #${req.recordId.length > 8 ? req.recordId.substring(0, 8) : req.recordId})?',
+              style: TextStyle(fontSize: 13, color: tokens.textSecondary)),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFDC2626), foregroundColor: Colors.white),
+              child: const Text('Reject Request', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            ),
+          ],
+        );
+      },
     );
 
     if (confirm != true) return;
@@ -387,16 +389,14 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
       final res = await api.rejectReversal(req.id);
       _showBanner(
         res['message'] ?? 'Reversal rejected.',
-        const Color(0xFF1E40AF),
-        const Color(0xFFEFF6FF),
+        'info',
         Icons.info_outline,
       );
       ref.invalidate(masterDailyCashbookProvider);
     } catch (e) {
       _showBanner(
         'Rejection failed: $e',
-        const Color(0xFFDC2626),
-        const Color(0xFFFEF2F2),
+        'error',
         Icons.error_outline,
       );
     }
@@ -404,12 +404,12 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
 
   Future<void> _handleFlagTreasuryReversal() async {
     if (_selectedTreasuryTxId == null || _selectedTreasuryTxId!.isEmpty) {
-      _showBanner('Please select a Treasury Entry to flag.', const Color(0xFFD97706), const Color(0xFFFEF3C7), Icons.warning_amber);
+      _showBanner('Please select a Treasury Entry to flag.', 'warning', Icons.warning_amber);
       return;
     }
     final reason = _treasuryRevReasonCtrl.text.trim();
     if (reason.isEmpty) {
-      _showBanner('Please provide a reason for the reversal.', const Color(0xFFD97706), const Color(0xFFFEF3C7), Icons.warning_amber);
+      _showBanner('Please provide a reason for the reversal.', 'warning', Icons.warning_amber);
       return;
     }
 
@@ -419,8 +419,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
       final res = await api.flagTreasuryReversal(_selectedTreasuryTxId!, reason);
       _showBanner(
         res['message'] ?? 'Treasury reversal request submitted!',
-        const Color(0xFF065F46),
-        const Color(0xFFECFDF5),
+        'success',
         Icons.check_circle_outline,
       );
       _treasuryRevReasonCtrl.clear();
@@ -429,8 +428,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
     } catch (e) {
       _showBanner(
         'Failed to submit request: $e',
-        const Color(0xFFDC2626),
-        const Color(0xFFFEF2F2),
+        'error',
         Icons.error_outline,
       );
     } finally {
@@ -449,8 +447,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
       final res = await api.executeEodClose(dateStr, reasonTag: reasonTag, notes: notes);
       _showBanner(
         res['message'] ?? 'Successfully executed Day Close! Operational date advanced.',
-        const Color(0xFF065F46),
-        const Color(0xFFECFDF5),
+        'success',
         Icons.check_circle_outline,
       );
       ref.invalidate(coAggregationProvider('${_formatDate(_selectedDateTab2)}||${_selectedOfficerTab2 ?? ""}'));
@@ -458,8 +455,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
     } catch (e) {
       _showBanner(
         'EOD Day Close failed: $e',
-        const Color(0xFFDC2626),
-        const Color(0xFFFEF2F2),
+        'error',
         Icons.error_outline,
       );
     } finally {
@@ -515,6 +511,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
   }
 
   Widget _buildHeader(bool isMobile) {
+    final tokens = IcareSurfaceTokens.of(context);
     final isAm = _isAm;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -532,7 +529,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                     style: TextStyle(
                       fontSize: isMobile ? 20 : 25,
                       fontWeight: FontWeight.w700,
-                      color: const Color(0xFF0F172A),
+                      color: tokens.textPrimary,
                       letterSpacing: -0.5,
                     ),
                   ),
@@ -541,10 +538,10 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                     isAm
                         ? 'Regional Treasury & Supervised Branch Vault Audit'
                         : 'Branch Treasury & Vault Cashbook',
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w500,
-                      color: Color(0xFF64748B),
+                      color: tokens.textMuted,
                     ),
                   ),
                 ],
@@ -555,9 +552,9 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                 decoration: BoxDecoration(
-                  color: isAm ? const Color(0xFFF0FDFA) : const Color(0xFFECFDF5),
+                  color: isAm ? tokens.brandSoftBg : tokens.successBg,
                   borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: isAm ? const Color(0xFF99F6E4) : const Color(0xFFA7F3D0)),
+                  border: Border.all(color: isAm ? tokens.brandSoftBorder : tokens.successBorder),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
@@ -565,7 +562,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                     Icon(
                       isAm ? Icons.visibility_outlined : Icons.verified_user_outlined,
                       size: 14,
-                      color: isAm ? const Color(0xFF0F766E) : const Color(0xFF059669),
+                      color: isAm ? tokens.brandPrimary : tokens.successText,
                     ),
                     const SizedBox(width: 5),
                     Text(
@@ -573,7 +570,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                       style: TextStyle(
                         fontSize: 11.5,
                         fontWeight: FontWeight.w700,
-                        color: isAm ? const Color(0xFF0F766E) : const Color(0xFF065F46),
+                        color: isAm ? tokens.brandSoftText : tokens.successText,
                       ),
                     ),
                   ],
@@ -587,17 +584,24 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
   }
 
   Widget _buildFeedbackBanner() {
+    final tokens = IcareSurfaceTokens.of(context);
+    final (fg, bg, border) = switch (_bannerSeverity) {
+      'error' => (tokens.dangerText, tokens.dangerBg, tokens.dangerBorder),
+      'warning' => (tokens.warningText, tokens.warningBg, tokens.warningBorder),
+      'info' => (tokens.infoText, tokens.infoBg, tokens.infoBorder),
+      _ => (tokens.successText, tokens.successBg, tokens.successBorder),
+    };
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
-        color: _bannerBg,
+        color: bg,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: _bannerColor.withValues(alpha: 0.25)),
+        border: Border.all(color: border),
       ),
       child: Row(
         children: [
-          Icon(_bannerIcon, size: 20, color: _bannerColor),
+          Icon(_bannerIcon, size: 20, color: fg),
           const SizedBox(width: 12),
           Expanded(
             child: Text(
@@ -605,12 +609,12 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
               style: TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
-                color: _bannerColor,
+                color: fg,
               ),
             ),
           ),
           IconButton(
-            icon: Icon(Icons.close, size: 16, color: _bannerColor),
+            icon: Icon(Icons.close, size: 16, color: fg),
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(),
             onPressed: () => setState(() => _bannerMessage = null),
@@ -621,8 +625,9 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
   }
 
   Widget _buildPillTabs() {
+    final tokens = IcareSurfaceTokens.of(context);
     final isAm = _isAm;
-    final activeTabColor = isAm ? const Color(0xFF0F766E) : const Color(0xFF2563EB);
+    final activeTabColor = isAm ? tokens.brandPrimaryDark : const Color(0xFF1D4ED8);
     final tabs = [
       (0, isAm ? 'Daily Cashbook Audit' : 'Daily Cashbook Entry', Icons.account_balance_wallet_outlined),
       (1, isAm ? 'CO Cashbooks Inspection' : 'CO Cashbooks Aggregation', Icons.groups_outlined),
@@ -647,27 +652,29 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                 duration: const Duration(milliseconds: 150),
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
                 decoration: BoxDecoration(
-                  color: isSelected ? activeTabColor : Colors.white,
+                  color: isSelected ? activeTabColor : tokens.surface,
                   borderRadius: BorderRadius.circular(10),
                   border: Border.all(
-                    color: isSelected ? activeTabColor : const Color(0xFFCBD5E1),
+                    color: isSelected ? activeTabColor : tokens.borderStrong,
                     width: isSelected ? 1.5 : 1.0,
                   ),
-                  boxShadow: isSelected
-                      ? [
-                          BoxShadow(
-                            color: activeTabColor.withValues(alpha: 0.22),
-                            blurRadius: 6,
-                            offset: const Offset(0, 2),
-                          ),
-                        ]
-                      : [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.02),
-                            blurRadius: 2,
-                            offset: const Offset(0, 1),
-                          ),
-                        ],
+                  boxShadow: tokens.isDark
+                      ? null
+                      : isSelected
+                          ? [
+                              BoxShadow(
+                                color: activeTabColor.withValues(alpha: 0.22),
+                                blurRadius: 6,
+                                offset: const Offset(0, 2),
+                              ),
+                            ]
+                          : [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.02),
+                                blurRadius: 2,
+                                offset: const Offset(0, 1),
+                              ),
+                            ],
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
@@ -675,7 +682,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                     Icon(
                       t.$3,
                       size: 16,
-                      color: isSelected ? Colors.white : const Color(0xFF64748B),
+                      color: isSelected ? Colors.white : tokens.textMuted,
                     ),
                     const SizedBox(width: 8),
                     Text(
@@ -683,7 +690,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                       style: TextStyle(
                         fontSize: 13,
                         fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
-                        color: isSelected ? Colors.white : const Color(0xFF334155),
+                        color: isSelected ? Colors.white : tokens.textSecondary,
                       ),
                     ),
                   ],
@@ -714,6 +721,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
   // ==========================================
 
   Widget _buildTab1Daily(bool isMobile) {
+    final tokens = IcareSurfaceTokens.of(context);
     final branches = _getAvailableBranches();
     if (_selectedBranchTab1 == null && branches.isNotEmpty) {
       _selectedBranchTab1 = branches.first;
@@ -726,8 +734,8 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
       loading: () => const IcareTableSkeleton(rowCount: 8, hasFilterBar: false),
       error: (err, _) => Container(
         padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(color: const Color(0xFFFEF2F2), borderRadius: BorderRadius.circular(8)),
-        child: Text('Error loading Master Cashbook: $err', style: const TextStyle(color: Color(0xFFDC2626))),
+        decoration: BoxDecoration(color: tokens.dangerBg, borderRadius: BorderRadius.circular(8)),
+        child: Text('Error loading Master Cashbook: $err', style: TextStyle(color: tokens.dangerText)),
       ),
       data: (data) {
         final isAm = _isAm;
@@ -750,7 +758,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
               if (data.tally != null) ...[
                 _buildReconciliationTally(data.tally!, data.branch),
                 const SizedBox(height: 20),
-                const Divider(color: Color(0xFFE2E8F0)),
+                Divider(color: tokens.borderSubtle),
                 const SizedBox(height: 16),
               ],
               _buildDailyLedgerTAccount(data, isMobile),
@@ -761,13 +769,13 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                 if (data.tally != null) ...[
                   _buildReconciliationTally(data.tally!, data.branch),
                   const SizedBox(height: 20),
-                  const Divider(color: Color(0xFFE2E8F0)),
+                  Divider(color: tokens.borderSubtle),
                   const SizedBox(height: 16),
                 ],
                 _buildDailyLedgerTAccount(data, isMobile),
                 if (!isMobile || _tab1MobileSection == 3) ...[
                   const SizedBox(height: 28),
-                  const Divider(color: Color(0xFFE2E8F0)),
+                  Divider(color: tokens.borderSubtle),
                   const SizedBox(height: 20),
                 ],
               ],
@@ -775,7 +783,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                 _buildBmManualInputsForm(data, isMobile),
                 if (!isMobile || _tab1MobileSection == 3) ...[
                   const SizedBox(height: 28),
-                  const Divider(color: Color(0xFFE2E8F0)),
+                  Divider(color: tokens.borderSubtle),
                   const SizedBox(height: 20),
                 ],
               ],
@@ -790,6 +798,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
   }
 
   Widget _buildTab1ControlBar(MasterCashbookDailyData data, bool isMobile) {
+    final tokens = IcareSurfaceTokens.of(context);
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     final yesterday = today.subtract(const Duration(days: 1));
@@ -802,16 +811,18 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: tokens.surface,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.02),
-            blurRadius: 4,
-            offset: const Offset(0, 1),
-          ),
-        ],
+        border: Border.all(color: tokens.borderSubtle),
+        boxShadow: tokens.isDark
+            ? null
+            : [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.02),
+                  blurRadius: 4,
+                  offset: const Offset(0, 1),
+                ),
+              ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -822,23 +833,23 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
               physics: const BouncingScrollPhysics(),
               child: Row(
                 children: [
-                  const Icon(Icons.apartment, size: 16, color: Color(0xFF0F766E)),
+                  Icon(Icons.apartment, size: 16, color: tokens.brandPrimary),
                   const SizedBox(width: 8),
-                  const Text('Supervised Branch:', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF475569))),
+                  Text('Supervised Branch:', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: tokens.textSecondary)),
                   const SizedBox(width: 8),
                   for (final b in branches) ...[
                     Padding(
                       padding: const EdgeInsets.only(right: 6),
                       child: ChoiceChip(
-                        avatar: Icon(Icons.storefront, size: 14, color: _selectedBranchTab1 == b ? Colors.white : const Color(0xFF0F766E)),
-                        label: Text(b, style: TextStyle(fontSize: 12, fontWeight: _selectedBranchTab1 == b ? FontWeight.w800 : FontWeight.w600, color: _selectedBranchTab1 == b ? Colors.white : const Color(0xFF1E293B))),
+                        avatar: Icon(Icons.storefront, size: 14, color: _selectedBranchTab1 == b ? Colors.white : tokens.brandPrimary),
+                        label: Text(b, style: TextStyle(fontSize: 12, fontWeight: _selectedBranchTab1 == b ? FontWeight.w800 : FontWeight.w600, color: _selectedBranchTab1 == b ? Colors.white : tokens.textPrimary)),
                         selected: _selectedBranchTab1 == b,
-                        selectedColor: const Color(0xFF0F766E),
-                        backgroundColor: const Color(0xFFF8FAFC),
+                        selectedColor: tokens.brandPrimaryDark,
+                        backgroundColor: tokens.surfaceSubtle,
                         visualDensity: VisualDensity.compact,
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                         materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        side: BorderSide(color: _selectedBranchTab1 == b ? const Color(0xFF0F766E) : const Color(0xFFCBD5E1)),
+                        side: BorderSide(color: _selectedBranchTab1 == b ? tokens.brandPrimaryDark : tokens.borderStrong),
                         onSelected: (selected) {
                           if (selected && _selectedBranchTab1 != b) {
                             _changeActiveBranch(b);
@@ -850,7 +861,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                 ],
               ),
             ),
-            const Divider(height: 18),
+            Divider(height: 18, color: tokens.borderSubtle),
           ],
           Row(
             children: [
@@ -867,14 +878,14 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                     setState(() => _selectedDateTab1 = picked);
                   }
                 },
-                icon: const Icon(Icons.calendar_today_outlined, size: 15, color: Color(0xFF0F172A)),
+                icon: Icon(Icons.calendar_today_outlined, size: 15, color: tokens.textPrimary),
                 label: Text(
                   DateFormat(isMobile ? 'EEE, dd MMM yyyy' : 'EEEE, dd MMMM yyyy').format(_selectedDateTab1),
-                  style: const TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF0F172A), fontSize: 13),
+                  style: TextStyle(fontWeight: FontWeight.w700, color: tokens.textPrimary, fontSize: 13),
                 ),
                 style: OutlinedButton.styleFrom(
-                  backgroundColor: const Color(0xFFF8FAFC),
-                  side: const BorderSide(color: Color(0xFFCBD5E1)),
+                  backgroundColor: tokens.surfaceSubtle,
+                  side: BorderSide(color: tokens.borderStrong),
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                 ),
@@ -888,16 +899,16 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                   decoration: BoxDecoration(
-                    color: isToday ? const Color(0xFF064E3B) : const Color(0xFFF1F5F9),
+                    color: isToday ? tokens.brandPrimaryDark : tokens.surfaceHover,
                     borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: isToday ? const Color(0xFF064E3B) : const Color(0xFFCBD5E1)),
+                    border: Border.all(color: isToday ? tokens.brandPrimaryDark : tokens.borderStrong),
                   ),
                   child: Text(
                     'Today',
                     style: TextStyle(
                       fontSize: 12,
                       fontWeight: isToday ? FontWeight.w700 : FontWeight.w600,
-                      color: isToday ? Colors.white : const Color(0xFF334155),
+                      color: isToday ? Colors.white : tokens.textSecondary,
                     ),
                   ),
                 ),
@@ -911,16 +922,16 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                   decoration: BoxDecoration(
-                    color: isYesterday ? const Color(0xFF064E3B) : const Color(0xFFF1F5F9),
+                    color: isYesterday ? tokens.brandPrimaryDark : tokens.surfaceHover,
                     borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: isYesterday ? const Color(0xFF064E3B) : const Color(0xFFCBD5E1)),
+                    border: Border.all(color: isYesterday ? tokens.brandPrimaryDark : tokens.borderStrong),
                   ),
                   child: Text(
                     'Yesterday',
                     style: TextStyle(
                       fontSize: 12,
                       fontWeight: isYesterday ? FontWeight.w700 : FontWeight.w600,
-                      color: isYesterday ? Colors.white : const Color(0xFF334155),
+                      color: isYesterday ? Colors.white : tokens.textSecondary,
                     ),
                   ),
                 ),
@@ -929,7 +940,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
 
               if (isMobile)
                 IconButton(
-                  icon: const Icon(Icons.refresh, size: 19, color: Color(0xFF0F172A)),
+                  icon: Icon(Icons.refresh, size: 19, color: tokens.textPrimary),
                   tooltip: 'Refresh Daily Cashbook',
                   onPressed: () {
                     _lastLoadedTab1Key = null;
@@ -946,14 +957,14 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                     ref.invalidate(coAggregationProvider);
                     ref.invalidate(monthlyLedgerProvider);
                   },
-                  icon: const Icon(Icons.refresh, size: 15, color: Color(0xFF0F172A)),
-                  label: const Text(
+                  icon: Icon(Icons.refresh, size: 15, color: tokens.textPrimary),
+                  label: Text(
                     'Refresh',
-                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF0F172A)),
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tokens.textPrimary),
                   ),
                   style: OutlinedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                    side: const BorderSide(color: Color(0xFFCBD5E1)),
+                    side: BorderSide(color: tokens.borderStrong),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                   ),
                 ),
@@ -965,9 +976,9 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                   decoration: BoxDecoration(
-                    color: data.isOpen ? const Color(0xFFECFDF5) : const Color(0xFFFEF3C7),
+                    color: data.isOpen ? tokens.successBg : tokens.warningBg,
                     borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: data.isOpen ? const Color(0xFFA7F3D0) : const Color(0xFFFDE68A)),
+                    border: Border.all(color: data.isOpen ? tokens.successBorder : tokens.warningBorder),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
@@ -975,7 +986,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                       Icon(
                         data.isOpen ? Icons.lock_open_outlined : Icons.lock_outlined,
                         size: 13,
-                        color: data.isOpen ? const Color(0xFF059669) : const Color(0xFFD97706),
+                        color: data.isOpen ? tokens.successDot : tokens.warningDot,
                       ),
                       const SizedBox(width: 5),
                       Text(
@@ -983,7 +994,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                         style: TextStyle(
                           fontSize: 11.5,
                           fontWeight: FontWeight.w700,
-                          color: data.isOpen ? const Color(0xFF065F46) : const Color(0xFF92400E),
+                          color: data.isOpen ? tokens.successText : tokens.warningText,
                         ),
                       ),
                     ],
@@ -999,10 +1010,10 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
               width: double.infinity,
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               decoration: BoxDecoration(
-                color: data.openReason.toLowerCase().contains('closed') ? const Color(0xFFECFDF5) : const Color(0xFFFFFBEB),
+                color: data.openReason.toLowerCase().contains('closed') ? tokens.successBg : tokens.warningBg,
                 borderRadius: BorderRadius.circular(6),
                 border: Border.all(
-                  color: data.openReason.toLowerCase().contains('closed') ? const Color(0xFFA7F3D0) : const Color(0xFFFDE68A),
+                  color: data.openReason.toLowerCase().contains('closed') ? tokens.successBorder : tokens.warningBorder,
                 ),
               ),
               child: Row(
@@ -1010,7 +1021,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                   Icon(
                     data.openReason.toLowerCase().contains('closed') ? Icons.check_circle_outline : Icons.warning_amber_rounded,
                     size: 15,
-                    color: data.openReason.toLowerCase().contains('closed') ? const Color(0xFF059669) : const Color(0xFFD97706),
+                    color: data.openReason.toLowerCase().contains('closed') ? tokens.successDot : tokens.warningDot,
                   ),
                   const SizedBox(width: 8),
                   Expanded(
@@ -1021,7 +1032,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
-                        color: data.openReason.toLowerCase().contains('closed') ? const Color(0xFF065F46) : const Color(0xFF92400E),
+                        color: data.openReason.toLowerCase().contains('closed') ? tokens.successText : tokens.warningText,
                       ),
                     ),
                   ),
@@ -1035,6 +1046,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
   }
 
   Widget _buildTab1MobileSectionSelector() {
+    final tokens = IcareSurfaceTokens.of(context);
     final sections = [
       (0, 'Ledger', Icons.account_balance_wallet_outlined),
       (1, 'Manual', Icons.edit_note_outlined),
@@ -1045,9 +1057,9 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
-        color: const Color(0xFFF1F5F9),
+        color: tokens.surfaceHover,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: tokens.borderSubtle),
       ),
       padding: const EdgeInsets.all(4),
       child: Row(
@@ -1060,9 +1072,9 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
               child: Container(
                 padding: const EdgeInsets.symmetric(vertical: 8),
                 decoration: BoxDecoration(
-                  color: isSelected ? Colors.white : Colors.transparent,
+                  color: isSelected ? tokens.surface : Colors.transparent,
                   borderRadius: BorderRadius.circular(6),
-                  boxShadow: isSelected
+                  boxShadow: (isSelected && !tokens.isDark)
                       ? [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 4, offset: const Offset(0, 1))]
                       : null,
                 ),
@@ -1072,7 +1084,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                     Icon(
                       s.$3,
                       size: 14,
-                      color: isSelected ? const Color(0xFF0F172A) : const Color(0xFF64748B),
+                      color: isSelected ? tokens.textPrimary : tokens.textMuted,
                     ),
                     const SizedBox(width: 4),
                     Flexible(
@@ -1083,7 +1095,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                         style: TextStyle(
                           fontSize: 11,
                           fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                          color: isSelected ? const Color(0xFF0F172A) : const Color(0xFF64748B),
+                          color: isSelected ? tokens.textPrimary : tokens.textMuted,
                         ),
                       ),
                     ),
@@ -1098,6 +1110,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
   }
 
   Widget _buildReconciliationTally(MasterReconciliationTallyData tally, String branch) {
+    final tokens = IcareSurfaceTokens.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1107,14 +1120,14 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
+                Text(
                   'Collection & Arrears Reconciliation Tally',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: tokens.textPrimary),
                 ),
                 const SizedBox(height: 2),
                 Text(
                   '$branch Branch reconciliation',
-                  style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                  style: TextStyle(fontSize: 12, color: tokens.textMuted),
                 ),
               ],
             ),
@@ -1134,16 +1147,16 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                   label: 'Scheduled Inflows',
                   value: _formatCurrency(tally.scheduledExpected),
                   icon: Icons.schedule_outlined,
-                  iconColor: const Color(0xFF2563EB),
-                  iconBg: const Color(0xFFEFF6FF),
+                  iconColor: tokens.infoDot,
+                  iconBg: tokens.infoBg,
                 ),
                 _buildMetricCard(
                   width: cardWidth,
                   label: 'Overdue Arrears',
                   value: _formatCurrency(tally.notPaidAmount),
                   icon: Icons.warning_amber_rounded,
-                  iconColor: const Color(0xFFDC2626),
-                  iconBg: const Color(0xFFFEF2F2),
+                  iconColor: tokens.dangerDot,
+                  iconBg: tokens.dangerBg,
                   delta: tally.notPaidCount > 0 ? '${tally.notPaidCount} Not Paid' : '0 Arrears',
                   isDeltaInverse: true,
                 ),
@@ -1152,8 +1165,8 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                   label: 'Physical Cash Collected',
                   value: _formatCurrency(tally.actualCashCollected),
                   icon: Icons.payments_outlined,
-                  iconColor: const Color(0xFF059669),
-                  iconBg: const Color(0xFFECFDF5),
+                  iconColor: tokens.successDot,
+                  iconBg: tokens.successBg,
                   delta: tally.excessAmount > 0 ? '+${_formatCurrency(tally.excessAmount)} Excess' : null,
                 ),
                 _buildMetricCard(
@@ -1161,8 +1174,8 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                   label: 'Bank Deposited',
                   value: _formatCurrency(tally.bankDeposited),
                   icon: Icons.account_balance_outlined,
-                  iconColor: const Color(0xFF0F766E),
-                  iconBg: const Color(0xFFF0FDFA),
+                  iconColor: tokens.brandPrimary,
+                  iconBg: tokens.brandSoftBg,
                 ),
               ],
             );
@@ -1179,23 +1192,24 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
   }
 
   Widget _buildTallyCallout(MasterReconciliationTallyData tally) {
+    final tokens = IcareSurfaceTokens.of(context);
     final closing = tally.closingCashBalance;
     if (closing.abs() < 0.01) {
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
-          color: const Color(0xFFECFDF5),
+          color: tokens.successBg,
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: const Color(0xFFA7F3D0)),
+          border: Border.all(color: tokens.successBorder),
         ),
         child: Row(
           children: [
-            const Icon(Icons.check_circle_outline, color: Color(0xFF059669), size: 18),
+            Icon(Icons.check_circle_outline, color: tokens.successDot, size: 18),
             const SizedBox(width: 10),
             Expanded(
               child: Text(
                 'Reconciled: ₦0 net variance • Arrears: ${_formatCurrency(tally.notPaidAmount)}',
-                style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: Color(0xFF065F46)),
+                style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: tokens.successText),
               ),
             ),
           ],
@@ -1205,18 +1219,18 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
-          color: const Color(0xFFEFF6FF),
+          color: tokens.infoBg,
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: const Color(0xFFBFDBFE)),
+          border: Border.all(color: tokens.infoBorder),
         ),
         child: Row(
           children: [
-            const Icon(Icons.info_outline, color: Color(0xFF2563EB), size: 18),
+            Icon(Icons.info_outline, color: tokens.infoDot, size: 18),
             const SizedBox(width: 10),
             Expanded(
               child: Text(
                 'Vault Cash: ${_formatCurrency(closing)} unbanked • Arrears: ${_formatCurrency(tally.notPaidAmount)}',
-                style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: Color(0xFF1E40AF)),
+                style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: tokens.infoText),
               ),
             ),
           ],
@@ -1226,18 +1240,18 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
-          color: const Color(0xFFFFFBEB),
+          color: tokens.warningBg,
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: const Color(0xFFFDE68A)),
+          border: Border.all(color: tokens.warningBorder),
         ),
         child: Row(
           children: [
-            const Icon(Icons.warning_amber_rounded, color: Color(0xFFD97706), size: 18),
+            Icon(Icons.warning_amber_rounded, color: tokens.warningDot, size: 18),
             const SizedBox(width: 10),
             Expanded(
               child: Text(
                 'Excess Deposited: Surplus ${_formatCurrency(closing.abs())} banked',
-                style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: Color(0xFF92400E)),
+                style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: tokens.warningText),
               ),
             ),
           ],
@@ -1247,54 +1261,55 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
   }
 
   Widget _buildNonPayingClientsExpander(List<MasterNotPaidClientData> clients) {
+    final tokens = IcareSurfaceTokens.of(context);
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: tokens.surface,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: tokens.borderSubtle),
       ),
       child: ExpansionTile(
         tilePadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
         leading: Container(
           padding: const EdgeInsets.all(6),
           decoration: BoxDecoration(
-            color: const Color(0xFFFEF2F2),
+            color: tokens.dangerBg,
             borderRadius: BorderRadius.circular(6),
           ),
-          child: const Icon(Icons.people_outline, size: 16, color: Color(0xFFDC2626)),
+          child: Icon(Icons.people_outline, size: 16, color: tokens.dangerDot),
         ),
         title: Text(
           'View Non-Paying Clients (${clients.length} Arrears Records)',
-          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
+          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: tokens.textPrimary),
         ),
         children: [
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: DataTable(
-              headingRowColor: WidgetStateProperty.all(const Color(0xFFF8FAFC)),
-              columns: const [
-                DataColumn(label: Text('Client Name', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
-                DataColumn(label: Text('Client Code', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
-                DataColumn(label: Text('Expected Installment', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
-                DataColumn(label: Text('Shortfall / Arrears', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
-                DataColumn(label: Text('Type', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
+              headingRowColor: WidgetStateProperty.all(tokens.surfaceSubtle),
+              columns: [
+                DataColumn(label: Text('Client Name', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: tokens.textPrimary))),
+                DataColumn(label: Text('Client Code', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: tokens.textPrimary))),
+                DataColumn(label: Text('Expected Installment', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: tokens.textPrimary))),
+                DataColumn(label: Text('Shortfall / Arrears', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: tokens.textPrimary))),
+                DataColumn(label: Text('Type', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: tokens.textPrimary))),
               ],
               rows: clients.map((c) {
                 return DataRow(cells: [
-                  DataCell(Text(c.name, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600))),
-                  DataCell(Text(c.code, style: const TextStyle(fontSize: 12, fontFamily: 'monospace'))),
-                  DataCell(Text(_formatCurrency(c.expected), style: const TextStyle(fontSize: 12, fontFamily: 'monospace'))),
-                  DataCell(Text(_formatCurrency(c.shortfall), style: const TextStyle(fontSize: 12, color: Color(0xFFDC2626), fontWeight: FontWeight.w700, fontFamily: 'monospace'))),
+                  DataCell(Text(c.name, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tokens.textPrimary))),
+                  DataCell(Text(c.code, style: TextStyle(fontSize: 12, fontFamily: 'monospace', color: tokens.textSecondary))),
+                  DataCell(Text(_formatCurrency(c.expected), style: TextStyle(fontSize: 12, fontFamily: 'monospace', color: tokens.textPrimary))),
+                  DataCell(Text(_formatCurrency(c.shortfall), style: TextStyle(fontSize: 12, color: tokens.dangerText, fontWeight: FontWeight.w700, fontFamily: 'monospace'))),
                   DataCell(
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                       decoration: BoxDecoration(
-                        color: c.isPartial ? const Color(0xFFFEF3C7) : const Color(0xFFFEF2F2),
+                        color: c.isPartial ? tokens.warningBg : tokens.dangerBg,
                         borderRadius: BorderRadius.circular(4),
                       ),
                       child: Text(
                         c.isPartial ? 'Partial Shortfall' : 'Marked NOT PAID (₦0)',
-                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: c.isPartial ? const Color(0xFF92400E) : const Color(0xFFDC2626)),
+                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: c.isPartial ? tokens.warningText : tokens.dangerText),
                       ),
                     ),
                   ),
@@ -1308,6 +1323,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
   }
 
   Widget _buildDailyLedgerTAccount(MasterCashbookDailyData data, bool isMobile) {
+    final tokens = IcareSurfaceTokens.of(context);
     final inf = data.inflows;
     final out = data.outflows;
 
@@ -1378,14 +1394,14 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
+                  Text(
                     'Daily Ledger (T-Account Sheet)',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: tokens.textPrimary),
                   ),
                   const SizedBox(height: 2),
                   Text(
                     _tab1HideZeroRows ? '$totalActive active accounts' : 'All 42 accounts',
-                    style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B)),
+                    style: TextStyle(fontSize: 11.5, color: tokens.textMuted),
                   ),
                 ],
               ),
@@ -1398,17 +1414,17 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                     icon: Icon(
                       _tab1UseSpreadsheet ? Icons.dashboard_outlined : Icons.table_chart_outlined,
                       size: 14,
-                      color: const Color(0xFF334155),
+                      color: tokens.textSecondary,
                     ),
                     label: Text(
                       _tab1UseSpreadsheet ? 'T-Panels' : 'Spreadsheet',
-                      style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Color(0xFF334155)),
+                      style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: tokens.textSecondary),
                     ),
                     style: OutlinedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                      side: const BorderSide(color: Color(0xFFCBD5E1)),
+                      side: BorderSide(color: tokens.borderStrong),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-                      backgroundColor: Colors.white,
+                      backgroundColor: tokens.surface,
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -1418,17 +1434,17 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                   icon: Icon(
                     _tab1HideZeroRows ? Icons.visibility_outlined : Icons.filter_alt_outlined,
                     size: 14,
-                    color: const Color(0xFF334155),
+                    color: tokens.textSecondary,
                   ),
                   label: Text(
                     _tab1HideZeroRows ? 'Show All' : 'Active Only',
-                    style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Color(0xFF334155)),
+                    style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: tokens.textSecondary),
                   ),
                   style: OutlinedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    side: const BorderSide(color: Color(0xFFCBD5E1)),
+                    side: BorderSide(color: tokens.borderStrong),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-                    backgroundColor: Colors.white,
+                    backgroundColor: tokens.surface,
                   ),
                 ),
               ],
@@ -1441,9 +1457,9 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
         if (isMobile) ...[
           Container(
             decoration: BoxDecoration(
-              color: const Color(0xFFF1F5F9),
+              color: tokens.surfaceHover,
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: const Color(0xFFE2E8F0)),
+              border: Border.all(color: tokens.borderSubtle),
             ),
             padding: const EdgeInsets.all(3),
             child: Row(
@@ -1454,9 +1470,9 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                     child: Container(
                       padding: const EdgeInsets.symmetric(vertical: 6),
                       decoration: BoxDecoration(
-                        color: _tab1TAccountTab == 0 ? Colors.white : Colors.transparent,
+                        color: _tab1TAccountTab == 0 ? tokens.surface : Colors.transparent,
                         borderRadius: BorderRadius.circular(6),
-                        boxShadow: _tab1TAccountTab == 0
+                        boxShadow: (_tab1TAccountTab == 0 && !tokens.isDark)
                             ? [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 2)]
                             : null,
                       ),
@@ -1466,7 +1482,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                         style: TextStyle(
                           fontSize: 11,
                           fontWeight: _tab1TAccountTab == 0 ? FontWeight.w700 : FontWeight.w500,
-                          color: _tab1TAccountTab == 0 ? const Color(0xFF0F172A) : const Color(0xFF64748B),
+                          color: _tab1TAccountTab == 0 ? tokens.textPrimary : tokens.textMuted,
                         ),
                       ),
                     ),
@@ -1478,9 +1494,9 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                     child: Container(
                       padding: const EdgeInsets.symmetric(vertical: 6),
                       decoration: BoxDecoration(
-                        color: _tab1TAccountTab == 1 ? Colors.white : Colors.transparent,
+                        color: _tab1TAccountTab == 1 ? tokens.surface : Colors.transparent,
                         borderRadius: BorderRadius.circular(6),
-                        boxShadow: _tab1TAccountTab == 1
+                        boxShadow: (_tab1TAccountTab == 1 && !tokens.isDark)
                             ? [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 2)]
                             : null,
                       ),
@@ -1490,7 +1506,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                         style: TextStyle(
                           fontSize: 11,
                           fontWeight: _tab1TAccountTab == 1 ? FontWeight.w700 : FontWeight.w500,
-                          color: _tab1TAccountTab == 1 ? const Color(0xFF059669) : const Color(0xFF64748B),
+                          color: _tab1TAccountTab == 1 ? tokens.successText : tokens.textMuted,
                         ),
                       ),
                     ),
@@ -1502,9 +1518,9 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                     child: Container(
                       padding: const EdgeInsets.symmetric(vertical: 6),
                       decoration: BoxDecoration(
-                        color: _tab1TAccountTab == 2 ? Colors.white : Colors.transparent,
+                        color: _tab1TAccountTab == 2 ? tokens.surface : Colors.transparent,
                         borderRadius: BorderRadius.circular(6),
-                        boxShadow: _tab1TAccountTab == 2
+                        boxShadow: (_tab1TAccountTab == 2 && !tokens.isDark)
                             ? [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 2)]
                             : null,
                       ),
@@ -1514,7 +1530,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                         style: TextStyle(
                           fontSize: 11,
                           fontWeight: _tab1TAccountTab == 2 ? FontWeight.w700 : FontWeight.w500,
-                          color: _tab1TAccountTab == 2 ? const Color(0xFFDC2626) : const Color(0xFF64748B),
+                          color: _tab1TAccountTab == 2 ? tokens.dangerText : tokens.textMuted,
                         ),
                       ),
                     ),
@@ -1537,9 +1553,9 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                   title: 'DEBIT (INFLOWS & OPENING B/F)',
                   totalLabel: 'Total Debit (B/F + Inflows)',
                   totalAmount: data.totalInflows,
-                  headerColor: const Color(0xFF059669),
-                  headerBg: const Color(0xFFECFDF5),
-                  headerBorder: const Color(0xFFA7F3D0),
+                  headerColor: tokens.successText,
+                  headerBg: tokens.successBg,
+                  headerBorder: tokens.successBorder,
                   items: displayedInflows,
                   icon: Icons.south_west_rounded,
                   isCredit: false,
@@ -1551,9 +1567,9 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                   title: 'CREDIT (CASH OUTFLOWS)',
                   totalLabel: 'Total Outflows',
                   totalAmount: data.totalOutflows,
-                  headerColor: const Color(0xFFDC2626),
-                  headerBg: const Color(0xFFFFF1F2),
-                  headerBorder: const Color(0xFFFECDD3),
+                  headerColor: tokens.dangerText,
+                  headerBg: tokens.dangerBg,
+                  headerBorder: tokens.dangerBorder,
                   items: displayedOutflows,
                   icon: Icons.north_east_rounded,
                   isCredit: true,
@@ -1569,7 +1585,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
             items: displayedInflows,
             totalLabel: 'Total Inflows',
             totalValue: data.totalInflows,
-            accentColor: const Color(0xFF059669),
+            accentColor: tokens.successText,
             icon: Icons.south_west_rounded,
           )
         else if (isMobile && _tab1TAccountTab == 2)
@@ -1578,8 +1594,9 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
             items: displayedOutflows,
             totalLabel: 'Total Outflows',
             totalValue: data.totalOutflows,
-            accentColor: const Color(0xFFDC2626),
+            accentColor: tokens.dangerText,
             icon: Icons.north_east_rounded,
+            isCredit: true,
           )
         else if (isMobile && _tab1TAccountTab == 0) ...[
           _buildSingleLedgerList(
@@ -1587,7 +1604,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
             items: displayedInflows,
             totalLabel: 'Total Inflows',
             totalValue: data.totalInflows,
-            accentColor: const Color(0xFF059669),
+            accentColor: tokens.successText,
             icon: Icons.south_west_rounded,
           ),
           const SizedBox(height: 14),
@@ -1596,8 +1613,9 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
             items: displayedOutflows,
             totalLabel: 'Total Outflows',
             totalValue: data.totalOutflows,
-            accentColor: const Color(0xFFDC2626),
+            accentColor: tokens.dangerText,
             icon: Icons.north_east_rounded,
+            isCredit: true,
           ),
           const SizedBox(height: 14),
           _buildTAccountBalancingBar(data),
@@ -1605,19 +1623,19 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
           // Spreadsheet Data Table
           Container(
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: tokens.surface,
               borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: const Color(0xFFE2E8F0)),
+              border: Border.all(color: tokens.borderSubtle),
             ),
             child: SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               child: DataTable(
-                headingRowColor: WidgetStateProperty.all(const Color(0xFFF8FAFC)),
-                columns: const [
-                  DataColumn(label: Text('Inflows (Left / Debit)', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
-                  DataColumn(label: Text('Amount (₦)', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
-                  DataColumn(label: Text('Outflows (Right / Credit)', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
-                  DataColumn(label: Text('Amount (₦)', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
+                headingRowColor: WidgetStateProperty.all(tokens.surfaceSubtle),
+                columns: [
+                  DataColumn(label: Text('Inflows (Left / Debit)', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: tokens.textPrimary))),
+                  DataColumn(label: Text('Amount (₦)', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: tokens.textPrimary))),
+                  DataColumn(label: Text('Outflows (Right / Credit)', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: tokens.textPrimary))),
+                  DataColumn(label: Text('Amount (₦)', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: tokens.textPrimary))),
                 ],
                 rows: [
                   ...List.generate(maxLen, (idx) {
@@ -1626,24 +1644,24 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
 
                     return DataRow(
                       color: WidgetStateProperty.resolveWith<Color?>((states) {
-                        if (idx.isOdd) return const Color(0xFFF8FAFC);
-                        return Colors.white;
+                        if (idx.isOdd) return tokens.surfaceSubtle;
+                        return tokens.surface;
                       }),
                       cells: [
-                        DataCell(Text(infItem.$1, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500))),
-                        DataCell(Text(infItem.$1.isNotEmpty ? _formatCurrency(infItem.$2) : '', style: const TextStyle(fontSize: 12, color: Color(0xFF059669), fontWeight: FontWeight.w600, fontFamily: 'monospace'))),
-                        DataCell(Text(outItem.$1, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500))),
-                        DataCell(Text(outItem.$1.isNotEmpty ? _formatCurrency(outItem.$2) : '', style: const TextStyle(fontSize: 12, color: Color(0xFFDC2626), fontWeight: FontWeight.w600, fontFamily: 'monospace'))),
+                        DataCell(Text(infItem.$1, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: tokens.textPrimary))),
+                        DataCell(Text(infItem.$1.isNotEmpty ? _formatCurrency(infItem.$2) : '', style: TextStyle(fontSize: 12, color: tokens.successText, fontWeight: FontWeight.w600, fontFamily: 'monospace'))),
+                        DataCell(Text(outItem.$1, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: tokens.textPrimary))),
+                        DataCell(Text(outItem.$1.isNotEmpty ? _formatCurrency(outItem.$2) : '', style: TextStyle(fontSize: 12, color: tokens.dangerText, fontWeight: FontWeight.w600, fontFamily: 'monospace'))),
                       ],
                     );
                   }),
                   DataRow(
-                    color: WidgetStateProperty.all(const Color(0xFFF1F5F9)),
+                    color: WidgetStateProperty.all(tokens.surfaceHover),
                     cells: [
-                      const DataCell(Text('Total Debit (Opening + Receipts)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Color(0xFF065F46)))),
-                      DataCell(Text(_formatCurrency(data.totalInflows), style: const TextStyle(fontSize: 12, color: Color(0xFF059669), fontWeight: FontWeight.w800, fontFamily: 'monospace'))),
-                      const DataCell(Text('Total Credit (Outflows)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Color(0xFF991B1B)))),
-                      DataCell(Text(_formatCurrency(data.totalOutflows), style: const TextStyle(fontSize: 12, color: Color(0xFFDC2626), fontWeight: FontWeight.w800, fontFamily: 'monospace'))),
+                      DataCell(Text('Total Debit (Opening + Receipts)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: tokens.successText))),
+                      DataCell(Text(_formatCurrency(data.totalInflows), style: TextStyle(fontSize: 12, color: tokens.successText, fontWeight: FontWeight.w800, fontFamily: 'monospace'))),
+                      DataCell(Text('Total Credit (Outflows)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: tokens.dangerText))),
+                      DataCell(Text(_formatCurrency(data.totalOutflows), style: TextStyle(fontSize: 12, color: tokens.dangerText, fontWeight: FontWeight.w800, fontFamily: 'monospace'))),
                     ],
                   ),
                 ],
@@ -1668,18 +1686,21 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
     required IconData icon,
     required bool isCredit,
   }) {
+    final tokens = IcareSurfaceTokens.of(context);
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: tokens.surface,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.02),
-            blurRadius: 4,
-            offset: const Offset(0, 1),
-          ),
-        ],
+        border: Border.all(color: tokens.borderSubtle),
+        boxShadow: tokens.isDark
+            ? null
+            : [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.02),
+                  blurRadius: 4,
+                  offset: const Offset(0, 1),
+                ),
+              ],
       ),
       child: Column(
         children: [
@@ -1707,7 +1728,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                   decoration: BoxDecoration(
-                    color: Colors.white,
+                    color: tokens.surface,
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(color: headerBorder),
                   ),
@@ -1727,21 +1748,21 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
 
           // Items list
           if (items.isEmpty)
-            const Padding(
-              padding: EdgeInsets.all(20),
-              child: Text('No active accounts recorded.', style: TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+            Padding(
+              padding: const EdgeInsets.all(20),
+              child: Text('No active accounts recorded.', style: TextStyle(fontSize: 12, color: tokens.textMuted)),
             )
           else
             ListView.separated(
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
               itemCount: items.length,
-              separatorBuilder: (_, __) => const Divider(height: 1, color: Color(0xFFF1F5F9)),
+              separatorBuilder: (_, __) => Divider(height: 1, color: tokens.borderSubtle),
               itemBuilder: (context, idx) {
                 final item = items[idx];
                 final isOpening = item.$1.contains('Opening');
                 return Container(
-                  color: isOpening ? const Color(0xFFF0FDF4) : (idx.isEven ? Colors.white : const Color(0xFFF8FAFC)),
+                  color: isOpening ? tokens.successBg : (idx.isEven ? tokens.surface : tokens.surfaceSubtle),
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -1753,7 +1774,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                               Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
                                 margin: const EdgeInsets.only(right: 6),
-                                decoration: BoxDecoration(color: const Color(0xFF065F46), borderRadius: BorderRadius.circular(3)),
+                                decoration: BoxDecoration(color: tokens.brandPrimaryDark, borderRadius: BorderRadius.circular(3)),
                                 child: const Text('OPEN', style: TextStyle(fontSize: 9, fontWeight: FontWeight.w700, color: Colors.white)),
                               ),
                             ],
@@ -1763,7 +1784,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                                 style: TextStyle(
                                   fontSize: 12,
                                   fontWeight: isOpening ? FontWeight.w700 : FontWeight.w500,
-                                  color: const Color(0xFF334155),
+                                  color: tokens.textSecondary,
                                 ),
                                 overflow: TextOverflow.ellipsis,
                               ),
@@ -1778,7 +1799,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                           fontFamily: 'monospace',
                           fontSize: 12.5,
                           fontWeight: FontWeight.w700,
-                          color: isCredit ? const Color(0xFFDC2626) : const Color(0xFF059669),
+                          color: isCredit ? tokens.dangerText : tokens.successText,
                         ),
                       ),
                     ],
@@ -1790,17 +1811,17 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
           // Footer total
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            decoration: const BoxDecoration(
-              color: Color(0xFFF8FAFC),
-              borderRadius: BorderRadius.only(bottomLeft: Radius.circular(9), bottomRight: Radius.circular(9)),
-              border: Border(top: BorderSide(color: Color(0xFFE2E8F0))),
+            decoration: BoxDecoration(
+              color: tokens.surfaceSubtle,
+              borderRadius: const BorderRadius.only(bottomLeft: Radius.circular(9), bottomRight: Radius.circular(9)),
+              border: Border(top: BorderSide(color: tokens.borderSubtle)),
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
                   totalLabel,
-                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF475569)),
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: tokens.textSecondary),
                 ),
                 Text(
                   _formatCurrency(totalAmount),
@@ -1820,15 +1841,16 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
   }
 
   Widget _buildTAccountBalancingBar(MasterCashbookDailyData data) {
+    final tokens = IcareSurfaceTokens.of(context);
     final closing = data.closingBalance;
     final isPos = closing >= 0;
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
-        color: isPos ? const Color(0xFFECFDF5) : const Color(0xFFFEF2F2),
+        color: isPos ? tokens.successBg : tokens.dangerBg,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: isPos ? const Color(0xFFA7F3D0) : const Color(0xFFFECACA)),
+        border: Border.all(color: isPos ? tokens.successBorder : tokens.dangerBorder),
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -1839,7 +1861,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                 Icon(
                   isPos ? Icons.check_circle_outline : Icons.warning_amber_rounded,
                   size: 20,
-                  color: isPos ? const Color(0xFF059669) : const Color(0xFFDC2626),
+                  color: isPos ? tokens.successDot : tokens.dangerDot,
                 ),
                 const SizedBox(width: 10),
                 Flexible(
@@ -1851,7 +1873,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                         style: TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w700,
-                          color: isPos ? const Color(0xFF065F46) : const Color(0xFF991B1B),
+                          color: isPos ? tokens.successText : tokens.dangerText,
                           letterSpacing: 0.4,
                         ),
                       ),
@@ -1859,7 +1881,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                         'Opening (${_formatCurrency(data.inflows.openingBalance)}) + Receipts (${_formatCurrency(data.totalInflows - data.inflows.openingBalance)}) - Outflows (${_formatCurrency(data.totalOutflows)})',
                         style: TextStyle(
                           fontSize: 11.5,
-                          color: isPos ? const Color(0xFF047857) : const Color(0xFFB91C1C),
+                          color: isPos ? tokens.successText : tokens.dangerText,
                         ),
                       ),
                     ],
@@ -1872,14 +1894,14 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
           Column(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              const Text('Closing Balance', style: TextStyle(fontSize: 11, color: Color(0xFF64748B), fontWeight: FontWeight.w500)),
+              Text('Closing Balance', style: TextStyle(fontSize: 11, color: tokens.textMuted, fontWeight: FontWeight.w500)),
               Text(
                 _formatCurrency(closing),
                 style: TextStyle(
                   fontFamily: 'monospace',
                   fontSize: 16,
                   fontWeight: FontWeight.w800,
-                  color: isPos ? const Color(0xFF065F46) : const Color(0xFFDC2626),
+                  color: isPos ? tokens.successText : tokens.dangerText,
                 ),
               ),
             ],
@@ -1896,28 +1918,32 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
     required double totalValue,
     required Color accentColor,
     required IconData icon,
+    bool isCredit = false,
   }) {
+    final tokens = IcareSurfaceTokens.of(context);
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: tokens.surface,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.02),
-            blurRadius: 4,
-            offset: const Offset(0, 1),
-          ),
-        ],
+        border: Border.all(color: tokens.borderSubtle),
+        boxShadow: tokens.isDark
+            ? null
+            : [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.02),
+                  blurRadius: 4,
+                  offset: const Offset(0, 1),
+                ),
+              ],
       ),
       child: Column(
         children: [
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             decoration: BoxDecoration(
-              color: accentColor.withValues(alpha: 0.07),
+              color: accentColor.withValues(alpha: tokens.isDark ? 0.14 : 0.07),
               borderRadius: const BorderRadius.only(topLeft: Radius.circular(9), topRight: Radius.circular(9)),
-              border: Border(bottom: BorderSide(color: accentColor.withValues(alpha: 0.2))),
+              border: Border(bottom: BorderSide(color: accentColor.withValues(alpha: 0.25))),
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -1937,16 +1963,16 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
             ),
           ),
           if (items.isEmpty)
-            const Padding(
-              padding: EdgeInsets.all(16),
-              child: Text('No active entries recorded.', style: TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Text('No active entries recorded.', style: TextStyle(fontSize: 12, color: tokens.textMuted)),
             )
           else
             ListView.separated(
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
               itemCount: items.length,
-              separatorBuilder: (_, __) => const Divider(height: 1, color: Color(0xFFF1F5F9)),
+              separatorBuilder: (_, __) => Divider(height: 1, color: tokens.borderSubtle),
               itemBuilder: (context, idx) {
                 final item = items[idx];
                 final isOpening = item.$1.contains('Opening');
@@ -1961,7 +1987,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                           style: TextStyle(
                             fontSize: 12.5,
                             fontWeight: isOpening ? FontWeight.w700 : FontWeight.w500,
-                            color: const Color(0xFF334155),
+                            color: tokens.textSecondary,
                           ),
                         ),
                       ),
@@ -1972,7 +1998,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                           fontFamily: 'monospace',
                           fontSize: 12.5,
                           fontWeight: FontWeight.w700,
-                          color: item.$2 > 0 ? (accentColor == const Color(0xFF059669) ? const Color(0xFF059669) : const Color(0xFFDC2626)) : const Color(0xFF94A3B8),
+                          color: item.$2 > 0 ? (isCredit ? tokens.dangerText : tokens.successText) : tokens.textLight,
                         ),
                       ),
                     ],
@@ -1986,19 +2012,22 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
   }
 
   Widget _buildBmManualInputsForm(MasterCashbookDailyData data, bool isMobile) {
+    final tokens = IcareSurfaceTokens.of(context);
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: tokens.surface,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.02),
-            blurRadius: 4,
-            offset: const Offset(0, 1),
-          ),
-        ],
+        border: Border.all(color: tokens.borderSubtle),
+        boxShadow: tokens.isDark
+            ? null
+            : [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.02),
+                  blurRadius: 4,
+                  offset: const Offset(0, 1),
+                ),
+              ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2008,18 +2037,18 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
               Container(
                 padding: const EdgeInsets.all(7),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF1F5F9),
+                  color: tokens.surfaceHover,
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: const Icon(Icons.edit_note_outlined, size: 20, color: Color(0xFF0F172A)),
+                child: Icon(Icons.edit_note_outlined, size: 20, color: tokens.textPrimary),
               ),
               const SizedBox(width: 10),
-              const Expanded(
+              Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('BM Manual Inputs & Transfers', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: Color(0xFF0F172A))),
-                    Text('Head Office funding, inter-branch transfers, and expenses.', style: TextStyle(fontSize: 11.5, color: Color(0xFF64748B))),
+                    Text('BM Manual Inputs & Transfers', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: tokens.textPrimary)),
+                    Text('Head Office funding, inter-branch transfers, and expenses.', style: TextStyle(fontSize: 11.5, color: tokens.textMuted)),
                   ],
                 ),
               ),
@@ -2031,18 +2060,18 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
           Container(
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
-              color: const Color(0xFFF0FDF4),
+              color: tokens.successBg,
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: const Color(0xFFA7F3D0)),
+              border: Border.all(color: tokens.successBorder),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Row(
+                Row(
                   children: [
-                    Icon(Icons.south_west_rounded, size: 15, color: Color(0xFF059669)),
-                    SizedBox(width: 6),
-                    Text('Vault Funding Received (Inflows)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF065F46))),
+                    Icon(Icons.south_west_rounded, size: 15, color: tokens.successDot),
+                    const SizedBox(width: 6),
+                    Text('Vault Funding Received (Inflows)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: tokens.successText)),
                   ],
                 ),
                 const SizedBox(height: 12),
@@ -2072,18 +2101,18 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
           Container(
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
-              color: const Color(0xFFFFF1F2),
+              color: tokens.dangerBg,
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: const Color(0xFFFECDD3)),
+              border: Border.all(color: tokens.dangerBorder),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Row(
+                Row(
                   children: [
-                    Icon(Icons.north_east_rounded, size: 15, color: Color(0xFFDC2626)),
-                    SizedBox(width: 6),
-                    Text('Corporate Transfers & Outflows', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF9F1239))),
+                    Icon(Icons.north_east_rounded, size: 15, color: tokens.dangerDot),
+                    const SizedBox(width: 6),
+                    Text('Corporate Transfers & Outflows', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: tokens.dangerText)),
                   ],
                 ),
                 const SizedBox(height: 12),
@@ -2126,20 +2155,20 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
           // Card 3: Branch Treasury Adjustments & Debt Management
           Container(
             decoration: BoxDecoration(
-              color: const Color(0xFFF8FAFC),
+              color: tokens.surfaceSubtle,
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: const Color(0xFFE2E8F0)),
+              border: Border.all(color: tokens.borderSubtle),
             ),
             child: ExpansionTile(
               tilePadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
-              leading: const Icon(Icons.tune_outlined, size: 18, color: Color(0xFF475569)),
-              title: const Text(
+              leading: Icon(Icons.tune_outlined, size: 18, color: tokens.textSecondary),
+              title: Text(
                 'Branch Treasury Adjustments & Debt Management',
-                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: tokens.textPrimary),
               ),
-              subtitle: const Text(
+              subtitle: Text(
                 'Record branch-level cash debts, borrowed vault floats, deficit settlements, or direct adjustments.',
-                style: TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                style: TextStyle(fontSize: 11, color: tokens.textMuted),
               ),
               childrenPadding: const EdgeInsets.all(14),
               children: [
@@ -2164,7 +2193,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
           const SizedBox(height: 20),
 
           // Card 4: Daily Balancing Summary & Action
-          const Text('Daily Balancing Summary', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFF0F172A))),
+          Text('Daily Balancing Summary', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: tokens.textPrimary)),
           const SizedBox(height: 10),
           LayoutBuilder(
             builder: (context, constraints) {
@@ -2179,24 +2208,24 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                     label: 'Opening Balance (B/F)',
                     value: _formatCurrency(data.inflows.openingBalance),
                     icon: Icons.lock_clock_outlined,
-                    iconColor: const Color(0xFF065F46),
-                    iconBg: const Color(0xFFECFDF5),
+                    iconColor: tokens.brandPrimary,
+                    iconBg: tokens.brandSoftBg,
                   ),
                   _buildMetricCard(
                     width: cardW,
                     label: 'Today Inflows (Receipts)',
                     value: _formatCurrency((data.totalInflows - data.inflows.openingBalance).clamp(0.0, double.infinity)),
                     icon: Icons.south_west_rounded,
-                    iconColor: const Color(0xFF059669),
-                    iconBg: const Color(0xFFECFDF5),
+                    iconColor: tokens.successDot,
+                    iconBg: tokens.successBg,
                   ),
                   _buildMetricCard(
                     width: cardW,
                     label: 'Today Outflows (Credit)',
                     value: _formatCurrency(data.totalOutflows),
                     icon: Icons.north_east_rounded,
-                    iconColor: const Color(0xFFDC2626),
-                    iconBg: const Color(0xFFFFF1F2),
+                    iconColor: tokens.dangerDot,
+                    iconBg: tokens.dangerBg,
                   ),
                 ],
               );
@@ -2219,7 +2248,8 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                 style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5, color: Colors.white),
               ),
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFFFF4B4B),
+                backgroundColor: tokens.brandPrimaryDark,
+                foregroundColor: Colors.white,
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
               ),
             ),
@@ -2230,9 +2260,11 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
   }
 
   Widget _buildClosingBalanceBanner(double closing) {
+    final tokens = IcareSurfaceTokens.of(context);
     final isPos = closing >= 0;
-    final color = isPos ? const Color(0xFF065F46) : const Color(0xFFDC2626);
-    final bg = isPos ? const Color(0xFFECFDF5) : const Color(0xFFFEF2F2);
+    final color = isPos ? tokens.successText : tokens.dangerText;
+    final bg = isPos ? tokens.successBg : tokens.dangerBg;
+    final border = isPos ? tokens.successBorder : tokens.dangerBorder;
 
     return Container(
       width: double.infinity,
@@ -2240,7 +2272,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
       decoration: BoxDecoration(
         color: bg,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: color.withValues(alpha: 0.3)),
+        border: Border.all(color: border),
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -2269,30 +2301,31 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
   }
 
   Widget _buildErrorCorrectionHub(MasterCashbookDailyData data, bool isMobile) {
+    final tokens = IcareSurfaceTokens.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
+        Text(
           'Branch Error Correction & Reversals Hub',
-          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
+          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: tokens.textPrimary),
         ),
         const SizedBox(height: 2),
-        const Text(
+        Text(
           'Pending reversal requests and branch corrections.',
-          style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+          style: TextStyle(fontSize: 12, color: tokens.textMuted),
         ),
         const SizedBox(height: 16),
-        const Text(
+        Text(
           'Pending Branch Reversal Requests',
-          style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF334155)),
+          style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: tokens.textSecondary),
         ),
         const SizedBox(height: 10),
         if (data.pendingReversals.isEmpty)
           Container(
             width: double.infinity,
             padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(color: const Color(0xFFECFDF5), borderRadius: BorderRadius.circular(6)),
-            child: const Text('No pending reversal requests for this branch.', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF065F46))),
+            decoration: BoxDecoration(color: tokens.successBg, borderRadius: BorderRadius.circular(6), border: Border.all(color: tokens.successBorder)),
+            child: Text('No pending reversal requests for this branch.', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: tokens.successText)),
           )
         else
           ...data.pendingReversals.map((r) => _buildPendingReversalCard(r, isMobile)),
@@ -2302,39 +2335,43 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
     );
   }
 
-  (IconData, Color, Color, Color, String) _getReversalTypeInfo(String recordType) {
+  (IconData, Color, Color, Color, String) _getReversalTypeInfo(String recordType, IcareSurfaceTokens tokens) {
     if (recordType.contains('Savings')) {
-      return (Icons.savings_outlined, const Color(0xFF059669), const Color(0xFFECFDF5), const Color(0xFFA7F3D0), 'Savings Deposit');
+      return (Icons.savings_outlined, tokens.successText, tokens.successBg, tokens.successBorder, 'Savings Deposit');
     }
     if (recordType.contains('Fee')) {
-      return (Icons.receipt_long_outlined, const Color(0xFFD97706), const Color(0xFFFEF3C7), const Color(0xFFFDE68A), 'EOD Fee');
+      return (Icons.receipt_long_outlined, tokens.warningText, tokens.warningBg, tokens.warningBorder, 'EOD Fee');
     }
     if (recordType.contains('Expense')) {
-      return (Icons.shopping_cart_outlined, const Color(0xFFE11D48), const Color(0xFFFFE4E6), const Color(0xFFFECDD3), 'Office Expense');
+      return (Icons.shopping_cart_outlined, tokens.dangerText, tokens.dangerBg, tokens.dangerBorder, 'Office Expense');
     }
     if (recordType.contains('Treasury')) {
-      return (Icons.account_balance_outlined, const Color(0xFF7C3AED), const Color(0xFFF5F3FF), const Color(0xFFDDD6FE), 'Treasury Transfer');
+      final purple = tokens.isDark ? const Color(0xFFA78BFA) : const Color(0xFF7C3AED);
+      return (Icons.account_balance_outlined, purple, purple.withValues(alpha: tokens.isDark ? 0.16 : 0.08), purple.withValues(alpha: 0.35), 'Treasury Transfer');
     }
-    return (Icons.payments_outlined, const Color(0xFF2563EB), const Color(0xFFEFF6FF), const Color(0xFFBFDBFE), 'Loan Repayment');
+    return (Icons.payments_outlined, tokens.infoText, tokens.infoBg, tokens.infoBorder, 'Loan Repayment');
   }
 
   Widget _buildPendingReversalCard(MasterPendingReversalData req, bool isMobile) {
-    final typeInfo = _getReversalTypeInfo(req.recordType);
+    final tokens = IcareSurfaceTokens.of(context);
+    final typeInfo = _getReversalTypeInfo(req.recordType, tokens);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: tokens.surface,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.02),
-            blurRadius: 4,
-            offset: const Offset(0, 1),
-          ),
-        ],
+        border: Border.all(color: tokens.borderSubtle),
+        boxShadow: tokens.isDark
+            ? null
+            : [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.02),
+                  blurRadius: 4,
+                  offset: const Offset(0, 1),
+                ),
+              ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2368,22 +2405,22 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                     const SizedBox(width: 8),
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                      decoration: BoxDecoration(color: const Color(0xFFF1F5F9), borderRadius: BorderRadius.circular(4)),
+                      decoration: BoxDecoration(color: tokens.surfaceHover, borderRadius: BorderRadius.circular(4)),
                       child: Text(
                         'Ref #${req.recordId.length > 8 ? req.recordId.substring(0, 8) : req.recordId}',
-                        style: const TextStyle(fontSize: 11, fontFamily: 'monospace', fontWeight: FontWeight.w600, color: Color(0xFF475569)),
+                        style: TextStyle(fontSize: 11, fontFamily: 'monospace', fontWeight: FontWeight.w600, color: tokens.textSecondary),
                       ),
                     ),
                     const SizedBox(width: 8),
                     Text(
                       CurrencyFormatter.format(req.amount),
-                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFFDC2626), fontFamily: 'monospace'),
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: tokens.dangerText, fontFamily: 'monospace'),
                     ),
                     if (req.clientName != null && req.clientName!.isNotEmpty) ...[
                       const SizedBox(width: 8),
                       Text(
                         '• ${req.clientName!} ${req.clientCode != null && req.clientCode!.isNotEmpty ? "(${req.clientCode})" : ""}',
-                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF0F172A)),
+                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tokens.textPrimary),
                       ),
                     ],
                   ],
@@ -2392,16 +2429,16 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFFEF3C7),
+                  color: tokens.warningBg,
                   borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: const Color(0xFFFDE68A)),
+                  border: Border.all(color: tokens.warningBorder),
                 ),
-                child: const Row(
+                child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.hourglass_top_outlined, size: 11, color: Color(0xFF92400E)),
-                    SizedBox(width: 4),
-                    Text('Pending Approval', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: Color(0xFF92400E))),
+                    Icon(Icons.hourglass_top_outlined, size: 11, color: tokens.warningText),
+                    const SizedBox(width: 4),
+                    Text('Pending Approval', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: tokens.warningText)),
                   ],
                 ),
               ),
@@ -2410,20 +2447,20 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
           const SizedBox(height: 10),
           Row(
             children: [
-              const Icon(Icons.person_outline, size: 13, color: Color(0xFF64748B)),
+              Icon(Icons.person_outline, size: 13, color: tokens.textMuted),
               const SizedBox(width: 4),
               Text(
                 'Requested by ${req.requestedByName}',
-                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF334155)),
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tokens.textSecondary),
               ),
               const SizedBox(width: 8),
-              const Text('•', style: TextStyle(color: Color(0xFFCBD5E1))),
+              Text('•', style: TextStyle(color: tokens.borderStrong)),
               const SizedBox(width: 8),
-              const Icon(Icons.access_time, size: 13, color: Color(0xFF64748B)),
+              Icon(Icons.access_time, size: 13, color: tokens.textMuted),
               const SizedBox(width: 4),
               Text(
                 req.createdAt.length > 16 ? req.createdAt.substring(0, 16).replaceAll('T', ' ') : req.createdAt,
-                style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B)),
+                style: TextStyle(fontSize: 11.5, color: tokens.textMuted),
               ),
             ],
           ),
@@ -2432,19 +2469,19 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
             width: double.infinity,
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             decoration: BoxDecoration(
-              color: const Color(0xFFF8FAFC),
+              color: tokens.surfaceSubtle,
               borderRadius: BorderRadius.circular(6),
-              border: Border.all(color: const Color(0xFFE2E8F0)),
+              border: Border.all(color: tokens.borderSubtle),
             ),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Icon(Icons.format_quote_outlined, size: 15, color: Color(0xFF94A3B8)),
+                Icon(Icons.format_quote_outlined, size: 15, color: tokens.textLight),
                 const SizedBox(width: 6),
                 Expanded(
                   child: Text(
                     req.reason,
-                    style: const TextStyle(fontSize: 12, fontStyle: FontStyle.italic, color: Color(0xFF334155)),
+                    style: TextStyle(fontSize: 12, fontStyle: FontStyle.italic, color: tokens.textSecondary),
                   ),
                 ),
               ],
@@ -2456,10 +2493,10 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
             children: [
               OutlinedButton.icon(
                 onPressed: () => _handleRejectReversal(req),
-                icon: const Icon(Icons.close, size: 14, color: Color(0xFF475569)),
-                label: const Text('Reject', style: TextStyle(color: Color(0xFF475569), fontSize: 12, fontWeight: FontWeight.w600)),
+                icon: Icon(Icons.close, size: 14, color: tokens.textSecondary),
+                label: Text('Reject', style: TextStyle(color: tokens.textSecondary, fontSize: 12, fontWeight: FontWeight.w600)),
                 style: OutlinedButton.styleFrom(
-                  side: const BorderSide(color: Color(0xFFCBD5E1)),
+                  side: BorderSide(color: tokens.borderStrong),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                 ),
@@ -2470,7 +2507,8 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                 icon: const Icon(Icons.check, size: 14, color: Colors.white),
                 label: const Text('Approve Reversal', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w700)),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF059669),
+                  backgroundColor: tokens.brandPrimaryDark,
+                  foregroundColor: Colors.white,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 ),
@@ -2483,27 +2521,28 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
   }
 
   Widget _buildFlagTreasuryExpander(List<MasterTreasuryTransactionData> transactions) {
+    final tokens = IcareSurfaceTokens.of(context);
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: tokens.surface,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: tokens.borderSubtle),
       ),
       child: ExpansionTile(
         tilePadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
         leading: Container(
           padding: const EdgeInsets.all(6),
           decoration: BoxDecoration(
-            color: const Color(0xFFFEF3C7),
+            color: tokens.warningBg,
             borderRadius: BorderRadius.circular(6),
           ),
-          child: const Icon(Icons.flag_outlined, size: 16, color: Color(0xFFD97706)),
+          child: Icon(Icons.flag_outlined, size: 16, color: tokens.warningDot),
         ),
-        title: const Text('Flag Branch Treasury Entry for Reversal', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF0F172A))),
+        title: Text('Flag Branch Treasury Entry for Reversal', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: tokens.textPrimary)),
         childrenPadding: const EdgeInsets.all(16),
         children: [
           if (transactions.isEmpty)
-            const Text('No recent branch treasury transactions found.', style: TextStyle(fontSize: 12, color: Color(0xFF64748B)))
+            Text('No recent branch treasury transactions found.', style: TextStyle(fontSize: 12, color: tokens.textMuted))
           else ...[
             DropdownButtonFormField<String>(
               value: _selectedTreasuryTxId,
@@ -2534,7 +2573,8 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                     : const Icon(Icons.flag_outlined, size: 18, color: Colors.white),
                 label: Text(_isSubmittingReversal ? 'Submitting Request...' : 'Submit Treasury Reversal Request', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 13)),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFFFF4B4B),
+                  backgroundColor: const Color(0xFFDC2626),
+                  foregroundColor: Colors.white,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                 ),
               ),
@@ -2550,6 +2590,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
   // ==========================================
 
   Widget _buildTab2CoAggregation(bool isMobile) {
+    final tokens = IcareSurfaceTokens.of(context);
     final branches = _getAvailableBranches();
     if (_selectedBranchTab2 == null && branches.isNotEmpty) {
       _selectedBranchTab2 = _selectedBranchTab1 ?? branches.first;
@@ -2562,8 +2603,8 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
       loading: () => const IcareTableSkeleton(rowCount: 8, hasFilterBar: false),
       error: (err, _) => Container(
         padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(color: const Color(0xFFFEF2F2), borderRadius: BorderRadius.circular(8)),
-        child: Text('Error loading CO Cashbook aggregation: $err', style: const TextStyle(color: Color(0xFFDC2626))),
+        decoration: BoxDecoration(color: tokens.dangerBg, borderRadius: BorderRadius.circular(8)),
+        child: Text('Error loading CO Cashbook aggregation: $err', style: TextStyle(color: tokens.dangerText)),
       ),
       data: (data) {
         if (_selectedOfficerTab2 == null && data.officers.isNotEmpty) {
@@ -2601,33 +2642,33 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                       label: 'Opening Balance',
                       value: _formatCurrency(data.openingBalance),
                       icon: Icons.account_balance_wallet_outlined,
-                      iconColor: const Color(0xFF475569),
-                      iconBg: const Color(0xFFF1F5F9),
+                      iconColor: tokens.textSecondary,
+                      iconBg: tokens.surfaceHover,
                     ),
                     _buildMetricCard(
                       width: cardW,
                       label: 'Total Inflows',
                       value: _formatCurrency(data.totalInflows),
                       icon: Icons.south_west_rounded,
-                      iconColor: const Color(0xFF059669),
-                      iconBg: const Color(0xFFECFDF5),
+                      iconColor: tokens.successDot,
+                      iconBg: tokens.successBg,
                     ),
                     _buildMetricCard(
                       width: cardW,
                       label: 'Total Outflows',
                       value: _formatCurrency(data.totalOutflows),
                       icon: Icons.north_east_rounded,
-                      iconColor: const Color(0xFFDC2626),
-                      iconBg: const Color(0xFFFEF2F2),
+                      iconColor: tokens.dangerDot,
+                      iconBg: tokens.dangerBg,
                     ),
                     _buildMetricCard(
                       width: cardW,
                       label: 'Closing Balance',
                       value: _formatCurrency(data.closingBalance),
                       icon: Icons.savings_outlined,
-                      iconColor: isPos ? const Color(0xFF059669) : const Color(0xFFDC2626),
-                      iconBg: isPos ? const Color(0xFFECFDF5) : const Color(0xFFFEF2F2),
-                      valueColor: isPos ? const Color(0xFF065F46) : const Color(0xFFDC2626),
+                      iconColor: isPos ? tokens.successDot : tokens.dangerDot,
+                      iconBg: isPos ? tokens.successBg : tokens.dangerBg,
+                      valueColor: isPos ? tokens.successText : tokens.dangerText,
                     ),
                   ],
                 );
@@ -2643,11 +2684,11 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                     children: [
                       Text(
                         _isAm ? 'Area Supervisory Credit Officer Inspection' : 'Credit Officer Daily Cashbook Ledger',
-                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
+                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: tokens.textPrimary),
                       ),
                       Text(
                         '${data.officer.isNotEmpty ? data.officer : "All Officers"}${data.branch.isNotEmpty ? " • ${data.branch}" : (activeBranch != null && activeBranch.isNotEmpty ? " • $activeBranch" : "")} • ${DateFormat("dd MMM yyyy").format(_selectedDateTab2)}',
-                        style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B)),
+                        style: TextStyle(fontSize: 11.5, color: tokens.textMuted),
                       ),
                     ],
                   ),
@@ -2660,17 +2701,17 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                       icon: Icon(
                         _tab2HideZeroRows ? Icons.visibility_outlined : Icons.filter_alt_outlined,
                         size: 14,
-                        color: const Color(0xFF334155),
+                        color: tokens.textSecondary,
                       ),
                       label: Text(
                         _tab2HideZeroRows ? 'Active Only' : 'Show All',
-                        style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Color(0xFF334155)),
+                        style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: tokens.textSecondary),
                       ),
                       style: OutlinedButton.styleFrom(
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                        side: const BorderSide(color: Color(0xFFCBD5E1)),
+                        side: BorderSide(color: tokens.borderStrong),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-                        backgroundColor: Colors.white,
+                        backgroundColor: tokens.surface,
                       ),
                     ),
                     if (!isMobile) ...[
@@ -2680,17 +2721,17 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                         icon: Icon(
                           _tab2UseSpreadsheet ? Icons.view_agenda_outlined : Icons.table_chart_outlined,
                           size: 14,
-                          color: const Color(0xFF334155),
+                          color: tokens.textSecondary,
                         ),
                         label: Text(
                           _tab2UseSpreadsheet ? 'T-Panels' : 'Spreadsheet',
-                          style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Color(0xFF334155)),
+                          style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: tokens.textSecondary),
                         ),
                         style: OutlinedButton.styleFrom(
                           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                          side: const BorderSide(color: Color(0xFFCBD5E1)),
+                          side: BorderSide(color: tokens.borderStrong),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-                          backgroundColor: Colors.white,
+                          backgroundColor: tokens.surface,
                         ),
                       ),
                     ],
@@ -2703,7 +2744,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
               // Mobile Segmented Selector for Inflows / Outflows / Both
               Container(
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF1F5F9),
+                  color: tokens.surfaceHover,
                   borderRadius: BorderRadius.circular(8),
                 ),
                 padding: const EdgeInsets.all(3),
@@ -2717,11 +2758,11 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                           padding: const EdgeInsets.symmetric(vertical: 7),
                           alignment: Alignment.center,
                           decoration: BoxDecoration(
-                            color: _tab2TAccountTab == 0 ? Colors.white : Colors.transparent,
+                            color: _tab2TAccountTab == 0 ? tokens.surface : Colors.transparent,
                             borderRadius: BorderRadius.circular(6),
-                            boxShadow: _tab2TAccountTab == 0 ? [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 2)] : null,
+                            boxShadow: (_tab2TAccountTab == 0 && !tokens.isDark) ? [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 2)] : null,
                           ),
-                          child: Text('Both', style: TextStyle(fontSize: 12, fontWeight: _tab2TAccountTab == 0 ? FontWeight.w700 : FontWeight.w500, color: _tab2TAccountTab == 0 ? const Color(0xFF0F172A) : const Color(0xFF64748B))),
+                          child: Text('Both', style: TextStyle(fontSize: 12, fontWeight: _tab2TAccountTab == 0 ? FontWeight.w700 : FontWeight.w500, color: _tab2TAccountTab == 0 ? tokens.textPrimary : tokens.textMuted)),
                         ),
                       ),
                     ),
@@ -2733,11 +2774,11 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                           padding: const EdgeInsets.symmetric(vertical: 7),
                           alignment: Alignment.center,
                           decoration: BoxDecoration(
-                            color: _tab2TAccountTab == 1 ? Colors.white : Colors.transparent,
+                            color: _tab2TAccountTab == 1 ? tokens.surface : Colors.transparent,
                             borderRadius: BorderRadius.circular(6),
-                            boxShadow: _tab2TAccountTab == 1 ? [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 2)] : null,
+                            boxShadow: (_tab2TAccountTab == 1 && !tokens.isDark) ? [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 2)] : null,
                           ),
-                          child: Text('Inflows', style: TextStyle(fontSize: 12, fontWeight: _tab2TAccountTab == 1 ? FontWeight.w700 : FontWeight.w500, color: _tab2TAccountTab == 1 ? const Color(0xFF059669) : const Color(0xFF64748B))),
+                          child: Text('Inflows', style: TextStyle(fontSize: 12, fontWeight: _tab2TAccountTab == 1 ? FontWeight.w700 : FontWeight.w500, color: _tab2TAccountTab == 1 ? tokens.successText : tokens.textMuted)),
                         ),
                       ),
                     ),
@@ -2749,11 +2790,11 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                           padding: const EdgeInsets.symmetric(vertical: 7),
                           alignment: Alignment.center,
                           decoration: BoxDecoration(
-                            color: _tab2TAccountTab == 2 ? Colors.white : Colors.transparent,
+                            color: _tab2TAccountTab == 2 ? tokens.surface : Colors.transparent,
                             borderRadius: BorderRadius.circular(6),
-                            boxShadow: _tab2TAccountTab == 2 ? [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 2)] : null,
+                            boxShadow: (_tab2TAccountTab == 2 && !tokens.isDark) ? [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 2)] : null,
                           ),
-                          child: Text('Outflows', style: TextStyle(fontSize: 12, fontWeight: _tab2TAccountTab == 2 ? FontWeight.w700 : FontWeight.w500, color: _tab2TAccountTab == 2 ? const Color(0xFFDC2626) : const Color(0xFF64748B))),
+                          child: Text('Outflows', style: TextStyle(fontSize: 12, fontWeight: _tab2TAccountTab == 2 ? FontWeight.w700 : FontWeight.w500, color: _tab2TAccountTab == 2 ? tokens.dangerText : tokens.textMuted)),
                         ),
                       ),
                     ),
@@ -2767,7 +2808,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                   items: displayedInflows,
                   totalLabel: 'Total Inflows',
                   totalValue: data.totalInflows,
-                  accentColor: const Color(0xFF059669),
+                  accentColor: tokens.successText,
                   icon: Icons.south_west_rounded,
                 ),
                 const SizedBox(height: 12),
@@ -2778,8 +2819,9 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                   items: displayedOutflows,
                   totalLabel: 'Total Outflows',
                   totalValue: data.totalOutflows,
-                  accentColor: const Color(0xFFDC2626),
+                  accentColor: tokens.dangerText,
                   icon: Icons.north_east_rounded,
+                  isCredit: true,
                 ),
                 const SizedBox(height: 12),
               ],
@@ -2794,9 +2836,9 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                       title: 'DEBIT (Cash Inflows)',
                       totalLabel: 'Total Inflows',
                       totalAmount: data.totalInflows,
-                      headerColor: const Color(0xFF065F46),
-                      headerBg: const Color(0xFFF0FDF4),
-                      headerBorder: const Color(0xFFA7F3D0),
+                      headerColor: tokens.successText,
+                      headerBg: tokens.successBg,
+                      headerBorder: tokens.successBorder,
                       items: displayedInflows,
                       icon: Icons.south_west_rounded,
                       isCredit: false,
@@ -2808,9 +2850,9 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                       title: 'CREDIT (Cash Outflows)',
                       totalLabel: 'Total Outflows',
                       totalAmount: data.totalOutflows,
-                      headerColor: const Color(0xFF991B1B),
-                      headerBg: const Color(0xFFFEF2F2),
-                      headerBorder: const Color(0xFFFECACA),
+                      headerColor: tokens.dangerText,
+                      headerBg: tokens.dangerBg,
+                      headerBorder: tokens.dangerBorder,
                       items: displayedOutflows,
                       icon: Icons.north_east_rounded,
                       isCredit: true,
@@ -2824,7 +2866,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
               _buildCoLedgerTable(data, isMobile),
             ],
             const SizedBox(height: 24),
-            const Divider(color: Color(0xFFE2E8F0)),
+            Divider(color: tokens.borderSubtle),
             const SizedBox(height: 16),
             _buildEodControls(data, isMobile),
           ],
@@ -2834,6 +2876,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
   }
 
   Widget _buildTab2ControlBar(CoAggregationData data, bool isMobile) {
+    final tokens = IcareSurfaceTokens.of(context);
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     final yesterday = today.subtract(const Duration(days: 1));
@@ -2847,12 +2890,12 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: tokens.surface,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: tokens.borderSubtle),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.02),
+            color: Colors.black.withValues(alpha: tokens.isDark ? 0.14 : 0.02),
             blurRadius: 4,
             offset: const Offset(0, 1),
           ),
@@ -2867,23 +2910,23 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
               physics: const BouncingScrollPhysics(),
               child: Row(
                 children: [
-                  const Icon(Icons.apartment, size: 16, color: Color(0xFF0F766E)),
+                  Icon(Icons.apartment, size: 16, color: tokens.brandPrimary),
                   const SizedBox(width: 8),
-                  const Text('Supervised Branch:', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF475569))),
+                  Text('Supervised Branch:', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: tokens.textSecondary)),
                   const SizedBox(width: 8),
                   for (final b in branches) ...[
                     Padding(
                       padding: const EdgeInsets.only(right: 6),
                       child: ChoiceChip(
-                        avatar: Icon(Icons.storefront, size: 14, color: activeBranch == b ? Colors.white : const Color(0xFF0F766E)),
-                        label: Text(b, style: TextStyle(fontSize: 12, fontWeight: activeBranch == b ? FontWeight.w800 : FontWeight.w600, color: activeBranch == b ? Colors.white : const Color(0xFF1E293B))),
+                        avatar: Icon(Icons.storefront, size: 14, color: activeBranch == b ? Colors.white : tokens.brandPrimary),
+                        label: Text(b, style: TextStyle(fontSize: 12, fontWeight: activeBranch == b ? FontWeight.w800 : FontWeight.w600, color: activeBranch == b ? Colors.white : tokens.textPrimary)),
                         selected: activeBranch == b,
-                        selectedColor: const Color(0xFF0F766E),
-                        backgroundColor: const Color(0xFFF8FAFC),
+                        selectedColor: tokens.brandPrimaryDark,
+                        backgroundColor: tokens.surfaceSubtle,
                         visualDensity: VisualDensity.compact,
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                         materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        side: BorderSide(color: activeBranch == b ? const Color(0xFF0F766E) : const Color(0xFFCBD5E1)),
+                        side: BorderSide(color: activeBranch == b ? tokens.brandPrimaryDark : tokens.borderStrong),
                         onSelected: (selected) {
                           if (selected && activeBranch != b) {
                             _changeActiveBranch(b);
@@ -2895,7 +2938,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                 ],
               ),
             ),
-            const Divider(height: 18),
+            Divider(height: 18, color: tokens.borderSubtle),
           ],
           if (isMobile) ...[
             // Mobile: Date picker and chips row
@@ -2913,14 +2956,14 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                       setState(() => _selectedDateTab2 = picked);
                     }
                   },
-                  icon: const Icon(Icons.calendar_today_outlined, size: 15, color: Color(0xFF0F172A)),
+                  icon: Icon(Icons.calendar_today_outlined, size: 15, color: tokens.textPrimary),
                   label: Text(
                     DateFormat('EEE, dd MMM yyyy').format(_selectedDateTab2),
-                    style: const TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF0F172A), fontSize: 12.5),
+                    style: TextStyle(fontWeight: FontWeight.w700, color: tokens.textPrimary, fontSize: 12.5),
                   ),
                   style: OutlinedButton.styleFrom(
-                    backgroundColor: const Color(0xFFF8FAFC),
-                    side: const BorderSide(color: Color(0xFFCBD5E1)),
+                    backgroundColor: tokens.surfaceSubtle,
+                    side: BorderSide(color: tokens.borderStrong),
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                   ),
@@ -2932,16 +2975,16 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
                     decoration: BoxDecoration(
-                      color: isToday ? const Color(0xFF064E3B) : const Color(0xFFF1F5F9),
+                      color: isToday ? tokens.brandPrimaryDark : tokens.surfaceSubtle,
                       borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: isToday ? const Color(0xFF064E3B) : const Color(0xFFCBD5E1)),
+                      border: Border.all(color: isToday ? tokens.brandPrimaryDark : tokens.borderStrong),
                     ),
                     child: Text(
                       'Today',
                       style: TextStyle(
                         fontSize: 11.5,
                         fontWeight: isToday ? FontWeight.w700 : FontWeight.w600,
-                        color: isToday ? Colors.white : const Color(0xFF334155),
+                        color: isToday ? Colors.white : tokens.textSecondary,
                       ),
                     ),
                   ),
@@ -2953,16 +2996,16 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
                     decoration: BoxDecoration(
-                      color: isYesterday ? const Color(0xFF064E3B) : const Color(0xFFF1F5F9),
+                      color: isYesterday ? tokens.brandPrimaryDark : tokens.surfaceSubtle,
                       borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: isYesterday ? const Color(0xFF064E3B) : const Color(0xFFCBD5E1)),
+                      border: Border.all(color: isYesterday ? tokens.brandPrimaryDark : tokens.borderStrong),
                     ),
                     child: Text(
                       'Y\'day',
                       style: TextStyle(
                         fontSize: 11.5,
                         fontWeight: isYesterday ? FontWeight.w700 : FontWeight.w600,
-                        color: isYesterday ? Colors.white : const Color(0xFF334155),
+                        color: isYesterday ? Colors.white : tokens.textSecondary,
                       ),
                     ),
                   ),
@@ -2974,23 +3017,25 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF8FAFC),
+                  color: tokens.surfaceSubtle,
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: const Color(0xFFCBD5E1)),
+                  border: Border.all(color: tokens.borderStrong),
                 ),
                 child: Row(
                   children: [
-                    const Icon(Icons.badge_outlined, size: 16, color: Color(0xFF64748B)),
+                    Icon(Icons.badge_outlined, size: 16, color: tokens.textMuted),
                     const SizedBox(width: 8),
                     Expanded(
                       child: DropdownButtonHideUnderline(
                         child: DropdownButton<String>(
                           isExpanded: true,
+                          dropdownColor: tokens.surfaceElevated,
+                          iconEnabledColor: tokens.textSecondary,
                           value: _selectedOfficerTab2 ?? (data.officers.isNotEmpty ? data.officers[0].username : null),
                           items: data.officers.map((o) {
                             return DropdownMenuItem<String>(
                               value: o.username,
-                              child: Text(o.display, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF0F172A)), overflow: TextOverflow.ellipsis),
+                              child: Text(o.display, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: tokens.textPrimary), overflow: TextOverflow.ellipsis),
                             );
                           }).toList(),
                           onChanged: (val) {
@@ -3010,13 +3055,13 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
                     color: isClosed
-                        ? const Color(0xFFEFF6FF)
-                        : (data.isOpen ? const Color(0xFFECFDF5) : const Color(0xFFFEF3C7)),
+                        ? tokens.infoBg
+                        : (data.isOpen ? tokens.successBg : tokens.warningBg),
                     borderRadius: BorderRadius.circular(16),
                     border: Border.all(
                       color: isClosed
-                          ? const Color(0xFFBFDBFE)
-                          : (data.isOpen ? const Color(0xFFA7F3D0) : const Color(0xFFFDE68A)),
+                          ? tokens.infoBorder
+                          : (data.isOpen ? tokens.successBorder : tokens.warningBorder),
                     ),
                   ),
                   child: Row(
@@ -3028,8 +3073,8 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                             : (data.isOpen ? Icons.lock_open_outlined : Icons.lock_outlined),
                         size: 12,
                         color: isClosed
-                            ? const Color(0xFF1E40AF)
-                            : (data.isOpen ? const Color(0xFF059669) : const Color(0xFFD97706)),
+                            ? tokens.infoText
+                            : (data.isOpen ? tokens.successDot : tokens.warningDot),
                       ),
                       const SizedBox(width: 4),
                       Text(
@@ -3038,8 +3083,8 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                           fontSize: 11,
                           fontWeight: FontWeight.w700,
                           color: isClosed
-                              ? const Color(0xFF1E40AF)
-                              : (data.isOpen ? const Color(0xFF065F46) : const Color(0xFF92400E)),
+                              ? tokens.infoText
+                              : (data.isOpen ? tokens.successText : tokens.warningText),
                         ),
                       ),
                     ],
@@ -3063,14 +3108,14 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                       setState(() => _selectedDateTab2 = picked);
                     }
                   },
-                  icon: const Icon(Icons.calendar_today_outlined, size: 15, color: Color(0xFF0F172A)),
+                  icon: Icon(Icons.calendar_today_outlined, size: 15, color: tokens.textPrimary),
                   label: Text(
                     DateFormat('EEEE, dd MMMM yyyy').format(_selectedDateTab2),
-                    style: const TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF0F172A), fontSize: 13),
+                    style: TextStyle(fontWeight: FontWeight.w700, color: tokens.textPrimary, fontSize: 13),
                   ),
                   style: OutlinedButton.styleFrom(
-                    backgroundColor: const Color(0xFFF8FAFC),
-                    side: const BorderSide(color: Color(0xFFCBD5E1)),
+                    backgroundColor: tokens.surfaceSubtle,
+                    side: BorderSide(color: tokens.borderStrong),
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                   ),
@@ -3082,16 +3127,16 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                     decoration: BoxDecoration(
-                      color: isToday ? const Color(0xFF064E3B) : const Color(0xFFF1F5F9),
+                      color: isToday ? tokens.brandPrimaryDark : tokens.surfaceSubtle,
                       borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: isToday ? const Color(0xFF064E3B) : const Color(0xFFCBD5E1)),
+                      border: Border.all(color: isToday ? tokens.brandPrimaryDark : tokens.borderStrong),
                     ),
                     child: Text(
                       'Today',
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: isToday ? FontWeight.w700 : FontWeight.w600,
-                        color: isToday ? Colors.white : const Color(0xFF334155),
+                        color: isToday ? Colors.white : tokens.textSecondary,
                       ),
                     ),
                   ),
@@ -3100,19 +3145,19 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                 InkWell(
                   onTap: () => setState(() => _selectedDateTab2 = yesterday),
                   borderRadius: BorderRadius.circular(6),
-                  child: Container(
+                      child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                     decoration: BoxDecoration(
-                      color: isYesterday ? const Color(0xFF064E3B) : const Color(0xFFF1F5F9),
+                      color: isYesterday ? tokens.brandPrimaryDark : tokens.surfaceSubtle,
                       borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: isYesterday ? const Color(0xFF064E3B) : const Color(0xFFCBD5E1)),
+                      border: Border.all(color: isYesterday ? tokens.brandPrimaryDark : tokens.borderStrong),
                     ),
                     child: Text(
                       'Yesterday',
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: isYesterday ? FontWeight.w700 : FontWeight.w600,
-                        color: isYesterday ? Colors.white : const Color(0xFF334155),
+                        color: isYesterday ? Colors.white : tokens.textSecondary,
                       ),
                     ),
                   ),
@@ -3122,28 +3167,30 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                   Container(
                     height: 24,
                     width: 1,
-                    color: const Color(0xFFE2E8F0),
+                    color: tokens.borderSubtle,
                   ),
                   const SizedBox(width: 14),
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFF8FAFC),
+                      color: tokens.surfaceSubtle,
                       borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: const Color(0xFFCBD5E1)),
+                      border: Border.all(color: tokens.borderStrong),
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(Icons.badge_outlined, size: 15, color: Color(0xFF64748B)),
+                        Icon(Icons.badge_outlined, size: 15, color: tokens.textMuted),
                         const SizedBox(width: 6),
                         DropdownButtonHideUnderline(
                           child: DropdownButton<String>(
+                            dropdownColor: tokens.surfaceElevated,
+                            iconEnabledColor: tokens.textSecondary,
                             value: _selectedOfficerTab2 ?? (data.officers.isNotEmpty ? data.officers[0].username : null),
                             items: data.officers.map((o) {
                               return DropdownMenuItem<String>(
                                 value: o.username,
-                                child: Text(o.display, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF0F172A))),
+                                child: Text(o.display, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: tokens.textPrimary)),
                               );
                             }).toList(),
                             onChanged: (val) {
@@ -3160,13 +3207,13 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                   decoration: BoxDecoration(
                     color: isClosed
-                        ? const Color(0xFFEFF6FF)
-                        : (data.isOpen ? const Color(0xFFECFDF5) : const Color(0xFFFEF3C7)),
+                        ? tokens.infoBg
+                        : (data.isOpen ? tokens.successBg : tokens.warningBg),
                     borderRadius: BorderRadius.circular(20),
                     border: Border.all(
                       color: isClosed
-                          ? const Color(0xFFBFDBFE)
-                          : (data.isOpen ? const Color(0xFFA7F3D0) : const Color(0xFFFDE68A)),
+                          ? tokens.infoBorder
+                          : (data.isOpen ? tokens.successBorder : tokens.warningBorder),
                     ),
                   ),
                   child: Row(
@@ -3178,8 +3225,8 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                             : (data.isOpen ? Icons.lock_open_outlined : Icons.lock_outlined),
                         size: 13,
                         color: isClosed
-                            ? const Color(0xFF1E40AF)
-                            : (data.isOpen ? const Color(0xFF059669) : const Color(0xFFD97706)),
+                            ? tokens.infoText
+                            : (data.isOpen ? tokens.successDot : tokens.warningDot),
                       ),
                       const SizedBox(width: 5),
                       Text(
@@ -3188,8 +3235,8 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                           fontSize: 11.5,
                           fontWeight: FontWeight.w700,
                           color: isClosed
-                              ? const Color(0xFF1E40AF)
-                              : (data.isOpen ? const Color(0xFF065F46) : const Color(0xFF92400E)),
+                              ? tokens.infoText
+                              : (data.isOpen ? tokens.successText : tokens.warningText),
                         ),
                       ),
                     ],
@@ -3204,15 +3251,16 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
   }
 
   Widget _buildCoTAccountBalancingBar(CoAggregationData data) {
+    final tokens = IcareSurfaceTokens.of(context);
     final closing = data.closingBalance;
     final isPos = closing >= 0;
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
-        color: isPos ? const Color(0xFFECFDF5) : const Color(0xFFFEF2F2),
+        color: isPos ? tokens.successBg : tokens.dangerBg,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: isPos ? const Color(0xFFA7F3D0) : const Color(0xFFFECACA)),
+        border: Border.all(color: isPos ? tokens.successBorder : tokens.dangerBorder),
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -3223,7 +3271,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                 Icon(
                   isPos ? Icons.check_circle_outline : Icons.warning_amber_rounded,
                   size: 20,
-                  color: isPos ? const Color(0xFF059669) : const Color(0xFFDC2626),
+                  color: isPos ? tokens.successDot : tokens.dangerDot,
                 ),
                 const SizedBox(width: 10),
                 Flexible(
@@ -3235,7 +3283,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                         style: TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w700,
-                          color: isPos ? const Color(0xFF065F46) : const Color(0xFF991B1B),
+                          color: isPos ? tokens.successText : tokens.dangerText,
                           letterSpacing: 0.4,
                         ),
                       ),
@@ -3243,7 +3291,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                         'Opening (${_formatCurrency(data.openingBalance)}) + Receipts (${_formatCurrency(data.totalInflows - data.openingBalance)}) - Outflows (${_formatCurrency(data.totalOutflows)})',
                         style: TextStyle(
                           fontSize: 11.5,
-                          color: isPos ? const Color(0xFF047857) : const Color(0xFFB91C1C),
+                          color: (isPos ? tokens.successText : tokens.dangerText).withValues(alpha: 0.9),
                         ),
                       ),
                     ],
@@ -3256,14 +3304,14 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
           Column(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              const Text('Closing Balance', style: TextStyle(fontSize: 11, color: Color(0xFF64748B), fontWeight: FontWeight.w500)),
+              Text('Closing Balance', style: TextStyle(fontSize: 11, color: tokens.textMuted, fontWeight: FontWeight.w500)),
               Text(
                 _formatCurrency(closing),
                 style: TextStyle(
                   fontFamily: 'monospace',
                   fontSize: 16,
                   fontWeight: FontWeight.w800,
-                  color: isPos ? const Color(0xFF065F46) : const Color(0xFFDC2626),
+                  color: isPos ? tokens.successText : tokens.dangerText,
                 ),
               ),
             ],
@@ -3274,6 +3322,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
   }
 
   Widget _buildCoLedgerTable(CoAggregationData data, bool isMobile) {
+    final tokens = IcareSurfaceTokens.of(context);
     final inflowItems = data.inflows.entries.toList();
     final outflowItems = data.outflows.entries.toList();
 
@@ -3286,12 +3335,12 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
 
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: tokens.surface,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: tokens.borderSubtle),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.02),
+            color: Colors.black.withValues(alpha: tokens.isDark ? 0.14 : 0.02),
             blurRadius: 4,
             offset: const Offset(0, 1),
           ),
@@ -3301,14 +3350,14 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (isMobile)
-            const Padding(
-              padding: EdgeInsets.fromLTRB(14, 10, 14, 4),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 10, 14, 4),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.swap_horiz, size: 14, color: Color(0xFF64748B)),
-                  SizedBox(width: 4),
-                  Text('Scroll horizontally to view debit/credit columns', style: TextStyle(fontSize: 11, color: Color(0xFF64748B), fontStyle: FontStyle.italic)),
+                  Icon(Icons.swap_horiz, size: 14, color: tokens.textMuted),
+                  const SizedBox(width: 4),
+                  Text('Scroll horizontally to view debit/credit columns', style: TextStyle(fontSize: 11, color: tokens.textMuted, fontStyle: FontStyle.italic)),
                 ],
               ),
             ),
@@ -3317,12 +3366,12 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
             child: SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               child: DataTable(
-                headingRowColor: WidgetStateProperty.all(const Color(0xFFF8FAFC)),
-                columns: const [
-                  DataColumn(label: Text('Inflows (Left / Debit)', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
-                  DataColumn(label: Text('Amount (₦)', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
-                  DataColumn(label: Text('Outflows (Right / Credit)', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
-                  DataColumn(label: Text('Amount (₦)', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
+                headingRowColor: WidgetStateProperty.all(tokens.surfaceSubtle),
+                columns: [
+                  DataColumn(label: Text('Inflows (Left / Debit)', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: tokens.textPrimary))),
+                  DataColumn(label: Text('Amount (₦)', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: tokens.textPrimary))),
+                  DataColumn(label: Text('Outflows (Right / Credit)', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: tokens.textPrimary))),
+                  DataColumn(label: Text('Amount (₦)', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: tokens.textPrimary))),
                 ],
                 rows: [
                   ...List.generate(maxLen, (idx) {
@@ -3331,24 +3380,24 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
 
                     return DataRow(
                       color: WidgetStateProperty.resolveWith<Color?>((states) {
-                        if (idx.isOdd) return const Color(0xFFF8FAFC);
-                        return Colors.white;
+                        if (idx.isOdd) return tokens.surfaceSubtle;
+                        return tokens.surface;
                       }),
                       cells: [
-                        DataCell(Text(inf?.key ?? '', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500))),
-                        DataCell(Text(inf != null ? _formatCurrency(inf.value) : '', style: const TextStyle(fontSize: 12, color: Color(0xFF059669), fontWeight: FontWeight.w600, fontFamily: 'monospace'))),
-                        DataCell(Text(out?.key ?? '', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500))),
-                        DataCell(Text(out != null ? _formatCurrency(out.value) : '', style: const TextStyle(fontSize: 12, color: Color(0xFFDC2626), fontWeight: FontWeight.w600, fontFamily: 'monospace'))),
+                        DataCell(Text(inf?.key ?? '', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: tokens.textPrimary))),
+                        DataCell(Text(inf != null ? _formatCurrency(inf.value) : '', style: TextStyle(fontSize: 12, color: tokens.successText, fontWeight: FontWeight.w600, fontFamily: 'monospace'))),
+                        DataCell(Text(out?.key ?? '', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: tokens.textPrimary))),
+                        DataCell(Text(out != null ? _formatCurrency(out.value) : '', style: TextStyle(fontSize: 12, color: tokens.dangerText, fontWeight: FontWeight.w600, fontFamily: 'monospace'))),
                       ],
                     );
                   }),
                   DataRow(
-                    color: WidgetStateProperty.all(const Color(0xFFF1F5F9)),
+                    color: WidgetStateProperty.all(tokens.neutralBg),
                     cells: [
-                      const DataCell(Text('Total Debit (Opening + Receipts)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Color(0xFF065F46)))),
-                      DataCell(Text(_formatCurrency(data.totalInflows), style: const TextStyle(fontSize: 12, color: Color(0xFF059669), fontWeight: FontWeight.w800, fontFamily: 'monospace'))),
-                      const DataCell(Text('Total Credit (Outflows)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Color(0xFF991B1B)))),
-                      DataCell(Text(_formatCurrency(data.totalOutflows), style: const TextStyle(fontSize: 12, color: Color(0xFFDC2626), fontWeight: FontWeight.w800, fontFamily: 'monospace'))),
+                      DataCell(Text('Total Debit (Opening + Receipts)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: tokens.successText))),
+                      DataCell(Text(_formatCurrency(data.totalInflows), style: TextStyle(fontSize: 12, color: tokens.successText, fontWeight: FontWeight.w800, fontFamily: 'monospace'))),
+                      DataCell(Text('Total Credit (Outflows)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: tokens.dangerText))),
+                      DataCell(Text(_formatCurrency(data.totalOutflows), style: TextStyle(fontSize: 12, color: tokens.dangerText, fontWeight: FontWeight.w800, fontFamily: 'monospace'))),
                     ],
                   ),
                 ],
@@ -3361,6 +3410,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
   }
 
   Widget _buildEodControls(CoAggregationData data, bool isMobile) {
+    final tokens = IcareSurfaceTokens.of(context);
     final dateStr = _formatDate(_selectedDateTab2);
     final isClosed = !data.isOpen && data.openReason.toLowerCase().contains('closed');
     final isAm = _isAm;
@@ -3368,12 +3418,12 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: tokens.surface,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: tokens.borderSubtle),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.02),
+            color: Colors.black.withValues(alpha: tokens.isDark ? 0.14 : 0.02),
             blurRadius: 4,
             offset: const Offset(0, 1),
           ),
@@ -3387,10 +3437,10 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
               Container(
                 padding: const EdgeInsets.all(7),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF1F5F9),
+                  color: tokens.surfaceSubtle,
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: const Icon(Icons.security_outlined, size: 20, color: Color(0xFF0F172A)),
+                child: Icon(Icons.security_outlined, size: 20, color: tokens.textPrimary),
               ),
               const SizedBox(width: 10),
               Expanded(
@@ -3399,11 +3449,11 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                   children: [
                     Text(
                       isAm ? 'Daily Vault Ledger Supervisory Status' : 'Branch Manager End of Day (EOD) Operations',
-                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: tokens.textPrimary),
                     ),
                     Text(
                       isAm ? 'Certified operational status & vault freeze inspection.' : 'Daily ledger freeze & date rollover.',
-                      style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B)),
+                      style: TextStyle(fontSize: 11.5, color: tokens.textMuted),
                     ),
                   ],
                 ),
@@ -3417,18 +3467,18 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                 width: double.infinity,
                 padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF0FDF4),
+                  color: tokens.successBg,
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: const Color(0xFFBBF7D0)),
+                  border: Border.all(color: tokens.successBorder),
                 ),
                 child: Row(
                   children: [
-                    const Icon(Icons.verified_outlined, color: Color(0xFF16A34A), size: 20),
+                    Icon(Icons.verified_outlined, color: tokens.successDot, size: 20),
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
                         'Certified Day Close for $dateStr • Vault balance locked and day closed by Branch Manager.',
-                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF166534)),
+                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: tokens.successText),
                       ),
                     ),
                   ],
@@ -3439,18 +3489,18 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                 width: double.infinity,
                 padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF0FDFA),
+                  color: tokens.brandSoftBg,
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: const Color(0xFF99F6E4)),
+                  border: Border.all(color: tokens.brandSoftBorder),
                 ),
                 child: Row(
                   children: [
-                    const Icon(Icons.shield_outlined, color: Color(0xFF0F766E), size: 20),
+                    Icon(Icons.shield_outlined, color: tokens.brandPrimary, size: 20),
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
                         'Supervisory Inspection Mode • Operational Date: $dateStr. Vault Day Close is an operational control executed exclusively by the Branch Manager.',
-                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF115E59)),
+                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: tokens.brandSoftText),
                       ),
                     ),
                   ],
@@ -3462,18 +3512,18 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                 width: double.infinity,
                 padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFEFF6FF),
+                  color: tokens.infoBg,
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: const Color(0xFFBFDBFE)),
+                  border: Border.all(color: tokens.infoBorder),
                 ),
                 child: Row(
                   children: [
-                    const Icon(Icons.check_circle_outline, color: Color(0xFF1E40AF), size: 20),
+                    Icon(Icons.check_circle_outline, color: tokens.infoText, size: 20),
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
                         'Day Close Executed for $dateStr • Operational date advanced.',
-                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF1E40AF)),
+                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: tokens.infoText),
                       ),
                     ),
                   ],
@@ -3484,18 +3534,18 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                 width: double.infinity,
                 padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFFFFBEB),
+                  color: tokens.warningBg,
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: const Color(0xFFFDE68A)),
+                  border: Border.all(color: tokens.warningBorder),
                 ),
                 child: Row(
                   children: [
-                    const Icon(Icons.lock_outlined, color: Color(0xFFD97706), size: 20),
+                    Icon(Icons.lock_outlined, color: tokens.warningDot, size: 20),
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
                         'Cannot execute Day Close (${data.openReason}).',
-                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF92400E)),
+                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: tokens.warningText),
                       ),
                     ),
                   ],
@@ -3508,19 +3558,19 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                   Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFEFF6FF),
+                      color: tokens.infoBg,
                       borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: const Color(0xFFBFDBFE)),
+                      border: Border.all(color: tokens.infoBorder),
                     ),
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Icon(Icons.info_outline, size: 16, color: Color(0xFF1E40AF)),
+                        Icon(Icons.info_outline, size: 16, color: tokens.infoText),
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
                             'Operational Date: $dateStr • Freezes daily entries and advances to Next Working Day.',
-                            style: const TextStyle(fontSize: 12, color: Color(0xFF1E40AF), fontWeight: FontWeight.w500),
+                            style: TextStyle(fontSize: 12, color: tokens.infoText, fontWeight: FontWeight.w500),
                           ),
                         ),
                       ],
@@ -3534,7 +3584,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                         : const Icon(Icons.shield_outlined, size: 16, color: Colors.white),
                     label: const Text('Execute EOD Day Close', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: Colors.white)),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF065F46),
+                      backgroundColor: tokens.brandPrimaryDark,
                       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                     ),
@@ -3548,19 +3598,19 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                     child: Container(
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFEFF6FF),
+                        color: tokens.infoBg,
                         borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: const Color(0xFFBFDBFE)),
+                        border: Border.all(color: tokens.infoBorder),
                       ),
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Icon(Icons.info_outline, size: 16, color: Color(0xFF1E40AF)),
+                          Icon(Icons.info_outline, size: 16, color: tokens.infoText),
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
                               'Operational Date: $dateStr • Freezes daily entries and advances to Next Working Day.',
-                              style: const TextStyle(fontSize: 12, color: Color(0xFF1E40AF), fontWeight: FontWeight.w500),
+                              style: TextStyle(fontSize: 12, color: tokens.infoText, fontWeight: FontWeight.w500),
                             ),
                           ),
                         ],
@@ -3575,7 +3625,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                         : const Icon(Icons.shield_outlined, size: 16, color: Colors.white),
                     label: const Text('Execute EOD Day Close', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: Colors.white)),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF065F46),
+                      backgroundColor: tokens.brandPrimaryDark,
                       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                     ),
@@ -3603,15 +3653,6 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
         : (isPos
             ? 'Cash in Safe / Office (+${_formatCurrency(closingBal)})'
             : 'Advance Money Banked Ahead (-${_formatCurrency(closingBal.abs())})');
-    final statusColor = isZero
-        ? const Color(0xFF065F46)
-        : (isPos ? const Color(0xFF1E40AF) : const Color(0xFF92400E));
-    final statusBg = isZero
-        ? const Color(0xFFECFDF5)
-        : (isPos ? const Color(0xFFEFF6FF) : const Color(0xFFFFFBEB));
-    final statusBorder = isZero
-        ? const Color(0xFFA7F3D0)
-        : (isPos ? const Color(0xFFBFDBFE) : const Color(0xFFFDE68A));
 
     final options = isZero
         ? ['All collections banked today']
@@ -3630,131 +3671,153 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
     showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDlgState) => AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          title: const Row(
-            children: [
-              Icon(Icons.shield_outlined, color: Color(0xFF0F172A), size: 22),
-              SizedBox(width: 8),
-              Text('Confirm Day Close', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Color(0xFF0F172A))),
-            ],
-          ),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
+        builder: (ctx, setDlgState) {
+          final tokens = IcareSurfaceTokens.of(ctx);
+          final statusColor = isZero
+              ? tokens.successText
+              : (isPos ? tokens.infoText : tokens.warningText);
+          final statusBg = isZero
+              ? tokens.successBg
+              : (isPos ? tokens.infoBg : tokens.warningBg);
+          final statusBorder = isZero
+              ? tokens.successBorder
+              : (isPos ? tokens.infoBorder : tokens.warningBorder);
+
+          return AlertDialog(
+            backgroundColor: tokens.surfaceElevated,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            title: Row(
               children: [
-                Text(
-                  'Are you ready to close business operations for $dateStr?',
-                  style: const TextStyle(fontSize: 13, color: Color(0xFF334155), height: 1.4),
-                ),
-                const SizedBox(height: 12),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: statusBg,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: statusBorder),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        statusText,
-                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: statusColor),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        isZero
-                            ? 'All collections were paid into the commercial bank today.'
-                            : (isPos
-                                ? 'Cash remains in office custody overnight or advance credit logged.'
-                                : 'Cash was banked ahead for future meetings or client savings paid out.'),
-                        style: TextStyle(fontSize: 11.5, color: statusColor.withValues(alpha: 0.9)),
-                      ),
-                    ],
-                  ),
-                ),
-                if (!isZero) ...[
-                  const SizedBox(height: 14),
-                  const Text(
-                    'Reason for Balance:',
-                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF334155)),
-                  ),
-                  const SizedBox(height: 6),
-                  ...options.map((opt) => RadioListTile<String>(
-                    dense: true,
-                    contentPadding: EdgeInsets.zero,
-                    value: opt,
-                    groupValue: selectedTag,
-                    title: Text(opt, style: const TextStyle(fontSize: 12.5, color: Color(0xFF1E293B))),
-                    onChanged: (val) {
-                      if (val != null) setDlgState(() => selectedTag = val);
-                    },
-                  )),
-                ],
-                const SizedBox(height: 10),
-                TextField(
-                  controller: notesController,
-                  decoration: const InputDecoration(
-                    labelText: 'Add Note for Area Manager (Optional)',
-                    hintText: 'e.g. Mama Chinedu paid 4 weeks advance into bank.',
-                    border: OutlineInputBorder(),
-                    isDense: true,
-                  ),
-                  maxLines: 2,
-                ),
-                const SizedBox(height: 12),
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF8FAFC),
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: const Color(0xFFE2E8F0)),
-                  ),
-                  child: const Row(
-                    children: [
-                      Icon(Icons.info_outline, size: 16, color: Color(0xFF64748B)),
-                      SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          'Closing balance rolls forward as tomorrow morning opening money.',
-                          style: TextStyle(fontSize: 11, color: Color(0xFF64748B)),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+                Icon(Icons.shield_outlined, color: tokens.textPrimary, size: 22),
+                const SizedBox(width: 8),
+                Text('Confirm Day Close', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: tokens.textPrimary)),
               ],
             ),
-          ),
-          actions: [
-            OutlinedButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              style: OutlinedButton.styleFrom(
-                side: const BorderSide(color: Color(0xFFCBD5E1)),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Are you ready to close business operations for $dateStr?',
+                    style: TextStyle(fontSize: 13, color: tokens.textSecondary, height: 1.4),
+                  ),
+                  const SizedBox(height: 12),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: statusBg,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: statusBorder),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          statusText,
+                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: statusColor),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          isZero
+                              ? 'All collections were paid into the commercial bank today.'
+                              : (isPos
+                                  ? 'Cash remains in office custody overnight or advance credit logged.'
+                                  : 'Cash was banked ahead for future meetings or client savings paid out.'),
+                          style: TextStyle(fontSize: 11.5, color: statusColor.withValues(alpha: 0.9)),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (!isZero) ...[
+                    const SizedBox(height: 14),
+                    Text(
+                      'Reason for Balance:',
+                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: tokens.textSecondary),
+                    ),
+                    const SizedBox(height: 6),
+                    ...options.map((opt) => RadioListTile<String>(
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      activeColor: tokens.brandPrimary,
+                      value: opt,
+                      groupValue: selectedTag,
+                      title: Text(opt, style: TextStyle(fontSize: 12.5, color: tokens.textPrimary)),
+                      onChanged: (val) {
+                        if (val != null) setDlgState(() => selectedTag = val);
+                      },
+                    )),
+                  ],
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: notesController,
+                    style: TextStyle(fontSize: 13, color: tokens.textPrimary),
+                    decoration: InputDecoration(
+                      labelText: 'Add Note for Area Manager (Optional)',
+                      labelStyle: TextStyle(color: tokens.textMuted),
+                      hintText: 'e.g. Mama Chinedu paid 4 weeks advance into bank.',
+                      hintStyle: TextStyle(color: tokens.textMuted),
+                      filled: true,
+                      fillColor: tokens.surfaceSubtle,
+                      border: OutlineInputBorder(borderSide: BorderSide(color: tokens.borderSubtle)),
+                      enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: tokens.borderStrong)),
+                      focusedBorder: OutlineInputBorder(borderSide: BorderSide(color: tokens.brandPrimary, width: 1.5)),
+                      isDense: true,
+                    ),
+                    maxLines: 2,
+                  ),
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: tokens.surfaceSubtle,
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: tokens.borderSubtle),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.info_outline, size: 16, color: tokens.textMuted),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Closing balance rolls forward as tomorrow morning opening money.',
+                            style: TextStyle(fontSize: 11, color: tokens.textMuted),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
-              child: const Text('Cancel', style: TextStyle(color: Color(0xFF475569), fontWeight: FontWeight.w600)),
             ),
-            ElevatedButton(
-              onPressed: () {
-                Navigator.of(ctx).pop();
-                _handleExecuteEod(
-                  dateStr,
-                  reasonTag: selectedTag,
-                  notes: notesController.text.trim().isNotEmpty ? notesController.text.trim() : null,
-                );
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF065F46),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+            actions: [
+              OutlinedButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                style: OutlinedButton.styleFrom(
+                  side: BorderSide(color: tokens.borderStrong),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                ),
+                child: Text('Cancel', style: TextStyle(color: tokens.textSecondary, fontWeight: FontWeight.w600)),
               ),
-              child: const Text('Confirm & Close Day', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
-            ),
-          ],
-        ),
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.of(ctx).pop();
+                  _handleExecuteEod(
+                    dateStr,
+                    reasonTag: selectedTag,
+                    notes: notesController.text.trim().isNotEmpty ? notesController.text.trim() : null,
+                  );
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: tokens.brandPrimaryDark,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                ),
+                child: const Text('Confirm & Close Day', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -3764,6 +3827,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
   // ==========================================
 
   Widget _buildTab3MonthlyLedger(bool isMobile) {
+    final tokens = IcareSurfaceTokens.of(context);
     final key = '$_selectedMonth||$_selectedYear||${_selectedBranchTab3 ?? ""}';
     final asyncMonthly = ref.watch(monthlyLedgerProvider(key));
 
@@ -3771,8 +3835,12 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
       loading: () => const IcareTableSkeleton(rowCount: 8, hasFilterBar: false),
       error: (err, _) => Container(
         padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(color: const Color(0xFFFEF2F2), borderRadius: BorderRadius.circular(8)),
-        child: Text('Error loading Monthly Ledger: $err', style: const TextStyle(color: Color(0xFFDC2626))),
+        decoration: BoxDecoration(
+          color: tokens.dangerBg,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: tokens.dangerBorder),
+        ),
+        child: Text('Error loading Monthly Ledger: $err', style: TextStyle(color: tokens.dangerText)),
       ),
       data: (data) {
         if (_selectedBranchTab3 == null && data.availableBranches.isNotEmpty) {
@@ -3794,18 +3862,18 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                 width: double.infinity,
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFEFF6FF),
+                  color: tokens.infoBg,
                   borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: const Color(0xFFBFDBFE)),
+                  border: Border.all(color: tokens.infoBorder),
                 ),
-                child: const Row(
+                child: Row(
                   children: [
-                    Icon(Icons.info_outline, color: Color(0xFF1E40AF), size: 20),
-                    SizedBox(width: 10),
+                    Icon(Icons.info_outline, color: tokens.infoText, size: 20),
+                    const SizedBox(width: 10),
                     Expanded(
                       child: Text(
                         'Please select an operational branch to view the monthly ledger.',
-                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF1E40AF)),
+                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: tokens.infoText),
                       ),
                     ),
                   ],
@@ -3816,18 +3884,18 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                 width: double.infinity,
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFEFF6FF),
+                  color: tokens.infoBg,
                   borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: const Color(0xFFBFDBFE)),
+                  border: Border.all(color: tokens.infoBorder),
                 ),
                 child: Row(
                   children: [
-                    const Icon(Icons.info_outline, color: Color(0xFF1E40AF), size: 20),
+                    Icon(Icons.info_outline, color: tokens.infoText, size: 20),
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
                         'No ledger entries found for $currentBranch in ${DateFormat('MMMM yyyy').format(DateTime(_selectedYear, _selectedMonth, 1))}.',
-                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF1E40AF)),
+                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: tokens.infoText),
                       ),
                     ),
                   ],
@@ -3849,33 +3917,33 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                         label: 'Month Opening Balance',
                         value: _formatIntegerCurrency(data.monthOpening),
                         icon: Icons.account_balance_outlined,
-                        iconColor: const Color(0xFF475569),
-                        iconBg: const Color(0xFFF1F5F9),
+                        iconColor: tokens.textSecondary,
+                        iconBg: tokens.surfaceSubtle,
                       ),
                       _buildMetricCard(
                         width: cardW,
                         label: 'Total Monthly Inflows',
                         value: _formatIntegerCurrency(data.totalMonthInflows),
                         icon: Icons.south_west_rounded,
-                        iconColor: const Color(0xFF059669),
-                        iconBg: const Color(0xFFECFDF5),
+                        iconColor: tokens.successText,
+                        iconBg: tokens.successBg,
                       ),
                       _buildMetricCard(
                         width: cardW,
                         label: 'Total Monthly Outflows',
                         value: _formatIntegerCurrency(data.totalMonthOutflows),
                         icon: Icons.north_east_rounded,
-                        iconColor: const Color(0xFFDC2626),
-                        iconBg: const Color(0xFFFEF2F2),
+                        iconColor: tokens.dangerText,
+                        iconBg: tokens.dangerBg,
                       ),
                       _buildMetricCard(
                         width: cardW,
                         label: 'Month-End Closing Balance',
                         value: _formatIntegerCurrency(data.monthClosing),
                         icon: Icons.account_balance_wallet_outlined,
-                        iconColor: isPos ? const Color(0xFF059669) : const Color(0xFFDC2626),
-                        iconBg: isPos ? const Color(0xFFECFDF5) : const Color(0xFFFEF2F2),
-                        valueColor: isPos ? const Color(0xFF065F46) : const Color(0xFFDC2626),
+                        iconColor: isPos ? tokens.successText : tokens.dangerText,
+                        iconBg: isPos ? tokens.successBg : tokens.dangerBg,
+                        valueColor: isPos ? tokens.successText : tokens.dangerText,
                       ),
                     ],
                   );
@@ -3887,12 +3955,12 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                 decoration: BoxDecoration(
-                  color: Colors.white,
+                  color: tokens.surface,
                   borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                  border: Border.all(color: tokens.borderSubtle),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.02),
+                      color: Colors.black.withValues(alpha: tokens.isDark ? 0.14 : 0.02),
                       blurRadius: 4,
                       offset: const Offset(0, 1),
                     ),
@@ -3907,24 +3975,24 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                           Container(
                             padding: const EdgeInsets.all(8),
                             decoration: BoxDecoration(
-                              color: const Color(0xFFECFDF5),
+                              color: tokens.successBg,
                               borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: const Color(0xFFA7F3D0)),
+                              border: Border.all(color: tokens.successBorder),
                             ),
-                            child: const Icon(Icons.description_outlined, size: 20, color: Color(0xFF059669)),
+                            child: Icon(Icons.description_outlined, size: 20, color: tokens.successText),
                           ),
                           const SizedBox(width: 12),
-                          const Expanded(
+                          Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
                                   'Monthly Ledger Workbook Export',
-                                  style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
+                                  style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700, color: tokens.textPrimary),
                                 ),
                                 Text(
                                   'Complete 42-column Vault Cash Ledger matrix (.xlsx)',
-                                  style: TextStyle(fontSize: 11.5, color: Color(0xFF64748B)),
+                                  style: TextStyle(fontSize: 11.5, color: tokens.textMuted),
                                   overflow: TextOverflow.ellipsis,
                                 ),
                               ],
@@ -3944,7 +4012,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                         style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: Colors.white),
                       ),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF064E3B),
+                        backgroundColor: tokens.brandPrimaryDark,
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                       ),
@@ -3961,20 +4029,20 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                   children: [
                     Text(
                       _tab3DailyFeedView ? 'Daily Entries (${data.rows.length} days)' : 'Full Matrix Spreadsheet',
-                      style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
+                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: tokens.textPrimary),
                     ),
                     OutlinedButton.icon(
                       onPressed: () => setState(() => _tab3DailyFeedView = !_tab3DailyFeedView),
-                      icon: Icon(_tab3DailyFeedView ? Icons.table_chart_outlined : Icons.view_agenda_outlined, size: 14, color: const Color(0xFF334155)),
+                      icon: Icon(_tab3DailyFeedView ? Icons.table_chart_outlined : Icons.view_agenda_outlined, size: 14, color: tokens.textSecondary),
                       label: Text(
                         _tab3DailyFeedView ? 'Table View' : 'Card View',
-                        style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Color(0xFF334155)),
+                        style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: tokens.textSecondary),
                       ),
                       style: OutlinedButton.styleFrom(
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                        side: const BorderSide(color: Color(0xFFCBD5E1)),
+                        side: BorderSide(color: tokens.borderStrong),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-                        backgroundColor: Colors.white,
+                        backgroundColor: tokens.surface,
                       ),
                     ),
                   ],
@@ -3990,7 +4058,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                   children: [
                     Text(
                       'Monthly Ledger Details (${data.rows.length} Active Days)',
-                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: tokens.textPrimary),
                     ),
                   ],
                 ),
@@ -4005,24 +4073,27 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
   }
 
   Widget _buildTab3ControlCard(MonthlyLedgerData data, String currentBranch, bool isMobile) {
+    final tokens = IcareSurfaceTokens.of(context);
     final monthSelector = DropdownButtonFormField<int>(
       value: _selectedMonth,
+      dropdownColor: tokens.surfaceElevated,
+      style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: tokens.textPrimary),
       decoration: InputDecoration(
         labelText: 'Month',
-        labelStyle: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
-        prefixIcon: const Icon(Icons.calendar_month_outlined, size: 18, color: Color(0xFF64748B)),
+        labelStyle: TextStyle(fontSize: 12, color: tokens.textMuted),
+        prefixIcon: Icon(Icons.calendar_month_outlined, size: 18, color: tokens.textMuted),
         filled: true,
-        fillColor: const Color(0xFFF8FAFC),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFFE2E8F0))),
-        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFFCBD5E1))),
-        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFF064E3B), width: 1.5)),
+        fillColor: tokens.surfaceSubtle,
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: tokens.borderSubtle)),
+        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: tokens.borderStrong)),
+        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: tokens.brandPrimary, width: 1.5)),
         contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       ),
       items: List.generate(12, (index) {
         final m = index + 1;
         return DropdownMenuItem<int>(
           value: m,
-          child: Text(DateFormat('MMMM').format(DateTime(2026, m, 1)), style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+          child: Text(DateFormat('MMMM').format(DateTime(2026, m, 1)), style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: tokens.textPrimary)),
         );
       }),
       onChanged: (val) {
@@ -4035,16 +4106,16 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
       keyboardType: TextInputType.number,
       decoration: InputDecoration(
         labelText: 'Year',
-        labelStyle: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
-        prefixIcon: const Icon(Icons.schedule_outlined, size: 18, color: Color(0xFF64748B)),
+        labelStyle: TextStyle(fontSize: 12, color: tokens.textMuted),
+        prefixIcon: Icon(Icons.schedule_outlined, size: 18, color: tokens.textMuted),
         filled: true,
-        fillColor: const Color(0xFFF8FAFC),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFFE2E8F0))),
-        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFFCBD5E1))),
-        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFF064E3B), width: 1.5)),
+        fillColor: tokens.surfaceSubtle,
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: tokens.borderSubtle)),
+        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: tokens.borderStrong)),
+        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: tokens.brandPrimary, width: 1.5)),
         contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       ),
-      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, fontFamily: 'monospace'),
+      style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, fontFamily: 'monospace', color: tokens.textPrimary),
       onChanged: (val) {
         final parsed = int.tryParse(val);
         if (parsed != null && parsed >= 2024 && parsed <= 2030) {
@@ -4056,19 +4127,21 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
     final branchSelector = DropdownButtonFormField<String>(
       value: currentBranch,
       isExpanded: true,
+      dropdownColor: tokens.surfaceElevated,
+      style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: tokens.textPrimary),
       decoration: InputDecoration(
         labelText: 'Operating Branch',
-        labelStyle: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
-        prefixIcon: const Icon(Icons.business_outlined, size: 18, color: Color(0xFF64748B)),
+        labelStyle: TextStyle(fontSize: 12, color: tokens.textMuted),
+        prefixIcon: Icon(Icons.business_outlined, size: 18, color: tokens.textMuted),
         filled: true,
-        fillColor: const Color(0xFFF8FAFC),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFFE2E8F0))),
-        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFFCBD5E1))),
-        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFF064E3B), width: 1.5)),
+        fillColor: tokens.surfaceSubtle,
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: tokens.borderSubtle)),
+        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: tokens.borderStrong)),
+        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: tokens.brandPrimary, width: 1.5)),
         contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         enabled: data.availableBranches.length > 1,
       ),
-      items: data.availableBranches.map((b) => DropdownMenuItem(value: b, child: Text(b, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)))).toList(),
+      items: data.availableBranches.map((b) => DropdownMenuItem(value: b, child: Text(b, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: tokens.textPrimary)))).toList(),
       onChanged: data.availableBranches.length > 1
           ? (val) {
               if (val != null) _changeActiveBranch(val);
@@ -4079,12 +4152,12 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: tokens.surface,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: tokens.borderSubtle),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.02),
+            color: Colors.black.withValues(alpha: tokens.isDark ? 0.14 : 0.02),
             blurRadius: 4,
             offset: const Offset(0, 1),
           ),
@@ -4098,17 +4171,17 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
               Container(
                 padding: const EdgeInsets.all(7),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF1F5F9),
+                  color: tokens.surfaceSubtle,
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: const Icon(Icons.tune_outlined, size: 18, color: Color(0xFF0F172A)),
+                child: Icon(Icons.tune_outlined, size: 18, color: tokens.textPrimary),
               ),
               const SizedBox(width: 10),
-              const Column(
+              Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Monthly Ledger Parameters', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: Color(0xFF0F172A))),
-                  Text('Historical Vault Cash Reserve review.', style: TextStyle(fontSize: 11.5, color: Color(0xFF64748B))),
+                  Text('Monthly Ledger Parameters', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: tokens.textPrimary)),
+                  Text('Historical Vault Cash Reserve review.', style: TextStyle(fontSize: 11.5, color: tokens.textMuted)),
                 ],
               ),
             ],
@@ -4141,6 +4214,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
   }
 
   Widget _buildMonthlyLedgerDailyFeed(List<MonthlyLedgerRowData> rows) {
+    final tokens = IcareSurfaceTokens.of(context);
     return Column(
       children: rows.map((r) {
         final netCash = r.totalInflows - r.totalOutflows;
@@ -4148,12 +4222,12 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
         return Container(
           margin: const EdgeInsets.only(bottom: 10),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: tokens.surface,
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: const Color(0xFFE2E8F0)),
+            border: Border.all(color: tokens.borderSubtle),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.02),
+                color: Colors.black.withValues(alpha: tokens.isDark ? 0.14 : 0.02),
                 blurRadius: 3,
                 offset: const Offset(0, 1),
               ),
@@ -4161,17 +4235,19 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
           ),
           child: ExpansionTile(
             shape: const Border(),
+            iconColor: tokens.textMuted,
+            collapsedIconColor: tokens.textMuted,
             tilePadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
             leading: Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
               decoration: BoxDecoration(
-                color: const Color(0xFFF1F5F9),
+                color: tokens.surfaceSubtle,
                 borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: const Color(0xFFE2E8F0)),
+                border: Border.all(color: tokens.borderSubtle),
               ),
               child: Text(
                 r.date.length >= 10 ? r.date.substring(5) : r.date,
-                style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: Color(0xFF334155), fontFamily: 'monospace'),
+                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: tokens.textSecondary, fontFamily: 'monospace'),
               ),
             ),
             title: Row(
@@ -4179,14 +4255,14 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
               children: [
                 Text(
                   'Close: ${_formatIntegerCurrency(r.closingBalance)}',
-                  style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: Color(0xFF0F172A), fontFamily: 'monospace'),
+                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: tokens.textPrimary, fontFamily: 'monospace'),
                 ),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
                   decoration: BoxDecoration(
-                    color: isPos ? const Color(0xFFECFDF5) : const Color(0xFFFEF2F2),
+                    color: isPos ? tokens.successBg : tokens.dangerBg,
                     borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: isPos ? const Color(0xFFA7F3D0) : const Color(0xFFFECACA)),
+                    border: Border.all(color: isPos ? tokens.successBorder : tokens.dangerBorder),
                   ),
                   child: Text(
                     '${isPos ? '+' : ''}${_formatIntegerCurrency(netCash)}',
@@ -4194,7 +4270,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                       fontSize: 10.5,
                       fontWeight: FontWeight.w700,
                       fontFamily: 'monospace',
-                      color: isPos ? const Color(0xFF065F46) : const Color(0xFFDC2626),
+                      color: isPos ? tokens.successText : tokens.dangerText,
                     ),
                   ),
                 ),
@@ -4204,46 +4280,46 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
               padding: const EdgeInsets.only(top: 4),
               child: Row(
                 children: [
-                  Text('In: ${_formatIntegerCurrency(r.totalInflows)}', style: const TextStyle(fontSize: 11, color: Color(0xFF059669), fontWeight: FontWeight.w600, fontFamily: 'monospace')),
-                  const Text(' • ', style: TextStyle(color: Color(0xFF94A3B8))),
-                  Text('Out: ${_formatIntegerCurrency(r.totalOutflows)}', style: const TextStyle(fontSize: 11, color: Color(0xFFDC2626), fontWeight: FontWeight.w600, fontFamily: 'monospace')),
-                  const Text(' • ', style: TextStyle(color: Color(0xFF94A3B8))),
-                  Text('Open: ${_formatIntegerCurrency(r.openingBalance)}', style: const TextStyle(fontSize: 11, color: Color(0xFF64748B), fontFamily: 'monospace')),
+                  Text('In: ${_formatIntegerCurrency(r.totalInflows)}', style: TextStyle(fontSize: 11, color: tokens.successText, fontWeight: FontWeight.w600, fontFamily: 'monospace')),
+                  Text(' • ', style: TextStyle(color: tokens.textMuted)),
+                  Text('Out: ${_formatIntegerCurrency(r.totalOutflows)}', style: TextStyle(fontSize: 11, color: tokens.dangerText, fontWeight: FontWeight.w600, fontFamily: 'monospace')),
+                  Text(' • ', style: TextStyle(color: tokens.textMuted)),
+                  Text('Open: ${_formatIntegerCurrency(r.openingBalance)}', style: TextStyle(fontSize: 11, color: tokens.textMuted, fontFamily: 'monospace')),
                 ],
               ),
             ),
             childrenPadding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
             children: [
-              const Divider(color: Color(0xFFF1F5F9)),
+              Divider(color: tokens.borderSubtle),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text('Savings Deposits', style: TextStyle(fontSize: 11.5, color: Color(0xFF64748B))),
-                  Text(_formatIntegerCurrency(r.savingsDeposit), style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, fontFamily: 'monospace')),
+                  Text('Savings Deposits', style: TextStyle(fontSize: 11.5, color: tokens.textMuted)),
+                  Text(_formatIntegerCurrency(r.savingsDeposit), style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, fontFamily: 'monospace', color: tokens.textPrimary)),
                 ],
               ),
               const SizedBox(height: 4),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text('Daily Collections (60d/120d)', style: TextStyle(fontSize: 11.5, color: Color(0xFF64748B))),
-                  Text(_formatIntegerCurrency(r.repDaily + r.rep120Days), style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, fontFamily: 'monospace')),
+                  Text('Daily Collections (60d/120d)', style: TextStyle(fontSize: 11.5, color: tokens.textMuted)),
+                  Text(_formatIntegerCurrency(r.repDaily + r.rep120Days), style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, fontFamily: 'monospace', color: tokens.textPrimary)),
                 ],
               ),
               const SizedBox(height: 4),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text('Bank Deposits', style: TextStyle(fontSize: 11.5, color: Color(0xFF64748B))),
-                  Text(_formatIntegerCurrency(r.bankDeposit), style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Color(0xFFDC2626), fontFamily: 'monospace')),
+                  Text('Bank Deposits', style: TextStyle(fontSize: 11.5, color: tokens.textMuted)),
+                  Text(_formatIntegerCurrency(r.bankDeposit), style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: tokens.dangerText, fontFamily: 'monospace')),
                 ],
               ),
               const SizedBox(height: 4),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text('Active Loan Disbursements', style: TextStyle(fontSize: 11.5, color: Color(0xFF64748B))),
-                  Text(_formatIntegerCurrency(r.disb60d + r.disb120d + r.disb12w + r.disb24w + r.disbMth), style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Color(0xFFDC2626), fontFamily: 'monospace')),
+                  Text('Active Loan Disbursements', style: TextStyle(fontSize: 11.5, color: tokens.textMuted)),
+                  Text(_formatIntegerCurrency(r.disb60d + r.disb120d + r.disb12w + r.disb24w + r.disbMth), style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: tokens.dangerText, fontFamily: 'monospace')),
                 ],
               ),
             ],
@@ -4254,6 +4330,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
   }
 
   Widget _buildMonthlyLedgerTable(List<MonthlyLedgerRowData> rows, bool isMobile) {
+    final tokens = IcareSurfaceTokens.of(context);
     // Column Totals for Summary Row (every numeric column summed; Opening/Closing reflect Day-1 / Month-End)
     final monthOpening = rows.isNotEmpty ? rows.first.openingBalance : 0.0;
     final monthClosing = rows.isNotEmpty ? rows.last.closingBalance : 0.0;
@@ -4305,29 +4382,32 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
     final totalAssetReceipts = totalLoanRecAsset + totalCashAndCarry;
     final assetVariance = totalAssetReceipts - totalToAssets;
     final isAssetSettled = assetVariance.abs() < 0.01;
+    final headerStyle = TextStyle(fontWeight: FontWeight.w700, fontSize: 11.5, color: tokens.textPrimary);
+    final cellStyle = TextStyle(fontSize: 11, fontFamily: 'monospace', color: tokens.textPrimary);
+    final totalStyle = TextStyle(fontSize: 11, fontWeight: FontWeight.w700, fontFamily: 'monospace', color: tokens.textPrimary);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         if (isMobile)
-          const Padding(
-            padding: EdgeInsets.only(bottom: 6),
+          Padding(
+            padding: const EdgeInsets.only(bottom: 6),
             child: Row(
               children: [
-                Icon(Icons.swipe_outlined, size: 14, color: Color(0xFF64748B)),
-                SizedBox(width: 4),
-                Text('Scroll horizontally to view all columns', style: TextStyle(fontSize: 11, color: Color(0xFF64748B), fontStyle: FontStyle.italic)),
+                Icon(Icons.swipe_outlined, size: 14, color: tokens.textMuted),
+                const SizedBox(width: 4),
+                Text('Scroll horizontally to view all columns', style: TextStyle(fontSize: 11, color: tokens.textMuted, fontStyle: FontStyle.italic)),
               ],
             ),
           ),
         Container(
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: tokens.surface,
             borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: const Color(0xFFE2E8F0)),
+            border: Border.all(color: tokens.borderSubtle),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.02),
+                color: Colors.black.withValues(alpha: tokens.isDark ? 0.14 : 0.02),
                 blurRadius: 4,
                 offset: const Offset(0, 1),
               ),
@@ -4336,167 +4416,167 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
           child: SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: DataTable(
-              headingRowColor: WidgetStateProperty.all(const Color(0xFFF1F5F9)),
-              columns: const [
-                DataColumn(label: Text('Date', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 11.5))),
-                DataColumn(label: Text('Opening Balance', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 11.5))),
-                DataColumn(label: Text('Savings Deposit', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 11.5))),
-                DataColumn(label: Text('Repay (60d)', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 11.5))),
-                DataColumn(label: Text('Repay (120d)', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 11.5))),
-                DataColumn(label: Text('Repay (12w)', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 11.5))),
-                DataColumn(label: Text('Repay (24w)', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 11.5))),
-                DataColumn(label: Text('Repay (Mth)', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 11.5))),
-                DataColumn(label: Text('Laps Reserve', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 11.5))),
-                DataColumn(label: Text('Funds from HO', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 11.5))),
-                DataColumn(label: Text('Funds from Branch', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 11.5))),
-                DataColumn(label: Text('Funds from Area', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 11.5))),
-                DataColumn(label: Text('Asset Credit', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 11.5))),
-                DataColumn(label: Text('Cash & Carry', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 11.5))),
-                DataColumn(label: Text('Funds from Asset', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 11.5))),
-                DataColumn(label: Text('Loan Finance', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 11.5))),
-                DataColumn(label: Text('Daily 11%', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 11.5))),
-                DataColumn(label: Text('Daily 20%', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 11.5))),
-                DataColumn(label: Text('Weekly 11%', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 11.5))),
-                DataColumn(label: Text('Weekly 20%', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 11.5))),
-                DataColumn(label: Text('Risk Premium', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 11.5))),
-                DataColumn(label: Text('Contingency', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 11.5))),
-                DataColumn(label: Text('Form Damage', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 11.5))),
-                DataColumn(label: Text('Bonus', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 11.5))),
-                DataColumn(label: Text('App Fee', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 11.5))),
-                DataColumn(label: Text('Passbook', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 11.5))),
-                DataColumn(label: Text('Bank Withdr.', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 11.5))),
-                DataColumn(label: Text('Adjustment In', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 11.5))),
-                DataColumn(label: Text('Total Inflows', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 11.5, color: Color(0xFF065F46)))),
+              headingRowColor: WidgetStateProperty.all(tokens.surfaceSubtle),
+              columns: [
+                DataColumn(label: Text('Date', style: headerStyle)),
+                DataColumn(label: Text('Opening Balance', style: headerStyle)),
+                DataColumn(label: Text('Savings Deposit', style: headerStyle)),
+                DataColumn(label: Text('Repay (60d)', style: headerStyle)),
+                DataColumn(label: Text('Repay (120d)', style: headerStyle)),
+                DataColumn(label: Text('Repay (12w)', style: headerStyle)),
+                DataColumn(label: Text('Repay (24w)', style: headerStyle)),
+                DataColumn(label: Text('Repay (Mth)', style: headerStyle)),
+                DataColumn(label: Text('Laps Reserve', style: headerStyle)),
+                DataColumn(label: Text('Funds from HO', style: headerStyle)),
+                DataColumn(label: Text('Funds from Branch', style: headerStyle)),
+                DataColumn(label: Text('Funds from Area', style: headerStyle)),
+                DataColumn(label: Text('Asset Credit', style: headerStyle)),
+                DataColumn(label: Text('Cash & Carry', style: headerStyle)),
+                DataColumn(label: Text('Funds from Asset', style: headerStyle)),
+                DataColumn(label: Text('Loan Finance', style: headerStyle)),
+                DataColumn(label: Text('Daily 11%', style: headerStyle)),
+                DataColumn(label: Text('Daily 20%', style: headerStyle)),
+                DataColumn(label: Text('Weekly 11%', style: headerStyle)),
+                DataColumn(label: Text('Weekly 20%', style: headerStyle)),
+                DataColumn(label: Text('Risk Premium', style: headerStyle)),
+                DataColumn(label: Text('Contingency', style: headerStyle)),
+                DataColumn(label: Text('Form Damage', style: headerStyle)),
+                DataColumn(label: Text('Bonus', style: headerStyle)),
+                DataColumn(label: Text('App Fee', style: headerStyle)),
+                DataColumn(label: Text('Passbook', style: headerStyle)),
+                DataColumn(label: Text('Bank Withdr.', style: headerStyle)),
+                DataColumn(label: Text('Adjustment In', style: headerStyle)),
+                DataColumn(label: Text('Total Inflows', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 11.5, color: tokens.successText))),
                 // Outflows
-                DataColumn(label: Text('Disb 60d', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 11.5))),
-                DataColumn(label: Text('Disb 120d', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 11.5))),
-                DataColumn(label: Text('Disb 12w', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 11.5))),
-                DataColumn(label: Text('Disb 24w', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 11.5))),
-                DataColumn(label: Text('Disb Mth', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 11.5))),
-                DataColumn(label: Text('Xfer Branch', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 11.5))),
-                DataColumn(label: Text('Xfer HO', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 11.5))),
-                DataColumn(label: Text('Xfer Area', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 11.5))),
-                DataColumn(label: Text('To Assets', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 11.5))),
-                DataColumn(label: Text('To Finance', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 11.5))),
-                DataColumn(label: Text('Prod/Sav Withdr.', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 11.5))),
-                DataColumn(label: Text('Staff Salaries', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 11.5))),
-                DataColumn(label: Text('Office Expenses', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 11.5))),
-                DataColumn(label: Text('Laps Return', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 11.5))),
-                DataColumn(label: Text('Bank Deposit', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 11.5))),
-                DataColumn(label: Text('Adjustment Out', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 11.5))),
-                DataColumn(label: Text('Total Outflows', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 11.5, color: Color(0xFF991B1B)))),
-                DataColumn(label: Text('Closing Balance', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 11.5, color: Color(0xFF0F172A)))),
+                DataColumn(label: Text('Disb 60d', style: headerStyle)),
+                DataColumn(label: Text('Disb 120d', style: headerStyle)),
+                DataColumn(label: Text('Disb 12w', style: headerStyle)),
+                DataColumn(label: Text('Disb 24w', style: headerStyle)),
+                DataColumn(label: Text('Disb Mth', style: headerStyle)),
+                DataColumn(label: Text('Xfer Branch', style: headerStyle)),
+                DataColumn(label: Text('Xfer HO', style: headerStyle)),
+                DataColumn(label: Text('Xfer Area', style: headerStyle)),
+                DataColumn(label: Text('To Assets', style: headerStyle)),
+                DataColumn(label: Text('To Finance', style: headerStyle)),
+                DataColumn(label: Text('Prod/Sav Withdr.', style: headerStyle)),
+                DataColumn(label: Text('Staff Salaries', style: headerStyle)),
+                DataColumn(label: Text('Office Expenses', style: headerStyle)),
+                DataColumn(label: Text('Laps Return', style: headerStyle)),
+                DataColumn(label: Text('Bank Deposit', style: headerStyle)),
+                DataColumn(label: Text('Adjustment Out', style: headerStyle)),
+                DataColumn(label: Text('Total Outflows', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 11.5, color: tokens.dangerText))),
+                DataColumn(label: Text('Closing Balance', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 11.5, color: tokens.textPrimary))),
               ],
               rows: [
                 ...rows.map((r) {
                   return DataRow(
                     color: WidgetStateProperty.resolveWith<Color?>((states) {
                       final idx = rows.indexOf(r);
-                      if (idx.isOdd) return const Color(0xFFF8FAFC);
-                      return Colors.white;
+                      if (idx.isOdd) return tokens.surfaceSubtle;
+                      return tokens.surface;
                     }),
                     cells: [
-                      DataCell(Text(r.date, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, fontFamily: 'monospace'))),
-                      DataCell(Text(_formatLedgerCell(r.openingBalance), style: const TextStyle(fontSize: 11, fontFamily: 'monospace'))),
-                      DataCell(Text(_formatLedgerCell(r.savingsDeposit), style: const TextStyle(fontSize: 11, fontFamily: 'monospace'))),
-                      DataCell(Text(_formatLedgerCell(r.repDaily), style: const TextStyle(fontSize: 11, fontFamily: 'monospace'))),
-                      DataCell(Text(_formatLedgerCell(r.rep120Days), style: const TextStyle(fontSize: 11, fontFamily: 'monospace'))),
-                      DataCell(Text(_formatLedgerCell(r.rep12Weeks), style: const TextStyle(fontSize: 11, fontFamily: 'monospace'))),
-                      DataCell(Text(_formatLedgerCell(r.rep24Weeks), style: const TextStyle(fontSize: 11, fontFamily: 'monospace'))),
-                      DataCell(Text(_formatLedgerCell(r.repMonthly), style: const TextStyle(fontSize: 11, fontFamily: 'monospace'))),
-                      DataCell(Text(_formatLedgerCell(r.lapsReserve), style: const TextStyle(fontSize: 11, fontFamily: 'monospace'))),
-                      DataCell(Text(_formatLedgerCell(r.fundsReceivedHo), style: const TextStyle(fontSize: 11, fontFamily: 'monospace'))),
-                      DataCell(Text(_formatLedgerCell(r.fundsReceivedOtherBranch), style: const TextStyle(fontSize: 11, fontFamily: 'monospace'))),
-                      DataCell(Text(_formatLedgerCell(r.fundsReceivedOtherArea), style: const TextStyle(fontSize: 11, fontFamily: 'monospace'))),
-                      DataCell(Text(_formatLedgerCell(r.assetCreditSales), style: const TextStyle(fontSize: 11, fontFamily: 'monospace'))),
-                      DataCell(Text(_formatLedgerCell(r.cashAndCarry), style: const TextStyle(fontSize: 11, fontFamily: 'monospace'))),
-                      DataCell(Text(_formatLedgerCell(r.loanReceivedAsset), style: const TextStyle(fontSize: 11, fontFamily: 'monospace'))),
-                      DataCell(Text(_formatLedgerCell(r.loanReceivedFinance), style: const TextStyle(fontSize: 11, fontFamily: 'monospace'))),
-                      DataCell(Text(_formatLedgerCell(r.daily11Pct), style: const TextStyle(fontSize: 11, fontFamily: 'monospace'))),
-                      DataCell(Text(_formatLedgerCell(r.daily20Pct), style: const TextStyle(fontSize: 11, fontFamily: 'monospace'))),
-                      DataCell(Text(_formatLedgerCell(r.weekly11Pct), style: const TextStyle(fontSize: 11, fontFamily: 'monospace'))),
-                      DataCell(Text(_formatLedgerCell(r.weekly20Pct), style: const TextStyle(fontSize: 11, fontFamily: 'monospace'))),
-                      DataCell(Text(_formatLedgerCell(r.riskPremiumReturns), style: const TextStyle(fontSize: 11, fontFamily: 'monospace'))),
-                      DataCell(Text(_formatLedgerCell(r.contingency), style: const TextStyle(fontSize: 11, fontFamily: 'monospace'))),
-                      DataCell(Text(_formatLedgerCell(r.creditFormDamage), style: const TextStyle(fontSize: 11, fontFamily: 'monospace'))),
-                      DataCell(Text(_formatLedgerCell(r.bonus), style: const TextStyle(fontSize: 11, fontFamily: 'monospace'))),
-                      DataCell(Text(_formatLedgerCell(r.appFee), style: const TextStyle(fontSize: 11, fontFamily: 'monospace'))),
-                      DataCell(Text(_formatLedgerCell(r.passbook), style: const TextStyle(fontSize: 11, fontFamily: 'monospace'))),
-                      DataCell(Text(_formatLedgerCell(r.bankWithdrawal), style: const TextStyle(fontSize: 11, fontFamily: 'monospace'))),
-                      DataCell(Text(_formatLedgerCell(r.adjustmentIn), style: const TextStyle(fontSize: 11, fontFamily: 'monospace'))),
-                      DataCell(Text(_formatLedgerCell(r.totalInflows), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFF059669), fontFamily: 'monospace'))),
-                      DataCell(Text(_formatLedgerCell(r.disb60d), style: const TextStyle(fontSize: 11, fontFamily: 'monospace'))),
-                      DataCell(Text(_formatLedgerCell(r.disb120d), style: const TextStyle(fontSize: 11, fontFamily: 'monospace'))),
-                      DataCell(Text(_formatLedgerCell(r.disb12w), style: const TextStyle(fontSize: 11, fontFamily: 'monospace'))),
-                      DataCell(Text(_formatLedgerCell(r.disb24w), style: const TextStyle(fontSize: 11, fontFamily: 'monospace'))),
-                      DataCell(Text(_formatLedgerCell(r.disbMth), style: const TextStyle(fontSize: 11, fontFamily: 'monospace'))),
-                      DataCell(Text(_formatLedgerCell(r.fundTransferredOtherBranch), style: const TextStyle(fontSize: 11, fontFamily: 'monospace'))),
-                      DataCell(Text(_formatLedgerCell(r.fundTransferredHo), style: const TextStyle(fontSize: 11, fontFamily: 'monospace'))),
-                      DataCell(Text(_formatLedgerCell(r.fundToOtherArea), style: const TextStyle(fontSize: 11, fontFamily: 'monospace'))),
-                      DataCell(Text(_formatLedgerCell(r.fundToAssetProgram), style: const TextStyle(fontSize: 11, fontFamily: 'monospace'))),
-                      DataCell(Text(_formatLedgerCell(r.fundToProductFinance), style: const TextStyle(fontSize: 11, fontFamily: 'monospace'))),
-                      DataCell(Text(_formatLedgerCell(r.productWithdrawal), style: const TextStyle(fontSize: 11, fontFamily: 'monospace'))),
-                      DataCell(Text(_formatLedgerCell(r.staffSalaries), style: const TextStyle(fontSize: 11, fontFamily: 'monospace'))),
-                      DataCell(Text(_formatLedgerCell(r.officeExpenses), style: const TextStyle(fontSize: 11, fontFamily: 'monospace'))),
-                      DataCell(Text(_formatLedgerCell(r.lapsReturns), style: const TextStyle(fontSize: 11, fontFamily: 'monospace'))),
-                      DataCell(Text(_formatLedgerCell(r.bankDeposit), style: const TextStyle(fontSize: 11, fontFamily: 'monospace'))),
-                      DataCell(Text(_formatLedgerCell(r.adjustmentOut), style: const TextStyle(fontSize: 11, fontFamily: 'monospace'))),
-                      DataCell(Text(_formatLedgerCell(r.totalOutflows), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFFDC2626), fontFamily: 'monospace'))),
-                      DataCell(Text(_formatLedgerCell(r.closingBalance), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Color(0xFF0F172A), fontFamily: 'monospace'))),
+                      DataCell(Text(r.date, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, fontFamily: 'monospace', color: tokens.textPrimary))),
+                      DataCell(Text(_formatLedgerCell(r.openingBalance), style: cellStyle)),
+                      DataCell(Text(_formatLedgerCell(r.savingsDeposit), style: cellStyle)),
+                      DataCell(Text(_formatLedgerCell(r.repDaily), style: cellStyle)),
+                      DataCell(Text(_formatLedgerCell(r.rep120Days), style: cellStyle)),
+                      DataCell(Text(_formatLedgerCell(r.rep12Weeks), style: cellStyle)),
+                      DataCell(Text(_formatLedgerCell(r.rep24Weeks), style: cellStyle)),
+                      DataCell(Text(_formatLedgerCell(r.repMonthly), style: cellStyle)),
+                      DataCell(Text(_formatLedgerCell(r.lapsReserve), style: cellStyle)),
+                      DataCell(Text(_formatLedgerCell(r.fundsReceivedHo), style: cellStyle)),
+                      DataCell(Text(_formatLedgerCell(r.fundsReceivedOtherBranch), style: cellStyle)),
+                      DataCell(Text(_formatLedgerCell(r.fundsReceivedOtherArea), style: cellStyle)),
+                      DataCell(Text(_formatLedgerCell(r.assetCreditSales), style: cellStyle)),
+                      DataCell(Text(_formatLedgerCell(r.cashAndCarry), style: cellStyle)),
+                      DataCell(Text(_formatLedgerCell(r.loanReceivedAsset), style: cellStyle)),
+                      DataCell(Text(_formatLedgerCell(r.loanReceivedFinance), style: cellStyle)),
+                      DataCell(Text(_formatLedgerCell(r.daily11Pct), style: cellStyle)),
+                      DataCell(Text(_formatLedgerCell(r.daily20Pct), style: cellStyle)),
+                      DataCell(Text(_formatLedgerCell(r.weekly11Pct), style: cellStyle)),
+                      DataCell(Text(_formatLedgerCell(r.weekly20Pct), style: cellStyle)),
+                      DataCell(Text(_formatLedgerCell(r.riskPremiumReturns), style: cellStyle)),
+                      DataCell(Text(_formatLedgerCell(r.contingency), style: cellStyle)),
+                      DataCell(Text(_formatLedgerCell(r.creditFormDamage), style: cellStyle)),
+                      DataCell(Text(_formatLedgerCell(r.bonus), style: cellStyle)),
+                      DataCell(Text(_formatLedgerCell(r.appFee), style: cellStyle)),
+                      DataCell(Text(_formatLedgerCell(r.passbook), style: cellStyle)),
+                      DataCell(Text(_formatLedgerCell(r.bankWithdrawal), style: cellStyle)),
+                      DataCell(Text(_formatLedgerCell(r.adjustmentIn), style: cellStyle)),
+                      DataCell(Text(_formatLedgerCell(r.totalInflows), style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: tokens.successText, fontFamily: 'monospace'))),
+                      DataCell(Text(_formatLedgerCell(r.disb60d), style: cellStyle)),
+                      DataCell(Text(_formatLedgerCell(r.disb120d), style: cellStyle)),
+                      DataCell(Text(_formatLedgerCell(r.disb12w), style: cellStyle)),
+                      DataCell(Text(_formatLedgerCell(r.disb24w), style: cellStyle)),
+                      DataCell(Text(_formatLedgerCell(r.disbMth), style: cellStyle)),
+                      DataCell(Text(_formatLedgerCell(r.fundTransferredOtherBranch), style: cellStyle)),
+                      DataCell(Text(_formatLedgerCell(r.fundTransferredHo), style: cellStyle)),
+                      DataCell(Text(_formatLedgerCell(r.fundToOtherArea), style: cellStyle)),
+                      DataCell(Text(_formatLedgerCell(r.fundToAssetProgram), style: cellStyle)),
+                      DataCell(Text(_formatLedgerCell(r.fundToProductFinance), style: cellStyle)),
+                      DataCell(Text(_formatLedgerCell(r.productWithdrawal), style: cellStyle)),
+                      DataCell(Text(_formatLedgerCell(r.staffSalaries), style: cellStyle)),
+                      DataCell(Text(_formatLedgerCell(r.officeExpenses), style: cellStyle)),
+                      DataCell(Text(_formatLedgerCell(r.lapsReturns), style: cellStyle)),
+                      DataCell(Text(_formatLedgerCell(r.bankDeposit), style: cellStyle)),
+                      DataCell(Text(_formatLedgerCell(r.adjustmentOut), style: cellStyle)),
+                      DataCell(Text(_formatLedgerCell(r.totalOutflows), style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: tokens.dangerText, fontFamily: 'monospace'))),
+                      DataCell(Text(_formatLedgerCell(r.closingBalance), style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: tokens.textPrimary, fontFamily: 'monospace'))),
                     ],
                   );
                 }),
                 // Total Summary Row
                 DataRow(
-                  color: WidgetStateProperty.all(const Color(0xFFF1F5F9)),
+                  color: WidgetStateProperty.all(tokens.neutralBg),
                   cells: [
-                    const DataCell(Text('MONTH TOTAL', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)))),
-                    DataCell(Text(_formatLedgerCell(monthOpening), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, fontFamily: 'monospace'))),
-                    DataCell(Text(_formatLedgerCell(totalSavings), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, fontFamily: 'monospace'))),
-                    DataCell(Text(_formatLedgerCell(totalRepDaily), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, fontFamily: 'monospace'))),
-                    DataCell(Text(_formatLedgerCell(totalRep120), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, fontFamily: 'monospace'))),
-                    DataCell(Text(_formatLedgerCell(totalRep12w), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, fontFamily: 'monospace'))),
-                    DataCell(Text(_formatLedgerCell(totalRep24w), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, fontFamily: 'monospace'))),
-                    DataCell(Text(_formatLedgerCell(totalRepMth), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, fontFamily: 'monospace'))),
-                    DataCell(Text(_formatLedgerCell(totalLapsReserve), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, fontFamily: 'monospace'))),
-                    DataCell(Text(_formatLedgerCell(totalFundsHo), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, fontFamily: 'monospace'))),
-                    DataCell(Text(_formatLedgerCell(totalFundsBranch), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, fontFamily: 'monospace'))),
-                    DataCell(Text(_formatLedgerCell(totalFundsArea), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, fontFamily: 'monospace'))),
-                    DataCell(Text(_formatLedgerCell(totalAssetCredit), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, fontFamily: 'monospace'))),
-                    DataCell(Text(_formatLedgerCell(totalCashAndCarry), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, fontFamily: 'monospace'))),
-                    DataCell(Text(_formatLedgerCell(totalLoanRecAsset), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, fontFamily: 'monospace'))),
-                    DataCell(Text(_formatLedgerCell(totalLoanRecFinance), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, fontFamily: 'monospace'))),
-                    DataCell(Text(_formatLedgerCell(totalDaily11), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, fontFamily: 'monospace'))),
-                    DataCell(Text(_formatLedgerCell(totalDaily20), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, fontFamily: 'monospace'))),
-                    DataCell(Text(_formatLedgerCell(totalWeekly11), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, fontFamily: 'monospace'))),
-                    DataCell(Text(_formatLedgerCell(totalWeekly20), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, fontFamily: 'monospace'))),
-                    DataCell(Text(_formatLedgerCell(totalRiskPremium), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, fontFamily: 'monospace'))),
-                    DataCell(Text(_formatLedgerCell(totalContingency), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, fontFamily: 'monospace'))),
-                    DataCell(Text(_formatLedgerCell(totalFormDamage), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, fontFamily: 'monospace'))),
-                    DataCell(Text(_formatLedgerCell(totalBonus), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, fontFamily: 'monospace'))),
-                    DataCell(Text(_formatLedgerCell(totalAppFee), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, fontFamily: 'monospace'))),
-                    DataCell(Text(_formatLedgerCell(totalPassbook), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, fontFamily: 'monospace'))),
-                    DataCell(Text(_formatLedgerCell(totalBankWithdr), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, fontFamily: 'monospace'))),
-                    DataCell(Text(_formatLedgerCell(totalAdjIn), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, fontFamily: 'monospace'))),
-                    DataCell(Text(_formatLedgerCell(totalInflows), style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: Color(0xFF059669), fontFamily: 'monospace'))),
-                    DataCell(Text(_formatLedgerCell(totalDisb60d), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, fontFamily: 'monospace'))),
-                    DataCell(Text(_formatLedgerCell(totalDisb120d), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, fontFamily: 'monospace'))),
-                    DataCell(Text(_formatLedgerCell(totalDisb12w), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, fontFamily: 'monospace'))),
-                    DataCell(Text(_formatLedgerCell(totalDisb24w), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, fontFamily: 'monospace'))),
-                    DataCell(Text(_formatLedgerCell(totalDisbMth), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, fontFamily: 'monospace'))),
-                    DataCell(Text(_formatLedgerCell(totalXferBranch), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, fontFamily: 'monospace'))),
-                    DataCell(Text(_formatLedgerCell(totalXferHo), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, fontFamily: 'monospace'))),
-                    DataCell(Text(_formatLedgerCell(totalXferArea), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, fontFamily: 'monospace'))),
-                    DataCell(Text(_formatLedgerCell(totalToAssets), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, fontFamily: 'monospace'))),
-                    DataCell(Text(_formatLedgerCell(totalToFinance), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, fontFamily: 'monospace'))),
-                    DataCell(Text(_formatLedgerCell(totalProdWithdr), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, fontFamily: 'monospace'))),
-                    DataCell(Text(_formatLedgerCell(totalSalaries), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, fontFamily: 'monospace'))),
-                    DataCell(Text(_formatLedgerCell(totalOfficeExp), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, fontFamily: 'monospace'))),
-                    DataCell(Text(_formatLedgerCell(totalLapsRet), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, fontFamily: 'monospace'))),
-                    DataCell(Text(_formatLedgerCell(totalBankDep), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, fontFamily: 'monospace'))),
-                    DataCell(Text(_formatLedgerCell(totalAdjOut), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, fontFamily: 'monospace'))),
-                    DataCell(Text(_formatLedgerCell(totalOutflows), style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: Color(0xFFDC2626), fontFamily: 'monospace'))),
-                    DataCell(Text(_formatLedgerCell(monthClosing), style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: Color(0xFF0F172A), fontFamily: 'monospace'))),
+                    DataCell(Text('MONTH TOTAL', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: tokens.textPrimary))),
+                    DataCell(Text(_formatLedgerCell(monthOpening), style: totalStyle)),
+                    DataCell(Text(_formatLedgerCell(totalSavings), style: totalStyle)),
+                    DataCell(Text(_formatLedgerCell(totalRepDaily), style: totalStyle)),
+                    DataCell(Text(_formatLedgerCell(totalRep120), style: totalStyle)),
+                    DataCell(Text(_formatLedgerCell(totalRep12w), style: totalStyle)),
+                    DataCell(Text(_formatLedgerCell(totalRep24w), style: totalStyle)),
+                    DataCell(Text(_formatLedgerCell(totalRepMth), style: totalStyle)),
+                    DataCell(Text(_formatLedgerCell(totalLapsReserve), style: totalStyle)),
+                    DataCell(Text(_formatLedgerCell(totalFundsHo), style: totalStyle)),
+                    DataCell(Text(_formatLedgerCell(totalFundsBranch), style: totalStyle)),
+                    DataCell(Text(_formatLedgerCell(totalFundsArea), style: totalStyle)),
+                    DataCell(Text(_formatLedgerCell(totalAssetCredit), style: totalStyle)),
+                    DataCell(Text(_formatLedgerCell(totalCashAndCarry), style: totalStyle)),
+                    DataCell(Text(_formatLedgerCell(totalLoanRecAsset), style: totalStyle)),
+                    DataCell(Text(_formatLedgerCell(totalLoanRecFinance), style: totalStyle)),
+                    DataCell(Text(_formatLedgerCell(totalDaily11), style: totalStyle)),
+                    DataCell(Text(_formatLedgerCell(totalDaily20), style: totalStyle)),
+                    DataCell(Text(_formatLedgerCell(totalWeekly11), style: totalStyle)),
+                    DataCell(Text(_formatLedgerCell(totalWeekly20), style: totalStyle)),
+                    DataCell(Text(_formatLedgerCell(totalRiskPremium), style: totalStyle)),
+                    DataCell(Text(_formatLedgerCell(totalContingency), style: totalStyle)),
+                    DataCell(Text(_formatLedgerCell(totalFormDamage), style: totalStyle)),
+                    DataCell(Text(_formatLedgerCell(totalBonus), style: totalStyle)),
+                    DataCell(Text(_formatLedgerCell(totalAppFee), style: totalStyle)),
+                    DataCell(Text(_formatLedgerCell(totalPassbook), style: totalStyle)),
+                    DataCell(Text(_formatLedgerCell(totalBankWithdr), style: totalStyle)),
+                    DataCell(Text(_formatLedgerCell(totalAdjIn), style: totalStyle)),
+                    DataCell(Text(_formatLedgerCell(totalInflows), style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: tokens.successText, fontFamily: 'monospace'))),
+                    DataCell(Text(_formatLedgerCell(totalDisb60d), style: totalStyle)),
+                    DataCell(Text(_formatLedgerCell(totalDisb120d), style: totalStyle)),
+                    DataCell(Text(_formatLedgerCell(totalDisb12w), style: totalStyle)),
+                    DataCell(Text(_formatLedgerCell(totalDisb24w), style: totalStyle)),
+                    DataCell(Text(_formatLedgerCell(totalDisbMth), style: totalStyle)),
+                    DataCell(Text(_formatLedgerCell(totalXferBranch), style: totalStyle)),
+                    DataCell(Text(_formatLedgerCell(totalXferHo), style: totalStyle)),
+                    DataCell(Text(_formatLedgerCell(totalXferArea), style: totalStyle)),
+                    DataCell(Text(_formatLedgerCell(totalToAssets), style: totalStyle)),
+                    DataCell(Text(_formatLedgerCell(totalToFinance), style: totalStyle)),
+                    DataCell(Text(_formatLedgerCell(totalProdWithdr), style: totalStyle)),
+                    DataCell(Text(_formatLedgerCell(totalSalaries), style: totalStyle)),
+                    DataCell(Text(_formatLedgerCell(totalOfficeExp), style: totalStyle)),
+                    DataCell(Text(_formatLedgerCell(totalLapsRet), style: totalStyle)),
+                    DataCell(Text(_formatLedgerCell(totalBankDep), style: totalStyle)),
+                    DataCell(Text(_formatLedgerCell(totalAdjOut), style: totalStyle)),
+                    DataCell(Text(_formatLedgerCell(totalOutflows), style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: tokens.dangerText, fontFamily: 'monospace'))),
+                    DataCell(Text(_formatLedgerCell(monthClosing), style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: tokens.textPrimary, fontFamily: 'monospace'))),
                   ],
                 ),
               ],
@@ -4507,10 +4587,10 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
         Container(
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
-            color: isAssetSettled ? const Color(0xFFECFDF5) : const Color(0xFFFFFBEB),
+            color: isAssetSettled ? tokens.successBg : tokens.warningBg,
             borderRadius: BorderRadius.circular(10),
             border: Border.all(
-              color: isAssetSettled ? const Color(0xFFA7F3D0) : const Color(0xFFFDE68A),
+              color: isAssetSettled ? tokens.successBorder : tokens.warningBorder,
             ),
           ),
           child: Column(
@@ -4525,7 +4605,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                         Icon(
                           isAssetSettled ? Icons.check_circle_outline : Icons.pending_actions_outlined,
                           size: 18,
-                          color: isAssetSettled ? const Color(0xFF059669) : const Color(0xFFD97706),
+                          color: isAssetSettled ? tokens.successDot : tokens.warningDot,
                         ),
                         const SizedBox(width: 8),
                         Flexible(
@@ -4536,7 +4616,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                             style: TextStyle(
                               fontSize: 13,
                               fontWeight: FontWeight.w700,
-                              color: isAssetSettled ? const Color(0xFF065F46) : const Color(0xFF92400E),
+                              color: isAssetSettled ? tokens.successText : tokens.warningText,
                             ),
                           ),
                         ),
@@ -4547,8 +4627,9 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                     decoration: BoxDecoration(
-                      color: isAssetSettled ? const Color(0xFFD1FAE5) : const Color(0xFFFEF3C7),
+                      color: tokens.surfaceElevated,
                       borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: isAssetSettled ? tokens.successBorder : tokens.warningBorder),
                     ),
                     child: Text(
                       isAssetSettled
@@ -4558,7 +4639,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                         fontSize: 11.5,
                         fontWeight: FontWeight.w700,
                         fontFamily: 'monospace',
-                        color: isAssetSettled ? const Color(0xFF065F46) : const Color(0xFF92400E),
+                        color: isAssetSettled ? tokens.successText : tokens.warningText,
                       ),
                     ),
                   ),
@@ -4571,19 +4652,19 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                 children: [
                   Text(
                     'Funds from Asset: ${_formatCurrency(totalLoanRecAsset)}',
-                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF334155)),
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tokens.textSecondary),
                   ),
                   Text(
                     'Cash & Carry: ${_formatCurrency(totalCashAndCarry)}',
-                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF334155)),
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tokens.textSecondary),
                   ),
                   Text(
                     'Total Asset Receipts: ${_formatCurrency(totalAssetReceipts)}',
-                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF065F46)),
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: tokens.successText),
                   ),
                   Text(
                     'Fund to Asset Program: ${_formatCurrency(totalToAssets)}',
-                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF991B1B)),
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: tokens.dangerText),
                   ),
                 ],
               ),
@@ -4609,16 +4690,17 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
     bool isDeltaInverse = false,
     Color? valueColor,
   }) {
+    final tokens = IcareSurfaceTokens.of(context);
     return Container(
       width: width,
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: tokens.surface,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: tokens.borderSubtle),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.02),
+            color: Colors.black.withValues(alpha: tokens.isDark ? 0.14 : 0.02),
             blurRadius: 4,
             offset: const Offset(0, 1),
           ),
@@ -4637,17 +4719,17 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                       Container(
                         padding: const EdgeInsets.all(5),
                         decoration: BoxDecoration(
-                          color: iconBg ?? const Color(0xFFF1F5F9),
+                          color: iconBg ?? tokens.surfaceSubtle,
                           borderRadius: BorderRadius.circular(6),
                         ),
-                        child: Icon(icon, size: 14, color: iconColor ?? const Color(0xFF475569)),
+                        child: Icon(icon, size: 14, color: iconColor ?? tokens.textSecondary),
                       ),
                       const SizedBox(width: 8),
                     ],
                     Expanded(
                       child: Text(
                         label,
-                        style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Color(0xFF64748B)),
+                        style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: tokens.textMuted),
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
@@ -4658,16 +4740,16 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                   decoration: BoxDecoration(
-                    color: isDeltaInverse ? const Color(0xFFFEF2F2) : const Color(0xFFECFDF5),
+                    color: isDeltaInverse ? tokens.dangerBg : tokens.successBg,
                     borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: isDeltaInverse ? const Color(0xFFFECACA) : const Color(0xFFA7F3D0)),
+                    border: Border.all(color: isDeltaInverse ? tokens.dangerBorder : tokens.successBorder),
                   ),
                   child: Text(
                     delta,
                     style: TextStyle(
                       fontSize: 10,
                       fontWeight: FontWeight.w700,
-                      color: isDeltaInverse ? const Color(0xFFDC2626) : const Color(0xFF059669),
+                      color: isDeltaInverse ? tokens.dangerText : tokens.successText,
                     ),
                   ),
                 ),
@@ -4685,7 +4767,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                 fontFamily: 'monospace',
                 fontSize: 18,
                 fontWeight: FontWeight.w700,
-                color: valueColor ?? const Color(0xFF0F172A),
+                color: valueColor ?? tokens.textPrimary,
                 letterSpacing: -0.3,
               ),
             ),
@@ -4696,45 +4778,47 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
   }
 
   Widget _buildNumberInputField(String label, TextEditingController ctrl) {
+    final tokens = IcareSurfaceTokens.of(context);
     return TextFormField(
       controller: ctrl,
       keyboardType: const TextInputType.numberWithOptions(decimal: true),
       decoration: InputDecoration(
         labelText: label,
-        labelStyle: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+        labelStyle: TextStyle(fontSize: 12, color: tokens.textMuted),
         prefixIcon: Container(
           padding: const EdgeInsets.only(left: 12, right: 8),
           alignment: Alignment.centerLeft,
           width: 32,
-          child: const Text('₦', style: TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF334155), fontSize: 13)),
+          child: Text('₦', style: TextStyle(fontWeight: FontWeight.w700, color: tokens.textSecondary, fontSize: 13)),
         ),
         filled: true,
-        fillColor: const Color(0xFFF8FAFC),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFFE2E8F0))),
-        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFFCBD5E1))),
-        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFF064E3B), width: 1.5)),
+        fillColor: tokens.surfaceSubtle,
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: tokens.borderSubtle)),
+        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: tokens.borderStrong)),
+        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: tokens.brandPrimary, width: 1.5)),
         contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       ),
-      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, fontFamily: 'monospace'),
+      style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, fontFamily: 'monospace', color: tokens.textPrimary),
     );
   }
 
   Widget _buildTextInputField(String label, TextEditingController ctrl, {String? placeholder}) {
+    final tokens = IcareSurfaceTokens.of(context);
     return TextFormField(
       controller: ctrl,
       decoration: InputDecoration(
         labelText: label,
-        labelStyle: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+        labelStyle: TextStyle(fontSize: 12, color: tokens.textMuted),
         hintText: placeholder,
-        hintStyle: const TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
+        hintStyle: TextStyle(fontSize: 12, color: tokens.textMuted),
         filled: true,
-        fillColor: const Color(0xFFF8FAFC),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFFE2E8F0))),
-        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFFCBD5E1))),
-        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFF064E3B), width: 1.5)),
+        fillColor: tokens.surfaceSubtle,
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: tokens.borderSubtle)),
+        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: tokens.borderStrong)),
+        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: tokens.brandPrimary, width: 1.5)),
         contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       ),
-      style: const TextStyle(fontSize: 13),
+      style: TextStyle(fontSize: 13, color: tokens.textPrimary),
     );
   }
 }

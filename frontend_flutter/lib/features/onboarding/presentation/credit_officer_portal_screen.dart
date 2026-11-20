@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
-import '../../../../core/theme/icare_colors.dart';
+import '../../../../core/theme/icare_theme_tokens.dart';
 import '../../../../core/utils/currency_formatter.dart';
 import '../../auth/presentation/login_screen.dart';
 import '../data/onboarding_api_service.dart';
@@ -156,8 +156,8 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
 
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Roster draft saved successfully.'),
-            backgroundColor: Color(0xFF059669),
+            content: Text('Roster draft saved successfully.', style: TextStyle(color: Colors.white)),
+            backgroundColor: Color(0xFF15803D),
             duration: Duration(seconds: 2),
           ),
         );
@@ -167,7 +167,7 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
         setState(() => _isSaving = false);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Failed to save draft: $e'),
+            content: Text('Failed to save draft: $e', style: const TextStyle(color: Colors.white)),
             backgroundColor: const Color(0xFFDC2626),
           ),
         );
@@ -181,7 +181,7 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
     if (_groups.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Please register at least one solidarity group before submitting.'),
+          content: Text('Please register at least one solidarity group before submitting.', style: TextStyle(color: Colors.white)),
           backgroundColor: Color(0xFFD97706),
         ),
       );
@@ -190,60 +190,64 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
 
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Submit Roster to Branch Manager'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Are you sure you want to submit your roster to your Branch Manager?',
-              style: TextStyle(fontSize: 13, color: Color(0xFF0F172A)),
-            ),
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF8FAFC),
-                borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: const Color(0xFFE2E8F0)),
+      builder: (ctx) {
+        final dialogTokens = IcareSurfaceTokens.of(ctx);
+        return AlertDialog(
+          backgroundColor: dialogTokens.surfaceElevated,
+          title: Text('Submit Roster to Branch Manager', style: TextStyle(color: dialogTokens.textPrimary)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Are you sure you want to submit your roster to your Branch Manager?',
+                style: TextStyle(fontSize: 13, color: dialogTokens.textPrimary),
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Solidarity Groups: ${_groups.length}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 2),
-                  Text('Registered Clients: ${_members.length}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 2),
-                  Text(
-                    'Total Portfolio Savings: ${CurrencyFormatter.formatNaira(double.tryParse(_aggregates['total_portfolio_savings']?.toString() ?? '0') ?? 0.0)}',
-                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF059669)),
-                  ),
-                ],
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: dialogTokens.surfaceSubtle,
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: dialogTokens.borderSubtle),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Solidarity Groups: ${_groups.length}', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: dialogTokens.textPrimary)),
+                    const SizedBox(height: 2),
+                    Text('Registered Clients: ${_members.length}', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: dialogTokens.textPrimary)),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Total Portfolio Savings: ${CurrencyFormatter.formatNaira(double.tryParse(_aggregates['total_portfolio_savings']?.toString() ?? '0') ?? 0.0)}',
+                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: dialogTokens.successText),
+                    ),
+                  ],
+                ),
               ),
+              const SizedBox(height: 12),
+              Text(
+                'Once submitted, your workspace will be locked for editing. If you need to make changes, your Branch Manager can unlock it for you.',
+                style: TextStyle(fontSize: 11.5, color: dialogTokens.textMuted),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Cancel'),
             ),
-            const SizedBox(height: 12),
-            const Text(
-              'Once submitted, your workspace will be locked for editing. If you need to make changes, your Branch Manager can unlock it for you.',
-              style: TextStyle(fontSize: 11.5, color: Color(0xFF64748B)),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: dialogTokens.brandPrimaryDark,
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('Confirm & Submit to BM'),
             ),
           ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: IcareColors.primary,
-              foregroundColor: Colors.white,
-            ),
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Confirm & Submit to BM'),
-          ),
-        ],
-      ),
+        );
+      },
     );
 
     if (confirmed != true) return;
@@ -259,8 +263,8 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Your roster has been submitted to your Branch Manager!'),
-            backgroundColor: Color(0xFF059669),
+            content: Text('Your roster has been submitted to your Branch Manager!', style: TextStyle(color: Colors.white)),
+            backgroundColor: Color(0xFF15803D),
             duration: Duration(seconds: 3),
           ),
         );
@@ -271,7 +275,7 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
         setState(() => _isSaving = false);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Submission failed: $e'),
+            content: Text('Submission failed: $e', style: const TextStyle(color: Colors.white)),
             backgroundColor: const Color(0xFFDC2626),
           ),
         );
@@ -309,8 +313,8 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
 
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(res['message'] ?? 'Excel file ingested successfully.'),
-            backgroundColor: const Color(0xFF059669),
+            content: Text(res['message'] ?? 'Excel file ingested successfully.', style: const TextStyle(color: Colors.white)),
+            backgroundColor: const Color(0xFF15803D),
           ),
         );
       }
@@ -319,7 +323,7 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
         setState(() => _isSaving = false);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Excel upload failed: $e'),
+            content: Text('Excel upload failed: $e', style: const TextStyle(color: Colors.white)),
             backgroundColor: const Color(0xFFDC2626),
           ),
         );
@@ -345,113 +349,129 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
     showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) => AlertDialog(
-          title: Text(isEdit ? 'Edit Solidarity Group' : 'Add New Solidarity Group'),
-          content: SingleChildScrollView(
-            child: SizedBox(
-              width: 440,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextFormField(
-                    controller: nameCtrl,
-                    decoration: const InputDecoration(
-                      labelText: 'Group Name *',
-                      hintText: 'e.g. Progressive Traders Group',
+        builder: (ctx, setDialogState) {
+          final dialogTokens = IcareSurfaceTokens.of(ctx);
+          return AlertDialog(
+            backgroundColor: dialogTokens.surfaceElevated,
+            title: Text(isEdit ? 'Edit Solidarity Group' : 'Add New Solidarity Group', style: TextStyle(color: dialogTokens.textPrimary)),
+            content: SingleChildScrollView(
+              child: SizedBox(
+                width: 440,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextFormField(
+                      controller: nameCtrl,
+                      style: TextStyle(color: dialogTokens.textPrimary),
+                      decoration: const InputDecoration(
+                        labelText: 'Group Name *',
+                        hintText: 'e.g. Progressive Traders Group',
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 12),
-                  TextFormField(
-                    controller: refCtrl,
-                    textCapitalization: TextCapitalization.characters,
-                    decoration: const InputDecoration(
-                      labelText: 'Group Reference *',
-                      hintText: 'e.g. GRP-01',
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: refCtrl,
+                      style: TextStyle(color: dialogTokens.textPrimary),
+                      textCapitalization: TextCapitalization.characters,
+                      decoration: const InputDecoration(
+                        labelText: 'Group Reference *',
+                        hintText: 'e.g. GRP-01',
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 12),
-                  DropdownButtonFormField<String>(
-                    initialValue: _meetingDays.contains(selectedDay) ? selectedDay : _meetingDays.first,
-                    decoration: const InputDecoration(labelText: 'Weekly Meeting Day'),
-                    items: _meetingDays.map<DropdownMenuItem<String>>((d) => DropdownMenuItem<String>(value: d, child: Text(d))).toList(),
-                    onChanged: (val) {
-                      if (val != null) setDialogState(() => selectedDay = val);
-                    },
-                  ),
-                  const SizedBox(height: 12),
-                  TextFormField(
-                    controller: leaderCtrl,
-                    decoration: const InputDecoration(
-                      labelText: 'Group Leader / Representative',
-                      hintText: 'e.g. Mrs. Aminat Adeleke',
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<String>(
+                      initialValue: _meetingDays.contains(selectedDay) ? selectedDay : _meetingDays.first,
+                      dropdownColor: dialogTokens.surfaceElevated,
+                      style: TextStyle(fontSize: 14, color: dialogTokens.textPrimary),
+                      decoration: const InputDecoration(labelText: 'Weekly Meeting Day'),
+                      items: _meetingDays.map<DropdownMenuItem<String>>((d) => DropdownMenuItem<String>(value: d, child: Text(d))).toList(),
+                      onChanged: (val) {
+                        if (val != null) setDialogState(() => selectedDay = val);
+                      },
                     ),
-                  ),
-                  const SizedBox(height: 12),
-                  TextFormField(
-                    controller: savingsCtrl,
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                    decoration: const InputDecoration(
-                      labelText: 'Initial Group Opening Savings (₦)',
-                      hintText: '0.00',
-                      prefixText: '₦ ',
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: leaderCtrl,
+                      style: TextStyle(color: dialogTokens.textPrimary),
+                      decoration: const InputDecoration(
+                        labelText: 'Group Leader / Representative',
+                        hintText: 'e.g. Mrs. Aminat Adeleke',
+                      ),
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: savingsCtrl,
+                      style: TextStyle(color: dialogTokens.textPrimary),
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      decoration: const InputDecoration(
+                        labelText: 'Initial Group Opening Savings (₦)',
+                        hintText: '0.00',
+                        prefixText: '₦ ',
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: IcareColors.primary, foregroundColor: Colors.white),
-              onPressed: () {
-                final gName = nameCtrl.text.trim();
-                final gRef = refCtrl.text.trim().toUpperCase();
-                final gSav = double.tryParse(savingsCtrl.text.trim()) ?? 0.0;
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: dialogTokens.brandPrimaryDark, foregroundColor: Colors.white),
+                onPressed: () {
+                  final gName = nameCtrl.text.trim();
+                  final gRef = refCtrl.text.trim().toUpperCase();
+                  final gSav = double.tryParse(savingsCtrl.text.trim()) ?? 0.0;
 
-                if (gName.isEmpty || gRef.isEmpty) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Group Name and Reference are required.')),
-                  );
-                  return;
-                }
-
-                // Check duplicate reference in this officer's groups
-                if (!isEdit && _groups.any((g) => (g['group_reference'] ?? '').toString().toUpperCase() == gRef)) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Group Reference "$gRef" already exists in your roster.')),
-                  );
-                  return;
-                }
-
-                final updatedGroup = {
-                  'group_reference': gRef,
-                  'group_name': gName,
-                  'meeting_day': selectedDay,
-                  'leader_name': leaderCtrl.text.trim().isEmpty ? null : leaderCtrl.text.trim(),
-                  'group_savings': gSav,
-                  'officer_name': _officer?['name'] ?? '',
-                };
-
-                setState(() {
-                  if (isEdit) {
-                    final idx = _groups.indexOf(groupToEdit);
-                    if (idx >= 0) _groups[idx] = updatedGroup;
-                  } else {
-                    _groups.add(updatedGroup);
+                  if (gName.isEmpty || gRef.isEmpty) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Group Name and Reference are required.', style: TextStyle(color: Colors.white)),
+                        backgroundColor: Color(0xFFDC2626),
+                      ),
+                    );
+                    return;
                   }
-                });
 
-                Navigator.of(ctx).pop();
-                _saveDraft();
-              },
-              child: Text(isEdit ? 'Save Changes' : 'Create Group'),
-            ),
-          ],
-        ),
+                  // Check duplicate reference in this officer's groups
+                  if (!isEdit && _groups.any((g) => (g['group_reference'] ?? '').toString().toUpperCase() == gRef)) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Group Reference "$gRef" already exists in your roster.', style: const TextStyle(color: Colors.white)),
+                        backgroundColor: const Color(0xFFDC2626),
+                      ),
+                    );
+                    return;
+                  }
+
+                  final updatedGroup = {
+                    'group_reference': gRef,
+                    'group_name': gName,
+                    'meeting_day': selectedDay,
+                    'leader_name': leaderCtrl.text.trim().isEmpty ? null : leaderCtrl.text.trim(),
+                    'group_savings': gSav,
+                    'officer_name': _officer?['name'] ?? '',
+                  };
+
+                  setState(() {
+                    if (isEdit) {
+                      final idx = _groups.indexOf(groupToEdit);
+                      if (idx >= 0) _groups[idx] = updatedGroup;
+                    } else {
+                      _groups.add(updatedGroup);
+                    }
+                  });
+
+                  Navigator.of(ctx).pop();
+                  _saveDraft();
+                },
+                child: Text(isEdit ? 'Save Changes' : 'Create Group'),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -464,31 +484,36 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
 
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Delete Solidarity Group'),
-        content: Text(
-          memberCount > 0
-              ? 'Warning: This group currently has $memberCount assigned clients. Deleting it will also remove these clients from your roster. Proceed?'
-              : 'Are you sure you want to delete group "$gRef"?',
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Cancel')),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFDC2626), foregroundColor: Colors.white),
-            onPressed: () {
-              setState(() {
-                _groups.remove(group);
-                if (memberCount > 0) {
-                  _members.removeWhere((m) => (m['group_reference'] ?? '').toString().toUpperCase() == gRef.toUpperCase());
-                }
-              });
-              Navigator.of(ctx).pop();
-              _saveDraft();
-            },
-            child: const Text('Delete'),
+      builder: (ctx) {
+        final dialogTokens = IcareSurfaceTokens.of(ctx);
+        return AlertDialog(
+          backgroundColor: dialogTokens.surfaceElevated,
+          title: Text('Delete Solidarity Group', style: TextStyle(color: dialogTokens.textPrimary)),
+          content: Text(
+            memberCount > 0
+                ? 'Warning: This group currently has $memberCount assigned clients. Deleting it will also remove these clients from your roster. Proceed?'
+                : 'Are you sure you want to delete group "$gRef"?',
+            style: TextStyle(color: dialogTokens.textSecondary),
           ),
-        ],
-      ),
+          actions: [
+            TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Cancel')),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFDC2626), foregroundColor: Colors.white),
+              onPressed: () {
+                setState(() {
+                  _groups.remove(group);
+                  if (memberCount > 0) {
+                    _members.removeWhere((m) => (m['group_reference'] ?? '').toString().toUpperCase() == gRef.toUpperCase());
+                  }
+                });
+                Navigator.of(ctx).pop();
+                _saveDraft();
+              },
+              child: const Text('Delete'),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -501,7 +526,10 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
 
     if (_groups.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please create at least one solidarity group first.')),
+        const SnackBar(
+          content: Text('Please create at least one solidarity group first.', style: TextStyle(color: Colors.white)),
+          backgroundColor: Color(0xFFDC2626),
+        ),
       );
       return;
     }
@@ -530,147 +558,167 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
     showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) => AlertDialog(
-          title: Text(isEdit ? 'Edit Client Roster Record' : 'Register New Client'),
-          content: SingleChildScrollView(
-            child: SizedBox(
-              width: 480,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  TextFormField(
-                    controller: nameCtrl,
-                    decoration: const InputDecoration(labelText: 'Client Full Name *', hintText: 'e.g. Babatunde Adeleke'),
-                  ),
-                  const SizedBox(height: 12),
-                  DropdownButtonFormField<String>(
-                    initialValue: _groups.any((g) => g['group_reference'] == selectedGroupRef) ? selectedGroupRef : _groups.first['group_reference'],
-                    decoration: const InputDecoration(labelText: 'Assigned Solidarity Group *'),
-                    items: _groups.map<DropdownMenuItem<String>>((g) {
-                      final ref = g['group_reference']?.toString() ?? '';
-                      final name = g['group_name']?.toString() ?? '';
-                      return DropdownMenuItem<String>(value: ref, child: Text('$ref — $name'));
-                    }).toList(),
-                    onChanged: (val) {
-                      if (val != null) setDialogState(() => selectedGroupRef = val);
-                    },
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextFormField(
-                          controller: phoneCtrl,
-                          keyboardType: TextInputType.phone,
-                          decoration: const InputDecoration(labelText: 'Phone Number', hintText: '08012345678'),
+        builder: (ctx, setDialogState) {
+          final dialogTokens = IcareSurfaceTokens.of(ctx);
+          return AlertDialog(
+            backgroundColor: dialogTokens.surfaceElevated,
+            title: Text(isEdit ? 'Edit Client Roster Record' : 'Register New Client', style: TextStyle(color: dialogTokens.textPrimary)),
+            content: SingleChildScrollView(
+              child: SizedBox(
+                width: 480,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    TextFormField(
+                      controller: nameCtrl,
+                      style: TextStyle(color: dialogTokens.textPrimary),
+                      decoration: const InputDecoration(labelText: 'Client Full Name *', hintText: 'e.g. Babatunde Adeleke'),
+                    ),
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<String>(
+                      initialValue: _groups.any((g) => g['group_reference'] == selectedGroupRef) ? selectedGroupRef : _groups.first['group_reference'],
+                      dropdownColor: dialogTokens.surfaceElevated,
+                      style: TextStyle(fontSize: 14, color: dialogTokens.textPrimary),
+                      decoration: const InputDecoration(labelText: 'Assigned Solidarity Group *'),
+                      items: _groups.map<DropdownMenuItem<String>>((g) {
+                        final ref = g['group_reference']?.toString() ?? '';
+                        final name = g['group_name']?.toString() ?? '';
+                        return DropdownMenuItem<String>(value: ref, child: Text('$ref — $name'));
+                      }).toList(),
+                      onChanged: (val) {
+                        if (val != null) setDialogState(() => selectedGroupRef = val);
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextFormField(
+                            controller: phoneCtrl,
+                            style: TextStyle(color: dialogTokens.textPrimary),
+                            keyboardType: TextInputType.phone,
+                            decoration: const InputDecoration(labelText: 'Phone Number', hintText: '08012345678'),
+                          ),
                         ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: TextFormField(
-                          controller: savingsCtrl,
-                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                          decoration: const InputDecoration(labelText: 'Savings Balance (₦)', hintText: '0.00', prefixText: '₦ '),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: TextFormField(
+                            controller: savingsCtrl,
+                            style: TextStyle(color: dialogTokens.textPrimary),
+                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                            decoration: const InputDecoration(labelText: 'Savings Balance (₦)', hintText: '0.00', prefixText: '₦ '),
+                          ),
                         ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  TextFormField(
-                    controller: addrCtrl,
-                    decoration: const InputDecoration(labelText: 'Residential Address', hintText: 'e.g. 14 Market Street'),
-                  ),
-                  const SizedBox(height: 16),
-                  const Divider(),
-                  const SizedBox(height: 8),
-                  const Text('Active Loan Position (Optional)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF0F172A))),
-                  const SizedBox(height: 10),
-                  DropdownButtonFormField<String>(
-                    initialValue: _loanProducts.any((p) => p['name'] == selectedLoanProduct) ? selectedLoanProduct : null,
-                    decoration: const InputDecoration(labelText: 'Loan Product Category'),
-                    items: _loanProducts.map<DropdownMenuItem<String>>((p) {
-                      final pName = p['name']?.toString() ?? '';
-                      return DropdownMenuItem<String>(value: pName, child: Text(pName));
-                    }).toList(),
-                    onChanged: (val) => setDialogState(() => selectedLoanProduct = val),
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextFormField(
-                          controller: principalCtrl,
-                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                          decoration: const InputDecoration(labelText: 'Principal Disbursed (₦)', hintText: '0.00', prefixText: '₦ '),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: addrCtrl,
+                      style: TextStyle(color: dialogTokens.textPrimary),
+                      decoration: const InputDecoration(labelText: 'Residential Address', hintText: 'e.g. 14 Market Street'),
+                    ),
+                    const SizedBox(height: 16),
+                    Divider(color: dialogTokens.borderSubtle),
+                    const SizedBox(height: 8),
+                    Text('Active Loan Position (Optional)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: dialogTokens.textPrimary)),
+                    const SizedBox(height: 10),
+                    DropdownButtonFormField<String>(
+                      initialValue: _loanProducts.any((p) => p['name'] == selectedLoanProduct) ? selectedLoanProduct : null,
+                      dropdownColor: dialogTokens.surfaceElevated,
+                      style: TextStyle(fontSize: 14, color: dialogTokens.textPrimary),
+                      decoration: const InputDecoration(labelText: 'Loan Product Category'),
+                      items: _loanProducts.map<DropdownMenuItem<String>>((p) {
+                        final pName = p['name']?.toString() ?? '';
+                        return DropdownMenuItem<String>(value: pName, child: Text(pName));
+                      }).toList(),
+                      onChanged: (val) => setDialogState(() => selectedLoanProduct = val),
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextFormField(
+                            controller: principalCtrl,
+                            style: TextStyle(color: dialogTokens.textPrimary),
+                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                            decoration: const InputDecoration(labelText: 'Principal Disbursed (₦)', hintText: '0.00', prefixText: '₦ '),
+                          ),
                         ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: TextFormField(
-                          controller: activeCreditCtrl,
-                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                          decoration: const InputDecoration(labelText: 'Active Credit (₦)', hintText: '0.00', prefixText: '₦ '),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: TextFormField(
+                            controller: activeCreditCtrl,
+                            style: TextStyle(color: dialogTokens.textPrimary),
+                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                            decoration: const InputDecoration(labelText: 'Active Credit (₦)', hintText: '0.00', prefixText: '₦ '),
+                          ),
                         ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  TextFormField(
-                    controller: currentBalCtrl,
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                    decoration: const InputDecoration(labelText: 'Current Loan Balance (₦)', hintText: '0.00', prefixText: '₦ '),
-                  ),
-                ],
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: currentBalCtrl,
+                      style: TextStyle(color: dialogTokens.textPrimary),
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      decoration: const InputDecoration(labelText: 'Current Loan Balance (₦)', hintText: '0.00', prefixText: '₦ '),
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Cancel')),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: IcareColors.primary, foregroundColor: Colors.white),
-              onPressed: () {
-                final fName = nameCtrl.text.trim();
-                if (fName.isEmpty) {
-                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Client name is required.')));
-                  return;
-                }
-
-                final sBal = double.tryParse(savingsCtrl.text.replaceAll(',', '').trim()) ?? 0.0;
-                final pAmount = double.tryParse(principalCtrl.text.replaceAll(',', '').trim()) ?? 0.0;
-                final aCred = double.tryParse(activeCreditCtrl.text.replaceAll(',', '').trim()) ?? 0.0;
-                final cBal = double.tryParse(currentBalCtrl.text.replaceAll(',', '').trim()) ?? (aCred > 0 ? aCred : 0.0);
-
-                final updatedMember = {
-                  'full_name': fName,
-                  'group_reference': selectedGroupRef,
-                  'phone_number': phoneCtrl.text.trim().isEmpty ? null : phoneCtrl.text.trim(),
-                  'home_address': addrCtrl.text.trim().isEmpty ? null : addrCtrl.text.trim(),
-                  'savings_balance': sBal,
-                  'principal': pAmount > 0 ? pAmount : (aCred > 0 ? aCred : 0.0),
-                  'principal_loan': pAmount > 0 ? pAmount : (aCred > 0 ? aCred : 0.0),
-                  'active_credit': aCred,
-                  'current_credit_balance': cBal,
-                  'loan_type': (pAmount > 0 || aCred > 0 || cBal > 0) ? selectedLoanProduct : null,
-                  'officer_name': _officer?['name'] ?? '',
-                };
-
-                setState(() {
-                  if (isEdit) {
-                    final idx = _members.indexOf(memberToEdit);
-                    if (idx >= 0) _members[idx] = updatedMember;
-                  } else {
-                    _members.add(updatedMember);
+            actions: [
+              TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Cancel')),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: dialogTokens.brandPrimaryDark, foregroundColor: Colors.white),
+                onPressed: () {
+                  final fName = nameCtrl.text.trim();
+                  if (fName.isEmpty) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Client name is required.', style: TextStyle(color: Colors.white)),
+                        backgroundColor: Color(0xFFDC2626),
+                      ),
+                    );
+                    return;
                   }
-                });
 
-                Navigator.of(ctx).pop();
-                _saveDraft();
-              },
-              child: Text(isEdit ? 'Save Changes' : 'Register Client'),
-            ),
-          ],
-        ),
+                  final sBal = double.tryParse(savingsCtrl.text.replaceAll(',', '').trim()) ?? 0.0;
+                  final pAmount = double.tryParse(principalCtrl.text.replaceAll(',', '').trim()) ?? 0.0;
+                  final aCred = double.tryParse(activeCreditCtrl.text.replaceAll(',', '').trim()) ?? 0.0;
+                  final cBal = double.tryParse(currentBalCtrl.text.replaceAll(',', '').trim()) ?? (aCred > 0 ? aCred : 0.0);
+
+                  final updatedMember = {
+                    'full_name': fName,
+                    'group_reference': selectedGroupRef,
+                    'phone_number': phoneCtrl.text.trim().isEmpty ? null : phoneCtrl.text.trim(),
+                    'home_address': addrCtrl.text.trim().isEmpty ? null : addrCtrl.text.trim(),
+                    'savings_balance': sBal,
+                    'principal': pAmount > 0 ? pAmount : (aCred > 0 ? aCred : 0.0),
+                    'principal_loan': pAmount > 0 ? pAmount : (aCred > 0 ? aCred : 0.0),
+                    'active_credit': aCred,
+                    'current_credit_balance': cBal,
+                    'loan_type': (pAmount > 0 || aCred > 0 || cBal > 0) ? selectedLoanProduct : null,
+                    'officer_name': _officer?['name'] ?? '',
+                  };
+
+                  setState(() {
+                    if (isEdit) {
+                      final idx = _members.indexOf(memberToEdit);
+                      if (idx >= 0) _members[idx] = updatedMember;
+                    } else {
+                      _members.add(updatedMember);
+                    }
+                  });
+
+                  Navigator.of(ctx).pop();
+                  _saveDraft();
+                },
+                child: Text(isEdit ? 'Save Changes' : 'Register Client'),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -680,22 +728,26 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
 
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Delete Client Record'),
-        content: Text('Are you sure you want to remove "${member['full_name']}" from your roster?'),
-        actions: [
-          TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Cancel')),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFDC2626), foregroundColor: Colors.white),
-            onPressed: () {
-              setState(() => _members.remove(member));
-              Navigator.of(ctx).pop();
-              _saveDraft();
-            },
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
+      builder: (ctx) {
+        final dialogTokens = IcareSurfaceTokens.of(ctx);
+        return AlertDialog(
+          backgroundColor: dialogTokens.surfaceElevated,
+          title: Text('Delete Client Record', style: TextStyle(color: dialogTokens.textPrimary)),
+          content: Text('Are you sure you want to remove "${member['full_name']}" from your roster?', style: TextStyle(color: dialogTokens.textSecondary)),
+          actions: [
+            TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Cancel')),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFDC2626), foregroundColor: Colors.white),
+              onPressed: () {
+                setState(() => _members.remove(member));
+                Navigator.of(ctx).pop();
+                _saveDraft();
+              },
+              child: const Text('Delete'),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -705,18 +757,19 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
 
   @override
   Widget build(BuildContext context) {
+    final tokens = IcareSurfaceTokens.of(context);
     if (_isLoading) {
-      return const Scaffold(
-        backgroundColor: Color(0xFFF8FAFC),
+      return Scaffold(
+        backgroundColor: tokens.canvas,
         body: Center(
-          child: CircularProgressIndicator(color: IcareColors.primary),
+          child: CircularProgressIndicator(color: tokens.brandPrimary),
         ),
       );
     }
 
     if (_currentToken.isEmpty || _errorMessage != null) {
       return Scaffold(
-        backgroundColor: const Color(0xFFF8FAFC),
+        backgroundColor: tokens.canvas,
         body: Center(
           child: SingleChildScrollView(
             padding: const EdgeInsets.all(24),
@@ -724,14 +777,14 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
               constraints: const BoxConstraints(maxWidth: 480),
               padding: const EdgeInsets.all(28),
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: tokens.surface,
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: const Color(0xFFE2E8F0)),
-                boxShadow: const [
+                border: Border.all(color: tokens.borderSubtle),
+                boxShadow: [
                   BoxShadow(
-                    color: Color(0x0A000000),
+                    color: Colors.black.withValues(alpha: tokens.isDark ? 0.25 : 0.04),
                     blurRadius: 16,
-                    offset: Offset(0, 4),
+                    offset: const Offset(0, 4),
                   )
                 ],
               ),
@@ -742,16 +795,16 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
                     width: 52,
                     height: 52,
                     decoration: BoxDecoration(
-                      color: const Color(0xFFEFF6FF),
+                      color: tokens.infoBg,
                       shape: BoxShape.circle,
-                      border: Border.all(color: const Color(0xFFBFDBFE)),
+                      border: Border.all(color: tokens.infoBorder),
                     ),
-                    child: const Icon(Icons.badge_outlined, size: 26, color: Color(0xFF1D4ED8)),
+                    child: Icon(Icons.badge_outlined, size: 26, color: tokens.infoText),
                   ),
                   const SizedBox(height: 16),
-                  const Text(
+                  Text(
                     'Credit Officer Portal Access',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: tokens.textPrimary),
                   ),
                   const SizedBox(height: 8),
                   Text(
@@ -759,13 +812,14 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       fontSize: 13,
-                      color: _errorMessage != null ? const Color(0xFFDC2626) : const Color(0xFF475569),
+                      color: _errorMessage != null ? tokens.dangerText : tokens.textSecondary,
                       height: 1.4,
                     ),
                   ),
                   const SizedBox(height: 20),
                   TextField(
                     controller: _tokenCtrl,
+                    style: TextStyle(color: tokens.textPrimary),
                     decoration: InputDecoration(
                       labelText: 'Credit Officer Token',
                       hintText: 'e.g. onb_co_...',
@@ -780,7 +834,7 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
                     height: 42,
                     child: ElevatedButton.icon(
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: IcareColors.primary,
+                        backgroundColor: tokens.brandPrimaryDark,
                         foregroundColor: Colors.white,
                       ),
                       onPressed: () {
@@ -808,7 +862,7 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
                       );
                     },
                     icon: const Icon(Icons.arrow_back, size: 14),
-                    label: const Text('Return to Staff Login', style: TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+                    label: Text('Return to Staff Login', style: TextStyle(fontSize: 12, color: tokens.textMuted)),
                   ),
                 ],
               ),
@@ -822,7 +876,7 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
     final isSubmitted = _officer?['status'] == 'submitted';
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF8FAFC),
+      backgroundColor: tokens.canvas,
       body: SafeArea(
         child: Column(
           children: [
@@ -834,7 +888,10 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
 
             // Tab Navigation
             Container(
-              color: Colors.white,
+              decoration: BoxDecoration(
+                color: tokens.surface,
+                border: Border(bottom: BorderSide(color: tokens.borderSubtle)),
+              ),
               child: LayoutBuilder(
                 builder: (context, tabConstraints) {
                   final isTabScrollable = tabConstraints.maxWidth < 640;
@@ -842,9 +899,9 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
                     controller: _tabController,
                     isScrollable: isTabScrollable,
                     tabAlignment: isTabScrollable ? TabAlignment.start : TabAlignment.fill,
-                    labelColor: IcareColors.primary,
-                    unselectedLabelColor: const Color(0xFF64748B),
-                    indicatorColor: IcareColors.primary,
+                    labelColor: tokens.brandPrimary,
+                    unselectedLabelColor: tokens.textMuted,
+                    indicatorColor: tokens.brandPrimary,
                     indicatorWeight: 2.5,
                     labelPadding: EdgeInsets.symmetric(horizontal: isTabScrollable ? 14 : 16),
                     labelStyle: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold),
@@ -918,11 +975,12 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
   // =========================================================================
 
   Widget _buildTopAppBar(String officerName, bool isSubmitted) {
+    final tokens = IcareSurfaceTokens.of(context);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        border: Border(bottom: BorderSide(color: Color(0xFFE2E8F0))),
+      decoration: BoxDecoration(
+        color: tokens.surface,
+        border: Border(bottom: BorderSide(color: tokens.borderSubtle)),
       ),
       child: LayoutBuilder(
         builder: (context, constraints) {
@@ -931,7 +989,7 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
           final branchPill = Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             decoration: BoxDecoration(
-              color: const Color(0xFF0F2744),
+              color: tokens.brandPrimaryDark,
               borderRadius: BorderRadius.circular(4),
             ),
             child: Text(
@@ -943,16 +1001,16 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
           final statusPill = Container(
             padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
             decoration: BoxDecoration(
-              color: isSubmitted ? const Color(0xFFEFF6FF) : const Color(0xFFFFFBEB),
+              color: isSubmitted ? tokens.infoBg : tokens.warningBg,
               borderRadius: BorderRadius.circular(4),
-              border: Border.all(color: isSubmitted ? const Color(0xFFBFDBFE) : const Color(0xFFFDE68A)),
+              border: Border.all(color: isSubmitted ? tokens.infoBorder : tokens.warningBorder),
             ),
             child: Text(
               isSubmitted ? 'SUBMITTED' : 'DRAFTING',
               style: TextStyle(
                 fontSize: 9.5,
                 fontWeight: FontWeight.bold,
-                color: isSubmitted ? const Color(0xFF1D4ED8) : const Color(0xFFB45309),
+                color: isSubmitted ? tokens.infoText : tokens.warningText,
               ),
             ),
           );
@@ -976,7 +1034,7 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
                               Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
                                 decoration: BoxDecoration(
-                                  color: const Color(0xFF059669),
+                                  color: const Color(0xFF15803D),
                                   borderRadius: BorderRadius.circular(3),
                                 ),
                                 child: const Text(
@@ -993,10 +1051,10 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
                               Expanded(
                                 child: Text(
                                   officerName,
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     fontSize: 14,
                                     fontWeight: FontWeight.bold,
-                                    color: Color(0xFF0F172A),
+                                    color: tokens.textPrimary,
                                   ),
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
@@ -1007,7 +1065,7 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
                           const SizedBox(height: 2),
                           Text(
                             '$_branchName Branch${_expiresAt != null ? " • Due: ${DateFormat('dd MMM').format(_expiresAt!.toLocal())}" : ""}',
-                            style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                            style: TextStyle(fontSize: 11, color: tokens.textMuted),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
@@ -1027,9 +1085,10 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
                       Expanded(
                         child: OutlinedButton.icon(
                           style: OutlinedButton.styleFrom(
+                            foregroundColor: tokens.textPrimary,
                             padding: const EdgeInsets.symmetric(vertical: 8),
                             minimumSize: const Size(0, 36),
-                            side: const BorderSide(color: Color(0xFFCBD5E1)),
+                            side: BorderSide(color: tokens.borderStrong),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
                           ),
                           onPressed: _isSaving ? null : _saveDraft,
@@ -1043,7 +1102,7 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
                       Expanded(
                         child: ElevatedButton.icon(
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: IcareColors.primary,
+                            backgroundColor: tokens.brandPrimaryDark,
                             foregroundColor: Colors.white,
                             padding: const EdgeInsets.symmetric(vertical: 8),
                             minimumSize: const Size(0, 36),
@@ -1061,16 +1120,16 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
                     width: double.infinity,
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFECFDF5),
+                      color: tokens.successBg,
                       borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: const Color(0xFFA7F3D0)),
+                      border: Border.all(color: tokens.successBorder),
                     ),
-                    child: const Row(
+                    child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(Icons.check_circle_outline, size: 14, color: Color(0xFF059669)),
-                        SizedBox(width: 6),
-                        Text('Roster Submitted & Locked', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: Color(0xFF059669))),
+                        Icon(Icons.check_circle_outline, size: 14, color: tokens.successDot),
+                        const SizedBox(width: 6),
+                        Text('Roster Submitted & Locked', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: tokens.successText)),
                       ],
                     ),
                   ),
@@ -1089,7 +1148,7 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF059669),
+                      color: const Color(0xFF15803D),
                       borderRadius: BorderRadius.circular(4),
                     ),
                     child: const Text(
@@ -1103,9 +1162,12 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
                     ),
                   ),
                   const SizedBox(width: 8),
-                  Text(
-                    officerName,
-                    style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
+                  Flexible(
+                    child: Text(
+                      officerName,
+                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: tokens.textPrimary),
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
                   const SizedBox(width: 8),
                   statusPill,
@@ -1114,7 +1176,7 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
               const SizedBox(height: 2),
               Text(
                 'Credit Officer • $_branchName • Branch: ${_sessionStatus.toUpperCase()}${_expiresAt != null ? " • Due: ${DateFormat('dd MMM').format(_expiresAt!.toLocal())}" : ""}',
-                style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B)),
+                style: TextStyle(fontSize: 11.5, color: tokens.textMuted),
               ),
             ],
           );
@@ -1125,6 +1187,8 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
               if (!_isLocked) ...[
                 OutlinedButton.icon(
                   style: OutlinedButton.styleFrom(
+                    foregroundColor: tokens.textPrimary,
+                    side: BorderSide(color: tokens.borderStrong),
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                     minimumSize: const Size(0, 34),
                   ),
@@ -1137,7 +1201,7 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
                 const SizedBox(width: 8),
                 ElevatedButton.icon(
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: IcareColors.primary,
+                    backgroundColor: tokens.brandPrimaryDark,
                     foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                     minimumSize: const Size(0, 34),
@@ -1150,16 +1214,16 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFECFDF5),
+                    color: tokens.successBg,
                     borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: const Color(0xFFA7F3D0)),
+                    border: Border.all(color: tokens.successBorder),
                   ),
-                  child: const Row(
+                  child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.check_circle_outline, size: 14, color: Color(0xFF059669)),
-                      SizedBox(width: 6),
-                      Text('Submitted & Locked', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: Color(0xFF059669))),
+                      Icon(Icons.check_circle_outline, size: 14, color: tokens.successDot),
+                      const SizedBox(width: 6),
+                      Text('Submitted & Locked', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: tokens.successText)),
                     ],
                   ),
                 ),
@@ -1185,6 +1249,7 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
   // =========================================================================
 
   Widget _buildPortfolioSummaryRibbon() {
+    final tokens = IcareSurfaceTokens.of(context);
     final isGroupFiltered = _selectedGroupFilter != 'All';
     final targetGroups = isGroupFiltered
         ? _groups.where((g) => (g['group_reference'] ?? '').toString().toUpperCase() == _selectedGroupFilter.toUpperCase()).toList()
@@ -1271,9 +1336,9 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
     ];
 
     return Container(
-      decoration: const BoxDecoration(
-        color: Color(0xFFF1F5F9),
-        border: Border(bottom: BorderSide(color: Color(0xFFE2E8F0))),
+      decoration: BoxDecoration(
+        color: tokens.surfaceSubtle,
+        border: Border(bottom: BorderSide(color: tokens.borderSubtle)),
       ),
       child: LayoutBuilder(
         builder: (context, constraints) {
@@ -1314,23 +1379,24 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
     bool isPrimary = false,
     bool isAlert = false,
   }) {
+    final tokens = IcareSurfaceTokens.of(context);
     return Container(
       constraints: const BoxConstraints(minWidth: 120),
       padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
       decoration: BoxDecoration(
-        color: isPrimary ? const Color(0xFFECFDF5) : Colors.white,
+        color: isPrimary ? tokens.brandSoftBg : tokens.surface,
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
           color: isPrimary
-              ? const Color(0xFF10B981)
-              : (isAlert ? const Color(0xFFFCA5A5) : const Color(0xFFCBD5E1)),
+              ? tokens.brandSoftBorder
+              : (isAlert ? tokens.dangerBorder : tokens.borderSubtle),
           width: isPrimary ? 1.4 : 1.0,
         ),
-        boxShadow: const [
+        boxShadow: [
           BoxShadow(
-            color: Color(0x06000000),
+            color: Colors.black.withValues(alpha: tokens.isDark ? 0.16 : 0.025),
             blurRadius: 3,
-            offset: Offset(0, 1),
+            offset: const Offset(0, 1),
           ),
         ],
       ),
@@ -1346,8 +1412,8 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
                 icon,
                 size: 11,
                 color: isPrimary
-                    ? const Color(0xFF059669)
-                    : (isAlert ? const Color(0xFFDC2626) : const Color(0xFF64748B)),
+                    ? tokens.brandSoftText
+                    : (isAlert ? tokens.dangerDot : tokens.textMuted),
               ),
               const SizedBox(width: 4),
               Flexible(
@@ -1357,8 +1423,8 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
                     fontSize: 9.5,
                     fontWeight: FontWeight.w600,
                     color: isPrimary
-                        ? const Color(0xFF065F46)
-                        : (isAlert ? const Color(0xFF991B1B) : const Color(0xFF64748B)),
+                        ? tokens.brandSoftText
+                        : (isAlert ? tokens.dangerText : tokens.textMuted),
                   ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -1373,8 +1439,8 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
               fontSize: 12.5,
               fontWeight: FontWeight.w800,
               color: isPrimary
-                  ? const Color(0xFF047857)
-                  : (isAlert ? const Color(0xFFDC2626) : const Color(0xFF0F172A)),
+                  ? tokens.brandSoftText
+                  : (isAlert ? tokens.dangerText : tokens.textPrimary),
               fontFeatures: const [FontFeature.tabularFigures()],
             ),
             softWrap: false,
@@ -1390,6 +1456,7 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
   // =========================================================================
 
   Widget _buildGroupsTab() {
+    final tokens = IcareSurfaceTokens.of(context);
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(
@@ -1398,13 +1465,15 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text(
-                'My Solidarity Groups',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
+              Flexible(
+                child: Text(
+                  'My Solidarity Groups',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: tokens.textPrimary),
+                ),
               ),
               if (!_isLocked)
                 ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(backgroundColor: IcareColors.primary, foregroundColor: Colors.white),
+                  style: ElevatedButton.styleFrom(backgroundColor: tokens.brandPrimaryDark, foregroundColor: Colors.white),
                   onPressed: () => _openGroupDialog(),
                   icon: const Icon(Icons.group_add_outlined, size: 16),
                   label: const Text('Add Group', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
@@ -1433,9 +1502,9 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
                 return Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: Colors.white,
+                    color: tokens.surface,
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                    border: Border.all(color: tokens.borderSubtle),
                   ),
                   child: LayoutBuilder(
                     builder: (context, cardConstraints) {
@@ -1450,27 +1519,27 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
                                 Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
                                   decoration: BoxDecoration(
-                                    color: const Color(0xFFF1F5F9),
+                                    color: tokens.surfaceSubtle,
                                     borderRadius: BorderRadius.circular(4),
-                                    border: Border.all(color: const Color(0xFFCBD5E1)),
+                                    border: Border.all(color: tokens.borderStrong),
                                   ),
                                   child: Text(
                                     gRef,
-                                    style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: Color(0xFF334155)),
+                                    style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: tokens.textSecondary),
                                   ),
                                 ),
                                 const SizedBox(width: 8),
                                 Expanded(
                                   child: Text(
                                     gName,
-                                    style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
+                                    style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold, color: tokens.textPrimary),
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                   ),
                                 ),
                                 if (!_isLocked) ...[
                                   IconButton(
-                                    icon: const Icon(Icons.edit_outlined, size: 15, color: Color(0xFF2563EB)),
+                                    icon: Icon(Icons.edit_outlined, size: 15, color: tokens.infoText),
                                     visualDensity: VisualDensity.compact,
                                     padding: EdgeInsets.zero,
                                     constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
@@ -1478,7 +1547,7 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
                                     tooltip: 'Edit group',
                                   ),
                                   IconButton(
-                                    icon: const Icon(Icons.delete_outline, size: 15, color: Color(0xFFDC2626)),
+                                    icon: Icon(Icons.delete_outline, size: 15, color: tokens.dangerDot),
                                     visualDensity: VisualDensity.compact,
                                     padding: EdgeInsets.zero,
                                     constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
@@ -1495,7 +1564,7 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
                                 Expanded(
                                   child: Text(
                                     'Meeting: $day • $clientCount clients ${leader != null ? "• Rep: $leader" : ""}',
-                                    style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                                    style: TextStyle(fontSize: 11, color: tokens.textMuted),
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                   ),
@@ -1503,7 +1572,7 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
                                 const SizedBox(width: 8),
                                 Text(
                                   'Pool: ${CurrencyFormatter.formatNaira(sav)}',
-                                  style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: Color(0xFF059669)),
+                                  style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: tokens.successText),
                                 ),
                               ],
                             ),
@@ -1516,13 +1585,13 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                             decoration: BoxDecoration(
-                              color: const Color(0xFFF1F5F9),
+                              color: tokens.surfaceSubtle,
                               borderRadius: BorderRadius.circular(4),
-                              border: Border.all(color: const Color(0xFFCBD5E1)),
+                              border: Border.all(color: tokens.borderStrong),
                             ),
                             child: Text(
                               gRef,
-                              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF334155)),
+                              style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: tokens.textSecondary),
                             ),
                           ),
                           const SizedBox(width: 12),
@@ -1530,11 +1599,11 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(gName, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF0F172A))),
+                                Text(gName, style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: tokens.textPrimary)),
                                 const SizedBox(height: 2),
                                 Text(
                                   'Meeting: $day • $clientCount registered clients ${leader != null ? "• Rep: $leader" : ""}',
-                                  style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B)),
+                                  style: TextStyle(fontSize: 11.5, color: tokens.textMuted),
                                 ),
                               ],
                             ),
@@ -1542,23 +1611,23 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
                           Column(
                             crossAxisAlignment: CrossAxisAlignment.end,
                             children: [
-                              const Text('Group Savings Pool', style: TextStyle(fontSize: 10, color: Color(0xFF64748B))),
+                              Text('Group Savings Pool', style: TextStyle(fontSize: 10, color: tokens.textMuted)),
                               Text(
                                 CurrencyFormatter.formatNaira(sav),
-                                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF059669)),
+                                style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: tokens.successText),
                               ),
                             ],
                           ),
                           if (!_isLocked) ...[
                             const SizedBox(width: 10),
                             IconButton(
-                              icon: const Icon(Icons.edit_outlined, size: 16, color: Color(0xFF2563EB)),
+                              icon: Icon(Icons.edit_outlined, size: 16, color: tokens.infoText),
                               visualDensity: VisualDensity.compact,
                               onPressed: () => _openGroupDialog(groupToEdit: g),
                               tooltip: 'Edit group',
                             ),
                             IconButton(
-                              icon: const Icon(Icons.delete_outline, size: 16, color: Color(0xFFDC2626)),
+                              icon: Icon(Icons.delete_outline, size: 16, color: tokens.dangerDot),
                               visualDensity: VisualDensity.compact,
                               onPressed: () => _confirmDeleteGroup(g),
                               tooltip: 'Delete group',
@@ -1581,6 +1650,7 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
   // =========================================================================
 
   Widget _buildMembersTab() {
+    final tokens = IcareSurfaceTokens.of(context);
     final filteredMembers = _members.where((m) {
       final matchesGroup = _selectedGroupFilter == 'All' || (m['group_reference'] ?? '').toString().toUpperCase() == _selectedGroupFilter.toUpperCase();
       final q = _searchQuery.trim().toLowerCase();
@@ -1599,13 +1669,15 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text(
-                'My Clients Roster',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
+              Flexible(
+                child: Text(
+                  'My Clients Roster',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: tokens.textPrimary),
+                ),
               ),
               if (!_isLocked)
                 ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(backgroundColor: IcareColors.primary, foregroundColor: Colors.white),
+                  style: ElevatedButton.styleFrom(backgroundColor: tokens.brandPrimaryDark, foregroundColor: Colors.white),
                   onPressed: () => _openMemberDialog(),
                   icon: const Icon(Icons.person_add_alt_outlined, size: 16),
                   label: const Text('Register Client', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
@@ -1621,10 +1693,11 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
                 child: SizedBox(
                   height: 38,
                   child: TextField(
+                    style: TextStyle(fontSize: 13, color: tokens.textPrimary),
                     decoration: InputDecoration(
                       hintText: 'Search client name or phone...',
-                      hintStyle: const TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
-                      prefixIcon: const Icon(Icons.search, size: 16, color: Color(0xFF64748B)),
+                      hintStyle: TextStyle(fontSize: 12, color: tokens.textMuted),
+                      prefixIcon: Icon(Icons.search, size: 16, color: tokens.textMuted),
                       suffixIcon: _searchQuery.isNotEmpty
                           ? IconButton(
                               icon: const Icon(Icons.clear, size: 14),
@@ -1634,14 +1707,14 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
                       contentPadding: const EdgeInsets.symmetric(horizontal: 10),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(8),
-                        borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
+                        borderSide: BorderSide(color: tokens.borderStrong),
                       ),
                       enabledBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(8),
-                        borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                        borderSide: BorderSide(color: tokens.borderSubtle),
                       ),
                       filled: true,
-                      fillColor: Colors.white,
+                      fillColor: tokens.surface,
                     ),
                     onChanged: (val) => setState(() => _searchQuery = val),
                   ),
@@ -1652,15 +1725,16 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
                 height: 38,
                 padding: const EdgeInsets.symmetric(horizontal: 10),
                 decoration: BoxDecoration(
-                  color: Colors.white,
+                  color: tokens.surface,
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                  border: Border.all(color: tokens.borderSubtle),
                 ),
                 child: DropdownButtonHideUnderline(
                   child: DropdownButton<String>(
                     value: _selectedGroupFilter,
-                    icon: const Icon(Icons.arrow_drop_down, color: Color(0xFF64748B)),
-                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF0F172A)),
+                    dropdownColor: tokens.surfaceElevated,
+                    icon: Icon(Icons.arrow_drop_down, color: tokens.textMuted),
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tokens.textPrimary),
                     items: [
                       const DropdownMenuItem(value: 'All', child: Text('All Groups')),
                       ..._groups.map((g) => DropdownMenuItem(
@@ -1699,9 +1773,9 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
                 return Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: Colors.white,
+                    color: tokens.surface,
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                    border: Border.all(color: tokens.borderSubtle),
                   ),
                   child: LayoutBuilder(
                     builder: (context, cardConstraints) {
@@ -1715,10 +1789,10 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
                               children: [
                                 CircleAvatar(
                                   radius: 14,
-                                  backgroundColor: const Color(0xFFEFF6FF),
+                                  backgroundColor: tokens.infoBg,
                                   child: Text(
                                     name.isNotEmpty ? name.substring(0, 1).toUpperCase() : 'C',
-                                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF1D4ED8)),
+                                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: tokens.infoText),
                                   ),
                                 ),
                                 const SizedBox(width: 8),
@@ -1728,14 +1802,14 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
                                     children: [
                                       Text(
                                         name,
-                                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
+                                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: tokens.textPrimary),
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
                                       ),
                                       const SizedBox(height: 1),
                                       Text(
                                         'Group $gRef${phone.isNotEmpty ? " • $phone" : ""}${lType != null ? " • $lType" : ""}',
-                                        style: const TextStyle(fontSize: 10.5, color: Color(0xFF64748B)),
+                                        style: TextStyle(fontSize: 10.5, color: tokens.textMuted),
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
                                       ),
@@ -1744,14 +1818,14 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
                                 ),
                                 if (!_isLocked) ...[
                                   IconButton(
-                                    icon: const Icon(Icons.edit_outlined, size: 15, color: Color(0xFF2563EB)),
+                                    icon: Icon(Icons.edit_outlined, size: 15, color: tokens.infoText),
                                     visualDensity: VisualDensity.compact,
                                     padding: EdgeInsets.zero,
                                     constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
                                     onPressed: () => _openMemberDialog(memberToEdit: m),
                                   ),
                                   IconButton(
-                                    icon: const Icon(Icons.delete_outline, size: 15, color: Color(0xFFDC2626)),
+                                    icon: Icon(Icons.delete_outline, size: 15, color: tokens.dangerDot),
                                     visualDensity: VisualDensity.compact,
                                     padding: EdgeInsets.zero,
                                     constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
@@ -1764,21 +1838,21 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                               decoration: BoxDecoration(
-                                color: const Color(0xFFF8FAFC),
+                                color: tokens.surfaceSubtle,
                                 borderRadius: BorderRadius.circular(6),
-                                border: Border.all(color: const Color(0xFFF1F5F9)),
+                                border: Border.all(color: tokens.borderSubtle),
                               ),
                               child: Row(
                                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                 children: [
                                   Text(
                                     'Savings: ${CurrencyFormatter.formatNaira(sav)}',
-                                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF059669)),
+                                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: tokens.successText),
                                   ),
                                   if (credit > 0 || bal > 0)
                                     Text(
                                       'Balance: ${CurrencyFormatter.formatNaira(bal)}',
-                                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFFDC2626)),
+                                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: tokens.dangerText),
                                     ),
                                 ],
                               ),
@@ -1791,10 +1865,10 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
                         children: [
                           CircleAvatar(
                             radius: 16,
-                            backgroundColor: const Color(0xFFF1F5F9),
+                            backgroundColor: tokens.surfaceSubtle,
                             child: Text(
                               name.isNotEmpty ? name.substring(0, 1).toUpperCase() : 'C',
-                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF334155)),
+                              style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: tokens.textSecondary),
                             ),
                           ),
                           const SizedBox(width: 10),
@@ -1802,11 +1876,11 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(name, style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold, color: Color(0xFF0F172A))),
+                                Text(name, style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold, color: tokens.textPrimary)),
                                 const SizedBox(height: 2),
                                 Text(
                                   'Group $gRef ${phone.isNotEmpty ? "• $phone" : ""} ${lType != null ? "• $lType" : ""}',
-                                  style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                                  style: TextStyle(fontSize: 11, color: tokens.textMuted),
                                 ),
                               ],
                             ),
@@ -1814,20 +1888,20 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
                           Column(
                             crossAxisAlignment: CrossAxisAlignment.end,
                             children: [
-                              Text('Savings: ${CurrencyFormatter.formatNaira(sav)}', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF059669))),
+                              Text('Savings: ${CurrencyFormatter.formatNaira(sav)}', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: tokens.successText)),
                               if (credit > 0 || bal > 0)
-                                Text('Balance: ${CurrencyFormatter.formatNaira(bal)}', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFFDC2626))),
+                                Text('Balance: ${CurrencyFormatter.formatNaira(bal)}', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: tokens.dangerText)),
                             ],
                           ),
                           if (!_isLocked) ...[
                             const SizedBox(width: 8),
                             IconButton(
-                              icon: const Icon(Icons.edit_outlined, size: 15, color: Color(0xFF2563EB)),
+                              icon: Icon(Icons.edit_outlined, size: 15, color: tokens.infoText),
                               visualDensity: VisualDensity.compact,
                               onPressed: () => _openMemberDialog(memberToEdit: m),
                             ),
                             IconButton(
-                              icon: const Icon(Icons.delete_outline, size: 15, color: Color(0xFFDC2626)),
+                              icon: Icon(Icons.delete_outline, size: 15, color: tokens.dangerDot),
                               visualDensity: VisualDensity.compact,
                               onPressed: () => _confirmDeleteMember(m),
                             ),
@@ -1849,42 +1923,43 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
   // =========================================================================
 
   Widget _buildExcelTab() {
+    final tokens = IcareSurfaceTokens.of(context);
     return Center(
       child: Container(
         constraints: const BoxConstraints(maxWidth: 540),
         padding: const EdgeInsets.all(28),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: tokens.surface,
           borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: const Color(0xFFE2E8F0)),
+          border: Border.all(color: tokens.borderSubtle),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
               padding: const EdgeInsets.all(16),
-              decoration: const BoxDecoration(
-                color: Color(0xFFF1F5F9),
+              decoration: BoxDecoration(
+                color: tokens.surfaceSubtle,
                 shape: BoxShape.circle,
               ),
-              child: const Icon(Icons.upload_file_outlined, size: 36, color: IcareColors.primary),
+              child: Icon(Icons.upload_file_outlined, size: 36, color: tokens.brandPrimary),
             ),
             const SizedBox(height: 16),
-            const Text(
+            Text(
               'Upload Credit Officer Excel Template',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: tokens.textPrimary),
             ),
             const SizedBox(height: 6),
-            const Text(
+            Text(
               'Select an Excel workbook (.xlsx) containing your Groups and Members sheets. Groups and accounts will automatically be tagged to your officer profile.',
               textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 12, color: Color(0xFF64748B), height: 1.4),
+              style: TextStyle(fontSize: 12, color: tokens.textMuted, height: 1.4),
             ),
             const SizedBox(height: 24),
             if (!_isLocked)
               ElevatedButton.icon(
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: IcareColors.primary,
+                  backgroundColor: tokens.brandPrimaryDark,
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                 ),
@@ -1893,9 +1968,9 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
                 label: const Text('Choose Excel File (.xlsx)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
               )
             else
-              const Text(
+              Text(
                 'Workspace is locked. Excel upload disabled.',
-                style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF64748B)),
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: tokens.textMuted),
               ),
           ],
         ),
@@ -1908,6 +1983,7 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
   // =========================================================================
 
   Widget _buildReviewTab(bool isSubmitted) {
+    final tokens = IcareSurfaceTokens.of(context);
     final indivSav = double.tryParse(_aggregates['individual_member_savings']?.toString() ?? '0') ?? 0.0;
     final grpSav = double.tryParse(_aggregates['group_savings_pool']?.toString() ?? '0') ?? 0.0;
     final miscSav = double.tryParse(_aggregates['misc_savings']?.toString() ?? _officer?['misc_savings']?.toString() ?? '0') ?? 0.0;
@@ -1928,26 +2004,26 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
                   padding: const EdgeInsets.all(16),
                   margin: const EdgeInsets.only(bottom: 20),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFECFDF5),
+                    color: tokens.successBg,
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: const Color(0xFFA7F3D0)),
+                    border: Border.all(color: tokens.successBorder),
                   ),
                   child: Row(
                     children: [
-                      const Icon(Icons.check_circle, color: Color(0xFF059669), size: 24),
+                      Icon(Icons.check_circle, color: tokens.successDot, size: 24),
                       const SizedBox(width: 12),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Text(
+                            Text(
                               'Roster Submitted to Branch Manager',
-                              style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF065F46)),
+                              style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: tokens.successText),
                             ),
                             const SizedBox(height: 2),
                             Text(
                               'Submitted on ${_officer?['submitted_at'] != null ? DateFormat('MMM dd, yyyy h:mm a').format(DateTime.parse(_officer!['submitted_at'])) : "recently"}. Awaiting Branch Manager verification and package consolidation.',
-                              style: const TextStyle(fontSize: 12, color: Color(0xFF047857)),
+                              style: TextStyle(fontSize: 12, color: tokens.successText),
                             ),
                           ],
                         ),
@@ -1956,36 +2032,36 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
                   ),
                 ),
 
-              const Text(
+              Text(
                 'My Portfolio Reconciliation Summary',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: tokens.textPrimary),
               ),
               const SizedBox(height: 12),
 
               Container(
                 decoration: BoxDecoration(
-                  color: Colors.white,
+                  color: tokens.surface,
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                  border: Border.all(color: tokens.borderSubtle),
                 ),
                 child: Column(
                   children: [
                     _buildSummaryRow('Solidarity Groups', '${_groups.length} groups'),
-                    const Divider(height: 1),
+                    Divider(height: 1, color: tokens.borderSubtle),
                     _buildSummaryRow('Registered Client Accounts', '${_members.length} clients'),
-                    const Divider(height: 1),
+                    Divider(height: 1, color: tokens.borderSubtle),
                     _buildSummaryRow('Individual Member Savings', CurrencyFormatter.formatNaira(indivSav)),
-                    const Divider(height: 1),
+                    Divider(height: 1, color: tokens.borderSubtle),
                     _buildSummaryRow('Group Solidarity Savings Pool', CurrencyFormatter.formatNaira(grpSav)),
-                    const Divider(height: 1),
+                    Divider(height: 1, color: tokens.borderSubtle),
                     if (miscSav > 0) ...[
                       _buildSummaryRow('Branch Misc Savings (Designated)', CurrencyFormatter.formatNaira(miscSav)),
-                      const Divider(height: 1),
+                      Divider(height: 1, color: tokens.borderSubtle),
                     ],
                     _buildSummaryRow('Total Portfolio Savings', CurrencyFormatter.formatNaira(totSav), isHighlight: true),
-                    const Divider(height: 1),
+                    Divider(height: 1, color: tokens.borderSubtle),
                     _buildSummaryRow('Total Active Loan Credit', CurrencyFormatter.formatNaira(activeCredit)),
-                    const Divider(height: 1),
+                    Divider(height: 1, color: tokens.borderSubtle),
                     _buildSummaryRow('Total Outstanding Loan Balance', CurrencyFormatter.formatNaira(currentBal)),
                   ],
                 ),
@@ -1998,7 +2074,7 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
                   height: 48,
                   child: ElevatedButton.icon(
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: IcareColors.primary,
+                      backgroundColor: tokens.brandPrimaryDark,
                       foregroundColor: Colors.white,
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                     ),
@@ -2018,18 +2094,21 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
   }
 
   Widget _buildSummaryRow(String label, String value, {bool isHighlight = false}) {
+    final tokens = IcareSurfaceTokens.of(context);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label, style: TextStyle(fontSize: 13, color: isHighlight ? const Color(0xFF0F172A) : const Color(0xFF64748B), fontWeight: isHighlight ? FontWeight.bold : FontWeight.normal)),
+          Flexible(
+            child: Text(label, style: TextStyle(fontSize: 13, color: isHighlight ? tokens.textPrimary : tokens.textMuted, fontWeight: isHighlight ? FontWeight.bold : FontWeight.normal)),
+          ),
           Text(
             value,
             style: TextStyle(
               fontSize: 13.5,
               fontWeight: FontWeight.bold,
-              color: isHighlight ? const Color(0xFF059669) : const Color(0xFF0F172A),
+              color: isHighlight ? tokens.successText : tokens.textPrimary,
               fontFeatures: const [FontFeature.tabularFigures()],
             ),
           ),
@@ -2039,21 +2118,22 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
   }
 
   Widget _buildEmptyState(String title, String subtitle) {
+    final tokens = IcareSurfaceTokens.of(context);
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(32),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: tokens.surface,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: tokens.borderSubtle),
       ),
       child: Column(
         children: [
-          const Icon(Icons.inbox_outlined, size: 36, color: Color(0xFF94A3B8)),
+          Icon(Icons.inbox_outlined, size: 36, color: tokens.textMuted),
           const SizedBox(height: 8),
-          Text(title, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF334155))),
+          Text(title, style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: tokens.textPrimary)),
           const SizedBox(height: 4),
-          Text(subtitle, textAlign: TextAlign.center, style: const TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+          Text(subtitle, textAlign: TextAlign.center, style: TextStyle(fontSize: 12, color: tokens.textMuted)),
         ],
       ),
     );

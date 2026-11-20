@@ -103,9 +103,14 @@ def get_current_user(
     role = user_record.role
     user_permissions = PERMISSIONS.get(role, set())
 
-    allowed_prods = []
-    if getattr(user_record, "extra_fields", None) and isinstance(user_record.extra_fields, dict):
-        allowed_prods = user_record.extra_fields.get("allowed_products", []) or []
+    extra_fields = getattr(user_record, "extra_fields", None)
+    if not isinstance(extra_fields, dict):
+        extra_fields = {}
+
+    allowed_prods = extra_fields.get("allowed_products", []) or []
+    prefs = extra_fields.get("preferences")
+    if not isinstance(prefs, dict):
+        prefs = {}
 
     current_user = CurrentUser(
         id=user_record.id,
@@ -116,6 +121,15 @@ def get_current_user(
         full_name=user_record.full_name or '',
         permissions=user_permissions,
         allowed_products=allowed_prods,
+        phone=str(extra_fields.get("phone") or ""),
+        email=str(extra_fields.get("email") or ""),
+        avatar_url=str(extra_fields.get("avatar_url") or ""),
+        bio=str(extra_fields.get("bio") or ""),
+        mfa_enabled=bool(extra_fields.get("mfa_enabled", False)),
+        is_misc_savings_manager=bool(extra_fields.get("is_misc_savings_manager", False)),
+        preferences=prefs,
+        created_at=user_record.created_at.isoformat() if getattr(user_record, "created_at", None) else None,
+        last_login=user_record.last_login.isoformat() if getattr(user_record, "last_login", None) else None,
     )
 
     if role in ["Area Manager", "AM", "AREA_MANAGER"]:

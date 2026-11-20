@@ -7,6 +7,10 @@ import '../../../core/auth/auth_state.dart';
 import '../../../core/offline/connectivity_service.dart';
 import '../../../core/offline/offline_sync_manager.dart';
 import '../../../core/offline/offline_database_service.dart';
+import '../../../core/theme/icare_theme_tokens.dart';
+import '../../../core/theme/theme_controller.dart';
+import '../../profile/presentation/settings_profile_screen.dart';
+import 'widgets/user_avatar_circle.dart';
 import '../../co/presentation/co_dashboard_screen.dart';
 import '../../co/presentation/loan_origination_screen.dart';
 import '../../co/presentation/daily_collections_screen.dart';
@@ -183,6 +187,7 @@ class CoAppScaffold extends ConsumerWidget {
     });
 
     final authState = ref.watch(authControllerProvider);
+    final tokens = IcareSurfaceTokens.of(context);
 
     // If user is simply logged out or session initial, immediately forward to login
     if (authState is! AuthStateAuthenticated) {
@@ -194,9 +199,9 @@ class CoAppScaffold extends ConsumerWidget {
           );
         }
       });
-      return const Scaffold(
-        backgroundColor: Color(0xFFF8FAFC),
-        body: Center(
+      return Scaffold(
+        backgroundColor: tokens.canvas,
+        body: const Center(
           child: CircularProgressIndicator(),
         ),
       );
@@ -209,36 +214,36 @@ class CoAppScaffold extends ConsumerWidget {
     // If the authenticated user has no branch scope assigned
     if (user.branch.trim().isEmpty) {
       return Scaffold(
-        backgroundColor: const Color(0xFFF8FAFC),
+        backgroundColor: tokens.canvas,
         body: Center(
           child: Container(
             constraints: const BoxConstraints(maxWidth: 500),
             padding: const EdgeInsets.all(24),
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: tokens.surface,
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: const Color(0xFFFCA5A5)),
+              border: Border.all(color: tokens.dangerBorder),
             ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.lock_outline, color: Color(0xFFDC2626), size: 48),
+                Icon(Icons.lock_outline, color: tokens.dangerDot, size: 48),
                 const SizedBox(height: 16),
-                const Text(
+                Text(
                   'ACCESS RESTRICTED: MISSING AUTHENTICATED SCOPE',
                   textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF991B1B)),
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: tokens.dangerText),
                 ),
                 const SizedBox(height: 8),
                 Text(
                   'No valid branch scope was detected for ${user.username}. Access is restricted per system security protocols.',
                   textAlign: TextAlign.center,
-                  style: const TextStyle(fontSize: 13, color: Color(0xFF64748B)),
+                  style: TextStyle(fontSize: 13, color: tokens.textMuted),
                 ),
                 const SizedBox(height: 20),
                 ElevatedButton(
                   onPressed: () => _handleSignOut(context, ref),
-                  style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFDC2626)),
+                  style: ElevatedButton.styleFrom(backgroundColor: tokens.dangerDot),
                   child: const Text('Return to Login', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
                 ),
               ],
@@ -360,20 +365,22 @@ class CoAppScaffold extends ConsumerWidget {
     final screenWidth = MediaQuery.of(context).size.width;
     final isDesktop = screenWidth >= 900;
     final isMobile = screenWidth < 600;
+    final compact = ref.watch(themeControllerProvider).compactDensity;
     final contentPadding = screenWidth < 600
-        ? const EdgeInsets.symmetric(horizontal: 14, vertical: 14)
+        ? EdgeInsets.symmetric(horizontal: compact ? 10 : 14, vertical: compact ? 10 : 14)
         : (screenWidth < 900
-            ? const EdgeInsets.all(20)
-            : const EdgeInsets.all(28));
+            ? EdgeInsets.all(compact ? 14 : 20)
+            : EdgeInsets.all(compact ? 20 : 28));
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF8FAFC),
+      backgroundColor: tokens.canvas,
       appBar: isDesktop
           ? null
           : AppBar(
-              backgroundColor: const Color(0xFF064E3B),
+              backgroundColor: tokens.isDark ? tokens.brandPrimaryDark : tokens.brandPrimary,
               elevation: 0,
               scrolledUnderElevation: 0,
+              leadingWidth: 44,
               leading: Builder(
                 builder: (ctx) => IconButton(
                   icon: const Icon(Icons.menu, color: Colors.white),
@@ -387,35 +394,39 @@ class CoAppScaffold extends ConsumerWidget {
                   ClipOval(
                     child: Image.asset(
                       'assets/icare_logo.png',
-                      width: 28,
-                      height: 28,
+                      width: 24,
+                      height: 24,
                       fit: BoxFit.contain,
                       errorBuilder: (context, error, stackTrace) => const SizedBox.shrink(),
                     ),
                   ),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: 6),
                   const Text(
                     'ICARE',
                     style: TextStyle(
                       color: Colors.white,
-                      fontSize: 17,
+                      fontSize: 15.5,
                       fontWeight: FontWeight.w800,
-                      letterSpacing: 0.8,
+                      letterSpacing: 0.4,
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: badgeColor,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      roleBadge,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 9.5,
-                        fontWeight: FontWeight.w700,
+                  const SizedBox(width: 6),
+                  Flexible(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: badgeColor,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        roleBadge,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
                     ),
                   ),
@@ -424,7 +435,7 @@ class CoAppScaffold extends ConsumerWidget {
               actions: [
                 // 1. Online / Offline Pill (Interactive Tap-to-Check)
                 Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 13, horizontal: 4),
+                  padding: const EdgeInsets.symmetric(vertical: 13, horizontal: 2),
                   child: _buildOnlineStatusPill(
                     context: context,
                     ref: ref,
@@ -437,10 +448,15 @@ class CoAppScaffold extends ConsumerWidget {
 
                 // 2. Explicit Refresh Action Button
                 IconButton(
-                  icon: const Icon(Icons.refresh, size: 20, color: Colors.white),
+                  icon: const Icon(Icons.refresh, size: 19, color: Colors.white),
                   tooltip: 'Refresh Page',
                   padding: const EdgeInsets.symmetric(horizontal: 4),
-                  constraints: const BoxConstraints(),
+                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                  style: IconButton.styleFrom(
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    minimumSize: const Size(32, 32),
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                  ),
                   onPressed: () async {
                     HapticFeedback.lightImpact();
                     await _triggerPageRefresh(ref, activePage, isBm, isAm, isAdmin: isAdmin);
@@ -466,36 +482,25 @@ class CoAppScaffold extends ConsumerWidget {
 
                 // 2. Outbox Pending Badge & Sync Action
                 Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 11, horizontal: 3),
+                  padding: const EdgeInsets.symmetric(vertical: 11, horizontal: 2),
                   child: _buildOutboxSyncBadge(context, ref),
                 ),
 
-                // 3. User Avatar Pill / Profile Drawer Trigger
-                Builder(
-                  builder: (ctx) => InkWell(
-                    onTap: () => Scaffold.of(ctx).openDrawer(),
-                    borderRadius: BorderRadius.circular(16),
-                    child: Padding(
-                      padding: const EdgeInsets.only(left: 4, right: 12),
-                      child: Container(
-                        width: 32,
-                        height: 32,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: const Color(0xFF047857),
-                          border: Border.all(color: const Color(0x80A7F3D0), width: 1.2),
-                        ),
-                        child: Center(
-                          child: Text(
-                            displayName.isNotEmpty ? displayName[0].toUpperCase() : 'U',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 13,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                        ),
-                      ),
+                // 3. User Avatar Pill / Direct Profile & Settings Trigger
+                Padding(
+                  padding: const EdgeInsets.only(left: 4, right: 10),
+                  child: Tooltip(
+                    message: 'Profile & Settings',
+                    child: UserAvatarCircle(
+                      fullName: displayName,
+                      avatarUrl: user.avatarUrl,
+                      size: 32,
+                      backgroundColor: tokens.brandPrimaryLight,
+                      borderColor: tokens.brandAccent.withValues(alpha: 0.75),
+                      borderWidth: 1.4,
+                      onTap: () {
+                        ref.read(activeCoPageProvider.notifier).state = 'Settings & Profile';
+                      },
                     ),
                   ),
                 ),
@@ -504,11 +509,12 @@ class CoAppScaffold extends ConsumerWidget {
       drawer: isDesktop
           ? null
           : Drawer(
-              backgroundColor: Colors.white,
+              backgroundColor: tokens.surface,
               child: _buildDrawerContent(
                 context,
                 ref,
                 displayName,
+                user.avatarUrl,
                 roleBadge,
                 branchName,
                 badgeColor,
@@ -533,7 +539,7 @@ class CoAppScaffold extends ConsumerWidget {
           Container(
             height: 3.0,
             width: double.infinity,
-            color: const Color(0xFF065F46),
+            color: tokens.brandPrimary,
           ),
 
           // 2. Main Body (Sidebar + Content Area)
@@ -546,15 +552,16 @@ class CoAppScaffold extends ConsumerWidget {
                       Container(
                         width: 270,
                         height: double.infinity,
-                        decoration: const BoxDecoration(
-                          color: Colors.white,
-                          border: Border(right: BorderSide(color: Color(0xFFE2E8F0))),
+                        decoration: BoxDecoration(
+                          color: tokens.surface,
+                          border: Border(right: BorderSide(color: tokens.borderSubtle)),
                         ),
                         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 22),
                         child: _buildSidebarContent(
                           context,
                           ref,
                           displayName,
+                          user.avatarUrl,
                           roleBadge,
                           branchName,
                           badgeColor,
@@ -569,8 +576,8 @@ class CoAppScaffold extends ConsumerWidget {
                       // ================= CONTENT AREA =================
                       Expanded(
                         child: RefreshIndicator(
-                          color: const Color(0xFF0F766E),
-                          backgroundColor: Colors.white,
+                          color: tokens.brandPrimary,
+                          backgroundColor: tokens.surfaceElevated,
                           displacement: 30,
                           onRefresh: () async {
                             HapticFeedback.lightImpact();
@@ -582,12 +589,13 @@ class CoAppScaffold extends ConsumerWidget {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                // Welcome Banner
-                                _buildWelcomeBanner(displayName, branchName, roleBadge),
-                                const SizedBox(height: 24),
+                                if (activePage != 'Settings & Profile') ...[
+                                  _buildWelcomeBanner(context, displayName, branchName, roleBadge),
+                                  const SizedBox(height: 24),
+                                ],
 
                                 // Active View Dispatcher
-                                _buildActiveView(activePage, isBm, isAm, isAdmin),
+                                _buildActiveView(context, ref, activePage, isBm, isAm, isAdmin),
                               ],
                             ),
                           ),
@@ -596,8 +604,8 @@ class CoAppScaffold extends ConsumerWidget {
                     ],
                   )
                 : RefreshIndicator(
-                    color: const Color(0xFF0F766E),
-                    backgroundColor: Colors.white,
+                    color: tokens.brandPrimary,
+                    backgroundColor: tokens.surfaceElevated,
                     displacement: 30,
                     onRefresh: () async {
                       HapticFeedback.lightImpact();
@@ -610,13 +618,13 @@ class CoAppScaffold extends ConsumerWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           // Welcome Banner
-                          if (!isMobile || activePage != 'Dashboard') ...[
-                            _buildWelcomeBanner(displayName, branchName, roleBadge, isMobile: isMobile),
+                          if (activePage != 'Settings & Profile' && (!isMobile || activePage != 'Dashboard')) ...[
+                            _buildWelcomeBanner(context, displayName, branchName, roleBadge, isMobile: isMobile),
                             SizedBox(height: isMobile ? 12 : 20),
                           ],
 
                           // Active View Dispatcher
-                          _buildActiveView(activePage, isBm, isAm, isAdmin),
+                          _buildActiveView(context, ref, activePage, isBm, isAm, isAdmin),
                         ],
                       ),
                     ),
@@ -672,29 +680,22 @@ class CoAppScaffold extends ConsumerWidget {
       ];
     }
 
+    final tokens = IcareSurfaceTokens.of(context);
     final availableDests = destinations.where((d) => navItems.contains(d.key)).toList();
     if (availableDests.isEmpty) return const SizedBox.shrink();
 
-    final activeThemeColor = isAdmin
-        ? const Color(0xFF7C3AED)
-        : (isBm
-            ? const Color(0xFF2563EB)
-            : (isAm ? const Color(0xFF0F766E) : const Color(0xFF065F46)));
-    final activeBgColor = isAdmin
-        ? const Color(0xFFF5F3FF)
-        : (isBm
-            ? const Color(0xFFEFF6FF)
-            : (isAm ? const Color(0xFFF0FDFA) : const Color(0xFFECFDF5)));
+    final activeThemeColor = tokens.brandPrimary;
+    final activeBgColor = tokens.brandSoftBg;
 
     return Container(
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        border: Border(top: BorderSide(color: Color(0xFFE2E8F0), width: 1)),
+      decoration: BoxDecoration(
+        color: tokens.surface,
+        border: Border(top: BorderSide(color: tokens.borderSubtle, width: 1)),
         boxShadow: [
           BoxShadow(
-            color: Color(0x0C0F172A),
+            color: tokens.isDark ? const Color(0x30000000) : const Color(0x0C0F172A),
             blurRadius: 10,
-            offset: Offset(0, -3),
+            offset: const Offset(0, -3),
           ),
         ],
       ),
@@ -724,7 +725,7 @@ class CoAppScaffold extends ConsumerWidget {
                         Icon(
                           isSelected ? dest.activeIcon : dest.icon,
                           size: 22,
-                          color: isSelected ? activeThemeColor : const Color(0xFF64748B),
+                          color: isSelected ? activeThemeColor : tokens.textMuted,
                         ),
                         const SizedBox(height: 3),
                         Text(
@@ -734,7 +735,7 @@ class CoAppScaffold extends ConsumerWidget {
                           style: TextStyle(
                             fontSize: 11,
                             fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                            color: isSelected ? activeThemeColor : const Color(0xFF64748B),
+                            color: isSelected ? activeThemeColor : tokens.textMuted,
                           ),
                         ),
                       ],
@@ -762,106 +763,105 @@ class CoAppScaffold extends ConsumerWidget {
     BuildContext context,
     WidgetRef ref,
     String displayName,
+    String? avatarUrl,
     String roleBadge,
     String branchName,
     Color badgeColor,
     List<String> navItems,
     String activePage,
   ) {
+    final tokens = IcareSurfaceTokens.of(context);
     return Column(
       children: [
-        // Drawer Header with Deep Emerald Gradient
-        Container(
-          width: double.infinity,
-          padding: EdgeInsets.fromLTRB(20, MediaQuery.of(context).padding.top + 16, 20, 20),
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                Color(0xFF022C22),
-                Color(0xFF064E3B),
-                Color(0xFF047857),
-              ],
+        // Drawer Header with Brand Gradient & User Avatar (Tappable to open Settings)
+        InkWell(
+          onTap: () {
+            ref.read(activeCoPageProvider.notifier).state = 'Settings & Profile';
+            Navigator.of(context).pop();
+          },
+          child: Container(
+            width: double.infinity,
+            padding: EdgeInsets.fromLTRB(20, MediaQuery.of(context).padding.top + 16, 20, 20),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  tokens.brandPrimaryDark,
+                  tokens.brandPrimary,
+                  tokens.brandPrimaryLight,
+                ],
+              ),
             ),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Container(
-                    width: 48,
-                    height: 48,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: Colors.white,
-                      border: Border.all(color: const Color(0xFF8CC63F), width: 2),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    UserAvatarCircle(
+                      fullName: displayName,
+                      avatarUrl: avatarUrl,
+                      size: 48,
+                      backgroundColor: Colors.white.withValues(alpha: 0.16),
+                      borderColor: tokens.brandAccent,
+                      borderWidth: 2,
                     ),
-                    child: ClipOval(
-                      child: Image.asset(
-                        'assets/icare_logo.png',
-                        fit: BoxFit.contain,
-                        errorBuilder: (context, error, stackTrace) => const Center(
-                          child: Text('IC', style: TextStyle(color: Color(0xFF064E3B), fontWeight: FontWeight.bold)),
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          displayName,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 15,
-                            fontWeight: FontWeight.w700,
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        const SizedBox(height: 4),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: badgeColor,
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: Text(
-                            roleBadge,
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            displayName,
                             style: const TextStyle(
                               color: Colors.white,
-                              fontSize: 9.5,
+                              fontSize: 15,
                               fontWeight: FontWeight.w700,
                             ),
+                            overflow: TextOverflow.ellipsis,
                           ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 14),
-              Row(
-                children: [
-                  const Icon(Icons.location_on_outlined, size: 14, color: Color(0xFF8CC63F)),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      _formatBranchLocation(branchName, isAdmin: roleBadge == 'Admin'),
-                      style: const TextStyle(
-                        color: Color(0xE2FFFFFF),
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
+                          const SizedBox(height: 4),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: badgeColor,
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              roleBadge,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 9.5,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
-                      overflow: TextOverflow.ellipsis,
                     ),
-                  ),
-                ],
-              ),
-            ],
+                    Icon(Icons.chevron_right, size: 18, color: Colors.white.withValues(alpha: 0.7)),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                Row(
+                  children: [
+                    Icon(Icons.location_on_outlined, size: 14, color: tokens.brandAccent),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        _formatBranchLocation(branchName, isAdmin: roleBadge == 'Admin'),
+                        style: const TextStyle(
+                          color: Color(0xE2FFFFFF),
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
 
@@ -870,12 +870,12 @@ class CoAppScaffold extends ConsumerWidget {
           child: ListView(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
             children: [
-              const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                 child: Text(
                   'OPERATIONS & MODULES',
                   style: TextStyle(
-                    color: Color(0xFF94A3B8),
+                    color: tokens.textMuted,
                     fontSize: 10,
                     fontWeight: FontWeight.w700,
                     letterSpacing: 1.2,
@@ -895,6 +895,30 @@ class CoAppScaffold extends ConsumerWidget {
                   },
                 );
               }),
+              const SizedBox(height: 12),
+              Divider(color: tokens.borderSubtle, height: 1),
+              const SizedBox(height: 10),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                child: Text(
+                  'PERSONAL ACCOUNT',
+                  style: TextStyle(
+                    color: tokens.textMuted,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 1.2,
+                  ),
+                ),
+              ),
+              _buildModernNavItem(
+                context: context,
+                label: 'Settings & Profile',
+                isSelected: activePage == 'Settings & Profile',
+                onTap: () {
+                  ref.read(activeCoPageProvider.notifier).state = 'Settings & Profile';
+                  Navigator.of(context).pop();
+                },
+              ),
             ],
           ),
         ),
@@ -902,9 +926,9 @@ class CoAppScaffold extends ConsumerWidget {
         // Drawer Footer
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
-          decoration: const BoxDecoration(
-            color: Color(0xFFF8FAFC),
-            border: Border(top: BorderSide(color: Color(0xFFE2E8F0))),
+          decoration: BoxDecoration(
+            color: tokens.surfaceSubtle,
+            border: Border(top: BorderSide(color: tokens.borderSubtle)),
           ),
           child: Column(
             children: [
@@ -912,13 +936,13 @@ class CoAppScaffold extends ConsumerWidget {
                 width: double.infinity,
                 child: OutlinedButton.icon(
                   style: OutlinedButton.styleFrom(
-                    backgroundColor: Colors.white,
-                    foregroundColor: const Color(0xFFDC2626),
-                    side: const BorderSide(color: Color(0xFFFECACA)),
+                    backgroundColor: tokens.surface,
+                    foregroundColor: tokens.dangerText,
+                    side: BorderSide(color: tokens.dangerBorder),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                     padding: const EdgeInsets.symmetric(vertical: 11),
                   ),
-                  icon: const Icon(Icons.logout, size: 16, color: Color(0xFFDC2626)),
+                  icon: Icon(Icons.logout, size: 16, color: tokens.dangerText),
                   label: const Text(
                     'Sign Out',
                     style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
@@ -930,10 +954,10 @@ class CoAppScaffold extends ConsumerWidget {
                 ),
               ),
               const SizedBox(height: 10),
-              const Text(
+              Text(
                 'CORE BANKING v3.0.0',
                 style: TextStyle(
-                  color: Color(0xFF94A3B8),
+                  color: tokens.textMuted,
                   fontSize: 9.5,
                   fontWeight: FontWeight.w600,
                   letterSpacing: 0.6,
@@ -1059,6 +1083,7 @@ class CoAppScaffold extends ConsumerWidget {
     BuildContext context,
     WidgetRef ref,
     String displayName,
+    String? avatarUrl,
     String roleBadge,
     String branchName,
     Color badgeColor,
@@ -1068,6 +1093,7 @@ class CoAppScaffold extends ConsumerWidget {
     required bool isAm,
     required bool isAdmin,
   }) {
+    final tokens = IcareSurfaceTokens.of(context);
     return Column(
       children: [
         // Top Sidebar Content
@@ -1084,7 +1110,7 @@ class CoAppScaffold extends ConsumerWidget {
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   color: const Color(0xFF0F2744),
-                  border: Border.all(color: const Color(0xFF8CC63F), width: 2),
+                  border: Border.all(color: tokens.brandAccent, width: 2),
                   boxShadow: const [
                     BoxShadow(
                       color: Colors.black12,
@@ -1099,11 +1125,11 @@ class CoAppScaffold extends ConsumerWidget {
                     width: 60,
                     height: 60,
                     fit: BoxFit.contain,
-                    errorBuilder: (context, error, stackTrace) => const Center(
+                    errorBuilder: (context, error, stackTrace) => Center(
                       child: Text(
                         'IC',
                         style: TextStyle(
-                          color: Color(0xFF8CC63F),
+                          color: tokens.brandAccent,
                           fontSize: 22,
                           fontWeight: FontWeight.w900,
                         ),
@@ -1116,11 +1142,11 @@ class CoAppScaffold extends ConsumerWidget {
 
             // App Version Label
             const SizedBox(height: 6),
-            const Center(
+            Center(
               child: Text(
                 'CORE BANKING v3.0.0',
                 style: TextStyle(
-                  color: Color(0xFF94A3B8),
+                  color: tokens.textMuted,
                   fontSize: 9.5,
                   fontWeight: FontWeight.w600,
                   letterSpacing: 0.8,
@@ -1128,61 +1154,90 @@ class CoAppScaffold extends ConsumerWidget {
               ),
             ),
             const SizedBox(height: 12),
-            const Divider(color: Color(0xFFE2E8F0), height: 1),
+            Divider(color: tokens.borderSubtle, height: 1),
             const SizedBox(height: 14),
 
-            // Officer Profile Card
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF8FAFC),
+            // Officer Profile Card (Tappable to open Settings & Profile)
+            Material(
+              color: Colors.transparent,
+              child: InkWell(
                 borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: const Color(0xFFE2E8F0)),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    displayName,
-                    style: const TextStyle(
-                      color: Color(0xFF0F172A),
-                      fontSize: 13.5,
-                      fontWeight: FontWeight.w700,
+                onTap: () {
+                  ref.read(activeCoPageProvider.notifier).state = 'Settings & Profile';
+                },
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+                  decoration: BoxDecoration(
+                    color: activePage == 'Settings & Profile' ? tokens.brandSoftBg : tokens.surfaceSubtle,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: activePage == 'Settings & Profile' ? tokens.brandSoftBorder : tokens.borderSubtle,
                     ),
                   ),
-                  const SizedBox(height: 6),
-                  Row(
+                  child: Row(
                     children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: badgeColor,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(
-                          roleBadge,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 9.5,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
+                      UserAvatarCircle(
+                        fullName: displayName,
+                        avatarUrl: avatarUrl,
+                        size: 38,
+                        backgroundColor: tokens.brandPrimary,
+                        borderColor: tokens.brandAccent.withValues(alpha: 0.7),
+                        borderWidth: 1.5,
                       ),
-                      const SizedBox(width: 8),
+                      const SizedBox(width: 10),
                       Expanded(
-                        child: Text(
-                          _formatBranchLocation(branchName, isAdmin: roleBadge == 'Admin'),
-                          style: const TextStyle(
-                            color: Color(0xFF64748B),
-                            fontSize: 11.5,
-                            overflow: TextOverflow.ellipsis,
-                          ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              displayName,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: tokens.textPrimary,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                                  decoration: BoxDecoration(
+                                    color: badgeColor,
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: Text(
+                                    roleBadge,
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 9,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                                Expanded(
+                                  child: Text(
+                                    _formatBranchLocation(branchName, isAdmin: roleBadge == 'Admin'),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      color: tokens.textMuted,
+                                      fontSize: 11,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
                         ),
                       ),
                     ],
                   ),
-                ],
+                ),
               ),
             ),
             const SizedBox(height: 10),
@@ -1192,9 +1247,9 @@ class CoAppScaffold extends ConsumerWidget {
               width: double.infinity,
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
               decoration: BoxDecoration(
-                color: const Color(0xFFF8FAFC),
+                color: tokens.surfaceSubtle,
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: const Color(0xFFE2E8F0)),
+                border: Border.all(color: tokens.borderSubtle),
               ),
               child: Row(
                 children: [
@@ -1212,9 +1267,9 @@ class CoAppScaffold extends ConsumerWidget {
                   InkWell(
                     onTap: () => _triggerPageRefresh(ref, activePage, isBm, isAm, isAdmin: isAdmin),
                     borderRadius: BorderRadius.circular(6),
-                    child: const Padding(
-                      padding: EdgeInsets.all(4),
-                      child: Icon(Icons.refresh, size: 16, color: Color(0xFF475569)),
+                    child: Padding(
+                      padding: const EdgeInsets.all(4),
+                      child: Icon(Icons.refresh, size: 16, color: tokens.textSecondary),
                     ),
                   ),
                 ],
@@ -1223,12 +1278,12 @@ class CoAppScaffold extends ConsumerWidget {
             const SizedBox(height: 14),
 
             // OPERATIONS Label
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 4),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4),
               child: Text(
                 'OPERATIONS',
                 style: TextStyle(
-                  color: Color(0xFF94A3B8),
+                  color: tokens.textMuted,
                   fontSize: 10,
                   fontWeight: FontWeight.w700,
                   letterSpacing: 1.2,
@@ -1255,24 +1310,33 @@ class CoAppScaffold extends ConsumerWidget {
             ),
           ),
         ),
-        const SizedBox(height: 10),
+        const SizedBox(height: 8),
 
-        // Bottom Sign Out Button
+        // Bottom Account Settings & Sign Out Actions
         Column(
           children: [
-            const Divider(color: Color(0xFFE2E8F0), height: 1),
-            const SizedBox(height: 14),
+            Divider(color: tokens.borderSubtle, height: 1),
+            const SizedBox(height: 10),
+            _buildModernNavItem(
+              context: context,
+              label: 'Settings & Profile',
+              isSelected: activePage == 'Settings & Profile',
+              onTap: () {
+                ref.read(activeCoPageProvider.notifier).state = 'Settings & Profile';
+              },
+            ),
+            const SizedBox(height: 8),
             SizedBox(
               width: double.infinity,
               child: OutlinedButton.icon(
                 style: OutlinedButton.styleFrom(
-                  backgroundColor: Colors.white,
-                  foregroundColor: const Color(0xFF334155),
-                  side: const BorderSide(color: Color(0xFFCBD5E1)),
+                  backgroundColor: tokens.surface,
+                  foregroundColor: tokens.textSecondary,
+                  side: BorderSide(color: tokens.borderStrong),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                   padding: const EdgeInsets.symmetric(vertical: 11),
                 ),
-                icon: const Icon(Icons.logout, size: 15, color: Color(0xFF64748B)),
+                icon: Icon(Icons.logout, size: 15, color: tokens.textMuted),
                 label: const Text(
                   'Sign Out',
                   style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
@@ -1295,6 +1359,7 @@ class CoAppScaffold extends ConsumerWidget {
     required bool isSelected,
     required VoidCallback onTap,
   }) {
+    final tokens = IcareSurfaceTokens.of(context);
     final icon = _getNavIcon(label, active: isSelected);
     return Padding(
       padding: const EdgeInsets.only(bottom: 3),
@@ -1306,10 +1371,10 @@ class CoAppScaffold extends ConsumerWidget {
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
             decoration: BoxDecoration(
-              color: isSelected ? const Color(0xFFECFDF5) : Colors.transparent,
+              color: isSelected ? tokens.brandSoftBg : Colors.transparent,
               borderRadius: BorderRadius.circular(8),
               border: isSelected
-                  ? Border.all(color: const Color(0xFFA7F3D0), width: 0.9)
+                  ? Border.all(color: tokens.brandSoftBorder, width: 0.9)
                   : null,
             ),
             child: Row(
@@ -1318,7 +1383,7 @@ class CoAppScaffold extends ConsumerWidget {
                   width: 3.5,
                   height: 16,
                   decoration: BoxDecoration(
-                    color: isSelected ? const Color(0xFF065F46) : Colors.transparent,
+                    color: isSelected ? tokens.brandPrimary : Colors.transparent,
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
@@ -1326,7 +1391,7 @@ class CoAppScaffold extends ConsumerWidget {
                 Icon(
                   icon,
                   size: 18,
-                  color: isSelected ? const Color(0xFF065F46) : const Color(0xFF64748B),
+                  color: isSelected ? tokens.brandSoftText : tokens.textMuted,
                 ),
                 const SizedBox(width: 10),
                 Expanded(
@@ -1335,7 +1400,7 @@ class CoAppScaffold extends ConsumerWidget {
                     style: TextStyle(
                       fontSize: 13,
                       fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                      color: isSelected ? const Color(0xFF065F46) : const Color(0xFF1E293B),
+                      color: isSelected ? tokens.brandSoftText : tokens.textPrimary,
                     ),
                   ),
                 ),
@@ -1373,13 +1438,16 @@ class CoAppScaffold extends ConsumerWidget {
       case 'Reports & Export':
       case 'Reports':
         return active ? Icons.analytics : Icons.analytics_outlined;
+      case 'Settings & Profile':
+        return active ? Icons.manage_accounts : Icons.manage_accounts_outlined;
       default:
         return active ? Icons.circle : Icons.circle_outlined;
     }
   }
 
   /// Welcome Banner (app.py L1991-2000)
-  Widget _buildWelcomeBanner(String displayName, String branchName, String roleBadge, {bool isMobile = false}) {
+  Widget _buildWelcomeBanner(BuildContext context, String displayName, String branchName, String roleBadge, {bool isMobile = false}) {
+    final tokens = IcareSurfaceTokens.of(context);
     final hour = DateTime.now().hour;
     final greeting = hour < 12 ? 'Good morning' : (hour < 17 ? 'Good afternoon' : 'Good evening');
     final formattedDate = DateFormat('EEEE, MMMM d, yyyy').format(DateTime.now());
@@ -1391,16 +1459,18 @@ class CoAppScaffold extends ConsumerWidget {
         width: double.infinity,
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: tokens.surface,
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: isAm ? const Color(0xFFCCFBF1) : (isBm ? const Color(0xFFDBEAFE) : const Color(0xFFE2E8F0))),
+          border: Border.all(
+            color: tokens.borderSubtle,
+          ),
         ),
         child: Row(
           children: [
             Icon(
               isAm ? Icons.hub_outlined : (isBm ? Icons.shield_outlined : Icons.location_on_outlined),
               size: 14,
-              color: isAm ? const Color(0xFF0F766E) : (isBm ? const Color(0xFF2563EB) : const Color(0xFF064E3B)),
+              color: tokens.brandPrimary,
             ),
             const SizedBox(width: 6),
             Expanded(
@@ -1413,7 +1483,7 @@ class CoAppScaffold extends ConsumerWidget {
                             ? '$branchName Branch Command · $formattedDate'
                             : '${_formatBranchLocation(branchName)} · $formattedDate')),
                 style: TextStyle(
-                  color: isAm ? const Color(0xFF0F766E) : (isBm ? const Color(0xFF1E40AF) : const Color(0xFF334155)),
+                  color: tokens.textSecondary,
                   fontSize: 11.5,
                   fontWeight: FontWeight.w600,
                   overflow: TextOverflow.ellipsis,
@@ -1429,7 +1499,11 @@ class CoAppScaffold extends ConsumerWidget {
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
       decoration: BoxDecoration(
-        color: isAm ? const Color(0xFF0F766E) : (isBm ? const Color(0xFF1E3A8A) : const Color(0xFF064E3B)),
+        color: isAm
+            ? const Color(0xFF0F766E)
+            : (isBm
+                ? const Color(0xFF1E3A8A)
+                : (tokens.isDark ? tokens.brandPrimaryDark : tokens.brandPrimary)),
         borderRadius: BorderRadius.circular(8),
         boxShadow: const [
           BoxShadow(
@@ -1480,7 +1554,8 @@ class CoAppScaffold extends ConsumerWidget {
     );
   }
 
-  Widget _buildActiveView(String page, bool isBm, bool isAm, bool isAdmin) {
+  Widget _buildActiveView(BuildContext context, WidgetRef ref, String page, bool isBm, bool isAm, bool isAdmin) {
+    final tokens = IcareSurfaceTokens.of(context);
     switch (page) {
       case 'Dashboard':
         if (isAdmin) return const AdminDashboardScreen();
@@ -1510,17 +1585,22 @@ class CoAppScaffold extends ConsumerWidget {
         return const ReportsExportScreen();
       case 'Branch Onboarding':
         return const BranchOnboardingAdminScreen();
+      case 'Settings & Profile':
+        return SettingsProfileScreen(
+          onRequestSignOut: () => _handleSignOut(context, ref),
+          onOpenOutboxSync: () => _showSyncDialog(context, ref),
+        );
       default:
         return Container(
           padding: const EdgeInsets.all(24),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: tokens.surface,
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: const Color(0xFFE2E8F0)),
+            border: Border.all(color: tokens.borderSubtle),
           ),
           child: Text(
             'Page: $page (Awaiting Page Parity Specification & Implementation)',
-            style: const TextStyle(fontSize: 14, color: Color(0xFF64748B)),
+            style: TextStyle(fontSize: 14, color: tokens.textMuted),
           ),
         );
     }
@@ -1552,9 +1632,14 @@ class _SyncDialogState extends ConsumerState<_SyncDialog> {
     final pendingCount = ref.watch(pendingOutboxCountProvider);
     final isOnline = ref.watch(isOnlineProvider);
     final syncMgr = ref.read(offlineSyncManagerProvider);
+    final tokens = IcareSurfaceTokens.of(context);
 
     return AlertDialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      backgroundColor: tokens.surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: tokens.borderSubtle),
+      ),
       titlePadding: const EdgeInsets.fromLTRB(20, 20, 20, 10),
       contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
       actionsPadding: const EdgeInsets.fromLTRB(20, 10, 20, 16),
@@ -1563,23 +1648,24 @@ class _SyncDialogState extends ConsumerState<_SyncDialog> {
           Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: const Color(0xFFFEF3C7),
+              color: tokens.warningBg,
               borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: tokens.warningBorder),
             ),
-            child: const Icon(Icons.cloud_sync, color: Color(0xFFD97706), size: 22),
+            child: Icon(Icons.cloud_sync, color: tokens.warningDot, size: 22),
           ),
           const SizedBox(width: 12),
-          const Expanded(
+          Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
                   'OFFLINE OUTBOX SYNC',
-                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: tokens.textPrimary),
                 ),
                 Text(
                   'Post queued collections to the central ledger',
-                  style: TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                  style: TextStyle(fontSize: 11, color: tokens.textMuted),
                 ),
               ],
             ),
@@ -1600,16 +1686,16 @@ class _SyncDialogState extends ConsumerState<_SyncDialog> {
               child: Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF8FAFC),
+                  color: tokens.surfaceSubtle,
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                  border: Border.all(color: tokens.borderSubtle),
                 ),
                 child: Row(
                   children: [
                     Icon(
                       isOnline ? Icons.wifi : Icons.wifi_off,
                       size: 18,
-                      color: isOnline ? const Color(0xFF10B981) : const Color(0xFFEF4444),
+                      color: isOnline ? tokens.successDot : tokens.dangerDot,
                     ),
                     const SizedBox(width: 8),
                     Expanded(
@@ -1618,14 +1704,14 @@ class _SyncDialogState extends ConsumerState<_SyncDialog> {
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w600,
-                          color: isOnline ? const Color(0xFF065F46) : const Color(0xFF991B1B),
+                          color: isOnline ? tokens.successText : tokens.dangerText,
                         ),
                       ),
                     ),
                     Icon(
                       Icons.refresh,
                       size: 16,
-                      color: isOnline ? const Color(0xFF065F46) : const Color(0xFF991B1B),
+                      color: isOnline ? tokens.successText : tokens.dangerText,
                     ),
                   ],
                 ),
@@ -1634,12 +1720,12 @@ class _SyncDialogState extends ConsumerState<_SyncDialog> {
             const SizedBox(height: 12),
             Text(
               'Pending transactions on device: $pendingCount',
-              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: tokens.textPrimary),
             ),
             const SizedBox(height: 4),
-            const Text(
+            Text(
               'Queued transactions will post atomically to primary vault cash and the double-entry financial ledger.',
-              style: TextStyle(fontSize: 11.5, color: Color(0xFF64748B)),
+              style: TextStyle(fontSize: 11.5, color: tokens.textMuted),
             ),
             if (pendingCount > 0) ...[
               const SizedBox(height: 10),
@@ -1658,14 +1744,14 @@ class _SyncDialogState extends ConsumerState<_SyncDialog> {
                   return Container(
                     constraints: const BoxConstraints(maxHeight: 180),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFF8FAFC),
+                      color: tokens.surfaceSubtle,
                       borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                      border: Border.all(color: tokens.borderSubtle),
                     ),
                     child: ListView.separated(
                       shrinkWrap: true,
                       itemCount: items.length,
-                      separatorBuilder: (_, __) => const Divider(height: 1, color: Color(0xFFE2E8F0)),
+                      separatorBuilder: (_, __) => Divider(height: 1, color: tokens.borderSubtle),
                       itemBuilder: (context, idx) {
                         final item = items[idx];
                         final isSingle = item['operation_type'] == 'SINGLE_COLLECTION';
@@ -1685,13 +1771,13 @@ class _SyncDialogState extends ConsumerState<_SyncDialog> {
                                   Container(
                                     padding: const EdgeInsets.all(5),
                                     decoration: BoxDecoration(
-                                      color: isSingle ? const Color(0xFFEFF6FF) : const Color(0xFFECFDF5),
+                                      color: isSingle ? tokens.infoBg : tokens.successBg,
                                       borderRadius: BorderRadius.circular(6),
                                     ),
                                     child: Icon(
                                       isSingle ? Icons.person_outline : Icons.groups_outlined,
                                       size: 16,
-                                      color: isSingle ? const Color(0xFF2563EB) : const Color(0xFF059669),
+                                      color: isSingle ? tokens.infoDot : tokens.successDot,
                                     ),
                                   ),
                                   const SizedBox(width: 8),
@@ -1701,12 +1787,12 @@ class _SyncDialogState extends ConsumerState<_SyncDialog> {
                                       children: [
                                         Text(
                                           groupOrClient,
-                                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF1E293B)),
+                                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: tokens.textPrimary),
                                           overflow: TextOverflow.ellipsis,
                                         ),
                                         Text(
                                           '$colDate · ${isSingle ? "Single Client" : "Group Batch"}',
-                                          style: const TextStyle(fontSize: 10.5, color: Color(0xFF64748B)),
+                                          style: TextStyle(fontSize: 10.5, color: tokens.textMuted),
                                         ),
                                       ],
                                     ),
@@ -1717,7 +1803,7 @@ class _SyncDialogState extends ConsumerState<_SyncDialog> {
                                       Container(
                                         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                         decoration: BoxDecoration(
-                                          color: isFailed ? const Color(0xFFFEF2F2) : const Color(0xFFFEF3C7),
+                                          color: isFailed ? tokens.dangerBg : tokens.warningBg,
                                           borderRadius: BorderRadius.circular(4),
                                         ),
                                         child: Text(
@@ -1725,7 +1811,7 @@ class _SyncDialogState extends ConsumerState<_SyncDialog> {
                                           style: TextStyle(
                                             fontSize: 10,
                                             fontWeight: FontWeight.w700,
-                                            color: isFailed ? const Color(0xFFDC2626) : const Color(0xFFB45309),
+                                            color: isFailed ? tokens.dangerText : tokens.warningText,
                                           ),
                                         ),
                                       ),
@@ -1747,16 +1833,16 @@ class _SyncDialogState extends ConsumerState<_SyncDialog> {
                                             }
                                           },
                                           borderRadius: BorderRadius.circular(4),
-                                          child: const Padding(
-                                            padding: EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                                          child: Padding(
+                                            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
                                             child: Row(
                                               mainAxisSize: MainAxisSize.min,
                                               children: [
-                                                Icon(Icons.delete_outline, size: 14, color: Color(0xFFDC2626)),
-                                                SizedBox(width: 2),
+                                                Icon(Icons.delete_outline, size: 14, color: tokens.dangerText),
+                                                const SizedBox(width: 2),
                                                 Text(
                                                   'Discard',
-                                                  style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Color(0xFFDC2626)),
+                                                  style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: tokens.dangerText),
                                                 ),
                                               ],
                                             ),
@@ -1771,7 +1857,7 @@ class _SyncDialogState extends ConsumerState<_SyncDialog> {
                                 const SizedBox(height: 4),
                                 Text(
                                   errMsg,
-                                  style: const TextStyle(fontSize: 10, color: Color(0xFFDC2626)),
+                                  style: TextStyle(fontSize: 10, color: tokens.dangerText),
                                   maxLines: 2,
                                   overflow: TextOverflow.ellipsis,
                                 ),
@@ -1790,10 +1876,10 @@ class _SyncDialogState extends ConsumerState<_SyncDialog> {
               Container(
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
-                  color: _isSuccess ? const Color(0xFFECFDF5) : const Color(0xFFFEF2F2),
+                  color: _isSuccess ? tokens.successBg : tokens.dangerBg,
                   borderRadius: BorderRadius.circular(6),
                   border: Border.all(
-                    color: _isSuccess ? const Color(0xFFA7F3D0) : const Color(0xFFFECACA),
+                    color: _isSuccess ? tokens.successBorder : tokens.dangerBorder,
                   ),
                 ),
                 child: Text(
@@ -1801,18 +1887,18 @@ class _SyncDialogState extends ConsumerState<_SyncDialog> {
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
-                    color: _isSuccess ? const Color(0xFF065F46) : const Color(0xFF991B1B),
+                    color: _isSuccess ? tokens.successText : tokens.dangerText,
                   ),
                 ),
               ),
             ],
             if (_isSyncing) ...[
               const SizedBox(height: 16),
-              const Center(
+              Center(
                 child: SizedBox(
                   width: 24,
                   height: 24,
-                  child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF064E3B)),
+                  child: CircularProgressIndicator(strokeWidth: 2, color: tokens.brandPrimary),
                 ),
               ),
             ],
@@ -1837,12 +1923,12 @@ class _SyncDialogState extends ConsumerState<_SyncDialog> {
                       });
                     }
                   },
-            icon: const Icon(Icons.delete_sweep_outlined, size: 16, color: Color(0xFFDC2626)),
-            label: const Text('Clear Failed', style: TextStyle(color: Color(0xFFDC2626), fontWeight: FontWeight.w700, fontSize: 12)),
+            icon: Icon(Icons.delete_sweep_outlined, size: 16, color: tokens.dangerText),
+            label: Text('Clear Failed', style: TextStyle(color: tokens.dangerText, fontWeight: FontWeight.w700, fontSize: 12)),
           ),
         TextButton(
           onPressed: _isSyncing ? null : () => Navigator.of(context).pop(),
-          child: const Text('Close', style: TextStyle(color: Color(0xFF64748B), fontWeight: FontWeight.w600)),
+          child: Text('Close', style: TextStyle(color: tokens.textMuted, fontWeight: FontWeight.w600)),
         ),
         ElevatedButton.icon(
           onPressed: (!isOnline || _isSyncing || pendingCount == 0)
@@ -1868,9 +1954,9 @@ class _SyncDialogState extends ConsumerState<_SyncDialog> {
                   }
                 },
           style: ElevatedButton.styleFrom(
-            backgroundColor: const Color(0xFF064E3B),
+            backgroundColor: tokens.brandPrimary,
             foregroundColor: Colors.white,
-            disabledBackgroundColor: const Color(0xFFCBD5E1),
+            disabledBackgroundColor: tokens.borderStrong,
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
           ),
           icon: const Icon(Icons.cloud_upload_outlined, size: 16),

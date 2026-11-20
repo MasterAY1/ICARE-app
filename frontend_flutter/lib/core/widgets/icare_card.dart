@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import '../theme/icare_colors.dart';
 import '../theme/icare_spacing.dart';
+import '../theme/icare_theme_tokens.dart';
 
 /// Universal institutional banking card container
 class IcareCard extends StatelessWidget {
@@ -25,18 +25,19 @@ class IcareCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final tokens = IcareSurfaceTokens.of(context);
     final effectivePadding = padding ?? IcareSpacing.cardPadding(context);
 
     Widget cardBody = Container(
       decoration: BoxDecoration(
-        color: backgroundColor ?? IcareColors.surface,
+        color: backgroundColor ?? tokens.surface,
         borderRadius: IcareSpacing.roundedMd,
-        border: border ?? Border.all(color: IcareColors.border, width: 1),
-        boxShadow: const [
+        border: border ?? Border.all(color: tokens.borderSubtle, width: 1),
+        boxShadow: [
           BoxShadow(
-            color: Color(0x0A0F172A),
-            blurRadius: 4,
-            offset: Offset(0, 1),
+            color: tokens.isDark ? const Color(0x28000000) : const Color(0x0A0F172A),
+            blurRadius: tokens.isDark ? 8 : 4,
+            offset: const Offset(0, 1),
           ),
         ],
       ),

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/theme/icare_theme_tokens.dart';
 import '../../../core/widgets/icare_skeleton_loader.dart';
 import '../../reports/data/datasources/reports_api_service.dart';
 import '../../reports/data/models/report_models.dart';
@@ -125,11 +126,12 @@ class _AdminBranchReconciliationSheetState extends ConsumerState<AdminBranchReco
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
     final isMobile = screenWidth < 768;
+    final tokens = IcareSurfaceTokens.of(context);
 
     return Container(
-      decoration: const BoxDecoration(
-        color: Color(0xFFF8FAFC),
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      decoration: BoxDecoration(
+        color: tokens.canvas,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -142,7 +144,7 @@ class _AdminBranchReconciliationSheetState extends ConsumerState<AdminBranchReco
                 width: 36,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: const Color(0xFFCBD5E1),
+                  color: tokens.borderStrong,
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
@@ -156,13 +158,14 @@ class _AdminBranchReconciliationSheetState extends ConsumerState<AdminBranchReco
                 Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFE2E8F0),
+                    color: tokens.brandSoftBg,
                     borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: tokens.brandSoftBorder),
                   ),
-                  child: const Icon(Icons.account_balance_outlined, size: 20, color: Color(0xFF0F766E)),
+                  child: Icon(Icons.account_balance_outlined, size: 20, color: tokens.brandPrimary),
                 ),
                 const SizedBox(width: 12),
-                const Expanded(
+                Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -171,31 +174,31 @@ class _AdminBranchReconciliationSheetState extends ConsumerState<AdminBranchReco
                         style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.w700,
-                          color: Color(0xFF0F172A),
+                          color: tokens.textPrimary,
                         ),
                       ),
-                      SizedBox(height: 2),
+                      const SizedBox(height: 2),
                       Text(
                         'Head Office Authority • Paper Returns Custody',
-                        style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                        style: TextStyle(fontSize: 12, color: tokens.textMuted),
                       ),
                     ],
                   ),
                 ),
                 IconButton(
                   onPressed: () => Navigator.of(context).pop(),
-                  icon: const Icon(Icons.close, color: Color(0xFF64748B), size: 20),
+                  icon: Icon(Icons.close, color: tokens.textMuted, size: 20),
                   splashRadius: 20,
                   tooltip: 'Close',
                 ),
               ],
             ),
           ),
-          const Divider(height: 1, color: Color(0xFFE2E8F0)),
+          Divider(height: 1, color: tokens.borderSubtle),
 
           // Scope Control Bar (Branch Dropdown & Period Stepper)
           _buildScopeControlBar(isMobile),
-          const Divider(height: 1, color: Color(0xFFE2E8F0)),
+          Divider(height: 1, color: tokens.borderSubtle),
 
           // Body Content
           Expanded(
@@ -222,23 +225,23 @@ class _AdminBranchReconciliationSheetState extends ConsumerState<AdminBranchReco
                             child: Column(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                const Icon(Icons.error_outline, size: 36, color: Color(0xFFDC2626)),
+                                Icon(Icons.error_outline, size: 36, color: tokens.dangerDot),
                                 const SizedBox(height: 12),
-                                const Text(
+                                Text(
                                   'Unable to load reconciliation baseline',
-                                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+                                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: tokens.textPrimary),
                                 ),
                                 const SizedBox(height: 6),
                                 Text(
                                   snapshot.error.toString(),
                                   textAlign: TextAlign.center,
-                                  style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                                  style: TextStyle(fontSize: 12, color: tokens.textMuted),
                                 ),
                                 const SizedBox(height: 16),
                                 ElevatedButton(
                                   onPressed: _loadReconciliation,
                                   style: ElevatedButton.styleFrom(
-                                    backgroundColor: const Color(0xFF0F766E),
+                                    backgroundColor: tokens.brandPrimary,
                                     foregroundColor: Colors.white,
                                   ),
                                   child: const Text('Retry'),
@@ -251,10 +254,10 @@ class _AdminBranchReconciliationSheetState extends ConsumerState<AdminBranchReco
 
                       final data = snapshot.data;
                       if (data == null) {
-                        return const Center(
+                        return Center(
                           child: Text(
                             'No reconciliation data found for this period.',
-                            style: TextStyle(fontSize: 13, color: Color(0xFF64748B)),
+                            style: TextStyle(fontSize: 13, color: tokens.textMuted),
                           ),
                         );
                       }
@@ -285,9 +288,10 @@ class _AdminBranchReconciliationSheetState extends ConsumerState<AdminBranchReco
   Widget _buildScopeControlBar(bool isMobile) {
     final branches = _cachedMeta?.branches ?? [];
     final branchNames = branches.map((b) => b.name).toList();
+    final tokens = IcareSurfaceTokens.of(context);
 
     return Container(
-      color: Colors.white,
+      color: tokens.surface,
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
       child: isMobile
           ? Column(
@@ -313,29 +317,31 @@ class _AdminBranchReconciliationSheetState extends ConsumerState<AdminBranchReco
     final currentVal = branchNames.contains(_selectedBranchName)
         ? _selectedBranchName
         : (branchNames.isNotEmpty ? branchNames.first : null);
+    final tokens = IcareSurfaceTokens.of(context);
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
+        color: tokens.surfaceSubtle,
         borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: const Color(0xFFCBD5E1)),
+        border: Border.all(color: tokens.borderStrong),
       ),
       child: DropdownButtonHideUnderline(
         child: DropdownButton<String>(
           value: currentVal,
+          dropdownColor: tokens.surfaceElevated,
           isDense: true,
-          hint: const Text('Select Branch', style: TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+          hint: Text('Select Branch', style: TextStyle(fontSize: 12, color: tokens.textMuted)),
           items: branchNames.map((b) {
             return DropdownMenuItem<String>(
               value: b,
               child: Row(
                 children: [
-                  const Icon(Icons.domain_outlined, size: 14, color: Color(0xFF0F766E)),
+                  Icon(Icons.domain_outlined, size: 14, color: tokens.brandPrimary),
                   const SizedBox(width: 6),
                   Text(
                     b,
-                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF1E293B)),
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tokens.textPrimary),
                   ),
                 ],
               ),
@@ -355,18 +361,19 @@ class _AdminBranchReconciliationSheetState extends ConsumerState<AdminBranchReco
   }
 
   Widget _buildPeriodStepper() {
+    final tokens = IcareSurfaceTokens.of(context);
     return Container(
       decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
+        color: tokens.surfaceSubtle,
         borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: const Color(0xFFCBD5E1)),
+        border: Border.all(color: tokens.borderStrong),
       ),
       padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           IconButton(
-            icon: const Icon(Icons.chevron_left, size: 18, color: Color(0xFF0F766E)),
+            icon: Icon(Icons.chevron_left, size: 18, color: tokens.brandPrimary),
             visualDensity: VisualDensity.compact,
             tooltip: 'Previous Month',
             onPressed: () {
@@ -385,15 +392,15 @@ class _AdminBranchReconciliationSheetState extends ConsumerState<AdminBranchReco
             padding: const EdgeInsets.symmetric(horizontal: 8),
             child: Text(
               '${_monthNames[_selectedMonth - 1]} $_selectedYear',
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 12.5,
                 fontWeight: FontWeight.w700,
-                color: Color(0xFF0F172A),
+                color: tokens.textPrimary,
               ),
             ),
           ),
           IconButton(
-            icon: const Icon(Icons.chevron_right, size: 18, color: Color(0xFF0F766E)),
+            icon: Icon(Icons.chevron_right, size: 18, color: tokens.brandPrimary),
             visualDensity: VisualDensity.compact,
             tooltip: 'Next Month',
             onPressed: () {

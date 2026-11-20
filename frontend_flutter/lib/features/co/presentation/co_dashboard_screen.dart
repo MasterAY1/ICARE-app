@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import '../../../core/theme/icare_colors.dart';
+import '../../../core/theme/icare_theme_tokens.dart';
 import '../../../core/theme/icare_typography.dart';
 import '../../../core/theme/icare_spacing.dart';
 import '../../../core/widgets/icare_card.dart';
@@ -89,6 +90,7 @@ class CoDashboardScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final tokens = IcareSurfaceTokens.of(context);
     final dashboardAsync = ref.watch(coDashboardProvider);
     final isOnline = ref.watch(isOnlineProvider);
 
@@ -106,10 +108,10 @@ class CoDashboardScreen extends ConsumerWidget {
         return Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: isConnectionError ? const Color(0xFFFEF3C7) : IcareColors.statusDangerBg,
+            color: isConnectionError ? tokens.warningBg : tokens.dangerBg,
             borderRadius: IcareSpacing.roundedMd,
             border: Border.all(
-              color: isConnectionError ? const Color(0xFFFCD34D) : IcareColors.statusDangerBorder,
+              color: isConnectionError ? tokens.warningBorder : tokens.dangerBorder,
             ),
           ),
           child: Row(
@@ -117,7 +119,7 @@ class CoDashboardScreen extends ConsumerWidget {
             children: [
               Icon(
                 isConnectionError ? Icons.cloud_off : Icons.error_outline,
-                color: isConnectionError ? const Color(0xFF92400E) : IcareColors.statusDangerText,
+                color: isConnectionError ? tokens.warningDot : tokens.dangerDot,
                 size: 22,
               ),
               const SizedBox(width: 12),
@@ -128,7 +130,7 @@ class CoDashboardScreen extends ConsumerWidget {
                     Text(
                       isConnectionError ? 'Offline Mode — No Local Cache Available' : 'Could not load dashboard data',
                       style: TextStyle(
-                        color: isConnectionError ? const Color(0xFF92400E) : IcareColors.statusDangerText,
+                        color: isConnectionError ? tokens.warningText : tokens.dangerText,
                         fontSize: 14,
                         fontWeight: FontWeight.bold,
                       ),
@@ -139,7 +141,7 @@ class CoDashboardScreen extends ConsumerWidget {
                           ? 'You are currently working offline, but no cached dashboard data was found on this device. Please connect to the internet once to load and pre-cache your portfolio.'
                           : AppErrorDetails.from(err).message,
                       style: TextStyle(
-                        color: isConnectionError ? const Color(0xFF78350F) : IcareColors.statusDangerText,
+                        color: (isConnectionError ? tokens.warningText : tokens.dangerText).withValues(alpha: 0.9),
                         fontSize: 12.5,
                       ),
                     ),
@@ -150,7 +152,7 @@ class CoDashboardScreen extends ConsumerWidget {
               ElevatedButton(
                 onPressed: () => ref.refresh(coDashboardProvider),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: isConnectionError ? const Color(0xFFD97706) : IcareColors.statusDangerText,
+                  backgroundColor: isConnectionError ? const Color(0xFFD97706) : const Color(0xFFDC2626),
                   elevation: 0,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
@@ -169,18 +171,18 @@ class CoDashboardScreen extends ConsumerWidget {
               margin: const EdgeInsets.only(bottom: 12),
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               decoration: BoxDecoration(
-                color: const Color(0xFFFEF3C7),
+                color: tokens.warningBg,
                 borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: const Color(0xFFFCD34D)),
+                border: Border.all(color: tokens.warningBorder),
               ),
-              child: const Row(
+              child: Row(
                 children: [
-                  Icon(Icons.cloud_off, size: 16, color: Color(0xFF92400E)),
-                  SizedBox(width: 8),
+                  Icon(Icons.cloud_off, size: 16, color: tokens.warningDot),
+                  const SizedBox(width: 8),
                   Expanded(
                     child: Text(
                       'Offline Mode Active — Displaying locally cached dashboard. Field collections and meeting sheets are available offline and will queue automatically for synchronization.',
-                      style: TextStyle(color: Color(0xFF92400E), fontSize: 11.5, fontWeight: FontWeight.w600),
+                      style: TextStyle(color: tokens.warningText, fontSize: 11.5, fontWeight: FontWeight.w600),
                     ),
                   ),
                 ],
@@ -193,6 +195,7 @@ class CoDashboardScreen extends ConsumerWidget {
   }
 
   Widget _buildDashboardContent(BuildContext context, WidgetRef ref, CoDashboardData data) {
+    final tokens = IcareSurfaceTokens.of(context);
     final wel = data.welcome;
     final officerName = wel['officer_name'] ?? 'Officer';
     final branchName = wel['branch_name'] ?? 'Branch';
@@ -230,6 +233,7 @@ class CoDashboardScreen extends ConsumerWidget {
                     isMobile ? 'Field Operations' : 'Credit Officer Dashboard',
                     style: IcareTypography.pageTitle.copyWith(
                       fontSize: isMobile ? 18 : 22,
+                      color: tokens.textPrimary,
                     ),
                   ),
                   const SizedBox(height: 2),
@@ -237,6 +241,7 @@ class CoDashboardScreen extends ConsumerWidget {
                     '$officerName · $branchName Branch',
                     style: IcareTypography.pageSubtitle.copyWith(
                       fontSize: isMobile ? 12 : 13,
+                      color: tokens.textMuted,
                     ),
                   ),
                 ],
@@ -254,20 +259,20 @@ class CoDashboardScreen extends ConsumerWidget {
             vertical: isMobile ? 10 : 12,
           ),
           decoration: BoxDecoration(
-            color: IcareColors.statusInfoBg,
+            color: tokens.infoBg,
             borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: IcareColors.statusInfoBorder),
+            border: Border.all(color: tokens.infoBorder),
           ),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              const Icon(Icons.calendar_today_outlined, color: IcareColors.statusInfoText, size: 15),
+              Icon(Icons.calendar_today_outlined, color: tokens.infoText, size: 15),
               const SizedBox(width: 8),
               Expanded(
                 child: RichText(
                   text: TextSpan(
                     style: TextStyle(
-                      color: IcareColors.statusInfoText,
+                      color: tokens.infoText,
                       fontSize: isMobile ? 12 : 13,
                       height: 1.35,
                     ),
@@ -297,23 +302,23 @@ class CoDashboardScreen extends ConsumerWidget {
             width: double.infinity,
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
             decoration: BoxDecoration(
-              color: IcareColors.statusWarningBg,
+              color: tokens.warningBg,
               borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: IcareColors.statusWarningBorder),
+              border: Border.all(color: tokens.warningBorder),
             ),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Padding(
-                  padding: EdgeInsets.only(top: 1),
-                  child: Icon(Icons.warning_amber_rounded, color: IcareColors.statusWarningText, size: 18),
+                Padding(
+                  padding: const EdgeInsets.only(top: 1),
+                  child: Icon(Icons.warning_amber_rounded, color: tokens.warningDot, size: 18),
                 ),
                 const SizedBox(width: 10),
                 Expanded(
                   child: RichText(
                     text: TextSpan(
-                      style: const TextStyle(
-                        color: IcareColors.statusWarningText,
+                      style: TextStyle(
+                        color: tokens.warningText,
                         fontSize: 13,
                         height: 1.4,
                       ),
@@ -378,7 +383,7 @@ class CoDashboardScreen extends ConsumerWidget {
             const SizedBox(height: 14),
             Text(
               'Quick Action: Start Collection',
-              style: IcareTypography.bodyBold.copyWith(fontSize: 13),
+              style: IcareTypography.bodyBold.copyWith(fontSize: 13, color: tokens.textPrimary),
             ),
             const SizedBox(height: 8),
             Wrap(
@@ -395,10 +400,10 @@ class CoDashboardScreen extends ConsumerWidget {
                   key: Key('start_grp_$idx'),
                   icon: Icon(isClosed ? Icons.lock_clock_outlined : Icons.play_circle_outline, size: 15),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: isClosed ? const Color(0xFF94A3B8) : IcareColors.primary,
-                    foregroundColor: Colors.white,
-                    disabledBackgroundColor: const Color(0xFFE2E8F0),
-                    disabledForegroundColor: const Color(0xFF64748B),
+                    backgroundColor: isClosed ? tokens.surfaceSubtle : tokens.brandPrimaryDark,
+                    foregroundColor: isClosed ? tokens.textMuted : Colors.white,
+                    disabledBackgroundColor: tokens.surfaceSubtle,
+                    disabledForegroundColor: tokens.textMuted,
                     elevation: 0,
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
                     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
@@ -521,7 +526,7 @@ class CoDashboardScreen extends ConsumerWidget {
                 label: 'Normal Payment',
                 value: CurrencyFormatter.formatNaira((stCards['normal_payment']?['amount'] as num?)?.toDouble() ?? 0.0),
                 delta: '${stCards['normal_payment']?['count'] ?? 0} On-Schedule',
-                topBorderColor: IcareColors.primary,
+                topBorderColor: tokens.brandPrimary,
               ),
             IcareMetricCard(
               label: 'Excess Payment',
@@ -592,17 +597,17 @@ class CoDashboardScreen extends ConsumerWidget {
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
+                      Text(
                         'CASHBOOK SETTLEMENT STATUS',
-                        style: IcareTypography.cardLabel,
+                        style: IcareTypography.cardLabel.copyWith(color: tokens.textMuted),
                       ),
                       const SizedBox(height: 4),
                       Text(
                         _cleanStatusText(cp['status']?.toString() ?? 'Balanced'),
                         style: IcareTypography.metricValueCompact.copyWith(
                           color: (cp['status']?.toString().toLowerCase().contains('unbal') ?? false)
-                              ? IcareColors.statusDangerText
-                              : IcareColors.statusSuccessText,
+                              ? tokens.dangerText
+                              : tokens.successText,
                         ),
                       ),
                     ],
@@ -615,8 +620,8 @@ class CoDashboardScreen extends ConsumerWidget {
               label: 'Cashbook Difference',
               value: CurrencyFormatter.formatNaira((cp['difference'] as num?)?.toDouble() ?? 0.0),
               statusTextColor: ((cp['difference'] as num?)?.toDouble() ?? 0.0) != 0.0
-                  ? IcareColors.statusDangerText
-                  : IcareColors.statusSuccessText,
+                  ? tokens.dangerText
+                  : tokens.successText,
               icon: Icons.compare_arrows_outlined,
             ),
           ], spacing: 12),
@@ -636,26 +641,26 @@ class CoDashboardScreen extends ConsumerWidget {
               width: double.infinity,
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
               decoration: BoxDecoration(
-                color: IcareColors.statusSuccessBg,
+                color: tokens.successBg,
                 borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: IcareColors.statusSuccessBorder),
-                boxShadow: const [
+                border: Border.all(color: tokens.successBorder),
+                boxShadow: [
                   BoxShadow(
-                    color: Color(0x060F172A),
+                    color: Colors.black.withValues(alpha: tokens.isDark ? 0.14 : 0.03),
                     blurRadius: 10,
-                    offset: Offset(0, 2),
+                    offset: const Offset(0, 2),
                   ),
                 ],
               ),
-              child: const Row(
+              child: Row(
                 children: [
-                  Icon(Icons.check_circle_outline, color: IcareColors.statusSuccessText, size: 18),
-                  SizedBox(width: 10),
+                  Icon(Icons.check_circle_outline, color: tokens.successDot, size: 18),
+                  const SizedBox(width: 10),
                   Expanded(
                     child: Text(
                       'All scheduled clients have completed full repayments for today.',
                       style: TextStyle(
-                        color: IcareColors.statusSuccessText,
+                        color: tokens.successText,
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
                       ),
@@ -678,6 +683,7 @@ class CoDashboardScreen extends ConsumerWidget {
   // ===========================================================================
 
   Widget _buildMobileSegmentedHub(BuildContext context, WidgetRef ref, CoDashboardData data) {
+    final tokens = IcareSurfaceTokens.of(context);
     final currentTab = ref.watch(coDashboardMobileTabProvider);
     final mPort = data.meetingPortfolio;
     final attList = data.attentionList;
@@ -705,12 +711,12 @@ class CoDashboardScreen extends ConsumerWidget {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            const Text(
+            Text(
               'OPERATIONAL HUB',
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w800,
-                color: Color(0xFF0F172A),
+                color: tokens.textPrimary,
                 letterSpacing: 0.6,
               ),
             ),
@@ -719,7 +725,7 @@ class CoDashboardScreen extends ConsumerWidget {
               style: TextStyle(
                 fontSize: 11,
                 fontWeight: FontWeight.w500,
-                color: Colors.grey.shade600,
+                color: tokens.textMuted,
               ),
             ),
           ],
@@ -731,15 +737,16 @@ class CoDashboardScreen extends ConsumerWidget {
           width: double.infinity,
           padding: const EdgeInsets.all(4),
           decoration: BoxDecoration(
-            color: const Color(0xFFF1F5F9),
+            color: tokens.surfaceSubtle,
             borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: const Color(0xFFE2E8F0)),
+            border: Border.all(color: tokens.borderSubtle),
           ),
           child: SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: Row(
               children: [
                 _buildSegmentPill(
+                  tokens: tokens,
                   ref: ref,
                   index: 0,
                   currentIndex: currentTab,
@@ -749,6 +756,7 @@ class CoDashboardScreen extends ConsumerWidget {
                 ),
                 const SizedBox(width: 4),
                 _buildSegmentPill(
+                  tokens: tokens,
                   ref: ref,
                   index: 1,
                   currentIndex: currentTab,
@@ -757,6 +765,7 @@ class CoDashboardScreen extends ConsumerWidget {
                 ),
                 const SizedBox(width: 4),
                 _buildSegmentPill(
+                  tokens: tokens,
                   ref: ref,
                   index: 2,
                   currentIndex: currentTab,
@@ -765,6 +774,7 @@ class CoDashboardScreen extends ConsumerWidget {
                 ),
                 const SizedBox(width: 4),
                 _buildSegmentPill(
+                  tokens: tokens,
                   ref: ref,
                   index: 3,
                   currentIndex: currentTab,
@@ -786,6 +796,7 @@ class CoDashboardScreen extends ConsumerWidget {
   }
 
   Widget _buildSegmentPill({
+    required IcareSurfaceTokens tokens,
     required WidgetRef ref,
     required int index,
     required int currentIndex,
@@ -807,14 +818,15 @@ class CoDashboardScreen extends ConsumerWidget {
           duration: const Duration(milliseconds: 150),
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           decoration: BoxDecoration(
-            color: isSelected ? Colors.white : Colors.transparent,
+            color: isSelected ? tokens.surfaceElevated : Colors.transparent,
             borderRadius: BorderRadius.circular(10),
+            border: isSelected ? Border.all(color: tokens.borderSubtle) : null,
             boxShadow: isSelected
-                ? const [
+                ? [
                     BoxShadow(
-                      color: Color(0x120F172A),
+                      color: Colors.black.withValues(alpha: tokens.isDark ? 0.18 : 0.06),
                       blurRadius: 6,
-                      offset: Offset(0, 2),
+                      offset: const Offset(0, 2),
                     ),
                   ]
                 : null,
@@ -825,7 +837,7 @@ class CoDashboardScreen extends ConsumerWidget {
               Icon(
                 icon,
                 size: 16,
-                color: isSelected ? IcareColors.primary : const Color(0xFF64748B),
+                color: isSelected ? tokens.brandPrimary : tokens.textMuted,
               ),
               const SizedBox(width: 6),
               Text(
@@ -833,7 +845,7 @@ class CoDashboardScreen extends ConsumerWidget {
                 style: TextStyle(
                   fontSize: 12.5,
                   fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                  color: isSelected ? const Color(0xFF0F172A) : const Color(0xFF64748B),
+                  color: isSelected ? tokens.textPrimary : tokens.textMuted,
                 ),
               ),
               if (badgeCount != null && badgeCount > 0) ...[
@@ -842,8 +854,8 @@ class CoDashboardScreen extends ConsumerWidget {
                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                   decoration: BoxDecoration(
                     color: isAlertBadge
-                        ? const Color(0xFFFEE2E2)
-                        : (isSelected ? const Color(0xFFECFDF5) : const Color(0xFFE2E8F0)),
+                        ? tokens.dangerBg
+                        : (isSelected ? tokens.brandSoftBg : tokens.neutralBg),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
@@ -852,8 +864,8 @@ class CoDashboardScreen extends ConsumerWidget {
                       fontSize: 10.5,
                       fontWeight: FontWeight.w700,
                       color: isAlertBadge
-                          ? const Color(0xFF991B1B)
-                          : (isSelected ? const Color(0xFF065F46) : const Color(0xFF475569)),
+                          ? tokens.dangerText
+                          : (isSelected ? tokens.brandSoftText : tokens.textSecondary),
                     ),
                   ),
                 ),
@@ -866,6 +878,7 @@ class CoDashboardScreen extends ConsumerWidget {
   }
 
   Widget _buildMobileTabMeetings(BuildContext context, WidgetRef ref, CoDashboardData data) {
+    final tokens = IcareSurfaceTokens.of(context);
     final mPort = data.meetingPortfolio;
     final isClosed = data.branchClosure['is_closed'] == true;
     if (mPort.isEmpty) {
@@ -882,10 +895,10 @@ class CoDashboardScreen extends ConsumerWidget {
           child: ElevatedButton.icon(
             icon: Icon(isClosed ? Icons.lock_clock_outlined : Icons.payments_outlined, size: 16),
             style: ElevatedButton.styleFrom(
-              backgroundColor: IcareColors.primary,
+              backgroundColor: tokens.brandPrimaryDark,
               foregroundColor: Colors.white,
-              disabledBackgroundColor: const Color(0xFFE2E8F0),
-              disabledForegroundColor: const Color(0xFF64748B),
+              disabledBackgroundColor: tokens.surfaceSubtle,
+              disabledForegroundColor: tokens.textMuted,
               padding: const EdgeInsets.symmetric(vertical: 12),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               elevation: 0,
@@ -906,6 +919,7 @@ class CoDashboardScreen extends ConsumerWidget {
   }
 
   Widget _buildMobileTabPerformance(BuildContext context, WidgetRef ref, CoDashboardData data) {
+    final tokens = IcareSurfaceTokens.of(context);
     final repS = data.repaymentSummary;
     final sav = data.savings;
     final stCards = data.repaymentStatus;
@@ -941,12 +955,12 @@ class CoDashboardScreen extends ConsumerWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         // Repayment Summary
-        const Text(
+        Text(
           'REPAYMENT SUMMARY',
           style: TextStyle(
             fontSize: 11,
             fontWeight: FontWeight.w800,
-            color: Color(0xFF0F172A),
+            color: tokens.textPrimary,
             letterSpacing: 0.5,
           ),
         ),
@@ -955,7 +969,7 @@ class CoDashboardScreen extends ConsumerWidget {
           width: double.infinity,
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
-            color: IcareColors.primaryDark,
+            color: tokens.brandPrimaryDark,
             borderRadius: BorderRadius.circular(14),
           ),
           child: Row(
@@ -964,9 +978,13 @@ class CoDashboardScreen extends ConsumerWidget {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
+                  Text(
                     'TOTAL REPAYMENT TODAY',
-                    style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: Color(0xFF6EE7B7)),
+                    style: TextStyle(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white.withValues(alpha: 0.82),
+                    ),
                   ),
                   const SizedBox(height: 4),
                   Text(
@@ -999,6 +1017,7 @@ class CoDashboardScreen extends ConsumerWidget {
           children: [
             Expanded(
               child: _buildMiniStatCard(
+                tokens: tokens,
                 label: 'Daily (60D)',
                 value: CurrencyFormatter.formatNaira(repDailyAmt),
                 subtext: '$repDailyClients Paid',
@@ -1007,6 +1026,7 @@ class CoDashboardScreen extends ConsumerWidget {
             const SizedBox(width: 8),
             Expanded(
               child: _buildMiniStatCard(
+                tokens: tokens,
                 label: '12 Weeks (Weekly)',
                 value: CurrencyFormatter.formatNaira(rep12Amt),
                 subtext: '$rep12Clients Paid',
@@ -1019,6 +1039,7 @@ class CoDashboardScreen extends ConsumerWidget {
           children: [
             Expanded(
               child: _buildMiniStatCard(
+                tokens: tokens,
                 label: '24 Weeks (Weekly)',
                 value: CurrencyFormatter.formatNaira(rep24Amt),
                 subtext: '$rep24Clients Paid',
@@ -1027,6 +1048,7 @@ class CoDashboardScreen extends ConsumerWidget {
             const SizedBox(width: 8),
             Expanded(
               child: _buildMiniStatCard(
+                tokens: tokens,
                 label: 'Daily (120D)',
                 value: CurrencyFormatter.formatNaira(rep120dAmt),
                 subtext: '$rep120dClients Paid',
@@ -1036,6 +1058,7 @@ class CoDashboardScreen extends ConsumerWidget {
         ),
         const SizedBox(height: 8),
         _buildMiniStatCard(
+          tokens: tokens,
           label: 'Monthly (3M / 6M)',
           value: CurrencyFormatter.formatNaira(repMonthlyAmt),
           subtext: '$repMonthlyClients Paid',
@@ -1043,12 +1066,12 @@ class CoDashboardScreen extends ConsumerWidget {
         const SizedBox(height: 16),
 
         // Savings Breakdown
-        const Text(
+        Text(
           'SAVINGS BREAKDOWN',
           style: TextStyle(
             fontSize: 11,
             fontWeight: FontWeight.w800,
-            color: Color(0xFF0F172A),
+            color: tokens.textPrimary,
             letterSpacing: 0.5,
           ),
         ),
@@ -1057,39 +1080,42 @@ class CoDashboardScreen extends ConsumerWidget {
           children: [
             Expanded(
               child: _buildMiniStatCard(
+                tokens: tokens,
                 label: 'Deposited',
                 value: CurrencyFormatter.formatNaira(depAmt),
                 subtext: '$depClients Clients',
-                valueColor: IcareColors.primary,
+                valueColor: tokens.brandPrimary,
               ),
             ),
             const SizedBox(width: 8),
             Expanded(
               child: _buildMiniStatCard(
+                tokens: tokens,
                 label: 'Withdrawn',
                 value: CurrencyFormatter.formatNaira(wdAmt),
                 subtext: '$wdClients Clients',
-                valueColor: const Color(0xFFDC2626),
+                valueColor: tokens.dangerText,
               ),
             ),
           ],
         ),
         const SizedBox(height: 8),
         _buildMiniStatCard(
+          tokens: tokens,
           label: 'Net Savings Today',
           value: CurrencyFormatter.formatNaira(netSav),
           subtext: 'Inflow minus outflow',
-          valueColor: const Color(0xFF059669),
+          valueColor: tokens.successText,
         ),
         const SizedBox(height: 16),
 
         // Repayment Status & Arrears
-        const Text(
+        Text(
           'STATUS & OVERDUE BREAKDOWN',
           style: TextStyle(
             fontSize: 11,
             fontWeight: FontWeight.w800,
-            color: Color(0xFF0F172A),
+            color: tokens.textPrimary,
             letterSpacing: 0.5,
           ),
         ),
@@ -1098,6 +1124,7 @@ class CoDashboardScreen extends ConsumerWidget {
           children: [
             Expanded(
               child: _buildMiniStatCard(
+                tokens: tokens,
                 label: 'Full Payoff',
                 value: CurrencyFormatter.formatNaira((fullPay?['amount'] as num?)?.toDouble() ?? 0.0),
                 subtext: '${fullPay?['count'] ?? 0} Settled',
@@ -1107,10 +1134,11 @@ class CoDashboardScreen extends ConsumerWidget {
             const SizedBox(width: 8),
             Expanded(
               child: _buildMiniStatCard(
+                tokens: tokens,
                 label: 'Normal Payment',
                 value: CurrencyFormatter.formatNaira((normalPay?['amount'] as num?)?.toDouble() ?? 0.0),
                 subtext: '${normalPay?['count'] ?? 0} On-Schedule',
-                topAccent: IcareColors.primary,
+                topAccent: tokens.brandPrimary,
               ),
             ),
           ],
@@ -1120,6 +1148,7 @@ class CoDashboardScreen extends ConsumerWidget {
           children: [
             Expanded(
               child: _buildMiniStatCard(
+                tokens: tokens,
                 label: 'Excess Payment',
                 value: CurrencyFormatter.formatNaira((excessPay?['amount'] as num?)?.toDouble() ?? 0.0),
                 subtext: '${excessPay?['count'] ?? 0} Surplus',
@@ -1129,6 +1158,7 @@ class CoDashboardScreen extends ConsumerWidget {
             const SizedBox(width: 8),
             Expanded(
               child: _buildMiniStatCard(
+                tokens: tokens,
                 label: 'Part Payment',
                 value: CurrencyFormatter.formatNaira((partPay?['amount'] as num?)?.toDouble() ?? 0.0),
                 subtext: '${partPay?['count'] ?? 0} Underpaid',
@@ -1139,6 +1169,7 @@ class CoDashboardScreen extends ConsumerWidget {
         ),
         const SizedBox(height: 8),
         _buildMiniStatCard(
+          tokens: tokens,
           label: 'Not Paid',
           value: CurrencyFormatter.formatNaira((notPaid?['amount'] as num?)?.toDouble() ?? 0.0),
           subtext: '${notPaid?['count'] ?? 0} Clients',
@@ -1147,11 +1178,12 @@ class CoDashboardScreen extends ConsumerWidget {
         if (arrears != null) ...[
           const SizedBox(height: 8),
           _buildMiniStatCard(
+            tokens: tokens,
             label: 'Overdue Arrears',
             value: CurrencyFormatter.formatNaira((arrears['amount'] as num?)?.toDouble() ?? 0.0),
             subtext: '${arrears['count'] ?? 0} Past Due Clients · $overdueGroupsCount Groups',
             topAccent: IcareColors.metricArrears,
-            valueColor: const Color(0xFF991B1B),
+            valueColor: tokens.dangerText,
           ),
         ],
       ],
@@ -1159,6 +1191,7 @@ class CoDashboardScreen extends ConsumerWidget {
   }
 
   Widget _buildMobileTabCashPosition(BuildContext context, WidgetRef ref, CoDashboardData data) {
+    final tokens = IcareSurfaceTokens.of(context);
     final cp = data.cashPosition;
     final opening = (cp['opening_balance'] as num?)?.toDouble() ?? 0.0;
     final cashIn = (cp['cash_in'] as num?)?.toDouble() ?? 0.0;
@@ -1175,6 +1208,7 @@ class CoDashboardScreen extends ConsumerWidget {
           children: [
             Expanded(
               child: _buildMiniStatCard(
+                tokens: tokens,
                 label: 'Opening Vault',
                 value: CurrencyFormatter.formatNaira(opening),
                 subtext: 'B/F Balance',
@@ -1183,10 +1217,11 @@ class CoDashboardScreen extends ConsumerWidget {
             const SizedBox(width: 8),
             Expanded(
               child: _buildMiniStatCard(
+                tokens: tokens,
                 label: 'Cash Inflow',
                 value: CurrencyFormatter.formatNaira(cashIn),
                 subtext: 'Collections & Fees',
-                valueColor: IcareColors.primary,
+                valueColor: tokens.brandPrimary,
               ),
             ),
           ],
@@ -1196,19 +1231,21 @@ class CoDashboardScreen extends ConsumerWidget {
           children: [
             Expanded(
               child: _buildMiniStatCard(
+                tokens: tokens,
                 label: 'Cash Outflow',
                 value: CurrencyFormatter.formatNaira(cashOut),
                 subtext: 'Disbursements & W/D',
-                valueColor: const Color(0xFFDC2626),
+                valueColor: tokens.dangerText,
               ),
             ),
             const SizedBox(width: 8),
             Expanded(
               child: _buildMiniStatCard(
+                tokens: tokens,
                 label: 'Closing Balance',
                 value: CurrencyFormatter.formatNaira(closing),
                 subtext: 'Primary Vault Ledger',
-                valueColor: const Color(0xFF2563EB),
+                valueColor: tokens.infoText,
               ),
             ),
           ],
@@ -1218,9 +1255,9 @@ class CoDashboardScreen extends ConsumerWidget {
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: tokens.surface,
             borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: const Color(0xFFE2E8F0)),
+            border: Border.all(color: tokens.borderSubtle),
           ),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -1228,9 +1265,9 @@ class CoDashboardScreen extends ConsumerWidget {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
+                  Text(
                     'SETTLEMENT STATUS',
-                    style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: Color(0xFF64748B)),
+                    style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: tokens.textMuted),
                   ),
                   const SizedBox(height: 2),
                   Text(
@@ -1238,7 +1275,7 @@ class CoDashboardScreen extends ConsumerWidget {
                     style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w800,
-                      color: isUnbalanced ? const Color(0xFFDC2626) : const Color(0xFF059669),
+                      color: isUnbalanced ? tokens.dangerText : tokens.successText,
                     ),
                   ),
                 ],
@@ -1246,9 +1283,9 @@ class CoDashboardScreen extends ConsumerWidget {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  const Text(
+                  Text(
                     'DIFFERENCE',
-                    style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: Color(0xFF64748B)),
+                    style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: tokens.textMuted),
                   ),
                   const SizedBox(height: 2),
                   Text(
@@ -1256,7 +1293,7 @@ class CoDashboardScreen extends ConsumerWidget {
                     style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w800,
-                      color: diff != 0.0 ? const Color(0xFFDC2626) : const Color(0xFF059669),
+                      color: diff != 0.0 ? tokens.dangerText : tokens.successText,
                       fontFeatures: const [FontFeature.tabularFigures()],
                     ),
                   ),
@@ -1271,7 +1308,7 @@ class CoDashboardScreen extends ConsumerWidget {
           child: ElevatedButton.icon(
             icon: const Icon(Icons.account_balance_wallet_outlined, size: 16),
             style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF2563EB),
+              backgroundColor: const Color(0xFF1D4ED8),
               foregroundColor: Colors.white,
               padding: const EdgeInsets.symmetric(vertical: 12),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -1291,25 +1328,26 @@ class CoDashboardScreen extends ConsumerWidget {
   }
 
   Widget _buildMobileTabAttention(BuildContext context, WidgetRef ref, CoDashboardData data) {
+    final tokens = IcareSurfaceTokens.of(context);
     final attList = data.attentionList;
     if (attList.isEmpty) {
       return Container(
         width: double.infinity,
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         decoration: BoxDecoration(
-          color: IcareColors.statusSuccessBg,
+          color: tokens.successBg,
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: IcareColors.statusSuccessBorder),
+          border: Border.all(color: tokens.successBorder),
         ),
-        child: const Row(
+        child: Row(
           children: [
-            Icon(Icons.check_circle_outline, color: IcareColors.statusSuccessText, size: 18),
-            SizedBox(width: 10),
+            Icon(Icons.check_circle_outline, color: tokens.successDot, size: 18),
+            const SizedBox(width: 10),
             Expanded(
               child: Text(
                 'All scheduled clients have completed full repayments for today.',
                 style: TextStyle(
-                  color: IcareColors.statusSuccessText,
+                  color: tokens.successText,
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
                 ),
@@ -1345,18 +1383,18 @@ class CoDashboardScreen extends ConsumerWidget {
           children: [
             Text(
               'Flagged Clients: ${filtered.length}',
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 11.5,
                 fontWeight: FontWeight.w700,
-                color: Color(0xFF0F172A),
+                color: tokens.textPrimary,
               ),
             ),
             if (filtered.length > 10)
               Text(
                 showAll ? 'Showing all' : 'Showing top 10',
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 11,
-                  color: Color(0xFF64748B),
+                  color: tokens.textMuted,
                   fontWeight: FontWeight.w500,
                 ),
               ),
@@ -1367,7 +1405,7 @@ class CoDashboardScreen extends ConsumerWidget {
         if (displayList.isEmpty)
           _buildInfoBox('No flagged clients match "$searchQuery".')
         else
-          ...displayList.map((r) => _buildMobileAttentionCard(r, ref)),
+          ...displayList.map((r) => _buildMobileAttentionCard(tokens, r, ref)),
 
         if (filtered.length > 10) ...[
           const SizedBox(height: 8),
@@ -1377,14 +1415,14 @@ class CoDashboardScreen extends ConsumerWidget {
               style: OutlinedButton.styleFrom(
                 padding: const EdgeInsets.symmetric(vertical: 10),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                side: const BorderSide(color: Color(0xFFCBD5E1)),
+                side: BorderSide(color: tokens.borderStrong),
               ),
               onPressed: () {
                 ref.read(coDashboardAttentionShowAllProvider.notifier).state = !showAll;
               },
               child: Text(
                 showAll ? 'Show Top 10 Only' : 'View All ${filtered.length} Flagged Clients',
-                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: tokens.textPrimary),
               ),
             ),
           ),
@@ -1393,7 +1431,7 @@ class CoDashboardScreen extends ConsumerWidget {
     );
   }
 
-  Widget _buildMobileAttentionCard(Map<String, dynamic> r, WidgetRef ref) {
+  Widget _buildMobileAttentionCard(IcareSurfaceTokens tokens, Map<String, dynamic> r, WidgetRef ref) {
     final clientName = (r['Client Name'] ?? r['client_name'] ?? '').toString();
     final group = (r['Group'] ?? r['group_name'] ?? '').toString();
     final expected = (r['Expected (₦)'] ??
@@ -1411,14 +1449,14 @@ class CoDashboardScreen extends ConsumerWidget {
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: tokens.surface,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-        boxShadow: const [
+        border: Border.all(color: tokens.borderSubtle),
+        boxShadow: [
           BoxShadow(
-            color: Color(0x060F172A),
+            color: Colors.black.withValues(alpha: tokens.isDark ? 0.14 : 0.03),
             blurRadius: 8,
-            offset: Offset(0, 2),
+            offset: const Offset(0, 2),
           ),
         ],
       ),
@@ -1435,10 +1473,10 @@ class CoDashboardScreen extends ConsumerWidget {
                   children: [
                     Text(
                       clientName,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 13.5,
                         fontWeight: FontWeight.w700,
-                        color: Color(0xFF0F172A),
+                        color: tokens.textPrimary,
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -1446,9 +1484,9 @@ class CoDashboardScreen extends ConsumerWidget {
                     const SizedBox(height: 2),
                     Text(
                       group,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 11,
-                        color: Color(0xFF64748B),
+                        color: tokens.textMuted,
                         fontWeight: FontWeight.w500,
                       ),
                       maxLines: 1,
@@ -1464,16 +1502,16 @@ class CoDashboardScreen extends ConsumerWidget {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
             decoration: BoxDecoration(
-              color: const Color(0xFFF8FAFC),
+              color: tokens.surfaceSubtle,
               borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: const Color(0xFFF1F5F9)),
+              border: Border.all(color: tokens.borderSubtle),
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                _buildMicroStat('Expected', CurrencyFormatter.formatNaira(expected), const Color(0xFF334155)),
-                _buildMicroStat('Paid', CurrencyFormatter.formatNaira(paid), IcareColors.primary),
-                _buildMicroStat('Shortfall', CurrencyFormatter.formatNaira(shortfall), const Color(0xFFDC2626)),
+                _buildMicroStat(tokens, 'Expected', CurrencyFormatter.formatNaira(expected), tokens.textSecondary),
+                _buildMicroStat(tokens, 'Paid', CurrencyFormatter.formatNaira(paid), tokens.brandPrimary),
+                _buildMicroStat(tokens, 'Shortfall', CurrencyFormatter.formatNaira(shortfall), tokens.dangerText),
               ],
             ),
           ),
@@ -1482,16 +1520,16 @@ class CoDashboardScreen extends ConsumerWidget {
     );
   }
 
-  Widget _buildMicroStat(String label, String value, Color valueColor) {
+  Widget _buildMicroStat(IcareSurfaceTokens tokens, String label, String value, Color valueColor) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
           label,
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 10,
             fontWeight: FontWeight.w600,
-            color: Color(0xFF64748B),
+            color: tokens.textMuted,
           ),
         ),
         const SizedBox(height: 2),
@@ -1509,6 +1547,7 @@ class CoDashboardScreen extends ConsumerWidget {
   }
 
   Widget _buildMiniStatCard({
+    required IcareSurfaceTokens tokens,
     required String label,
     required String value,
     required String subtext,
@@ -1518,14 +1557,14 @@ class CoDashboardScreen extends ConsumerWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: tokens.surface,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-        boxShadow: const [
+        border: Border.all(color: tokens.borderSubtle),
+        boxShadow: [
           BoxShadow(
-            color: Color(0x060F172A),
+            color: Colors.black.withValues(alpha: tokens.isDark ? 0.14 : 0.03),
             blurRadius: 6,
-            offset: Offset(0, 2),
+            offset: const Offset(0, 2),
           ),
         ],
       ),
@@ -1545,10 +1584,10 @@ class CoDashboardScreen extends ConsumerWidget {
           ],
           Text(
             label,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 10.5,
               fontWeight: FontWeight.w600,
-              color: Color(0xFF64748B),
+              color: tokens.textMuted,
             ),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
@@ -1559,7 +1598,7 @@ class CoDashboardScreen extends ConsumerWidget {
             style: TextStyle(
               fontSize: 14.5,
               fontWeight: FontWeight.w800,
-              color: valueColor ?? const Color(0xFF0F172A),
+              color: valueColor ?? tokens.textPrimary,
               fontFeatures: const [FontFeature.tabularFigures()],
             ),
             maxLines: 1,
@@ -1568,10 +1607,10 @@ class CoDashboardScreen extends ConsumerWidget {
           const SizedBox(height: 2),
           Text(
             subtext,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 10,
               fontWeight: FontWeight.w500,
-              color: Color(0xFF64748B),
+              color: tokens.textMuted,
             ),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
@@ -1863,6 +1902,7 @@ class CoDashboardScreen extends ConsumerWidget {
     bool isClosed = false,
     String closureReason = '',
   }) {
+    final tokens = IcareSurfaceTokens.of(context);
     final isMobile = IcareSpacing.isMobile(context);
 
     if (isMobile) {
@@ -1870,9 +1910,10 @@ class CoDashboardScreen extends ConsumerWidget {
         children: [
           Expanded(
             child: _buildActionShortcutIconButton(
+              tokens: tokens,
               icon: isClosed ? Icons.lock_clock_outlined : Icons.payments_outlined,
-              iconBg: isClosed ? const Color(0xFFF1F5F9) : const Color(0xFFECFDF5),
-              iconColor: isClosed ? const Color(0xFF94A3B8) : const Color(0xFF065F46),
+              iconBg: isClosed ? tokens.surfaceSubtle : tokens.successBg,
+              iconColor: isClosed ? tokens.textMuted : tokens.successText,
               tooltip: isClosed
                   ? 'Collections locked ($closureReason)'
                   : 'Collections (Post batch)',
@@ -1886,9 +1927,10 @@ class CoDashboardScreen extends ConsumerWidget {
           const SizedBox(width: 10),
           Expanded(
             child: _buildActionShortcutIconButton(
+              tokens: tokens,
               icon: Icons.person_add_alt_1_outlined,
-              iconBg: const Color(0xFFEFF6FF),
-              iconColor: const Color(0xFF1E40AF),
+              iconBg: tokens.infoBg,
+              iconColor: tokens.infoText,
               tooltip: 'Onboarding (Register client)',
               onTap: () {
                 ref.read(activeCoPageProvider.notifier).state = 'Loan Origination';
@@ -1898,9 +1940,10 @@ class CoDashboardScreen extends ConsumerWidget {
           const SizedBox(width: 10),
           Expanded(
             child: _buildActionShortcutIconButton(
+              tokens: tokens,
               icon: Icons.account_balance_wallet_outlined,
-              iconBg: const Color(0xFFFFFBEB),
-              iconColor: const Color(0xFF92400E),
+              iconBg: tokens.warningBg,
+              iconColor: tokens.warningText,
               tooltip: 'Cashbook (EOD Balance)',
               onTap: () {
                 ref.read(activeCoPageProvider.notifier).state = 'CO Cashbook';
@@ -1915,9 +1958,10 @@ class CoDashboardScreen extends ConsumerWidget {
       children: [
         Expanded(
           child: _buildActionShortcutCard(
+            tokens: tokens,
             icon: isClosed ? Icons.lock_clock_outlined : Icons.payments_outlined,
-            iconBg: isClosed ? const Color(0xFFF1F5F9) : const Color(0xFFECFDF5),
-            iconColor: isClosed ? const Color(0xFF94A3B8) : const Color(0xFF065F46),
+            iconBg: isClosed ? tokens.surfaceSubtle : tokens.successBg,
+            iconColor: isClosed ? tokens.textMuted : tokens.successText,
             title: 'Collections',
             subtitle: isClosed ? 'Closed today' : 'Post batch',
             onTap: isClosed
@@ -1930,9 +1974,10 @@ class CoDashboardScreen extends ConsumerWidget {
         const SizedBox(width: 10),
         Expanded(
           child: _buildActionShortcutCard(
+            tokens: tokens,
             icon: Icons.person_add_alt_1_outlined,
-            iconBg: const Color(0xFFEFF6FF),
-            iconColor: const Color(0xFF1E40AF),
+            iconBg: tokens.infoBg,
+            iconColor: tokens.infoText,
             title: 'Onboarding',
             subtitle: 'Register client',
             onTap: () {
@@ -1943,9 +1988,10 @@ class CoDashboardScreen extends ConsumerWidget {
         const SizedBox(width: 10),
         Expanded(
           child: _buildActionShortcutCard(
+            tokens: tokens,
             icon: Icons.account_balance_wallet_outlined,
-            iconBg: const Color(0xFFFFFBEB),
-            iconColor: const Color(0xFF92400E),
+            iconBg: tokens.warningBg,
+            iconColor: tokens.warningText,
             title: 'Cashbook',
             subtitle: 'EOD Balance',
             onTap: () {
@@ -1958,6 +2004,7 @@ class CoDashboardScreen extends ConsumerWidget {
   }
 
   Widget _buildActionShortcutIconButton({
+    required IcareSurfaceTokens tokens,
     required IconData icon,
     required Color iconBg,
     required Color iconColor,
@@ -1970,7 +2017,7 @@ class CoDashboardScreen extends ConsumerWidget {
       child: Opacity(
         opacity: disabled ? 0.65 : 1.0,
         child: Material(
-          color: Colors.white,
+          color: tokens.surface,
           borderRadius: BorderRadius.circular(14),
           child: InkWell(
             onTap: onTap,
@@ -1979,12 +2026,12 @@ class CoDashboardScreen extends ConsumerWidget {
               height: 48,
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: const Color(0xFFE2E8F0)),
-                boxShadow: const [
+                border: Border.all(color: tokens.borderSubtle),
+                boxShadow: [
                   BoxShadow(
-                    color: Color(0x080F172A),
+                    color: Colors.black.withValues(alpha: tokens.isDark ? 0.14 : 0.03),
                     blurRadius: 8,
-                    offset: Offset(0, 2),
+                    offset: const Offset(0, 2),
                   ),
                 ],
               ),
@@ -2007,6 +2054,7 @@ class CoDashboardScreen extends ConsumerWidget {
   }
 
   Widget _buildActionShortcutCard({
+    required IcareSurfaceTokens tokens,
     required IconData icon,
     required Color iconBg,
     required Color iconColor,
@@ -2018,7 +2066,7 @@ class CoDashboardScreen extends ConsumerWidget {
     return Opacity(
       opacity: disabled ? 0.65 : 1.0,
       child: Material(
-        color: Colors.white,
+        color: tokens.surface,
         borderRadius: BorderRadius.circular(16),
         child: InkWell(
           onTap: onTap,
@@ -2027,12 +2075,12 @@ class CoDashboardScreen extends ConsumerWidget {
             padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: const Color(0xFFE2E8F0)),
-              boxShadow: const [
+              border: Border.all(color: tokens.borderSubtle),
+              boxShadow: [
                 BoxShadow(
-                  color: Color(0x080F172A),
+                  color: Colors.black.withValues(alpha: tokens.isDark ? 0.14 : 0.03),
                   blurRadius: 10,
-                  offset: Offset(0, 3),
+                  offset: const Offset(0, 3),
                 ),
               ],
             ),
@@ -2051,10 +2099,10 @@ class CoDashboardScreen extends ConsumerWidget {
                 const SizedBox(height: 8),
                 Text(
                   title,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 12.5,
                     fontWeight: FontWeight.w700,
-                    color: Color(0xFF0F172A),
+                    color: tokens.textPrimary,
                   ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -2062,10 +2110,10 @@ class CoDashboardScreen extends ConsumerWidget {
                 const SizedBox(height: 2),
                 Text(
                   subtitle,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 10,
                     fontWeight: FontWeight.w500,
-                    color: Color(0xFF64748B),
+                    color: tokens.textMuted,
                   ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -2080,6 +2128,7 @@ class CoDashboardScreen extends ConsumerWidget {
 
   /// 2x2 Responsive Portfolio Health Grid
   Widget _buildPortfolioHealthGrid(BuildContext context, CoDashboardData data) {
+    final tokens = IcareSurfaceTokens.of(context);
     final repS = data.repaymentSummary;
     final sav = data.savings;
     final stCards = data.repaymentStatus;
@@ -2115,13 +2164,15 @@ class CoDashboardScreen extends ConsumerWidget {
     final isMobile = IcareSpacing.isMobile(context);
 
     final cardRepayments = _buildPortfolioHealthCard(
+      tokens: tokens,
       label: 'Repayments Today',
       value: CurrencyFormatter.formatNaira(totalCollected),
       subtext: '$clientsPaid clients paid',
-      accentColor: IcareColors.primary,
+      accentColor: tokens.brandPrimary,
     );
 
     final cardSavings = _buildPortfolioHealthCard(
+      tokens: tokens,
       label: 'Net Savings Today',
       value: CurrencyFormatter.formatNaira(netSavings),
       subtext: '$depClients dep · $wdClients w/d',
@@ -2129,19 +2180,21 @@ class CoDashboardScreen extends ConsumerWidget {
     );
 
     final cardVault = _buildPortfolioHealthCard(
+      tokens: tokens,
       label: 'Vault Balance',
       value: CurrencyFormatter.formatNaira(closingVault),
       subtext: 'Status: $cpStatus',
-      accentColor: const Color(0xFF2563EB),
+      accentColor: tokens.infoText,
     );
 
     final cardArrears = _buildPortfolioHealthCard(
+      tokens: tokens,
       label: 'Overdue Arrears',
       value: CurrencyFormatter.formatNaira(arrearsAmt),
       subtext: overdueGroupsCount > 0
           ? '$arrearsCount clients · $overdueGroupsCount groups'
           : '$arrearsCount clients flagged',
-      accentColor: const Color(0xFFDC2626),
+      accentColor: tokens.dangerDot,
       isAlert: arrearsAmt > 0,
     );
 
@@ -2151,12 +2204,12 @@ class CoDashboardScreen extends ConsumerWidget {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            const Text(
+            Text(
               'PORTFOLIO HEALTH',
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w800,
-                color: Color(0xFF0F172A),
+                color: tokens.textPrimary,
                 letterSpacing: 0.6,
               ),
             ),
@@ -2164,16 +2217,16 @@ class CoDashboardScreen extends ConsumerWidget {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFECFDF5),
+                  color: tokens.successBg,
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: const Color(0xFFA7F3D0)),
+                  border: Border.all(color: tokens.successBorder),
                 ),
                 child: Text(
                   '$totalClientsExpected Clients Scheduled',
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w700,
-                    color: Color(0xFF065F46),
+                    color: tokens.successText,
                   ),
                 ),
               ),
@@ -2217,6 +2270,7 @@ class CoDashboardScreen extends ConsumerWidget {
   }
 
   Widget _buildPortfolioHealthCard({
+    required IcareSurfaceTokens tokens,
     required String label,
     required String value,
     required String subtext,
@@ -2226,17 +2280,17 @@ class CoDashboardScreen extends ConsumerWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
       decoration: BoxDecoration(
-        color: isAlert ? const Color(0xFFFEF2F2) : Colors.white,
+        color: isAlert ? tokens.dangerBg : tokens.surface,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: isAlert ? const Color(0xFFFECACA) : const Color(0xFFE2E8F0),
+          color: isAlert ? tokens.dangerBorder : tokens.borderSubtle,
           width: 1,
         ),
-        boxShadow: const [
+        boxShadow: [
           BoxShadow(
-            color: Color(0x0A0F172A),
+            color: Colors.black.withValues(alpha: tokens.isDark ? 0.14 : 0.04),
             blurRadius: 14,
-            offset: Offset(0, 3),
+            offset: const Offset(0, 3),
           ),
         ],
       ),
@@ -2253,7 +2307,7 @@ class CoDashboardScreen extends ConsumerWidget {
                   style: TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w600,
-                    color: isAlert ? const Color(0xFF991B1B) : const Color(0xFF64748B),
+                    color: isAlert ? tokens.dangerText : tokens.textMuted,
                     letterSpacing: 0.2,
                   ),
                   maxLines: 1,
@@ -2276,7 +2330,7 @@ class CoDashboardScreen extends ConsumerWidget {
             style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.w800,
-              color: isAlert ? const Color(0xFF991B1B) : const Color(0xFF0F172A),
+              color: isAlert ? tokens.dangerText : tokens.textPrimary,
               letterSpacing: -0.3,
               fontFeatures: const [FontFeature.tabularFigures()],
             ),
@@ -2289,7 +2343,7 @@ class CoDashboardScreen extends ConsumerWidget {
             style: TextStyle(
               fontSize: 10.5,
               fontWeight: FontWeight.w600,
-              color: isAlert ? const Color(0xFFB91C1C) : const Color(0xFF64748B),
+              color: isAlert ? tokens.dangerText.withValues(alpha: 0.9) : tokens.textMuted,
             ),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
@@ -2305,234 +2359,239 @@ class CoDashboardScreen extends ConsumerWidget {
     WidgetRef ref, {
     bool isClosed = false,
   }) {
-    return Column(
-      children: rows.asMap().entries.map((entry) {
-        final idx = entry.key;
-        final r = entry.value;
-        final gName = (r['Group Name'] ?? r['group_name'] ?? '').toString();
-        final expected = (r['Expected (₦)'] ??
-                r['Expected Collection'] ??
-                r['expected_repayment'] ??
-                r['Expected'] as num?)
-            ?.toDouble() ??
-            0.0;
-        final collected = (r['Collected (₦)'] ??
-                r['Collected'] ??
-                r['collected_repayment'] as num?)
-            ?.toDouble() ??
-            0.0;
-        final rawStatus = (r['Status'] ?? r['status'] ?? 'Scheduled').toString();
-        final cleanStatus = _cleanStatusText(rawStatus);
-        final meetingDay = (r['Meeting Day'] ?? r['meeting_day'] ?? 'Today').toString();
-        final clientsExpected = (r['Clients Expected'] ?? r['clients_expected'] as num?)?.toInt() ?? 0;
-        final isCompleted = cleanStatus.toLowerCase() == 'completed' || (expected > 0 && collected >= expected);
+    return Builder(
+      builder: (context) {
+        final tokens = IcareSurfaceTokens.of(context);
+        return Column(
+          children: rows.asMap().entries.map((entry) {
+            final idx = entry.key;
+            final r = entry.value;
+            final gName = (r['Group Name'] ?? r['group_name'] ?? '').toString();
+            final expected = (r['Expected (₦)'] ??
+                    r['Expected Collection'] ??
+                    r['expected_repayment'] ??
+                    r['Expected'] as num?)
+                ?.toDouble() ??
+                0.0;
+            final collected = (r['Collected (₦)'] ??
+                    r['Collected'] ??
+                    r['collected_repayment'] as num?)
+                ?.toDouble() ??
+                0.0;
+            final rawStatus = (r['Status'] ?? r['status'] ?? 'Scheduled').toString();
+            final cleanStatus = _cleanStatusText(rawStatus);
+            final meetingDay = (r['Meeting Day'] ?? r['meeting_day'] ?? 'Today').toString();
+            final clientsExpected = (r['Clients Expected'] ?? r['clients_expected'] as num?)?.toInt() ?? 0;
+            final isCompleted = cleanStatus.toLowerCase() == 'completed' || (expected > 0 && collected >= expected);
 
-        return Container(
-          margin: const EdgeInsets.only(bottom: 12),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: const Color(0xFFE2E8F0)),
-            boxShadow: const [
-              BoxShadow(
-                color: Color(0x080F172A),
-                blurRadius: 12,
-                offset: Offset(0, 3),
-              ),
-            ],
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Top Accent Header
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                decoration: const BoxDecoration(
-                  color: Color(0xFFF8FAFC),
-                  borderRadius: BorderRadius.only(
-                    topLeft: Radius.circular(15),
-                    topRight: Radius.circular(15),
+            return Container(
+              margin: const EdgeInsets.only(bottom: 12),
+              decoration: BoxDecoration(
+                color: tokens.surface,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: tokens.borderSubtle),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: tokens.isDark ? 0.14 : 0.03),
+                    blurRadius: 12,
+                    offset: const Offset(0, 3),
                   ),
-                  border: Border(bottom: BorderSide(color: Color(0xFFF1F5F9))),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Expanded(
-                      child: Row(
-                        children: [
-                          Container(
-                            width: 8,
-                            height: 8,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: isCompleted ? const Color(0xFF059669) : const Color(0xFF2563EB),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  gName,
-                                  style: const TextStyle(
-                                    fontSize: 13.5,
-                                    fontWeight: FontWeight.w700,
-                                    color: Color(0xFF0F172A),
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                Text(
-                                  'Schedule: $meetingDay',
-                                  style: const TextStyle(
-                                    fontSize: 10.5,
-                                    color: Color(0xFF64748B),
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                      decoration: BoxDecoration(
-                        color: isCompleted ? const Color(0xFFECFDF5) : const Color(0xFFEFF6FF),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(
-                          color: isCompleted ? const Color(0xFFA7F3D0) : const Color(0xFFBFDBFE),
-                        ),
-                      ),
-                      child: Text(
-                        clientsExpected > 0 ? '$clientsExpected Members' : cleanStatus,
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                          color: isCompleted ? const Color(0xFF065F46) : const Color(0xFF1E40AF),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
+                ],
               ),
-              // Body stats
-              Padding(
-                padding: const EdgeInsets.all(14),
-                child: Column(
-                  children: [
-                    Row(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Top Accent Header
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                    decoration: BoxDecoration(
+                      color: tokens.surfaceSubtle,
+                      borderRadius: const BorderRadius.only(
+                        topLeft: Radius.circular(15),
+                        topRight: Radius.circular(15),
+                      ),
+                      border: Border(bottom: BorderSide(color: tokens.borderSubtle)),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Expanded(
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFF8FAFC),
-                              borderRadius: BorderRadius.circular(10),
-                              border: Border.all(color: const Color(0xFFE2E8F0)),
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Text(
-                                  'Expected Target',
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.w600,
-                                    color: Color(0xFF64748B),
-                                  ),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 8,
+                                height: 8,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: isCompleted ? tokens.successDot : tokens.infoText,
                                 ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  CurrencyFormatter.formatNaira(expected),
-                                  style: const TextStyle(
-                                    fontSize: 12.5,
-                                    fontWeight: FontWeight.w700,
-                                    color: Color(0xFF0F172A),
-                                  ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      gName,
+                                      style: TextStyle(
+                                        fontSize: 13.5,
+                                        fontWeight: FontWeight.w700,
+                                        color: tokens.textPrimary,
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                    Text(
+                                      'Schedule: $meetingDay',
+                                      style: TextStyle(
+                                        fontSize: 10.5,
+                                        color: tokens.textMuted,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ],
                                 ),
-                              ],
-                            ),
+                              ),
+                            ],
                           ),
                         ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFECFDF5),
-                              borderRadius: BorderRadius.circular(10),
-                              border: Border.all(color: const Color(0xFFA7F3D0)),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: isCompleted ? tokens.successBg : tokens.infoBg,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: isCompleted ? tokens.successBorder : tokens.infoBorder,
                             ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Text(
-                                  'Collected So Far',
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.w600,
-                                    color: Color(0xFF065F46),
-                                  ),
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  CurrencyFormatter.formatNaira(collected),
-                                  style: const TextStyle(
-                                    fontSize: 12.5,
-                                    fontWeight: FontWeight.w700,
-                                    color: Color(0xFF065F46),
-                                  ),
-                                ),
-                              ],
+                          ),
+                          child: Text(
+                            clientsExpected > 0 ? '$clientsExpected Members' : cleanStatus,
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: isCompleted ? tokens.successText : tokens.infoText,
                             ),
                           ),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 12),
-                    // One-tap launch button
-                    SizedBox(
-                      width: double.infinity,
-                      height: 42,
-                      child: ElevatedButton.icon(
-                        key: Key('mobile_start_grp_$idx'),
-                        onPressed: isClosed
-                            ? null
-                            : () {
-                                ref.read(selectedCollectionGroupProvider.notifier).state = gName;
-                                ref.read(activeCoPageProvider.notifier).state = 'Collections';
-                              },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF064E3B),
-                          foregroundColor: Colors.white,
-                          disabledBackgroundColor: const Color(0xFFE2E8F0),
-                          disabledForegroundColor: const Color(0xFF64748B),
-                          elevation: 0,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
+                  ),
+                  // Body stats
+                  Padding(
+                    padding: const EdgeInsets.all(14),
+                    child: Column(
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                decoration: BoxDecoration(
+                                  color: tokens.surfaceSubtle,
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(color: tokens.borderSubtle),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Expected Target',
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w600,
+                                        color: tokens.textMuted,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      CurrencyFormatter.formatNaira(expected),
+                                      style: TextStyle(
+                                        fontSize: 12.5,
+                                        fontWeight: FontWeight.w700,
+                                        color: tokens.textPrimary,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                decoration: BoxDecoration(
+                                  color: tokens.successBg,
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(color: tokens.successBorder),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Collected So Far',
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w600,
+                                        color: tokens.successText,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      CurrencyFormatter.formatNaira(collected),
+                                      style: TextStyle(
+                                        fontSize: 12.5,
+                                        fontWeight: FontWeight.w700,
+                                        color: tokens.successText,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        // One-tap launch button
+                        SizedBox(
+                          width: double.infinity,
+                          height: 42,
+                          child: ElevatedButton.icon(
+                            key: Key('mobile_start_grp_$idx'),
+                            onPressed: isClosed
+                                ? null
+                                : () {
+                                    ref.read(selectedCollectionGroupProvider.notifier).state = gName;
+                                    ref.read(activeCoPageProvider.notifier).state = 'Collections';
+                                  },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: tokens.brandPrimaryDark,
+                              foregroundColor: Colors.white,
+                              disabledBackgroundColor: tokens.surfaceSubtle,
+                              disabledForegroundColor: tokens.textMuted,
+                              elevation: 0,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                            icon: Icon(isClosed ? Icons.lock_clock_outlined : Icons.play_circle_outline, size: 16),
+                            label: Text(
+                              isClosed ? 'Branch Closed Today' : 'Open Collection Sheet ($cleanStatus)',
+                              style: const TextStyle(
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
                           ),
                         ),
-                        icon: Icon(isClosed ? Icons.lock_clock_outlined : Icons.play_circle_outline, size: 16),
-                        label: Text(
-                          isClosed ? 'Branch Closed Today' : 'Open Collection Sheet ($cleanStatus)',
-                          style: const TextStyle(
-                            fontSize: 12.5,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ),
+                      ],
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-            ],
-          ),
+            );
+          }).toList(),
         );
-      }).toList(),
+      },
     );
   }
 
@@ -2690,109 +2749,119 @@ class CoDashboardScreen extends ConsumerWidget {
 
   /// Meeting Portfolio Institutional Data Table (Desktop & Tablet)
   Widget _buildMeetingPortfolioTable(List<Map<String, dynamic>> rows) {
-    return IcareDataTable(
-      minWidth: 580,
-      columns: const [
-        DataColumn(label: Text('Group Name')),
-        DataColumn(label: Text('Expected (₦)'), numeric: true),
-        DataColumn(label: Text('Collected (₦)'), numeric: true),
-        DataColumn(label: Text('Outstanding (₦)'), numeric: true),
-        DataColumn(label: Text('Compliance')),
-        DataColumn(label: Text('Status')),
-      ],
-      rows: rows.map((r) {
-        final groupName = (r['Group Name'] ?? r['group_name'] ?? '').toString();
-        final expected = (r['Expected (₦)'] ??
-                r['Expected Collection'] ??
-                r['expected_repayment'] ??
-                r['Expected'] as num?)
-            ?.toDouble() ??
-            0.0;
-        final collected = (r['Collected (₦)'] ??
-                r['Collected'] ??
-                r['collected_repayment'] as num?)
-            ?.toDouble() ??
-            0.0;
-        final outstanding = (r['Outstanding (₦)'] ??
-                r['Outstanding'] ??
-                r['outstanding_repayment'] as num?)
-            ?.toDouble() ??
-            0.0;
-        final complianceVal = r['Compliance'] ?? r['Compliance %'] ?? r['repayment_rate_pct'];
-        final complianceStr = complianceVal is num
-            ? '${complianceVal.toStringAsFixed(1)}%'
-            : complianceVal?.toString() ?? '100.0%';
-        final status = (r['Status'] ?? r['status'] ?? 'Completed').toString();
+    return Builder(
+      builder: (context) {
+        final tokens = IcareSurfaceTokens.of(context);
+        return IcareDataTable(
+          minWidth: 580,
+          columns: const [
+            DataColumn(label: Text('Group Name')),
+            DataColumn(label: Text('Expected (₦)'), numeric: true),
+            DataColumn(label: Text('Collected (₦)'), numeric: true),
+            DataColumn(label: Text('Outstanding (₦)'), numeric: true),
+            DataColumn(label: Text('Compliance')),
+            DataColumn(label: Text('Status')),
+          ],
+          rows: rows.map((r) {
+            final groupName = (r['Group Name'] ?? r['group_name'] ?? '').toString();
+            final expected = (r['Expected (₦)'] ??
+                    r['Expected Collection'] ??
+                    r['expected_repayment'] ??
+                    r['Expected'] as num?)
+                ?.toDouble() ??
+                0.0;
+            final collected = (r['Collected (₦)'] ??
+                    r['Collected'] ??
+                    r['collected_repayment'] as num?)
+                ?.toDouble() ??
+                0.0;
+            final outstanding = (r['Outstanding (₦)'] ??
+                    r['Outstanding'] ??
+                    r['outstanding_repayment'] as num?)
+                ?.toDouble() ??
+                0.0;
+            final complianceVal = r['Compliance'] ?? r['Compliance %'] ?? r['repayment_rate_pct'];
+            final complianceStr = complianceVal is num
+                ? '${complianceVal.toStringAsFixed(1)}%'
+                : complianceVal?.toString() ?? '100.0%';
+            final status = (r['Status'] ?? r['status'] ?? 'Completed').toString();
 
-        return DataRow(cells: [
-          DataCell(Text(groupName, style: IcareTypography.bodyBold)),
-          DataCell(Text(CurrencyFormatter.formatNaira(expected), style: IcareTypography.tableFinancialNumber)),
-          DataCell(Text(
-            CurrencyFormatter.formatNaira(collected),
-            style: IcareTypography.tableFinancialNumber.copyWith(color: IcareColors.primary),
-          )),
-          DataCell(Text(CurrencyFormatter.formatNaira(outstanding), style: IcareTypography.tableFinancialNumber)),
-          DataCell(Text(complianceStr, style: IcareTypography.bodyBold)),
-          DataCell(IcareStatusBadge.fromStatus(status)),
-        ]);
-      }).toList(),
+            return DataRow(cells: [
+              DataCell(Text(groupName, style: IcareTypography.bodyBold.copyWith(color: tokens.textPrimary))),
+              DataCell(Text(CurrencyFormatter.formatNaira(expected), style: IcareTypography.tableFinancialNumber.copyWith(color: tokens.textPrimary))),
+              DataCell(Text(
+                CurrencyFormatter.formatNaira(collected),
+                style: IcareTypography.tableFinancialNumber.copyWith(color: tokens.brandPrimary),
+              )),
+              DataCell(Text(CurrencyFormatter.formatNaira(outstanding), style: IcareTypography.tableFinancialNumber.copyWith(color: tokens.textPrimary))),
+              DataCell(Text(complianceStr, style: IcareTypography.bodyBold.copyWith(color: tokens.textPrimary))),
+              DataCell(IcareStatusBadge.fromStatus(status)),
+            ]);
+          }).toList(),
+        );
+      },
     );
   }
 
   /// Attention List Institutional Data Table
   Widget _buildAttentionListTable(List<Map<String, dynamic>> rows) {
-    return IcareDataTable(
-      minWidth: 740,
-      columns: const [
-        DataColumn(label: Text('Client Name')),
-        DataColumn(label: Text('Client Code')),
-        DataColumn(label: Text('Group')),
-        DataColumn(label: Text('Expected (₦)'), numeric: true),
-        DataColumn(label: Text('Paid (₦)'), numeric: true),
-        DataColumn(label: Text('Shortfall (₦)'), numeric: true),
-        DataColumn(label: Text('Status')),
-        DataColumn(label: Text('Action')),
-      ],
-      rows: rows.map((r) {
-        final clientName = (r['Client Name'] ?? r['client_name'] ?? '').toString();
-        final clientCode = (r['Client Code'] ?? r['client_code'] ?? '').toString();
-        final group = (r['Group'] ?? r['group_name'] ?? '').toString();
-        final expected = (r['Expected (₦)'] ??
-                r['Expected'] ??
-                r['expected_amount'] as num?)
-            ?.toDouble() ??
-            0.0;
-        final paid = (r['Paid (₦)'] ?? r['Paid'] ?? r['paid_amount'] as num?)?.toDouble() ?? 0.0;
-        final shortfall =
-            (r['Shortfall (₦)'] ?? r['Shortfall'] ?? r['shortfall'] as num?)?.toDouble() ?? 0.0;
-        final status =
-            (r['Status'] ?? r['Issue Type'] ?? r['issue_type'] ?? r['status'] ?? 'Shortfall').toString();
-        final actionMsg = (r['Action'] ?? r['action'] ?? '').toString();
+    return Builder(
+      builder: (context) {
+        final tokens = IcareSurfaceTokens.of(context);
+        return IcareDataTable(
+          minWidth: 740,
+          columns: const [
+            DataColumn(label: Text('Client Name')),
+            DataColumn(label: Text('Client Code')),
+            DataColumn(label: Text('Group')),
+            DataColumn(label: Text('Expected (₦)'), numeric: true),
+            DataColumn(label: Text('Paid (₦)'), numeric: true),
+            DataColumn(label: Text('Shortfall (₦)'), numeric: true),
+            DataColumn(label: Text('Status')),
+            DataColumn(label: Text('Action')),
+          ],
+          rows: rows.map((r) {
+            final clientName = (r['Client Name'] ?? r['client_name'] ?? '').toString();
+            final clientCode = (r['Client Code'] ?? r['client_code'] ?? '').toString();
+            final group = (r['Group'] ?? r['group_name'] ?? '').toString();
+            final expected = (r['Expected (₦)'] ??
+                    r['Expected'] ??
+                    r['expected_amount'] as num?)
+                ?.toDouble() ??
+                0.0;
+            final paid = (r['Paid (₦)'] ?? r['Paid'] ?? r['paid_amount'] as num?)?.toDouble() ?? 0.0;
+            final shortfall =
+                (r['Shortfall (₦)'] ?? r['Shortfall'] ?? r['shortfall'] as num?)?.toDouble() ?? 0.0;
+            final status =
+                (r['Status'] ?? r['Issue Type'] ?? r['issue_type'] ?? r['status'] ?? 'Shortfall').toString();
+            final actionMsg = (r['Action'] ?? r['action'] ?? '').toString();
 
-        return DataRow(cells: [
-          DataCell(Text(clientName, style: IcareTypography.bodyBold)),
-          DataCell(Text(clientCode.isNotEmpty ? clientCode : 'N/A', style: IcareTypography.body)),
-          DataCell(Text(group, style: IcareTypography.body)),
-          DataCell(Text(CurrencyFormatter.formatNaira(expected), style: IcareTypography.tableFinancialNumber)),
-          DataCell(Text(CurrencyFormatter.formatNaira(paid), style: IcareTypography.tableFinancialNumber)),
-          DataCell(Text(
-            CurrencyFormatter.formatNaira(shortfall),
-            style: IcareTypography.tableFinancialNumber.copyWith(color: IcareColors.statusDangerText),
-          )),
-          DataCell(IcareStatusBadge.fromStatus(status)),
-          DataCell(
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 220),
-              child: Text(
-                actionMsg.isNotEmpty ? actionMsg : 'Follow Up',
-                style: IcareTypography.body.copyWith(fontSize: 12),
-                overflow: TextOverflow.ellipsis,
-                maxLines: 2,
+            return DataRow(cells: [
+              DataCell(Text(clientName, style: IcareTypography.bodyBold.copyWith(color: tokens.textPrimary))),
+              DataCell(Text(clientCode.isNotEmpty ? clientCode : 'N/A', style: IcareTypography.body.copyWith(color: tokens.textSecondary))),
+              DataCell(Text(group, style: IcareTypography.body.copyWith(color: tokens.textSecondary))),
+              DataCell(Text(CurrencyFormatter.formatNaira(expected), style: IcareTypography.tableFinancialNumber.copyWith(color: tokens.textPrimary))),
+              DataCell(Text(CurrencyFormatter.formatNaira(paid), style: IcareTypography.tableFinancialNumber.copyWith(color: tokens.textPrimary))),
+              DataCell(Text(
+                CurrencyFormatter.formatNaira(shortfall),
+                style: IcareTypography.tableFinancialNumber.copyWith(color: tokens.dangerText),
+              )),
+              DataCell(IcareStatusBadge.fromStatus(status)),
+              DataCell(
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 220),
+                  child: Text(
+                    actionMsg.isNotEmpty ? actionMsg : 'Follow Up',
+                    style: IcareTypography.body.copyWith(fontSize: 12, color: tokens.textSecondary),
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 2,
+                  ),
+                ),
               ),
-            ),
-          ),
-        ]);
-      }).toList(),
+            ]);
+          }).toList(),
+        );
+      },
     );
   }
 
@@ -2807,23 +2876,28 @@ class CoDashboardScreen extends ConsumerWidget {
   }
 
   Widget _buildInfoBox(String text) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      decoration: BoxDecoration(
-        color: IcareColors.statusInfoBg,
-        borderRadius: IcareSpacing.roundedMd,
-        border: Border.all(color: IcareColors.statusInfoBorder),
-      ),
-      child: Row(
-        children: [
-          const Icon(Icons.info_outline, color: IcareColors.statusInfoText, size: 18),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(text, style: const TextStyle(color: IcareColors.statusInfoText, fontSize: 13)),
+    return Builder(
+      builder: (context) {
+        final tokens = IcareSurfaceTokens.of(context);
+        return Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          decoration: BoxDecoration(
+            color: tokens.infoBg,
+            borderRadius: IcareSpacing.roundedMd,
+            border: Border.all(color: tokens.infoBorder),
           ),
-        ],
-      ),
+          child: Row(
+            children: [
+              Icon(Icons.info_outline, color: tokens.infoText, size: 18),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(text, style: TextStyle(color: tokens.infoText, fontSize: 13)),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }
@@ -2852,6 +2926,7 @@ class _AttentionSearchBarState extends ConsumerState<_AttentionSearchBar> {
 
   @override
   Widget build(BuildContext context) {
+    final tokens = IcareSurfaceTokens.of(context);
     final searchQuery = ref.watch(coDashboardAttentionSearchProvider);
     if (_ctrl.text != searchQuery && searchQuery.isEmpty) {
       _ctrl.clear();
@@ -2859,25 +2934,25 @@ class _AttentionSearchBarState extends ConsumerState<_AttentionSearchBar> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: tokens.surface,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFCBD5E1)),
+        border: Border.all(color: tokens.borderStrong),
       ),
       child: Row(
         children: [
-          const Icon(Icons.search, size: 18, color: Color(0xFF64748B)),
+          Icon(Icons.search, size: 18, color: tokens.textMuted),
           const SizedBox(width: 8),
           Expanded(
             child: TextField(
               controller: _ctrl,
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 hintText: 'Search client or group name...',
-                hintStyle: TextStyle(fontSize: 12.5, color: Color(0xFF94A3B8)),
+                hintStyle: TextStyle(fontSize: 12.5, color: tokens.textMuted),
                 border: InputBorder.none,
                 isDense: true,
-                contentPadding: EdgeInsets.symmetric(vertical: 8),
+                contentPadding: const EdgeInsets.symmetric(vertical: 8),
               ),
-              style: const TextStyle(fontSize: 13, color: Color(0xFF0F172A)),
+              style: TextStyle(fontSize: 13, color: tokens.textPrimary),
               onChanged: (val) {
                 ref.read(coDashboardAttentionSearchProvider.notifier).state = val;
               },
@@ -2889,7 +2964,7 @@ class _AttentionSearchBarState extends ConsumerState<_AttentionSearchBar> {
                 _ctrl.clear();
                 ref.read(coDashboardAttentionSearchProvider.notifier).state = '';
               },
-              child: const Icon(Icons.close, size: 16, color: Color(0xFF64748B)),
+              child: Icon(Icons.close, size: 16, color: tokens.textMuted),
             ),
         ],
       ),

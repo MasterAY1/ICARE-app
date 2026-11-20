@@ -9,6 +9,7 @@ import '../../../core/auth/auth_state.dart';
 import '../../../core/offline/connectivity_service.dart';
 import '../../../core/offline/offline_database_service.dart';
 import '../../../core/theme/icare_colors.dart';
+import '../../../core/theme/theme_controller.dart';
 import '../../onboarding/presentation/branch_onboarding_portal_screen.dart';
 import '../../onboarding/presentation/credit_officer_portal_screen.dart';
 import '../../shared/presentation/co_app_scaffold.dart';
@@ -288,6 +289,9 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
 
     final AuthState authState = ref.read(authControllerProvider);
     if (authState is AuthStateAuthenticated) {
+      if (authState.user.preferences.isNotEmpty) {
+        ref.read(themeControllerProvider.notifier).applyRemotePreferences(authState.user.preferences);
+      }
       return const CoAppScaffold();
     }
     return const LoginScreen();

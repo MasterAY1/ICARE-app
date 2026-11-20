@@ -182,8 +182,8 @@ class RBACScopeService:
         norm = cls.normalize_role(role)
         permitted = cls.get_permitted_menu_items(norm)
         
-        # Always allow Profile & Logout
-        if page_name in ["Profile", "Logout"]:
+        # Always allow Profile, Settings & Logout
+        if page_name in ["Profile", "Settings", "Settings & Profile", "Profile & Settings", "Logout"]:
             return True
 
         # Loose matching for sub-pages or legacy names

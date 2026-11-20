@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../../../../core/theme/icare_colors.dart';
+import '../../../../core/theme/icare_theme_tokens.dart';
 
 /// Supported authentication & activation modes inside the unified entry flow.
 enum AuthEntryMode {
@@ -24,6 +24,7 @@ class IcareAuthModeSegmentedBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final tokens = IcareSurfaceTokens.of(context);
     final bool reduceMotion = MediaQuery.disableAnimationsOf(context);
     final Duration animDuration =
         reduceMotion ? Duration.zero : const Duration(milliseconds: 220);
@@ -31,9 +32,9 @@ class IcareAuthModeSegmentedBar extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
-        color: const Color(0xFFF1F5F9),
+        color: tokens.surfaceSubtle,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: IcareColors.border, width: 1.0),
+        border: Border.all(color: tokens.borderSubtle, width: 1.0),
       ),
       child: LayoutBuilder(
         builder: (context, constraints) {
@@ -50,17 +51,17 @@ class IcareAuthModeSegmentedBar extends StatelessWidget {
                   width: segmentWidth,
                   height: 40,
                   decoration: BoxDecoration(
-                    color: IcareColors.surface,
+                    color: tokens.surface,
                     borderRadius: BorderRadius.circular(7),
                     border: Border.all(
-                      color: const Color(0xFF0F766E).withValues(alpha: 0.25),
+                      color: tokens.brandPrimary.withValues(alpha: 0.35),
                       width: 1.0,
                     ),
-                    boxShadow: const [
+                    boxShadow: [
                       BoxShadow(
-                        color: Color(0x0D0F172A),
+                        color: Colors.black.withValues(alpha: tokens.isDark ? 0.24 : 0.05),
                         blurRadius: 6,
-                        offset: Offset(0, 2),
+                        offset: const Offset(0, 2),
                       ),
                     ],
                   ),
@@ -119,8 +120,9 @@ class _SegmentButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final tokens = IcareSurfaceTokens.of(context);
     final Color foreground =
-        selected ? IcareColors.primary : IcareColors.textMuted;
+        selected ? tokens.brandPrimary : tokens.textMuted;
 
     return Semantics(
       button: true,
@@ -197,15 +199,16 @@ class IcareAuthField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final tokens = IcareSurfaceTokens.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
           label,
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 12.5,
             fontWeight: FontWeight.w600,
-            color: IcareColors.textPrimary,
+            color: tokens.textPrimary,
             letterSpacing: 0.1,
           ),
         ),
@@ -220,9 +223,9 @@ class IcareAuthField extends StatelessWidget {
           autofillHints: autofillHints,
           onSubmitted: onSubmitted,
           onChanged: onChanged,
-          cursorColor: const Color(0xFF0F766E),
+          cursorColor: tokens.brandPrimary,
           style: TextStyle(
-            color: IcareColors.textPrimary,
+            color: tokens.textPrimary,
             fontSize: 14,
             fontWeight: FontWeight.w500,
             fontFeatures:
@@ -230,32 +233,32 @@ class IcareAuthField extends StatelessWidget {
           ),
           decoration: InputDecoration(
             hintText: hint,
-            hintStyle: const TextStyle(
-              color: IcareColors.textLight,
+            hintStyle: TextStyle(
+              color: tokens.textLight,
               fontSize: 13.5,
               fontWeight: FontWeight.w400,
             ),
             filled: true,
-            fillColor: enabled ? IcareColors.surface : IcareColors.surfaceHover,
+            fillColor: enabled ? tokens.surface : tokens.surfaceHover,
             contentPadding:
                 const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
             prefixIcon:
-                Icon(prefixIcon, size: 18, color: const Color(0xFF0F766E)),
+                Icon(prefixIcon, size: 18, color: tokens.brandPrimary),
             suffixIcon: suffixIcon,
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(10),
               borderSide:
-                  const BorderSide(color: IcareColors.borderStrong, width: 1.0),
+                  BorderSide(color: tokens.borderStrong, width: 1.0),
             ),
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(10),
               borderSide:
-                  const BorderSide(color: IcareColors.borderStrong, width: 1.0),
+                  BorderSide(color: tokens.borderStrong, width: 1.0),
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(10),
               borderSide:
-                  const BorderSide(color: Color(0xFF0F766E), width: 1.8),
+                  BorderSide(color: tokens.brandPrimary, width: 1.8),
             ),
           ),
         ),
@@ -362,15 +365,20 @@ class _IcareTactilePrimaryButtonState extends State<IcareTactilePrimaryButton>
                     height: 48,
                     width: targetWidth,
                     decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [IcareColors.primary, Color(0xFF0F766E)],
+                      gradient: LinearGradient(
+                        colors: [
+                          IcareSurfaceTokens.of(context).brandPrimaryDark,
+                          IcareSurfaceTokens.of(context).brandPrimary,
+                        ],
                       ),
                       borderRadius: BorderRadius.circular(
                         widget.isLoading ? 24.0 : 10.0,
                       ),
                       boxShadow: [
                         BoxShadow(
-                          color: IcareColors.primary.withValues(alpha: 0.28),
+                          color: IcareSurfaceTokens.of(context)
+                              .brandPrimary
+                              .withValues(alpha: 0.28),
                           blurRadius: 12,
                           offset: const Offset(0, 4),
                         ),
@@ -443,6 +451,7 @@ class PasswordRequirementsChecklist extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final tokens = IcareSurfaceTokens.of(context);
     final String trimmed = newPassword.trim();
     final bool hasMinLength = trimmed.length >= 8;
     final bool differsFromTemp =
@@ -453,17 +462,17 @@ class PasswordRequirementsChecklist extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
-        color: IcareColors.surfaceSubtle,
+        color: tokens.surfaceSubtle,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: IcareColors.border),
+        border: Border.all(color: tokens.borderSubtle),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
+          Text(
             'ACTIVATION PASSWORD REQUIREMENTS',
             style: TextStyle(
-              color: IcareColors.textMuted,
+              color: tokens.textMuted,
               fontSize: 10,
               fontWeight: FontWeight.w700,
               letterSpacing: 0.7,
@@ -498,10 +507,11 @@ class _RequirementItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final tokens = IcareSurfaceTokens.of(context);
     final Color iconColor =
-        met ? IcareColors.statusSuccessDot : IcareColors.textLight;
+        met ? tokens.successDot : tokens.textLight;
     final Color textColor =
-        met ? IcareColors.statusSuccessText : IcareColors.textMuted;
+        met ? tokens.successText : tokens.textMuted;
 
     return Row(
       children: [
@@ -548,6 +558,7 @@ class OnboardingAccessPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final tokens = IcareSurfaceTokens.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -592,38 +603,38 @@ class OnboardingAccessPanel extends StatelessWidget {
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           decoration: BoxDecoration(
-            color: IcareColors.statusInfoBg,
+            color: tokens.infoBg,
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: IcareColors.statusInfoBorder),
+            border: Border.all(color: tokens.infoBorder),
           ),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Icon(
+              Icon(
                 Icons.info_outline_rounded,
                 size: 16,
-                color: IcareColors.statusInfoText,
+                color: tokens.infoText,
               ),
               const SizedBox(width: 8),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
+                    Text(
                       'New staff with temporary credentials?',
                       softWrap: true,
                       style: TextStyle(
-                        color: IcareColors.statusInfoText,
+                        color: tokens.infoText,
                         fontSize: 11.5,
                         fontWeight: FontWeight.w700,
                       ),
                     ),
                     const SizedBox(height: 2),
-                    const Text(
+                    Text(
                       'Sign in on Staff Sign-In with your temporary password to activate your account and set your personal password.',
                       softWrap: true,
                       style: TextStyle(
-                        color: IcareColors.textSecondary,
+                        color: tokens.textSecondary,
                         fontSize: 11.5,
                         height: 1.35,
                       ),
@@ -631,12 +642,12 @@ class OnboardingAccessPanel extends StatelessWidget {
                     const SizedBox(height: 4),
                     InkWell(
                       onTap: onSwitchToSignIn,
-                      child: const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 2),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 2),
                         child: Text(
                           'Go to Staff Sign-In',
                           style: TextStyle(
-                            color: IcareColors.statusInfoText,
+                            color: tokens.infoText,
                             fontSize: 11.5,
                             fontWeight: FontWeight.w700,
                             decoration: TextDecoration.underline,
@@ -670,21 +681,22 @@ class _PortalShortcutButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final tokens = IcareSurfaceTokens.of(context);
     return OutlinedButton(
       onPressed: () {
         HapticFeedback.lightImpact();
         onTap();
       },
       style: OutlinedButton.styleFrom(
-        backgroundColor: IcareColors.surfaceSubtle,
-        foregroundColor: IcareColors.textPrimary,
-        side: const BorderSide(color: IcareColors.border),
+        backgroundColor: tokens.surfaceSubtle,
+        foregroundColor: tokens.textPrimary,
+        side: BorderSide(color: tokens.borderSubtle),
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       ),
       child: Row(
         children: [
-          Icon(icon, size: 18, color: IcareColors.primary),
+          Icon(icon, size: 18, color: tokens.brandPrimary),
           const SizedBox(width: 8),
           Expanded(
             child: Column(
@@ -694,18 +706,18 @@ class _PortalShortcutButton extends StatelessWidget {
                 Text(
                   title,
                   softWrap: true,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w700,
-                    color: IcareColors.textPrimary,
+                    color: tokens.textPrimary,
                   ),
                 ),
                 Text(
                   subtitle,
                   softWrap: true,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 10.5,
-                    color: IcareColors.textMuted,
+                    color: tokens.textMuted,
                   ),
                 ),
               ],
