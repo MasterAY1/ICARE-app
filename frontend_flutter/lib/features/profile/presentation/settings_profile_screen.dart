@@ -19,9 +19,21 @@ import 'widgets/profile_identity_hero_card.dart';
 import 'widgets/profile_personal_details_card.dart';
 import 'widgets/security_mfa_password_card.dart';
 
+enum _ProfileSectionTab {
+  all('All', Icons.grid_view_rounded),
+  profile('Profile', Icons.badge_outlined),
+  theme('Theme', Icons.palette_outlined),
+  security('Security', Icons.security_outlined),
+  device('Device', Icons.devices_outlined);
+
+  final String label;
+  final IconData icon;
+  const _ProfileSectionTab(this.label, this.icon);
+}
+
 /// Unified Staff Profile & Settings Screen accessible to ALL ICARE roles.
-/// Implements FlutterCraft Fluid UI, Dark/Light/Accent theming, cross-platform
-/// photo upload, personal contact details, Two-Factor Authentication, and password management.
+/// Implements FlutterCraft Fluid UI, container-driven responsive layout,
+/// concise mobile copy, and segmented section filtering.
 class SettingsProfileScreen extends ConsumerStatefulWidget {
   final Future<void> Function()? onRequestSignOut;
   final VoidCallback? onOpenOutboxSync;
@@ -52,6 +64,7 @@ class _SettingsProfileScreenState extends ConsumerState<SettingsProfileScreen> {
   bool _isPasswordBusy = false;
   bool _hasUnsavedChanges = false;
   bool _hydratedFieldsOnce = false;
+  _ProfileSectionTab _activeTab = _ProfileSectionTab.all;
 
   StaffProfileSnapshot? _snapshot;
   MfaSetupBundle? _pendingMfaBundle;
@@ -92,7 +105,9 @@ class _SettingsProfileScreenState extends ConsumerState<SettingsProfileScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(msg),
-        backgroundColor: isError ? tokens.dangerDot : tokens.brandPrimary,
+        backgroundColor: isError
+            ? tokens.dangerDot
+            : (tokens.isDark ? tokens.brandPrimaryDark : tokens.brandPrimary),
       ),
     );
   }
@@ -124,7 +139,9 @@ class _SettingsProfileScreenState extends ConsumerState<SettingsProfileScreen> {
         _isLoading = false;
       });
 
-      await ref.read(authControllerProvider.notifier).updateAuthenticatedUser(snap.user);
+      await ref
+          .read(authControllerProvider.notifier)
+          .updateAuthenticatedUser(snap.user);
       if (snap.user.preferences.isNotEmpty) {
         await ref
             .read(themeControllerProvider.notifier)
@@ -196,7 +213,7 @@ class _SettingsProfileScreenState extends ConsumerState<SettingsProfileScreen> {
       builder: (ctx) => AlertDialog(
         title: const Text('Remove Profile Photo'),
         content: const Text(
-          'Your avatar will revert to your account initials across the workspace. Continue?',
+          'Revert your avatar to account initials?',
         ),
         actions: [
           TextButton(
@@ -293,9 +310,7 @@ class _SettingsProfileScreenState extends ConsumerState<SettingsProfileScreen> {
       await ref
           .read(authControllerProvider.notifier)
           .updateAuthenticatedUser(res.user);
-    } catch (_) {
-      // Local SharedPreferences persistence already guarantees offline continuity
-    }
+    } catch (_) {}
   }
 
   Future<void> _handleInitiateMfa() async {
@@ -389,7 +404,7 @@ class _SettingsProfileScreenState extends ConsumerState<SettingsProfileScreen> {
       builder: (ctx) => AlertDialog(
         title: const Text('Clear Offline Read Cache'),
         content: const Text(
-          'This removes cached dashboards and lists to free device space. Any pending unposted collections in your offline outbox remain safely preserved.',
+          'Remove cached dashboards and lists? Pending offline outbox items stay preserved.',
         ),
         actions: [
           TextButton(
@@ -408,10 +423,78 @@ class _SettingsProfileScreenState extends ConsumerState<SettingsProfileScreen> {
       await ref
           .read(offlineDatabaseServiceProvider)
           .clearSessionStorage(clearOutbox: false);
-      _showSnack('Cached read data cleared. Pending outbox preserved.');
+      _showSnack('Read cache cleared. Outbox preserved.');
     } catch (e) {
       _showSnack('Could not clear read cache: $e', isError: true);
     }
+  }
+
+  Widget _buildMobileSectionBar(IcareSurfaceTokens tokens, bool haptics) {
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: tokens.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: tokens.borderSubtle),
+      ),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: _ProfileSectionTab.values.map((tab) {
+            final selected = _activeTab == tab;
+            final activeBg =
+                tokens.isDark ? tokens.brandPrimaryDark : tokens.brandPrimary;
+            return Padding(
+              padding: const EdgeInsets.only(right: 4),
+              child: Semantics(
+                button: true,
+                selected: selected,
+                label: '${tab.label} section',
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(8),
+                  onTap: () {
+                    if (haptics) HapticFeedback.selectionClick();
+                    setState(() => _activeTab = tab);
+                  },
+                  child: AnimatedContainer(
+                    duration: IcareMotion.resolve(context, IcareMotion.fast),
+                    curve: IcareMotion.standardCurve,
+                    constraints: const BoxConstraints(minHeight: 38),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                    decoration: BoxDecoration(
+                      color: selected ? activeBg : Colors.transparent,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          tab.icon,
+                          size: 15,
+                          color: selected ? Colors.white : tokens.textMuted,
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          tab.label,
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight:
+                                selected ? FontWeight.w700 : FontWeight.w600,
+                            color:
+                                selected ? Colors.white : tokens.textSecondary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            );
+          }).toList(),
+        ),
+      ),
+    );
   }
 
   @override
@@ -425,7 +508,6 @@ class _SettingsProfileScreenState extends ConsumerState<SettingsProfileScreen> {
     final isOnline = ref.watch(isOnlineProvider);
     final pendingOutbox = ref.watch(pendingOutboxCountProvider);
     final tokens = IcareSurfaceTokens.of(context);
-    final isDesktop = MediaQuery.sizeOf(context).width >= 1020;
 
     final user = _snapshot?.user ?? authState.user;
     final canChangePw = _snapshot?.canSelfChangePassword ??
@@ -437,237 +519,182 @@ class _SettingsProfileScreenState extends ConsumerState<SettingsProfileScreen> {
         }.contains(user.role.trim().toLowerCase());
 
     if (_isLoading && _snapshot == null) {
-      return const IcareFormSkeleton(fieldCount: 5);
+      return const IcareFormSkeleton(fieldCount: 4);
     }
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        if (_loadError != null) ...[
-          Container(
-            margin: const EdgeInsets.only(bottom: 14),
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            decoration: BoxDecoration(
-              color: tokens.warningBg,
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: tokens.warningBorder),
+    final personalDetailsCard = ProfilePersonalDetailsCard(
+      user: user,
+      phoneController: _phoneCtrl,
+      emailController: _emailCtrl,
+      emergencyController: _emergencyCtrl,
+      bioController: _bioCtrl,
+      formKey: _formKey,
+      isSaving: _isSavingProfile,
+      hasUnsavedChanges: _hasUnsavedChanges,
+      onSave: _handleSavePersonalDetails,
+    );
+
+    final themeStudioCard = AppearanceThemeStudioCard(
+      settings: appearance,
+      onThemeModeChanged: (m) async {
+        await ref.read(themeControllerProvider.notifier).setThemeMode(m);
+        _syncPreferencesToServer();
+      },
+      onAccentPresetChanged: (p) async {
+        await ref.read(themeControllerProvider.notifier).setAccentPreset(p);
+        _syncPreferencesToServer();
+      },
+      onCompactDensityChanged: (v) async {
+        await ref.read(themeControllerProvider.notifier).setCompactDensity(v);
+        _syncPreferencesToServer();
+      },
+      onReduceMotionChanged: (v) async {
+        await ref.read(themeControllerProvider.notifier).setReduceMotion(v);
+        _syncPreferencesToServer();
+      },
+      onHapticsChanged: (v) async {
+        await ref.read(themeControllerProvider.notifier).setHapticsEnabled(v);
+        _syncPreferencesToServer();
+      },
+      onResetDefaults: () async {
+        await ref.read(themeControllerProvider.notifier).resetToDefaults();
+        _syncPreferencesToServer();
+        _showSnack('Theme preferences reset to default.');
+      },
+    );
+
+    final securityCard = SecurityMfaPasswordCard(
+      mfaEnabled: user.mfaEnabled,
+      mfaEnrolledAt: _snapshot?.mfaEnrolledAt,
+      remainingBackupCodes: _snapshot?.remainingBackupCodes ?? 0,
+      canSelfChangePassword: canChangePw,
+      isMfaBusy: _isMfaBusy,
+      isPasswordBusy: _isPasswordBusy,
+      pendingMfaBundle: _pendingMfaBundle,
+      onInitiateMfaSetup: _handleInitiateMfa,
+      onCancelMfaSetup: () => setState(() => _pendingMfaBundle = null),
+      onActivateMfa: _handleActivateMfa,
+      onDisableMfa: _handleDisableMfa,
+      onChangePassword: _handleChangePassword,
+    );
+
+    final deviceCard = DeviceSessionActivityCard(
+      isOnline: isOnline,
+      pendingOutboxCount: pendingOutbox,
+      recentActivity: _snapshot?.recentActivity ?? const [],
+      onOpenOutboxSync: widget.onOpenOutboxSync,
+      onClearLocalCache: _handleClearReadCache,
+      onSignOut: () => widget.onRequestSignOut?.call(),
+    );
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isTwoColumn = constraints.maxWidth >= 880;
+        final showProfile = _activeTab == _ProfileSectionTab.all ||
+            _activeTab == _ProfileSectionTab.profile;
+        final showTheme = _activeTab == _ProfileSectionTab.all ||
+            _activeTab == _ProfileSectionTab.theme;
+        final showSecurity = _activeTab == _ProfileSectionTab.all ||
+            _activeTab == _ProfileSectionTab.security;
+        final showDevice = _activeTab == _ProfileSectionTab.all ||
+            _activeTab == _ProfileSectionTab.device;
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (_loadError != null) ...[
+              Container(
+                margin: const EdgeInsets.only(bottom: 12),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: tokens.warningBg,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: tokens.warningBorder),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.info_outline,
+                        size: 16, color: tokens.warningText),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Showing cached profile ($_loadError)',
+                        softWrap: true,
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: tokens.warningText,
+                        ),
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: () => _loadProfile(forceHydrateFields: false),
+                      child: const Text('Retry'),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+
+            // 1. Compact Profile Hero Card
+            ProfileIdentityHeroCard(
+              user: user,
+              isUploadingAvatar: _isUploadingAvatar,
+              onPickAvatar: _handlePickAndUploadAvatar,
+              onRemoveAvatar: _handleRemoveAvatar,
+              isOnline: isOnline,
             ),
-            child: Row(
-              children: [
-                Icon(Icons.info_outline, size: 18, color: tokens.warningText),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    'Showing cached session details ($_loadError)',
-                    softWrap: true,
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: tokens.warningText,
+            const SizedBox(height: 12),
+
+            // 2. Container-Responsive Layout
+            if (isTwoColumn)
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    flex: 6,
+                    child: Column(
+                      children: [
+                        personalDetailsCard,
+                        const SizedBox(height: 16),
+                        securityCard,
+                      ],
                     ),
                   ),
-                ),
-                TextButton(
-                  onPressed: () => _loadProfile(forceHydrateFields: false),
-                  child: const Text('Retry'),
-                ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    flex: 5,
+                    child: Column(
+                      children: [
+                        themeStudioCard,
+                        const SizedBox(height: 16),
+                        deviceCard,
+                      ],
+                    ),
+                  ),
+                ],
+              )
+            else ...[
+              _buildMobileSectionBar(tokens, appearance.hapticsEnabled),
+              const SizedBox(height: 12),
+              if (showTheme) ...[
+                themeStudioCard,
+                const SizedBox(height: 12),
               ],
-            ),
-          ),
-        ],
-
-        // 1. Hero Profile Card
-        ProfileIdentityHeroCard(
-          user: user,
-          isUploadingAvatar: _isUploadingAvatar,
-          onPickAvatar: _handlePickAndUploadAvatar,
-          onRemoveAvatar: _handleRemoveAvatar,
-          isOnline: isOnline,
-        ),
-        const SizedBox(height: 18),
-
-        // 2. Responsive Main Content Grid
-        if (isDesktop)
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                flex: 6,
-                child: Column(
-                  children: [
-                    ProfilePersonalDetailsCard(
-                      user: user,
-                      phoneController: _phoneCtrl,
-                      emailController: _emailCtrl,
-                      emergencyController: _emergencyCtrl,
-                      bioController: _bioCtrl,
-                      formKey: _formKey,
-                      isSaving: _isSavingProfile,
-                      hasUnsavedChanges: _hasUnsavedChanges,
-                      onSave: _handleSavePersonalDetails,
-                    ),
-                    const SizedBox(height: 18),
-                    SecurityMfaPasswordCard(
-                      mfaEnabled: user.mfaEnabled,
-                      mfaEnrolledAt: _snapshot?.mfaEnrolledAt,
-                      remainingBackupCodes:
-                          _snapshot?.remainingBackupCodes ?? 0,
-                      canSelfChangePassword: canChangePw,
-                      isMfaBusy: _isMfaBusy,
-                      isPasswordBusy: _isPasswordBusy,
-                      pendingMfaBundle: _pendingMfaBundle,
-                      onInitiateMfaSetup: _handleInitiateMfa,
-                      onCancelMfaSetup: () =>
-                          setState(() => _pendingMfaBundle = null),
-                      onActivateMfa: _handleActivateMfa,
-                      onDisableMfa: _handleDisableMfa,
-                      onChangePassword: _handleChangePassword,
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 18),
-              Expanded(
-                flex: 5,
-                child: Column(
-                  children: [
-                    AppearanceThemeStudioCard(
-                      settings: appearance,
-                      onThemeModeChanged: (m) async {
-                        await ref
-                            .read(themeControllerProvider.notifier)
-                            .setThemeMode(m);
-                        _syncPreferencesToServer();
-                      },
-                      onAccentPresetChanged: (p) async {
-                        await ref
-                            .read(themeControllerProvider.notifier)
-                            .setAccentPreset(p);
-                        _syncPreferencesToServer();
-                      },
-                      onCompactDensityChanged: (v) async {
-                        await ref
-                            .read(themeControllerProvider.notifier)
-                            .setCompactDensity(v);
-                        _syncPreferencesToServer();
-                      },
-                      onReduceMotionChanged: (v) async {
-                        await ref
-                            .read(themeControllerProvider.notifier)
-                            .setReduceMotion(v);
-                        _syncPreferencesToServer();
-                      },
-                      onHapticsChanged: (v) async {
-                        await ref
-                            .read(themeControllerProvider.notifier)
-                            .setHapticsEnabled(v);
-                        _syncPreferencesToServer();
-                      },
-                      onResetDefaults: () async {
-                        await ref
-                            .read(themeControllerProvider.notifier)
-                            .resetToDefaults();
-                        _syncPreferencesToServer();
-                        _showSnack('Theme preferences reset to default.');
-                      },
-                    ),
-                    const SizedBox(height: 18),
-                    DeviceSessionActivityCard(
-                      isOnline: isOnline,
-                      pendingOutboxCount: pendingOutbox,
-                      recentActivity: _snapshot?.recentActivity ?? const [],
-                      onOpenOutboxSync: widget.onOpenOutboxSync,
-                      onClearLocalCache: _handleClearReadCache,
-                      onSignOut: () => widget.onRequestSignOut?.call(),
-                    ),
-                  ],
-                ),
-              ),
+              if (showProfile) ...[
+                personalDetailsCard,
+                const SizedBox(height: 12),
+              ],
+              if (showSecurity) ...[
+                securityCard,
+                const SizedBox(height: 12),
+              ],
+              if (showDevice) deviceCard,
             ],
-          )
-        else
-          Column(
-            children: [
-              AppearanceThemeStudioCard(
-                settings: appearance,
-                onThemeModeChanged: (m) async {
-                  await ref
-                      .read(themeControllerProvider.notifier)
-                      .setThemeMode(m);
-                  _syncPreferencesToServer();
-                },
-                onAccentPresetChanged: (p) async {
-                  await ref
-                      .read(themeControllerProvider.notifier)
-                      .setAccentPreset(p);
-                  _syncPreferencesToServer();
-                },
-                onCompactDensityChanged: (v) async {
-                  await ref
-                      .read(themeControllerProvider.notifier)
-                      .setCompactDensity(v);
-                  _syncPreferencesToServer();
-                },
-                onReduceMotionChanged: (v) async {
-                  await ref
-                      .read(themeControllerProvider.notifier)
-                      .setReduceMotion(v);
-                  _syncPreferencesToServer();
-                },
-                onHapticsChanged: (v) async {
-                  await ref
-                      .read(themeControllerProvider.notifier)
-                      .setHapticsEnabled(v);
-                  _syncPreferencesToServer();
-                },
-                onResetDefaults: () async {
-                  await ref
-                      .read(themeControllerProvider.notifier)
-                      .resetToDefaults();
-                  _syncPreferencesToServer();
-                  _showSnack('Theme preferences reset to default.');
-                },
-              ),
-              const SizedBox(height: 16),
-              ProfilePersonalDetailsCard(
-                user: user,
-                phoneController: _phoneCtrl,
-                emailController: _emailCtrl,
-                emergencyController: _emergencyCtrl,
-                bioController: _bioCtrl,
-                formKey: _formKey,
-                isSaving: _isSavingProfile,
-                hasUnsavedChanges: _hasUnsavedChanges,
-                onSave: _handleSavePersonalDetails,
-              ),
-              const SizedBox(height: 16),
-              SecurityMfaPasswordCard(
-                mfaEnabled: user.mfaEnabled,
-                mfaEnrolledAt: _snapshot?.mfaEnrolledAt,
-                remainingBackupCodes: _snapshot?.remainingBackupCodes ?? 0,
-                canSelfChangePassword: canChangePw,
-                isMfaBusy: _isMfaBusy,
-                isPasswordBusy: _isPasswordBusy,
-                pendingMfaBundle: _pendingMfaBundle,
-                onInitiateMfaSetup: _handleInitiateMfa,
-                onCancelMfaSetup: () =>
-                    setState(() => _pendingMfaBundle = null),
-                onActivateMfa: _handleActivateMfa,
-                onDisableMfa: _handleDisableMfa,
-                onChangePassword: _handleChangePassword,
-              ),
-              const SizedBox(height: 16),
-              DeviceSessionActivityCard(
-                isOnline: isOnline,
-                pendingOutboxCount: pendingOutbox,
-                recentActivity: _snapshot?.recentActivity ?? const [],
-                onOpenOutboxSync: widget.onOpenOutboxSync,
-                onClearLocalCache: _handleClearReadCache,
-                onSignOut: () => widget.onRequestSignOut?.call(),
-              ),
-            ],
-          ),
-      ],
+          ],
+        );
+      },
     );
   }
 }

@@ -30,286 +30,241 @@ class ProfilePersonalDetailsCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final tokens = IcareSurfaceTokens.of(context);
-    final isMobile = MediaQuery.sizeOf(context).width < 640;
 
-    return IcareCard(
-      padding: EdgeInsets.all(isMobile ? 16 : 20),
-      child: Form(
-        key: formKey,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isCompact = constraints.maxWidth < 520;
+        final twoColFields = constraints.maxWidth >= 460;
+        final twoColIdentity = constraints.maxWidth >= 260;
+
+        final lockedFields = [
+          _LockedField(
+            label: 'Full Name',
+            value: user.fullName.isNotEmpty ? user.fullName : user.username,
+          ),
+          _LockedField(
+            label: 'Username',
+            value: '@${user.username}',
+          ),
+          _LockedField(
+            label: 'Role',
+            value: user.role,
+          ),
+          _LockedField(
+            label: 'Branch',
+            value: user.branch.isNotEmpty ? user.branch : 'Head Office',
+          ),
+        ];
+
+        final phoneField = TextFormField(
+          controller: phoneController,
+          keyboardType: TextInputType.phone,
+          decoration: const InputDecoration(
+            labelText: 'Phone Number',
+            hintText: '+234 801 234 5678',
+            prefixIcon: Icon(Icons.phone_outlined, size: 18),
+          ),
+          validator: (val) {
+            final v = (val ?? '').trim();
+            if (v.isEmpty) return null;
+            if (!RegExp(r'^[0-9+\-\s()]{7,25}$').hasMatch(v)) {
+              return 'Enter a valid 7-25 digit phone number.';
+            }
+            return null;
+          },
+        );
+
+        final emailField = TextFormField(
+          controller: emailController,
+          keyboardType: TextInputType.emailAddress,
+          decoration: const InputDecoration(
+            labelText: 'Email Address',
+            hintText: 'staff.name@icare.ng',
+            prefixIcon: Icon(Icons.mail_outline, size: 18),
+          ),
+          validator: (val) {
+            final v = (val ?? '').trim();
+            if (v.isEmpty) return null;
+            if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(v)) {
+              return 'Enter a valid email address.';
+            }
+            return null;
+          },
+        );
+
+        return IcareCard(
+          padding: EdgeInsets.all(isCompact ? 14 : 18),
+          child: Form(
+            key: formKey,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: tokens.brandSoftBg,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: tokens.brandSoftBorder),
-                  ),
-                  child: Icon(
-                    Icons.badge_outlined,
-                    size: 18,
-                    color: tokens.brandSoftText,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Personal Details & Contact Directory',
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(7),
+                      decoration: BoxDecoration(
+                        color: tokens.brandSoftBg,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: tokens.brandSoftBorder),
+                      ),
+                      child: Icon(
+                        Icons.badge_outlined,
+                        size: 17,
+                        color: tokens.brandSoftText,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Profile & Contact',
                         softWrap: true,
                         style: TextStyle(
-                          fontSize: 15.5,
+                          fontSize: 15,
                           fontWeight: FontWeight.w700,
                           color: tokens.textPrimary,
                         ),
                       ),
-                      const SizedBox(height: 2),
-                      Text(
-                        'Keep your phone, email, and desk bio current across devices.',
-                        softWrap: true,
-                        style: TextStyle(fontSize: 12, color: tokens.textMuted),
-                      ),
-                    ],
-                  ),
-                ),
-                if (hasUnsavedChanges)
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: tokens.warningBg,
-                      borderRadius: BorderRadius.circular(999),
-                      border: Border.all(color: tokens.warningBorder),
                     ),
-                    child: Text(
-                      'Unsaved',
-                      style: TextStyle(
-                        fontSize: 10.5,
-                        fontWeight: FontWeight.w700,
-                        color: tokens.warningText,
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-            const SizedBox(height: 16),
-
-            // Institutional Read-Only Identity Summary
-            Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: tokens.surfaceSubtle,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: tokens.borderSubtle),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Icon(Icons.lock_outline, size: 14, color: tokens.textMuted),
-                      const SizedBox(width: 6),
-                      Expanded(
+                    if (hasUnsavedChanges)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: tokens.warningBg,
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(color: tokens.warningBorder),
+                        ),
                         child: Text(
-                          'Official Account Identity (Administered by Management)',
-                          softWrap: true,
+                          'Unsaved',
                           style: TextStyle(
-                            fontSize: 11,
+                            fontSize: 10.5,
                             fontWeight: FontWeight.w700,
-                            color: tokens.textMuted,
-                            letterSpacing: 0.3,
+                            color: tokens.warningText,
                           ),
                         ),
                       ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  LayoutBuilder(
-                    builder: (context, constraints) {
-                      final twoCol = constraints.maxWidth >= 500;
-                      final fields = [
-                        _LockedField(
-                          label: 'Official Full Name',
-                          value: user.fullName.isNotEmpty ? user.fullName : user.username,
-                        ),
-                        _LockedField(
-                          label: 'Staff Username',
-                          value: '@${user.username}',
-                        ),
-                        _LockedField(
-                          label: 'Assigned Role',
-                          value: user.role,
-                        ),
-                        _LockedField(
-                          label: 'Primary Branch',
-                          value: user.branch.isNotEmpty ? user.branch : 'Head Office',
-                        ),
-                      ];
+                  ],
+                ),
+                const SizedBox(height: 12),
 
-                      if (!twoCol) {
-                        return Column(
-                          children: fields
+                // Compact 2x2 Read-Only Identity Summary
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: tokens.surfaceSubtle,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: tokens.borderSubtle),
+                  ),
+                  child: twoColIdentity
+                      ? Column(
+                          children: [
+                            Row(
+                              children: [
+                                Expanded(child: lockedFields[0]),
+                                const SizedBox(width: 10),
+                                Expanded(child: lockedFields[1]),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                Expanded(child: lockedFields[2]),
+                                const SizedBox(width: 10),
+                                Expanded(child: lockedFields[3]),
+                              ],
+                            ),
+                          ],
+                        )
+                      : Column(
+                          children: lockedFields
                               .map((f) => Padding(
-                                    padding: const EdgeInsets.only(bottom: 10),
+                                    padding: const EdgeInsets.only(bottom: 8),
                                     child: f,
                                   ))
                               .toList(),
-                        );
-                      }
-
-                      return Column(
-                        children: [
-                          Row(
-                            children: [
-                              Expanded(child: fields[0]),
-                              const SizedBox(width: 12),
-                              Expanded(child: fields[1]),
-                            ],
-                          ),
-                          const SizedBox(height: 10),
-                          Row(
-                            children: [
-                              Expanded(child: fields[2]),
-                              const SizedBox(width: 12),
-                              Expanded(child: fields[3]),
-                            ],
-                          ),
-                        ],
-                      );
-                    },
-                  ),
-                ],
-              ),
-            ),
-
-            const SizedBox(height: 16),
-            Text(
-              'Editable Contact & Personal Bio',
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w700,
-                color: tokens.textPrimary,
-              ),
-            ),
-            const SizedBox(height: 12),
-
-            LayoutBuilder(
-              builder: (context, constraints) {
-                final twoCol = constraints.maxWidth >= 520;
-                final phoneField = TextFormField(
-                  controller: phoneController,
-                  keyboardType: TextInputType.phone,
-                  decoration: const InputDecoration(
-                    labelText: 'Phone Number',
-                    hintText: 'e.g. +234 801 234 5678',
-                    prefixIcon: Icon(Icons.phone_outlined, size: 18),
-                  ),
-                  validator: (val) {
-                    final v = (val ?? '').trim();
-                    if (v.isEmpty) return null;
-                    if (!RegExp(r'^[0-9+\-\s()]{7,25}$').hasMatch(v)) {
-                      return 'Enter a valid 7-25 digit phone number.';
-                    }
-                    return null;
-                  },
-                );
-
-                final emailField = TextFormField(
-                  controller: emailController,
-                  keyboardType: TextInputType.emailAddress,
-                  decoration: const InputDecoration(
-                    labelText: 'Email Address',
-                    hintText: 'e.g. staff.name@icare.ng',
-                    prefixIcon: Icon(Icons.mail_outline, size: 18),
-                  ),
-                  validator: (val) {
-                    final v = (val ?? '').trim();
-                    if (v.isEmpty) return null;
-                    if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(v)) {
-                      return 'Enter a valid email address.';
-                    }
-                    return null;
-                  },
-                );
-
-                if (!twoCol) {
-                  return Column(
-                    children: [
-                      phoneField,
-                      const SizedBox(height: 12),
-                      emailField,
-                    ],
-                  );
-                }
-
-                return Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(child: phoneField),
-                    const SizedBox(width: 12),
-                    Expanded(child: emailField),
-                  ],
-                );
-              },
-            ),
-            const SizedBox(height: 12),
-
-            TextFormField(
-              controller: emergencyController,
-              decoration: const InputDecoration(
-                labelText: 'Emergency Contact',
-                hintText: 'Next of kin name and phone number',
-                prefixIcon: Icon(Icons.contact_emergency_outlined, size: 18),
-              ),
-            ),
-            const SizedBox(height: 12),
-
-            TextFormField(
-              controller: bioController,
-              maxLines: 3,
-              maxLength: 280,
-              decoration: const InputDecoration(
-                labelText: 'Personal Bio & Desk Note',
-                hintText: 'Brief bio, territory note, or operational handover summary',
-                alignLabelWithHint: true,
-                prefixIcon: Padding(
-                  padding: EdgeInsets.only(bottom: 36),
-                  child: Icon(Icons.notes_outlined, size: 18),
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-
-            Align(
-              alignment: Alignment.centerRight,
-              child: ElevatedButton.icon(
-                onPressed: isSaving ? null : onSave,
-                style: ElevatedButton.styleFrom(
-                  minimumSize: const Size(180, 44),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                ),
-                icon: isSaving
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
                         ),
-                      )
-                    : const Icon(Icons.save_outlined, size: 17),
-                label: Text(isSaving ? 'Saving Profile...' : 'Save Personal Details'),
-              ),
+                ),
+
+                const SizedBox(height: 12),
+
+                if (twoColFields)
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(child: phoneField),
+                      const SizedBox(width: 10),
+                      Expanded(child: emailField),
+                    ],
+                  )
+                else ...[
+                  phoneField,
+                  const SizedBox(height: 10),
+                  emailField,
+                ],
+                const SizedBox(height: 10),
+
+                TextFormField(
+                  controller: emergencyController,
+                  decoration: const InputDecoration(
+                    labelText: 'Emergency Contact',
+                    hintText: 'Next of kin name & phone',
+                    prefixIcon: Icon(Icons.contact_emergency_outlined, size: 18),
+                  ),
+                ),
+                const SizedBox(height: 10),
+
+                TextFormField(
+                  controller: bioController,
+                  maxLines: 2,
+                  maxLength: 280,
+                  decoration: const InputDecoration(
+                    labelText: 'Personal Bio & Desk Note',
+                    hintText: 'Territory or handover note',
+                    alignLabelWithHint: true,
+                    prefixIcon: Padding(
+                      padding: EdgeInsets.only(bottom: 18),
+                      child: Icon(Icons.notes_outlined, size: 18),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 10),
+
+                SizedBox(
+                  width: isCompact ? double.infinity : null,
+                  child: Align(
+                    alignment: isCompact
+                        ? Alignment.center
+                        : Alignment.centerRight,
+                    child: ElevatedButton.icon(
+                      onPressed: isSaving ? null : onSave,
+                      style: ElevatedButton.styleFrom(
+                        minimumSize: Size(isCompact ? double.infinity : 180, 44),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                      icon: isSaving
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor:
+                                    AlwaysStoppedAnimation<Color>(Colors.white),
+                              ),
+                            )
+                          : const Icon(Icons.save_outlined, size: 17),
+                      label: Text(
+                          isSaving ? 'Saving...' : 'Save Personal Details'),
+                    ),
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 }
@@ -329,17 +284,18 @@ class _LockedField extends StatelessWidget {
         Text(
           label,
           style: TextStyle(
-            fontSize: 10.5,
+            fontSize: 10,
             fontWeight: FontWeight.w600,
             color: tokens.textMuted,
           ),
         ),
-        const SizedBox(height: 3),
+        const SizedBox(height: 2),
         Text(
           value,
-          softWrap: true,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
           style: TextStyle(
-            fontSize: 13,
+            fontSize: 12.5,
             fontWeight: FontWeight.w700,
             color: tokens.textPrimary,
           ),

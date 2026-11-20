@@ -33,314 +33,287 @@ class AppearanceThemeStudioCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final tokens = IcareSurfaceTokens.of(context);
-    final isMobile = MediaQuery.sizeOf(context).width < 640;
+    final platformBrightness = MediaQuery.platformBrightnessOf(context);
+    final systemModeHint =
+        platformBrightness == Brightness.dark ? 'OS: Dark' : 'OS: Light';
 
-    return IcareCard(
-      padding: EdgeInsets.all(isMobile ? 16 : 20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: tokens.brandSoftBg,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: tokens.brandSoftBorder),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isCompact = constraints.maxWidth < 520;
+        final threeAcross = constraints.maxWidth >= 280;
+        final twoColAccents = constraints.maxWidth >= 280;
+
+        final modeOptions = [
+          _ThemeModePreviewTile(
+            label: 'Light Slate',
+            subtitle: 'Daylight',
+            mode: ThemeMode.light,
+            selected: settings.themeMode == ThemeMode.light,
+            previewBg: const Color(0xFFF8FAFC),
+            previewCard: Colors.white,
+            previewHeader: settings.accentPreset.lightPrimary,
+            compact: isCompact,
+            onTap: () {
+              _triggerHaptic();
+              onThemeModeChanged(ThemeMode.light);
+            },
+          ),
+          _ThemeModePreviewTile(
+            label: 'Dark Vault',
+            subtitle: 'Low glare',
+            mode: ThemeMode.dark,
+            selected: settings.themeMode == ThemeMode.dark,
+            previewBg: const Color(0xFF090E1A),
+            previewCard: const Color(0xFF111827),
+            previewHeader: settings.accentPreset.darkPrimary,
+            compact: isCompact,
+            onTap: () {
+              _triggerHaptic();
+              onThemeModeChanged(ThemeMode.dark);
+            },
+          ),
+          _ThemeModePreviewTile(
+            label: 'System Auto',
+            subtitle: systemModeHint,
+            mode: ThemeMode.system,
+            selected: settings.themeMode == ThemeMode.system,
+            previewBg: const Color(0xFF334155),
+            previewCard: const Color(0xFFF8FAFC),
+            previewHeader: settings.accentPreset.lightPrimaryLight,
+            isSplitPreview: true,
+            compact: isCompact,
+            onTap: () {
+              _triggerHaptic();
+              onThemeModeChanged(ThemeMode.system);
+            },
+          ),
+        ];
+
+        final accentTiles = IcareAccentPreset.values.map((preset) {
+          final isSelected = settings.accentPreset == preset;
+          final primarySwatch =
+              tokens.isDark ? preset.darkPrimary : preset.lightPrimary;
+          return Semantics(
+            button: true,
+            selected: isSelected,
+            label: 'Accent theme ${preset.label}',
+            child: InkWell(
+              borderRadius: BorderRadius.circular(10),
+              onTap: () {
+                _triggerHaptic();
+                onAccentPresetChanged(preset);
+              },
+              child: AnimatedContainer(
+                duration: IcareMotion.resolve(context, IcareMotion.fast),
+                curve: IcareMotion.standardCurve,
+                constraints: const BoxConstraints(minHeight: 44),
+                padding: EdgeInsets.symmetric(
+                  horizontal: isCompact ? 10 : 12,
+                  vertical: isCompact ? 8 : 10,
                 ),
-                child: Icon(
-                  Icons.palette_outlined,
-                  size: 18,
-                  color: tokens.brandSoftText,
+                decoration: BoxDecoration(
+                  color: isSelected
+                      ? (tokens.isDark
+                          ? preset.darkSoftBg
+                          : preset.lightSoftBg)
+                      : tokens.surfaceSubtle,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: isSelected ? primarySwatch : tokens.borderSubtle,
+                    width: isSelected ? 1.6 : 1,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 20,
+                      height: 20,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: primarySwatch,
+                        border: Border.all(
+                          color: preset.lightAccent,
+                          width: 1.8,
+                        ),
+                      ),
+                      child: isSelected
+                          ? const Icon(Icons.check,
+                              size: 12, color: Colors.white)
+                          : null,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        preset.label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: isCompact ? 11.5 : 12.5,
+                          fontWeight: FontWeight.w700,
+                          color: tokens.textPrimary,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Appearance & Theme Studio',
+            ),
+          );
+        }).toList();
+
+        return IcareCard(
+          padding: EdgeInsets.all(isCompact ? 14 : 18),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(7),
+                    decoration: BoxDecoration(
+                      color: tokens.brandSoftBg,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: tokens.brandSoftBorder),
+                    ),
+                    child: Icon(
+                      Icons.palette_outlined,
+                      size: 17,
+                      color: tokens.brandSoftText,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'Appearance & Theme',
                       softWrap: true,
                       style: TextStyle(
-                        fontSize: 15.5,
+                        fontSize: 15,
                         fontWeight: FontWeight.w700,
                         color: tokens.textPrimary,
                       ),
                     ),
-                    const SizedBox(height: 2),
-                    Text(
-                      'Customize brightness, brand accent palette, and workspace density.',
-                      softWrap: true,
-                      style: TextStyle(fontSize: 12, color: tokens.textMuted),
-                    ),
-                  ],
-                ),
-              ),
-              TextButton(
-                onPressed: () {
-                  _triggerHaptic();
-                  onResetDefaults();
-                },
-                child: const Text('Reset'),
-              ),
-            ],
-          ),
-          const SizedBox(height: 18),
-
-          Text(
-            'Theme Mode',
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
-              color: tokens.textPrimary,
-            ),
-          ),
-          const SizedBox(height: 10),
-
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final threeAcross = constraints.maxWidth >= 480;
-              final options = [
-                _ThemeModePreviewTile(
-                  label: 'Light Slate',
-                  subtitle: 'Sunlight-ready',
-                  mode: ThemeMode.light,
-                  selected: settings.themeMode == ThemeMode.light,
-                  previewBg: const Color(0xFFF8FAFC),
-                  previewCard: Colors.white,
-                  previewHeader: settings.accentPreset.lightPrimary,
-                  onTap: () {
-                    _triggerHaptic();
-                    onThemeModeChanged(ThemeMode.light);
-                  },
-                ),
-                _ThemeModePreviewTile(
-                  label: 'Dark Vault',
-                  subtitle: 'Low-glare contrast',
-                  mode: ThemeMode.dark,
-                  selected: settings.themeMode == ThemeMode.dark,
-                  previewBg: const Color(0xFF090E1A),
-                  previewCard: const Color(0xFF111827),
-                  previewHeader: settings.accentPreset.darkPrimary,
-                  onTap: () {
-                    _triggerHaptic();
-                    onThemeModeChanged(ThemeMode.dark);
-                  },
-                ),
-                _ThemeModePreviewTile(
-                  label: 'System Auto',
-                  subtitle: 'Follows device',
-                  mode: ThemeMode.system,
-                  selected: settings.themeMode == ThemeMode.system,
-                  previewBg: const Color(0xFF334155),
-                  previewCard: const Color(0xFFF8FAFC),
-                  previewHeader: settings.accentPreset.lightPrimaryLight,
-                  isSplitPreview: true,
-                  onTap: () {
-                    _triggerHaptic();
-                    onThemeModeChanged(ThemeMode.system);
-                  },
-                ),
-              ];
-
-              if (threeAcross) {
-                return Row(
-                  children: [
-                    Expanded(child: options[0]),
-                    const SizedBox(width: 10),
-                    Expanded(child: options[1]),
-                    const SizedBox(width: 10),
-                    Expanded(child: options[2]),
-                  ],
-                );
-              }
-
-              return Column(
-                children: [
-                  Row(
-                    children: [
-                      Expanded(child: options[0]),
-                      const SizedBox(width: 10),
-                      Expanded(child: options[1]),
-                    ],
                   ),
-                  const SizedBox(height: 10),
-                  options[2],
-                ],
-              );
-            },
-          ),
-
-          const SizedBox(height: 20),
-          Text(
-            'Institutional Accent Palette',
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
-              color: tokens.textPrimary,
-            ),
-          ),
-          const SizedBox(height: 10),
-
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final twoCol = constraints.maxWidth >= 460;
-              final tiles = IcareAccentPreset.values.map((preset) {
-                final isSelected = settings.accentPreset == preset;
-                final primarySwatch =
-                    tokens.isDark ? preset.darkPrimary : preset.lightPrimary;
-                return Semantics(
-                  button: true,
-                  selected: isSelected,
-                  label: 'Accent theme ${preset.label}',
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(10),
-                    onTap: () {
+                  TextButton(
+                    onPressed: () {
                       _triggerHaptic();
-                      onAccentPresetChanged(preset);
+                      onResetDefaults();
                     },
-                    child: AnimatedContainer(
-                      duration: IcareMotion.resolve(context, IcareMotion.fast),
-                      curve: IcareMotion.standardCurve,
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 10),
-                      decoration: BoxDecoration(
-                        color: isSelected
-                            ? (tokens.isDark
-                                ? preset.darkSoftBg
-                                : preset.lightSoftBg)
-                            : tokens.surfaceSubtle,
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(
-                          color: isSelected
-                              ? primarySwatch
-                              : tokens.borderSubtle,
-                          width: isSelected ? 1.6 : 1,
-                        ),
-                      ),
-                      child: Row(
-                        children: [
-                          Container(
-                            width: 24,
-                            height: 24,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: primarySwatch,
-                              border: Border.all(
-                                color: preset.lightAccent,
-                                width: 2,
-                              ),
-                            ),
-                            child: isSelected
-                                ? const Icon(Icons.check,
-                                    size: 13, color: Colors.white)
-                                : null,
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  preset.label,
-                                  softWrap: true,
-                                  style: TextStyle(
-                                    fontSize: 12.5,
-                                    fontWeight: FontWeight.w700,
-                                    color: tokens.textPrimary,
-                                  ),
-                                ),
-                                Text(
-                                  preset.subtitle,
-                                  softWrap: true,
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    color: tokens.textMuted,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
+                    child: const Text('Reset'),
                   ),
-                );
-              }).toList();
+                ],
+              ),
+              const SizedBox(height: 12),
 
-              if (!twoCol) {
-                return Column(
-                  children: tiles
+              Text(
+                'Color Scheme',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: tokens.textMuted,
+                ),
+              ),
+              const SizedBox(height: 8),
+
+              if (threeAcross)
+                Row(
+                  children: [
+                    Expanded(child: modeOptions[0]),
+                    const SizedBox(width: 8),
+                    Expanded(child: modeOptions[1]),
+                    const SizedBox(width: 8),
+                    Expanded(child: modeOptions[2]),
+                  ],
+                )
+              else
+                Column(
+                  children: modeOptions
+                      .map((o) => Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: o,
+                          ))
+                      .toList(),
+                ),
+
+              const SizedBox(height: 14),
+              Text(
+                'Accent Palette',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: tokens.textMuted,
+                ),
+              ),
+              const SizedBox(height: 8),
+
+              if (twoColAccents)
+                Column(
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(child: accentTiles[0]),
+                        const SizedBox(width: 8),
+                        Expanded(child: accentTiles[1]),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(child: accentTiles[2]),
+                        const SizedBox(width: 8),
+                        Expanded(child: accentTiles[3]),
+                      ],
+                    ),
+                  ],
+                )
+              else
+                Column(
+                  children: accentTiles
                       .map((t) => Padding(
                             padding: const EdgeInsets.only(bottom: 8),
                             child: t,
                           ))
                       .toList(),
-                );
-              }
+                ),
 
-              return Column(
-                children: [
-                  Row(
-                    children: [
-                      Expanded(child: tiles[0]),
-                      const SizedBox(width: 10),
-                      Expanded(child: tiles[1]),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  Row(
-                    children: [
-                      Expanded(child: tiles[2]),
-                      const SizedBox(width: 10),
-                      Expanded(child: tiles[3]),
-                    ],
-                  ),
-                ],
-              );
-            },
-          ),
+              const SizedBox(height: 14),
+              Divider(color: tokens.borderSubtle, height: 1),
+              const SizedBox(height: 6),
 
-          const SizedBox(height: 18),
-          Divider(color: tokens.borderSubtle, height: 1),
-          const SizedBox(height: 10),
-
-          _ErgonomicToggleTile(
-            icon: Icons.table_rows_outlined,
-            title: 'High-Density Tables & Compact Controls',
-            subtitle: 'Tightens field heights and ledger rows for power users.',
-            value: settings.compactDensity,
-            onChanged: (v) {
-              _triggerHaptic();
-              onCompactDensityChanged(v);
-            },
+              _ErgonomicToggleTile(
+                icon: Icons.table_rows_outlined,
+                title: 'Compact Density',
+                subtitle: 'Tighter rows & controls',
+                value: settings.compactDensity,
+                onChanged: (v) {
+                  _triggerHaptic();
+                  onCompactDensityChanged(v);
+                },
+              ),
+              Divider(color: tokens.borderSubtle, height: 1),
+              _ErgonomicToggleTile(
+                icon: Icons.motion_photos_off_outlined,
+                title: 'Reduce Motion',
+                subtitle: 'Fewer UI animations',
+                value: settings.reduceMotion,
+                onChanged: (v) {
+                  _triggerHaptic();
+                  onReduceMotionChanged(v);
+                },
+              ),
+              Divider(color: tokens.borderSubtle, height: 1),
+              _ErgonomicToggleTile(
+                icon: Icons.vibration_outlined,
+                title: 'Haptic Feedback',
+                subtitle: 'Touch confirmation',
+                value: settings.hapticsEnabled,
+                onChanged: (v) {
+                  onHapticsChanged(v);
+                },
+              ),
+            ],
           ),
-          Divider(color: tokens.borderSubtle, height: 1),
-          _ErgonomicToggleTile(
-            icon: Icons.motion_photos_off_outlined,
-            title: 'Reduce Motion & Transitions',
-            subtitle: 'Minimizes animations across drawers, cards, and skeletons.',
-            value: settings.reduceMotion,
-            onChanged: (v) {
-              _triggerHaptic();
-              onReduceMotionChanged(v);
-            },
-          ),
-          Divider(color: tokens.borderSubtle, height: 1),
-          _ErgonomicToggleTile(
-            icon: Icons.vibration_outlined,
-            title: 'Tactile Haptic Feedback',
-            subtitle: 'Subtle haptic confirmation for mobile actions and saves.',
-            value: settings.hapticsEnabled,
-            onChanged: (v) {
-              onHapticsChanged(v);
-            },
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 }
@@ -354,6 +327,7 @@ class _ThemeModePreviewTile extends StatelessWidget {
   final Color previewCard;
   final Color previewHeader;
   final bool isSplitPreview;
+  final bool compact;
   final VoidCallback onTap;
 
   const _ThemeModePreviewTile({
@@ -365,6 +339,7 @@ class _ThemeModePreviewTile extends StatelessWidget {
     required this.previewCard,
     required this.previewHeader,
     this.isSplitPreview = false,
+    this.compact = false,
     required this.onTap,
   });
 
@@ -381,7 +356,7 @@ class _ThemeModePreviewTile extends StatelessWidget {
         child: AnimatedContainer(
           duration: IcareMotion.resolve(context, IcareMotion.fast),
           curve: IcareMotion.standardCurve,
-          padding: const EdgeInsets.all(10),
+          padding: EdgeInsets.all(compact ? 8 : 10),
           decoration: BoxDecoration(
             color: selected ? tokens.brandSoftBg : tokens.surfaceSubtle,
             borderRadius: BorderRadius.circular(10),
@@ -393,9 +368,8 @@ class _ThemeModePreviewTile extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Miniature UI Surface Preview
               Container(
-                height: 46,
+                height: compact ? 34 : 42,
                 decoration: BoxDecoration(
                   color: previewBg,
                   borderRadius: BorderRadius.circular(6),
@@ -408,12 +382,13 @@ class _ThemeModePreviewTile extends StatelessWidget {
                           Expanded(
                             child: Container(
                               color: const Color(0xFFF8FAFC),
-                              padding: const EdgeInsets.all(6),
+                              padding: const EdgeInsets.all(5),
                               child: Container(
                                 decoration: BoxDecoration(
                                   color: Colors.white,
-                                  borderRadius: BorderRadius.circular(4),
-                                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                                  borderRadius: BorderRadius.circular(3),
+                                  border: Border.all(
+                                      color: const Color(0xFFE2E8F0)),
                                 ),
                               ),
                             ),
@@ -421,12 +396,13 @@ class _ThemeModePreviewTile extends StatelessWidget {
                           Expanded(
                             child: Container(
                               color: const Color(0xFF090E1A),
-                              padding: const EdgeInsets.all(6),
+                              padding: const EdgeInsets.all(5),
                               child: Container(
                                 decoration: BoxDecoration(
                                   color: const Color(0xFF111827),
-                                  borderRadius: BorderRadius.circular(4),
-                                  border: Border.all(color: const Color(0xFF233046)),
+                                  borderRadius: BorderRadius.circular(3),
+                                  border: Border.all(
+                                      color: const Color(0xFF233046)),
                                 ),
                               ),
                             ),
@@ -434,25 +410,25 @@ class _ThemeModePreviewTile extends StatelessWidget {
                         ],
                       )
                     : Padding(
-                        padding: const EdgeInsets.all(6),
+                        padding: const EdgeInsets.all(5),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Container(
-                              height: 7,
-                              width: 36,
+                              height: 6,
+                              width: 28,
                               decoration: BoxDecoration(
                                 color: previewHeader,
                                 borderRadius: BorderRadius.circular(3),
                               ),
                             ),
-                            const SizedBox(height: 5),
+                            const SizedBox(height: 4),
                             Expanded(
                               child: Container(
                                 width: double.infinity,
                                 decoration: BoxDecoration(
                                   color: previewCard,
-                                  borderRadius: BorderRadius.circular(4),
+                                  borderRadius: BorderRadius.circular(3),
                                 ),
                               ),
                             ),
@@ -460,7 +436,7 @@ class _ThemeModePreviewTile extends StatelessWidget {
                         ),
                       ),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 6),
               Row(
                 children: [
                   Expanded(
@@ -469,16 +445,20 @@ class _ThemeModePreviewTile extends StatelessWidget {
                       children: [
                         Text(
                           label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                            fontSize: 12.5,
+                            fontSize: compact ? 11.5 : 12.5,
                             fontWeight: FontWeight.w700,
                             color: tokens.textPrimary,
                           ),
                         ),
                         Text(
                           subtitle,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                            fontSize: 10.5,
+                            fontSize: 10,
                             color: tokens.textMuted,
                           ),
                         ),
@@ -489,7 +469,7 @@ class _ThemeModePreviewTile extends StatelessWidget {
                     selected
                         ? Icons.check_circle_rounded
                         : Icons.radio_button_unchecked_rounded,
-                    size: 17,
+                    size: 15,
                     color: selected ? tokens.brandPrimary : tokens.textLight,
                   ),
                 ],
@@ -521,11 +501,11 @@ class _ErgonomicToggleTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final tokens = IcareSurfaceTokens.of(context);
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
+      padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
         children: [
-          Icon(icon, size: 19, color: tokens.textMuted),
-          const SizedBox(width: 12),
+          Icon(icon, size: 18, color: tokens.textMuted),
+          const SizedBox(width: 10),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -534,17 +514,16 @@ class _ErgonomicToggleTile extends StatelessWidget {
                   title,
                   softWrap: true,
                   style: TextStyle(
-                    fontSize: 13,
+                    fontSize: 12.5,
                     fontWeight: FontWeight.w600,
                     color: tokens.textPrimary,
                   ),
                 ),
-                const SizedBox(height: 2),
                 Text(
                   subtitle,
                   softWrap: true,
                   style: TextStyle(
-                    fontSize: 11.5,
+                    fontSize: 11,
                     color: tokens.textMuted,
                   ),
                 ),

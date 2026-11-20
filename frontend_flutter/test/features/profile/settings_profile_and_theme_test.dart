@@ -473,6 +473,17 @@ void main() {
         expect(find.text('Supervisor-Managed Password Policy'), findsOneWidget);
         expect(find.text('Update Password'), findsNothing);
         expect(find.text('Two-Factor Authentication: Not Enrolled'), findsOneWidget);
+        expect(find.text('OS: Light'), findsOneWidget);
+
+        // Mobile segmented section filter tabs switch focused view cleanly.
+        await tester.tap(find.text('Theme'));
+        await tester.pumpAndSettle();
+        expect(find.text('Appearance & Theme'), findsOneWidget);
+        expect(find.text('Profile & Contact'), findsNothing);
+
+        await tester.tap(find.text('All'));
+        await tester.pumpAndSettle();
+        expect(find.text('Profile & Contact'), findsOneWidget);
 
         // Live Theme Switch: Light Slate -> Dark Vault & Accent -> Sapphire Treasury.
         await tester.ensureVisible(find.text('Dark Vault'));
