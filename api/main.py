@@ -239,8 +239,14 @@ async def global_exception_handler(request: Request, exc: Exception):
     except Exception:
         pass
     err_dict = translate_error_to_icare_response(exc)
+    if isinstance(exc, (SystemError, MemoryError)):
+        resp_status = status.HTTP_500_INTERNAL_SERVER_ERROR
+    elif err_dict.get("error_code") == "DB_NETWORK_TIMEOUT":
+        resp_status = status.HTTP_503_SERVICE_UNAVAILABLE
+    else:
+        resp_status = status.HTTP_400_BAD_REQUEST
     return JSONResponse(
-        status_code=status.HTTP_400_BAD_REQUEST if not isinstance(exc, (SystemError, MemoryError)) else status.HTTP_500_INTERNAL_SERVER_ERROR,
+        status_code=resp_status,
         content=err_dict
     )
 

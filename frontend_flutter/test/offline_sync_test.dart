@@ -841,5 +841,246 @@ void main() {
       expect(mEnd['today_collected'], isFalse);
       expect(mEnd['offline_queued'], isFalse);
     });
+
+    test('syncOutbox unmasks message on HTTP 400 without detail, quarantines visibly, and retries cleanly', () async {
+      dbService.setSessionScope(userId: 'co-q1', branchId: 'br-test');
+      final qNotifier = QuarantinedOutboxNotifier(dbService);
+      final queued = await syncManager.queueOfflineBatch(
+        groupName: 'Favour',
+        collectionDate: '2026-11-23',
+        payload: {
+          'group_name': 'Favour',
+          'date': '2026-11-23',
+          'collections': [
+            {'client_id': 'c-f1', 'client_name': 'Favour Member', 'loan_repayment_amount': 2000.0},
+          ],
+        },
+      );
+      final outboxId = queued['outbox_id'] as int;
+
+      bool shouldPass = false;
+      final retryAdapter = _SequencedResponseAdapter((options) async {
+        if (options.path.contains('/api/v1/co/collections/batch-submit')) {
+          if (!shouldPass) {
+            return ResponseBody.fromBytes(
+              Uint8List.fromList(jsonEncode({
+                'error_code': 'VALIDATION_ERROR',
+                'title': 'Invalid Input Data',
+                'message': 'Group ID mismatch for solidarity branch.',
+              }).codeUnits),
+              400,
+              headers: {Headers.contentTypeHeader: [Headers.jsonContentType]},
+            );
+          }
+          return ResponseBody.fromBytes(
+            Uint8List.fromList(jsonEncode({
+              'success': true,
+              'receipt': {'batch_id': 'BATCH-OK-1'},
+            }).codeUnits),
+            200,
+            headers: {Headers.contentTypeHeader: [Headers.jsonContentType]},
+          );
+        }
+        return ResponseBody.fromBytes(
+          Uint8List.fromList(jsonEncode({'group_name': 'Favour', 'members': []}).codeUnits),
+          200,
+          headers: {Headers.contentTypeHeader: [Headers.jsonContentType]},
+        );
+      });
+
+      final retrySyncMgr = OfflineSyncManager(
+        dbService,
+        CoApiService(ApiClient(offlineDb: dbService, adapter: retryAdapter)),
+        notifier,
+        quarantinedNotifier: qNotifier,
+      );
+
+      final failRes = await retrySyncMgr.syncOutbox();
+      expect(failRes.success, isFalse);
+      expect(failRes.message, contains('Group ID mismatch for solidarity branch.'));
+      expect(failRes.message, isNot(contains('RequestOptions')));
+      expect(failRes.message, isNot(contains('validateStatus')));
+      expect(await dbService.getPendingOutboxCount(), 0);
+      expect(await dbService.getQuarantinedOutboxCount(), 1);
+      final qList = await dbService.getQuarantinedOutboxBatches();
+      expect(qList.first['error_message'], 'Group ID mismatch for solidarity branch.');
+
+      shouldPass = true;
+      final retryRes = await retrySyncMgr.retryQuarantinedBatch(outboxId, syncNow: true);
+      expect(retryRes?.success, isTrue);
+      expect(retryRes?.syncedCount, 1);
+      expect(await dbService.getQuarantinedOutboxCount(), 0);
+      expect(await dbService.getPendingOutboxCount(), 0);
+    });
+
+    test('syncOutbox treats DB_NETWORK_TIMEOUT on HTTP 400 as transient retryable failure', () async {
+      dbService.setSessionScope(userId: 'co-t1', branchId: 'br-test');
+      await syncManager.queueOfflineBatch(
+        groupName: 'Peace',
+        collectionDate: '2026-11-23',
+        payload: {
+          'group_name': 'Peace',
+          'date': '2026-11-23',
+          'collections': [
+            {'client_id': 'c-p1', 'loan_repayment_amount': 1000.0},
+          ],
+        },
+      );
+
+      final adapter = _MockResponseAdapter(
+        statusCode: 400,
+        responseData: {
+          'error_code': 'DB_NETWORK_TIMEOUT',
+          'message': 'Temporary database timeout during replay.',
+        },
+      );
+      final transientSync = OfflineSyncManager(
+        dbService,
+        CoApiService(ApiClient(offlineDb: dbService, adapter: adapter)),
+        notifier,
+      );
+      final res = await transientSync.syncOutbox();
+      expect(res.success, isFalse);
+      expect(res.message, contains('Temporary database timeout during replay.'));
+      expect(await dbService.getPendingOutboxCount(), 1);
+      expect(await dbService.getQuarantinedOutboxCount(), 0);
+    });
+
+    test('queueOfflineWithdrawalRequest enforces auto_execute=false, reserves cached balance, and syncs/rolls back cleanly', () async {
+      dbService.setSessionScope(userId: 'co-w1', branchId: 'br-test');
+      await dbService.cacheApiResponse('/api/v1/co/withdrawals/individual-options', {
+        'groups': ['All Groups', 'Favour'],
+        'all_groups': [],
+        'clients': [
+          {
+            'client_id': 'c-ind-1',
+            'client_code': 'CL-001',
+            'name': 'Bisi Ade',
+            'group_name': 'Favour',
+            'savings_balance': 15000.0,
+            'eligible_loans': [],
+          },
+        ],
+      });
+
+      final qNotifier = QuarantinedOutboxNotifier(dbService);
+      final capturedPayloads = <Map<String, dynamic>>[];
+      var rejectFirst = true;
+
+      final wrClient = ApiClient(
+        offlineDb: dbService,
+        adapter: _SequencedResponseAdapter((options) async {
+          if (options.path.contains('/api/v1/co/withdrawals/request')) {
+            final body = jsonDecode(options.data is String ? options.data : jsonEncode(options.data)) as Map<String, dynamic>;
+            capturedPayloads.add(body);
+            if (rejectFirst) {
+              return ResponseBody.fromBytes(
+                Uint8List.fromList(jsonEncode({'detail': 'Insufficient live balance.'}).codeUnits),
+                400,
+                headers: {Headers.contentTypeHeader: [Headers.jsonContentType]},
+              );
+            }
+            return ResponseBody.fromBytes(
+              Uint8List.fromList(jsonEncode({
+                'success': true,
+                'request_id': 'wr-1',
+                'reference': 'REF-WTH-001',
+                'status': 'PENDING',
+                'message': 'Queued',
+              }).codeUnits),
+              200,
+              headers: {Headers.contentTypeHeader: [Headers.jsonContentType]},
+            );
+          }
+          // Isolate rollback verification cleanly from post-sync background GET refresh
+          throw DioException.connectionError(
+            requestOptions: options,
+            reason: 'Skip background pre-cache during isolated rollback test',
+          );
+        }),
+      );
+
+      final wrSyncMgr = OfflineSyncManager(
+        dbService,
+        CoApiService(wrClient),
+        notifier,
+        quarantinedNotifier: qNotifier,
+      );
+
+      final queued = await wrSyncMgr.queueOfflineWithdrawalRequest(
+        displayLabel: 'Bisi Ade',
+        operationalDate: '2026-11-23',
+        payload: {
+          'savings_type': 'Individual',
+          'operation_type': 'Cash Withdrawal',
+          'client_id': 'c-ind-1',
+          'client_name': 'Bisi Ade',
+          'amount': 6000.0,
+          'operational_date': '2026-11-23',
+          'auto_execute': true,
+        },
+      );
+
+      expect(queued['offline_queued'], isTrue);
+      final wrId = queued['outbox_id'] as int;
+      final cachedDuringQueue = await dbService.getCachedApiResponse('/api/v1/co/withdrawals/individual-options') as Map<String, dynamic>;
+      expect(((cachedDuringQueue['clients'] as List).first as Map)['savings_balance'], 9000.0);
+
+      final syncFail = await wrSyncMgr.syncOutbox();
+      expect(syncFail.success, isFalse);
+      expect(capturedPayloads.first['auto_execute'], isFalse);
+      final cachedAfterRollback = await dbService.getCachedApiResponse('/api/v1/co/withdrawals/individual-options') as Map<String, dynamic>;
+      expect(((cachedAfterRollback['clients'] as List).first as Map)['savings_balance'], 15000.0);
+      expect(await dbService.getQuarantinedOutboxCount(), 1);
+
+      rejectFirst = false;
+      final retryOk = await wrSyncMgr.retryQuarantinedBatch(wrId, syncNow: true);
+      expect(retryOk?.success, isTrue);
+      expect(retryOk?.syncedCount, 1);
+      expect(capturedPayloads.last['idempotency_key'], capturedPayloads.first['idempotency_key']);
+      expect(capturedPayloads.last['auto_execute'], isFalse);
+    });
+
+    test('preCacheWithdrawalWorkspace warms business date and withdrawal options for offline reads', () async {
+      final connectivity = ConnectivityService();
+      dbService.setSessionScope(userId: 'co-pre1', branchId: 'br-test');
+      final adapter = _SequencedResponseAdapter((options) async {
+        if (options.path.contains('/origination/business-date')) {
+          return ResponseBody.fromBytes(
+            Uint8List.fromList(jsonEncode({'business_date': '2026-11-23'}).codeUnits),
+            200,
+            headers: {Headers.contentTypeHeader: [Headers.jsonContentType]},
+          );
+        }
+        if (options.path.contains('/withdrawals/individual-options')) {
+          return ResponseBody.fromBytes(
+            Uint8List.fromList(jsonEncode({'groups': ['All Groups'], 'clients': [{'client_id': 'c1', 'name': 'Ada'}], 'all_groups': []}).codeUnits),
+            200,
+            headers: {Headers.contentTypeHeader: [Headers.jsonContentType]},
+          );
+        }
+        return ResponseBody.fromBytes(
+          Uint8List.fromList(jsonEncode({'groups': [], 'records': [], 'misc_balance': 0.0, 'kpis': {}, 'all_records': []}).codeUnits),
+          200,
+          headers: {Headers.contentTypeHeader: [Headers.jsonContentType]},
+        );
+      });
+      final client = ApiClient(
+        connectivityService: connectivity,
+        offlineDb: dbService,
+        adapter: adapter,
+      );
+      final preApi = CoApiService(client);
+      final preSyncMgr = OfflineSyncManager(dbService, preApi, notifier);
+
+      await preSyncMgr.preCacheWithdrawalWorkspace();
+      connectivity.reportOffline();
+
+      final biz = await preApi.getOriginationBusinessDate();
+      final ind = await preApi.getIndividualWithdrawalOptions();
+      expect(biz['business_date'], '2026-11-23');
+      expect((ind['clients'] as List).length, 1);
+      connectivity.dispose();
+    });
   });
 }

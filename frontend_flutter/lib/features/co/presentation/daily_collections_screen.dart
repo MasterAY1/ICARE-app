@@ -164,6 +164,7 @@ final collectionSheetFutureProvider = FutureProvider.autoDispose<Map<String, dyn
     } else {
       syncMgr.preCacheSingleClients().ignore();
     }
+    syncMgr.preCacheWithdrawalWorkspace(dateStr: effectiveDateStr).ignore();
     return sheet;
   } catch (e) {
     final offlineSheet = await resolveOfflineSheet();

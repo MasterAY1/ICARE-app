@@ -16,6 +16,15 @@ final pendingOutboxCountProvider = StateNotifierProvider<PendingOutboxNotifier, 
   return notifier;
 });
 
+final quarantinedOutboxCountProvider = StateNotifierProvider<QuarantinedOutboxNotifier, int>((ref) {
+  final dbService = ref.watch(offlineDatabaseServiceProvider);
+  final notifier = QuarantinedOutboxNotifier(dbService);
+  ref.listen<AuthState>(authControllerProvider, (_, __) {
+    notifier.refresh();
+  });
+  return notifier;
+});
+
 class PendingOutboxNotifier extends StateNotifier<int> {
   final OfflineDatabaseService _db;
   PendingOutboxNotifier(this._db) : super(0) {
@@ -32,11 +41,33 @@ class PendingOutboxNotifier extends StateNotifier<int> {
   }
 }
 
+class QuarantinedOutboxNotifier extends StateNotifier<int> {
+  final OfflineDatabaseService _db;
+  QuarantinedOutboxNotifier(this._db) : super(0) {
+    refresh();
+  }
+
+  Future<void> refresh() async {
+    try {
+      final count = await _db.getQuarantinedOutboxCount();
+      state = count;
+    } catch (_) {
+      // In case table not yet ready
+    }
+  }
+}
+
 final offlineSyncManagerProvider = Provider<OfflineSyncManager>((ref) {
   final dbService = ref.watch(offlineDatabaseServiceProvider);
   final coApi = ref.watch(coApiServiceProvider);
   final notifier = ref.watch(pendingOutboxCountProvider.notifier);
-  return OfflineSyncManager(dbService, coApi, notifier);
+  final quarantinedNotifier = ref.watch(quarantinedOutboxCountProvider.notifier);
+  return OfflineSyncManager(
+    dbService,
+    coApi,
+    notifier,
+    quarantinedNotifier: quarantinedNotifier,
+  );
 });
 
 /// High-level manager orchestrating synchronization between local SQLite storage
@@ -45,11 +76,22 @@ class OfflineSyncManager {
   final OfflineDatabaseService _db;
   final CoApiService _api;
   final PendingOutboxNotifier _outboxNotifier;
+  final QuarantinedOutboxNotifier? _quarantinedNotifier;
 
   bool _isSyncing = false;
   bool get isSyncing => _isSyncing;
 
-  OfflineSyncManager(this._db, this._api, this._outboxNotifier);
+  OfflineSyncManager(
+    this._db,
+    this._api,
+    this._outboxNotifier, {
+    QuarantinedOutboxNotifier? quarantinedNotifier,
+  }) : _quarantinedNotifier = quarantinedNotifier;
+
+  Future<void> _refreshCounters() async {
+    await _outboxNotifier.refresh();
+    await _quarantinedNotifier?.refresh();
+  }
 
   /// Generates a globally unique client transaction key for idempotent execution.
   String generateIdempotencyKey(String groupName) {
@@ -114,6 +156,44 @@ class OfflineSyncManager {
     }
   }
 
+  /// Pre-caches withdrawal read snapshots and branch business date so Withdrawal Operations works read-only offline.
+  Future<void> preCacheWithdrawalWorkspace({String? dateStr}) async {
+    Future<void> safeCall(Future<dynamic> Function() fn) async {
+      try {
+        await fn();
+      } catch (_) {
+        // Non-critical background cache warm-up
+      }
+    }
+
+    String? effectiveDate = dateStr?.trim();
+    if (effectiveDate == null || effectiveDate.isEmpty) {
+      try {
+        final biz = await _api.getOriginationBusinessDate();
+        final raw = biz['business_date']?.toString().trim();
+        if (raw != null && raw.length >= 10) {
+          effectiveDate = raw.substring(0, 10);
+        }
+      } catch (_) {}
+    } else {
+      await safeCall(_api.getOriginationBusinessDate);
+    }
+
+    await Future.wait([
+      safeCall(_api.getIndividualWithdrawalOptions),
+      safeCall(_api.getGroupWithdrawalOptions),
+      safeCall(_api.getLapsWithdrawalOptions),
+      safeCall(_api.getMiscWithdrawalBalance),
+      if (effectiveDate != null && effectiveDate.isNotEmpty)
+        safeCall(() => _api.getDailyWithdrawals(
+              date: effectiveDate,
+              showAll: false,
+              category: 'All Types',
+              search: '',
+            )),
+    ]);
+  }
+
   /// Retrieves group sheet from local cache (fallback when offline).
   Future<Map<String, dynamic>?> getOfflineSheet(String groupName, {String? dateStr}) async {
     return await _db.getCachedGroupSheet(groupName, dateStr: dateStr);
@@ -163,7 +243,7 @@ class OfflineSyncManager {
       optimisticMeta: optimisticMeta,
     );
 
-    await _outboxNotifier.refresh();
+    await _refreshCounters();
 
     // Generate local offline receipt conforming to institutional standards
     final collections = (payload['collections'] as List<dynamic>? ?? []);
@@ -234,7 +314,7 @@ class OfflineSyncManager {
       optimisticMeta: optimisticMeta,
     );
 
-    await _outboxNotifier.refresh();
+    await _refreshCounters();
 
     final repAmt = (payload['loan_repayment'] as num?)?.toDouble() ?? 0.0;
     final savAmt = (payload['savings_deposit'] as num?)?.toDouble() ?? 0.0;
@@ -266,19 +346,66 @@ class OfflineSyncManager {
     };
   }
 
+  /// Queues a Credit Officer withdrawal request (`auto_execute: false`) for online review & BM 4-Eyes approval.
+  /// Enforces Option B governance: never queues direct manager executions or cash payouts offline.
+  Future<Map<String, dynamic>> queueOfflineWithdrawalRequest({
+    required String displayLabel,
+    required String operationalDate,
+    required Map<String, dynamic> payload,
+  }) async {
+    final existingKey = payload['idempotency_key']?.toString();
+    final key = (existingKey != null && existingKey.isNotEmpty)
+        ? existingKey
+        : generateIdempotencyKey('WR_$displayLabel');
+
+    final augmentedPayload = Map<String, dynamic>.from(payload);
+    augmentedPayload['idempotency_key'] = key;
+    augmentedPayload['auto_execute'] = false;
+
+    final optimisticMeta = await _db.applyOptimisticWithdrawalReservation(augmentedPayload);
+    final outboxId = await _db.queueWithdrawalRequest(
+      idempotencyKey: key,
+      displayLabel: displayLabel,
+      operationalDate: operationalDate,
+      payload: augmentedPayload,
+      optimisticMeta: optimisticMeta,
+    );
+
+    await _refreshCounters();
+
+    return {
+      'success': true,
+      'offline_queued': true,
+      'outbox_id': outboxId,
+      'idempotency_key': key,
+      'status': 'QUEUED_LOCAL',
+      'message':
+          'Withdrawal request queued offline for Manager approval. Do not disburse cash until synced and approved.',
+    };
+  }
+
   // ==========================================
   // 3. SYNC-UP (FLUSH PENDING OUTBOX TO SERVER)
   // ==========================================
 
   /// Rolls back any un-reverted optimistic local cache changes, discards the outbox batch,
-  /// and refreshes the pending counter.
+  /// and refreshes the outbox counters.
   Future<void> discardOutboxBatch(int id) async {
     await _db.rollbackOptimisticOfflineCollection(id);
     await _db.deleteOutboxBatch(id);
-    await _outboxNotifier.refresh();
+    await _refreshCounters();
   }
 
-  /// Rolls back and clears all failed outbox batches and refreshes the pending counter.
+  /// Re-queues a quarantined batch for manual retry, preserving its idempotency key.
+  /// If currently online, triggers immediate outbox synchronization.
+  Future<SyncResult?> retryQuarantinedBatch(int id, {bool syncNow = true}) async {
+    final requeued = await _db.requeueOutboxBatch(id);
+    await _refreshCounters();
+    if (!requeued || !syncNow) return null;
+    return await syncOutbox();
+  }
+
+  /// Rolls back and clears all failed outbox batches and refreshes the outbox counters.
   Future<int> clearAllFailedBatches() async {
     final pendingAndFailed = await _db.getPendingOutboxBatches();
     for (final item in pendingAndFailed) {
@@ -290,11 +417,106 @@ class OfflineSyncManager {
       }
     }
     final count = await _db.clearFailedOutboxBatches();
-    await _outboxNotifier.refresh();
+    await _refreshCounters();
     return count;
   }
 
-  /// Flushes all queued collection batches sequentially to the cloud backend.
+  /// Rolls back (idempotently) and clears all quarantined outbox batches from the device.
+  Future<int> clearAllQuarantinedBatches() async {
+    final quarantined = await _db.getQuarantinedOutboxBatches();
+    for (final item in quarantined) {
+      final bId = item['id'];
+      if (bId is int) {
+        await _db.rollbackOptimisticOfflineCollection(bId);
+      }
+    }
+    final count = await _db.clearQuarantinedOutboxBatches();
+    await _refreshCounters();
+    return count;
+  }
+
+  static bool _looksLikeDioBoilerplate(String msg) {
+    final lower = msg.toLowerCase();
+    return lower.contains('dioexception') ||
+        lower.contains('requestoptions') ||
+        lower.contains('status code of') ||
+        lower.contains('developer.mozilla.org') ||
+        lower.contains('validatestatus');
+  }
+
+  static Map<String, dynamic>? _parseErrorMap(dynamic raw) {
+    if (raw is Map) {
+      return Map<String, dynamic>.from(raw);
+    }
+    if (raw is String && raw.trim().startsWith('{')) {
+      try {
+        final decoded = jsonDecode(raw);
+        if (decoded is Map) {
+          return Map<String, dynamic>.from(decoded);
+        }
+      } catch (_) {}
+    }
+    return null;
+  }
+
+  static ({String message, bool isTransient}) _extractSyncError(dynamic error) {
+    if (error is! DioException) {
+      return (message: error.toString(), isTransient: true);
+    }
+
+    final statusCode = error.response?.statusCode;
+    final dataMap = _parseErrorMap(error.response?.data);
+    final errorCode = dataMap?['error_code']?.toString().trim() ?? '';
+    final detailStr = dataMap?['detail']?.toString().trim();
+    final msgStr = dataMap?['message']?.toString().trim();
+    final titleStr = dataMap?['title']?.toString().trim();
+    final serverText = (detailStr != null && detailStr.isNotEmpty)
+        ? detailStr
+        : ((msgStr != null && msgStr.isNotEmpty)
+            ? msgStr
+            : ((titleStr != null && titleStr.isNotEmpty) ? titleStr : null));
+
+    if (statusCode == 401) {
+      return (message: 'Session expired. Please sign in again to sync.', isTransient: true);
+    }
+    if (error.type == DioExceptionType.connectionTimeout ||
+        error.type == DioExceptionType.sendTimeout ||
+        error.type == DioExceptionType.receiveTimeout ||
+        error.type == DioExceptionType.connectionError) {
+      return (message: 'Network connection failed (${error.type.name}).', isTransient: true);
+    }
+
+    final isTransientError = errorCode == 'DB_NETWORK_TIMEOUT' ||
+        statusCode == 408 ||
+        statusCode == 429 ||
+        statusCode == null ||
+        statusCode >= 500;
+
+    if (serverText != null && !_looksLikeDioBoilerplate(serverText)) {
+      return (message: serverText, isTransient: isTransientError);
+    }
+
+    final rawMsg = error.message?.trim();
+    if (rawMsg != null && rawMsg.isNotEmpty && !_looksLikeDioBoilerplate(rawMsg)) {
+      return (
+        message: isTransientError ? 'Server error ($statusCode): $rawMsg' : 'Rejected ($statusCode): $rawMsg',
+        isTransient: isTransientError,
+      );
+    }
+
+    if (isTransientError) {
+      return (
+        message: 'Temporary server delay (${statusCode ?? error.type.name}). Your transaction remains safely queued.',
+        isTransient: true,
+      );
+    }
+    return (
+      message: 'Rejected ($statusCode): Validation failed on the server.',
+      isTransient: false,
+    );
+  }
+
+  /// Flushes all queued collection & withdrawal request batches sequentially to the cloud backend.
   /// Ensures strict double-entry ledger atomicity via atomic_execute_operations.
   Future<SyncResult> syncOutbox() async {
     if (_isSyncing) {
@@ -308,6 +530,7 @@ class OfflineSyncManager {
     final Set<String> touchedGroups = {};
     final Map<String, String?> touchedGroupDates = {};
     var touchedSingleClients = false;
+    var touchedWithdrawals = false;
 
     try {
       final pendingBatches = await _db.getPendingOutboxBatches();
@@ -329,7 +552,11 @@ class OfflineSyncManager {
 
         try {
           String serverBatchId;
-          if (opType == 'SINGLE_COLLECTION') {
+          if (opType == 'WITHDRAWAL_REQUEST') {
+            final safePayload = Map<String, dynamic>.from(payload)..['auto_execute'] = false;
+            final res = await _api.submitWithdrawalRequest(safePayload);
+            serverBatchId = res['reference']?.toString() ?? res['request_id']?.toString() ?? 'SYNCED-$id';
+          } else if (opType == 'SINGLE_COLLECTION') {
             final res = await _api.submitSingleCollection(payload);
             final receipt = res['receipt'] as Map<String, dynamic>?;
             serverBatchId = receipt?['batch_id']?.toString() ?? res['batch_id']?.toString() ?? 'SYNCED-$id';
@@ -341,55 +568,38 @@ class OfflineSyncManager {
 
           await _db.markOutboxBatchSynced(id, serverBatchId);
           await _db.clearOptimisticFlagOnSyncedBatch(id);
-          if (opType == 'SINGLE_COLLECTION') {
-            touchedSingleClients = true;
-          }
-          if (targetGroup.isNotEmpty && targetGroup != 'Ungrouped') {
-            touchedGroups.add(targetGroup);
-            touchedGroupDates[targetGroup] = targetDate;
-          }
-          syncedCount++;
-        } catch (e) {
-          failedCount++;
-          String err;
-          bool isTransient = true;
-          if (e is DioException) {
-            final statusCode = e.response?.statusCode;
-            if (statusCode == 401) {
-              err = 'Session expired. Please log in again to sync.';
-              isTransient = true;
-            } else if (e.type == DioExceptionType.connectionTimeout ||
-                e.type == DioExceptionType.sendTimeout ||
-                e.type == DioExceptionType.receiveTimeout ||
-                e.type == DioExceptionType.connectionError) {
-              err = 'Network connection failed (${e.type.name}).';
-              isTransient = true;
-            } else if (statusCode != null && statusCode >= 400 && statusCode < 500) {
-              isTransient = false;
-              if (e.response?.data is Map && (e.response!.data as Map).containsKey('detail')) {
-                err = (e.response!.data as Map)['detail'].toString();
-              } else {
-                err = 'Rejected ($statusCode): ${e.message ?? 'Validation error'}';
-              }
-            } else if (e.response?.data is Map && (e.response!.data as Map).containsKey('detail')) {
-              err = (e.response!.data as Map)['detail'].toString();
-            } else {
-              err = 'Server error (${statusCode ?? e.type.name}): ${e.message ?? 'Unknown'}';
-            }
+          if (opType == 'WITHDRAWAL_REQUEST') {
+            touchedWithdrawals = true;
           } else {
-            err = e.toString();
-          }
-
-          errorMessages.add('Batch #$id (${item['group_name']}): $err');
-          await _db.markOutboxBatchFailed(id, err, isPermanent: !isTransient);
-          if (!isTransient) {
-            await _db.rollbackOptimisticOfflineCollection(id);
             if (opType == 'SINGLE_COLLECTION') {
               touchedSingleClients = true;
             }
             if (targetGroup.isNotEmpty && targetGroup != 'Ungrouped') {
               touchedGroups.add(targetGroup);
               touchedGroupDates[targetGroup] = targetDate;
+            }
+          }
+          syncedCount++;
+        } catch (e) {
+          failedCount++;
+          final extracted = _extractSyncError(e);
+          final err = extracted.message;
+          final isTransient = extracted.isTransient;
+
+          errorMessages.add('Batch #$id (${item['group_name']}): $err');
+          await _db.markOutboxBatchFailed(id, err, isPermanent: !isTransient);
+          if (!isTransient) {
+            await _db.rollbackOptimisticOfflineCollection(id);
+            if (opType == 'WITHDRAWAL_REQUEST') {
+              touchedWithdrawals = true;
+            } else {
+              if (opType == 'SINGLE_COLLECTION') {
+                touchedSingleClients = true;
+              }
+              if (targetGroup.isNotEmpty && targetGroup != 'Ungrouped') {
+                touchedGroups.add(targetGroup);
+                touchedGroupDates[targetGroup] = targetDate;
+              }
             }
           }
           // Halt only on transient network, auth expiry, or 5xx outages; skip permanent 4xx poison items
@@ -405,11 +615,13 @@ class OfflineSyncManager {
       final remainingActive = await _db.getPendingOutboxBatches();
       final remainingGroups = <String>{};
       var hasRemainingSingle = false;
+      var hasRemainingWithdrawals = false;
       for (final rem in remainingActive) {
         try {
           final remPayload = jsonDecode(rem['payload_json'].toString()) as Map<String, dynamic>;
           final remOp = (rem['operation_type'] as String?) ?? 'BATCH_COLLECTION';
           if (remOp == 'SINGLE_COLLECTION') hasRemainingSingle = true;
+          if (remOp == 'WITHDRAWAL_REQUEST') hasRemainingWithdrawals = true;
           final remGrp = (remPayload['group_name'] ?? rem['group_name'])?.toString().trim() ?? '';
           if (remGrp.isNotEmpty && remGrp != 'Ungrouped') remainingGroups.add(remGrp);
         } catch (_) {}
@@ -422,8 +634,11 @@ class OfflineSyncManager {
           await _tryPreCacheGroup(grp, touchedGroupDates[grp]);
         }
       }
+      if (touchedWithdrawals && !hasRemainingWithdrawals) {
+        await preCacheWithdrawalWorkspace();
+      }
 
-      await _outboxNotifier.refresh();
+      await _refreshCounters();
 
       if (failedCount > 0) {
         final summaryMsg = errorMessages.isNotEmpty
@@ -446,7 +661,7 @@ class OfflineSyncManager {
       );
     } finally {
       _isSyncing = false;
-      await _outboxNotifier.refresh();
+      await _refreshCounters();
     }
   }
 }

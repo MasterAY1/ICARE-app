@@ -200,23 +200,40 @@ def save_repayment(
 
                 if not is_valid_group_uuid(g_id_val):
                     try:
+                        grp_branch_uuid = None
+                        try:
+                            grp_branch_uuid = FinancialPostingEngine._resolve_branch_id(uow, branch)
+                        except Exception:
+                            grp_branch_uuid = None
                         m = re.match(r"^(.+?)\s*\(\s*#(\d+)(?:\s*-\s*[^)]+)?\s*\)$", group_name)
                         if m:
                             base_gname = m.group(1).strip()
                             g_num = m.group(2).strip()
-                            res_g = uow.client.table("groups").select("group_id").eq("group_number", g_num).ilike("name", base_gname).execute()
+                            q_g = uow.client.table("groups").select("group_id").eq("group_number", g_num).ilike("name", base_gname)
+                            if grp_branch_uuid:
+                                q_g = q_g.eq("branch_id", grp_branch_uuid)
+                            res_g = q_g.execute()
                             if res_g.data:
                                 g_id_val = res_g.data[0]["group_id"]
                             if not g_id_val:
-                                res_num = uow.client.table("groups").select("group_id").eq("group_number", g_num).execute()
+                                q_num = uow.client.table("groups").select("group_id").eq("group_number", g_num)
+                                if grp_branch_uuid:
+                                    q_num = q_num.eq("branch_id", grp_branch_uuid)
+                                res_num = q_num.execute()
                                 if res_num.data:
                                     g_id_val = res_num.data[0]["group_id"]
                         if not is_valid_group_uuid(g_id_val):
-                            res_name = uow.client.table("groups").select("group_id").eq("name", group_name).execute()
+                            q_name = uow.client.table("groups").select("group_id").eq("name", group_name)
+                            if grp_branch_uuid:
+                                q_name = q_name.eq("branch_id", grp_branch_uuid)
+                            res_name = q_name.execute()
                             if res_name.data:
                                 g_id_val = res_name.data[0]["group_id"]
                             else:
-                                res_ci = uow.client.table("groups").select("group_id").ilike("name", group_name).execute()
+                                q_ci = uow.client.table("groups").select("group_id").ilike("name", group_name)
+                                if grp_branch_uuid:
+                                    q_ci = q_ci.eq("branch_id", grp_branch_uuid)
+                                res_ci = q_ci.execute()
                                 if res_ci.data:
                                     g_id_val = res_ci.data[0]["group_id"]
                     except Exception as ex_resolve:

@@ -58,6 +58,7 @@ final coDashboardProvider = FutureProvider.autoDispose<CoDashboardData>((ref) as
     } else {
       syncMgr.preCacheSingleClients().ignore();
     }
+    syncMgr.preCacheWithdrawalWorkspace(dateStr: todayStr).ignore();
     return data;
   } catch (err) {
     // 3. Fallback to cache on network drop / DioException

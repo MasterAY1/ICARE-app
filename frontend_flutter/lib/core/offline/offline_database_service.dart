@@ -1000,6 +1000,19 @@ class OfflineDatabaseService {
     }
 
     final opType = targetEntry['operation_type']?.toString() ?? 'BATCH_COLLECTION';
+    final targetIdemKey = targetEntry['idempotency_key']?.toString() ?? targetKey;
+    if (opType == 'WITHDRAWAL_REQUEST') {
+      await _adjustCachedWithdrawalBalance(payload, deltaMultiplier: 1.0);
+      await _markOutboxMetaRolledBack(
+        id: id,
+        targetIdemKey: targetIdemKey,
+        scope: scope,
+        meta: meta,
+        prefsList: prefsList,
+      );
+      return true;
+    }
+
     final List<Map<String, dynamic>> collections;
     final String targetGroupName;
     if (opType == 'SINGLE_COLLECTION') {
@@ -1016,7 +1029,6 @@ class OfflineDatabaseService {
     final grpSavDeposit = ((payload['group_savings_deposit'] ?? meta['group_savings_deposit'] ?? 0) as num).toDouble();
     final collectionDate = (targetEntry['collection_date'] ?? payload['date'] ?? meta['collection_date'])?.toString();
 
-    final targetIdemKey = targetEntry['idempotency_key']?.toString();
     final Set<String> remainingPendingKeys = {};
     final Set<String> remainingNotPaidKeys = {};
     for (final other in allEntries) {
@@ -1109,6 +1121,24 @@ class OfflineDatabaseService {
       groupSavingsDelta: -grpSavDeposit,
     );
 
+    await _markOutboxMetaRolledBack(
+      id: id,
+      targetIdemKey: targetIdemKey,
+      scope: scope,
+      meta: meta,
+      prefsList: prefsList,
+    );
+
+    return true;
+  }
+
+  Future<void> _markOutboxMetaRolledBack({
+    required int id,
+    required String? targetIdemKey,
+    required String scope,
+    required Map<String, dynamic> meta,
+    required List<Map<String, dynamic>> prefsList,
+  }) async {
     meta['rolled_back'] = true;
     final metaJson = jsonEncode(meta);
     bool matches(Map<String, dynamic> item) =>
@@ -1139,8 +1169,6 @@ class OfflineDatabaseService {
         );
       } catch (_) {}
     }
-
-    return true;
   }
 
   /// Clears the temporary `offline_queued` badge on cached sheets after a batch syncs,
@@ -1167,6 +1195,7 @@ class OfflineDatabaseService {
     }
 
     final opType = targetEntry['operation_type']?.toString() ?? 'BATCH_COLLECTION';
+    if (opType == 'WITHDRAWAL_REQUEST') return;
     final List<Map<String, dynamic>> collections = opType == 'SINGLE_COLLECTION'
         ? [payload]
         : ((payload['collections'] as List?)?.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList() ?? []);
@@ -1222,10 +1251,102 @@ class OfflineDatabaseService {
     );
   }
 
-  /// Queues an ad-hoc single client collection into the local outbox when offline.
-  Future<int> queueSingleCollection({
+  /// Adjusts cached withdrawal option balance (`deltaMultiplier` = -1.0 to reserve, +1.0 to restore).
+  Future<Map<String, dynamic>> applyOptimisticWithdrawalReservation(
+    Map<String, dynamic> payload,
+  ) async {
+    await _adjustCachedWithdrawalBalance(payload, deltaMultiplier: -1.0);
+    return {
+      'savings_type': payload['savings_type'],
+      'client_id': payload['client_id'],
+      'group_id': payload['group_id'],
+      'amount': (payload['amount'] as num?)?.toDouble() ?? 0.0,
+      'rolled_back': false,
+    };
+  }
+
+  Future<void> _adjustCachedWithdrawalBalance(
+    Map<String, dynamic> payload, {
+    required double deltaMultiplier,
+  }) async {
+    final amt = (payload['amount'] as num?)?.toDouble() ?? 0.0;
+    if (amt <= 0) return;
+    final stype = (payload['savings_type']?.toString() ?? '').trim();
+    final delta = amt * deltaMultiplier;
+
+    if (stype == 'Individual') {
+      final cid = (payload['client_id']?.toString() ?? '').trim();
+      if (cid.isEmpty) return;
+      final raw = await getCachedApiResponse('/api/v1/co/withdrawals/individual-options');
+      if (raw is Map) {
+        final copy = Map<String, dynamic>.from(raw);
+        final clients = (copy['clients'] as List?)?.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+        if (clients != null) {
+          for (final c in clients) {
+            if (c['client_id']?.toString().trim() == cid) {
+              final cur = (c['savings_balance'] as num?)?.toDouble() ?? 0.0;
+              final next = cur + delta;
+              c['savings_balance'] = next < 0.0 ? 0.0 : next;
+            }
+          }
+          copy['clients'] = clients;
+          await cacheApiResponse('/api/v1/co/withdrawals/individual-options', copy);
+        }
+      }
+    } else if (stype == 'Group') {
+      final gid = (payload['group_id']?.toString() ?? '').trim();
+      if (gid.isEmpty) return;
+      final raw = await getCachedApiResponse('/api/v1/co/withdrawals/group-options');
+      if (raw is Map) {
+        final copy = Map<String, dynamic>.from(raw);
+        final groups = (copy['groups'] as List?)?.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+        if (groups != null) {
+          for (final g in groups) {
+            if (g['group_id']?.toString().trim() == gid) {
+              final cur = (g['savings_balance'] as num?)?.toDouble() ?? 0.0;
+              final next = cur + delta;
+              g['savings_balance'] = next < 0.0 ? 0.0 : next;
+            }
+          }
+          copy['groups'] = groups;
+          await cacheApiResponse('/api/v1/co/withdrawals/group-options', copy);
+        }
+      }
+    } else if (stype == 'Misc') {
+      final raw = await getCachedApiResponse('/api/v1/co/withdrawals/misc-balance');
+      if (raw is Map) {
+        final copy = Map<String, dynamic>.from(raw);
+        final cur = (copy['misc_balance'] as num?)?.toDouble() ?? 0.0;
+        final next = cur + delta;
+        copy['misc_balance'] = next < 0.0 ? 0.0 : next;
+        await cacheApiResponse('/api/v1/co/withdrawals/misc-balance', copy);
+      }
+    } else if (stype == 'LAPS') {
+      final cid = (payload['client_id']?.toString() ?? '').trim();
+      if (cid.isEmpty) return;
+      final raw = await getCachedApiResponse('/api/v1/co/withdrawals/laps-options');
+      if (raw is Map) {
+        final copy = Map<String, dynamic>.from(raw);
+        final records = (copy['records'] as List?)?.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+        if (records != null) {
+          for (final r in records) {
+            if (r['client_id']?.toString().trim() == cid) {
+              final cur = (r['balance'] as num?)?.toDouble() ?? 0.0;
+              final next = cur + delta;
+              r['balance'] = next < 0.0 ? 0.0 : next;
+            }
+          }
+          copy['records'] = records;
+          await cacheApiResponse('/api/v1/co/withdrawals/laps-options', copy);
+        }
+      }
+    }
+  }
+
+  Future<int> _enqueueOutboxItem({
     required String idempotencyKey,
-    required String clientName,
+    required String operationType,
+    required String displayLabel,
     required String collectionDate,
     required Map<String, dynamic> payload,
     Map<String, dynamic>? optimisticMeta,
@@ -1240,8 +1361,8 @@ class OfflineDatabaseService {
       'user_id': _scopeUserId,
       'branch_id': _scopeBranchId,
       'idempotency_key': idempotencyKey,
-      'operation_type': 'SINGLE_COLLECTION',
-      'group_name': clientName,
+      'operation_type': operationType,
+      'group_name': displayLabel,
       'collection_date': collectionDate,
       'payload_json': jsonEncode(payload),
       'status': 'pending',
@@ -1276,8 +1397,8 @@ class OfflineDatabaseService {
           'user_id': _scopeUserId,
           'branch_id': _scopeBranchId,
           'idempotency_key': idempotencyKey,
-          'operation_type': 'SINGLE_COLLECTION',
-          'group_name': clientName,
+          'operation_type': operationType,
+          'group_name': displayLabel,
           'collection_date': collectionDate,
           'payload_json': encPayload,
           'status': 'pending',
@@ -1289,15 +1410,33 @@ class OfflineDatabaseService {
       );
     } catch (_) {
       useMemoryStore = true;
-      return queueSingleCollection(
+      return _enqueueOutboxItem(
         idempotencyKey: idempotencyKey,
-        clientName: clientName,
+        operationType: operationType,
+        displayLabel: displayLabel,
         collectionDate: collectionDate,
         payload: payload,
         optimisticMeta: optimisticMeta,
       );
     }
   }
+
+  /// Queues an ad-hoc single client collection into the local outbox when offline.
+  Future<int> queueSingleCollection({
+    required String idempotencyKey,
+    required String clientName,
+    required String collectionDate,
+    required Map<String, dynamic> payload,
+    Map<String, dynamic>? optimisticMeta,
+  }) =>
+      _enqueueOutboxItem(
+        idempotencyKey: idempotencyKey,
+        operationType: 'SINGLE_COLLECTION',
+        displayLabel: clientName,
+        collectionDate: collectionDate,
+        payload: payload,
+        optimisticMeta: optimisticMeta,
+      );
 
   /// Queues a collection batch into the local outbox when offline.
   Future<int> queueBatchCollection({
@@ -1306,94 +1445,51 @@ class OfflineDatabaseService {
     required String collectionDate,
     required Map<String, dynamic> payload,
     Map<String, dynamic>? optimisticMeta,
-  }) async {
-    final scope = activeScopeKey;
-    final nowIso = DateTime.now().toIso8601String();
-    final int recordId = idempotencyKey.hashCode.abs();
-    final metaJson = optimisticMeta != null ? jsonEncode(optimisticMeta) : null;
-    final entry = <String, dynamic>{
-      'id': recordId,
-      'scope_key': scope,
-      'user_id': _scopeUserId,
-      'branch_id': _scopeBranchId,
-      'idempotency_key': idempotencyKey,
-      'operation_type': 'BATCH_COLLECTION',
-      'group_name': groupName,
-      'collection_date': collectionDate,
-      'payload_json': jsonEncode(payload),
-      'status': 'pending',
-      'retry_count': 0,
-      'created_at': nowIso,
-      'synced_at': null,
-      'error_message': null,
-      if (metaJson != null) 'optimistic_meta_json': metaJson,
-    };
-
-    // Persist to SharedPreferences with deduplication and matching id
-    final list = await _readPrefsOutbox();
-    list.removeWhere((item) => item['idempotency_key'] == idempotencyKey || item['id'] == recordId);
-    list.add(Map<String, dynamic>.from(entry));
-    await _writePrefsOutbox(list);
-
-    if (kIsWeb || useMemoryStore) {
-      _webOutbox.removeWhere((item) => item['idempotency_key'] == idempotencyKey || item['id'] == recordId);
-      _webOutbox.add(entry);
-      return recordId;
-    }
-
-    try {
-      final encPayload = await _encryption.encryptString(jsonEncode(payload));
-      final encMeta = metaJson != null ? await _encryption.encryptString(metaJson) : null;
-      final db = await database;
-      return await db.insert(
-        'offline_outbox',
-        {
-          'id': recordId,
-          'scope_key': scope,
-          'user_id': _scopeUserId,
-          'branch_id': _scopeBranchId,
-          'idempotency_key': idempotencyKey,
-          'operation_type': 'BATCH_COLLECTION',
-          'group_name': groupName,
-          'collection_date': collectionDate,
-          'payload_json': encPayload,
-          'status': 'pending',
-          'retry_count': 0,
-          'created_at': nowIso,
-          if (encMeta != null) 'optimistic_meta_json': encMeta,
-        },
-        conflictAlgorithm: ConflictAlgorithm.replace,
-      );
-    } catch (_) {
-      useMemoryStore = true;
-      return queueBatchCollection(
+  }) =>
+      _enqueueOutboxItem(
         idempotencyKey: idempotencyKey,
-        groupName: groupName,
+        operationType: 'BATCH_COLLECTION',
+        displayLabel: groupName,
         collectionDate: collectionDate,
         payload: payload,
         optimisticMeta: optimisticMeta,
       );
-    }
-  }
 
-  /// Retrieves all pending outbox batches ready for synchronization (strictly scoped by user & branch).
-  Future<List<Map<String, dynamic>>> getPendingOutboxBatches() async {
+  /// Queues an unapproved Credit Officer withdrawal request into the local outbox when offline.
+  Future<int> queueWithdrawalRequest({
+    required String idempotencyKey,
+    required String displayLabel,
+    required String operationalDate,
+    required Map<String, dynamic> payload,
+    Map<String, dynamic>? optimisticMeta,
+  }) =>
+      _enqueueOutboxItem(
+        idempotencyKey: idempotencyKey,
+        operationType: 'WITHDRAWAL_REQUEST',
+        displayLabel: displayLabel,
+        collectionDate: operationalDate,
+        payload: payload,
+        optimisticMeta: optimisticMeta,
+      );
+
+  Future<List<Map<String, dynamic>>> _queryOutboxByStatuses(Set<String> statuses) async {
     final scope = activeScopeKey;
     if (kIsWeb || useMemoryStore) {
       await _hydrateWebOutboxFromPrefs();
       return _webOutbox
           .where((item) =>
               (item['scope_key']?.toString() ?? scope) == scope &&
-              (item['status'] == 'pending' || item['status'] == 'failed'))
+              statuses.contains(item['status']?.toString()))
           .toList();
     }
 
     try {
       final db = await database;
+      final placeholders = List.filled(statuses.length, '?').join(', ');
       final rows = await db.query(
         'offline_outbox',
-        where: "(status = 'pending' OR status = 'failed') AND scope_key = ?",
-        whereArgs: [scope],
+        where: "status IN ($placeholders) AND scope_key = ?",
+        whereArgs: [...statuses, scope],
         orderBy: 'id ASC',
       );
       final out = <Map<String, dynamic>>[];
@@ -1403,27 +1499,27 @@ class OfflineDatabaseService {
       return out;
     } catch (_) {
       useMemoryStore = true;
-      return getPendingOutboxBatches();
+      return _queryOutboxByStatuses(statuses);
     }
   }
 
-  /// Retrieves count of pending transactions awaiting upload for the active user & branch.
-  Future<int> getPendingOutboxCount() async {
+  Future<int> _countOutboxByStatuses(Set<String> statuses) async {
     final scope = activeScopeKey;
     if (kIsWeb || useMemoryStore) {
       await _hydrateWebOutboxFromPrefs();
       return _webOutbox
           .where((item) =>
               (item['scope_key']?.toString() ?? scope) == scope &&
-              (item['status'] == 'pending' || item['status'] == 'failed'))
+              statuses.contains(item['status']?.toString()))
           .length;
     }
 
     try {
       final db = await database;
+      final placeholders = List.filled(statuses.length, '?').join(', ');
       final res = await db.rawQuery(
-        "SELECT COUNT(*) as count FROM offline_outbox WHERE (status = 'pending' OR status = 'failed') AND scope_key = ?",
-        [scope],
+        "SELECT COUNT(*) as count FROM offline_outbox WHERE status IN ($placeholders) AND scope_key = ?",
+        [...statuses, scope],
       );
       if (res.isNotEmpty) {
         return (res.first['count'] as num?)?.toInt() ?? 0;
@@ -1431,9 +1527,23 @@ class OfflineDatabaseService {
       return 0;
     } catch (_) {
       useMemoryStore = true;
-      return getPendingOutboxCount();
+      return _countOutboxByStatuses(statuses);
     }
   }
+
+  /// Retrieves all pending/failed outbox batches ready for synchronization (strictly scoped by user & branch).
+  Future<List<Map<String, dynamic>>> getPendingOutboxBatches() =>
+      _queryOutboxByStatuses({'pending', 'failed'});
+
+  /// Retrieves all quarantined (needs-review) outbox batches rejected by server validation.
+  Future<List<Map<String, dynamic>>> getQuarantinedOutboxBatches() =>
+      _queryOutboxByStatuses({'quarantined'});
+
+  /// Retrieves count of pending/failed transactions awaiting upload for the active user & branch.
+  Future<int> getPendingOutboxCount() => _countOutboxByStatuses({'pending', 'failed'});
+
+  /// Retrieves count of quarantined transactions needing manual review or discard.
+  Future<int> getQuarantinedOutboxCount() => _countOutboxByStatuses({'quarantined'});
 
   String? _resolveIdempotencyKeyForId(int id, List<Map<String, dynamic>> prefsList) {
     for (final item in _webOutbox) {
@@ -1614,19 +1724,61 @@ class OfflineDatabaseService {
     }
   }
 
-  /// Clears all failed outbox batches for the active user & branch from the device.
-  Future<int> clearFailedOutboxBatches() async {
+  /// Re-queues a failed or quarantined outbox batch for manual retry, preserving its idempotency key.
+  Future<bool> requeueOutboxBatch(int id) async {
+    final prefsList = await _readPrefsOutbox();
+    final targetKey = _resolveIdempotencyKeyForId(id, prefsList);
+    bool matches(Map<String, dynamic> item) =>
+        item['id'] == id || (targetKey != null && item['idempotency_key'] == targetKey);
+    var updated = false;
+
+    if (prefsList.isNotEmpty) {
+      for (final item in prefsList) {
+        if (matches(item)) {
+          item['status'] = 'pending';
+          updated = true;
+        }
+      }
+      if (updated) await _writePrefsOutbox(prefsList);
+    }
+
+    if (kIsWeb || useMemoryStore) {
+      for (final item in _webOutbox) {
+        if (matches(item)) {
+          item['status'] = 'pending';
+          updated = true;
+        }
+      }
+      return updated;
+    }
+
+    try {
+      final db = await database;
+      final rowsUpdated = await db.update(
+        'offline_outbox',
+        {'status': 'pending'},
+        where: targetKey != null ? '(id = ? OR idempotency_key = ?) AND scope_key = ?' : 'id = ? AND scope_key = ?',
+        whereArgs: targetKey != null ? [id, targetKey, activeScopeKey] : [id, activeScopeKey],
+      );
+      return rowsUpdated > 0 || updated;
+    } catch (_) {
+      useMemoryStore = true;
+      return requeueOutboxBatch(id);
+    }
+  }
+
+  Future<int> _clearOutboxByStatus(String targetStatus) async {
     int count = 0;
     final prefsList = await _readPrefsOutbox();
     if (prefsList.isNotEmpty) {
-      final kept = prefsList.where((item) => item['status'] != 'failed').toList();
+      final kept = prefsList.where((item) => item['status'] != targetStatus).toList();
       count = prefsList.length - kept.length;
       await _writePrefsOutbox(kept);
     }
 
     if (kIsWeb || useMemoryStore) {
       final before = _webOutbox.length;
-      _webOutbox.removeWhere((item) => item['status'] == 'failed');
+      _webOutbox.removeWhere((item) => item['status'] == targetStatus);
       return count > 0 ? count : (before - _webOutbox.length);
     }
 
@@ -1634,15 +1786,21 @@ class OfflineDatabaseService {
       final db = await database;
       final deleted = await db.delete(
         'offline_outbox',
-        where: "status = 'failed' AND scope_key = ?",
-        whereArgs: [activeScopeKey],
+        where: "status = ? AND scope_key = ?",
+        whereArgs: [targetStatus, activeScopeKey],
       );
       return deleted;
     } catch (_) {
       useMemoryStore = true;
       final before = _webOutbox.length;
-      _webOutbox.removeWhere((item) => item['status'] == 'failed');
+      _webOutbox.removeWhere((item) => item['status'] == targetStatus);
       return count > 0 ? count : (before - _webOutbox.length);
     }
   }
+
+  /// Clears all failed outbox batches for the active user & branch from the device.
+  Future<int> clearFailedOutboxBatches() => _clearOutboxByStatus('failed');
+
+  /// Clears all quarantined (needs-review) outbox batches for the active user & branch.
+  Future<int> clearQuarantinedOutboxBatches() => _clearOutboxByStatus('quarantined');
 }

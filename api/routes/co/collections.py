@@ -1068,7 +1068,26 @@ def submit_batch_collections(
         g_dep = float(payload.group_savings_deposit or 0)
         g_wd = float(payload.group_savings_withdrawal or 0)
         if g_dep > 0 or g_wd > 0:
-            to_insert.append({
+            resolved_grp_id = None
+            try:
+                m_grp = re.match(r"^(.+?)\s*\(\s*#(\d+)(?:\s*-\s*[^)]+)?\s*\)$", payload.group_name)
+                if m_grp:
+                    qg = uow.client.table("groups").select("group_id").eq("group_number", m_grp.group(2).strip()).ilike("name", m_grp.group(1).strip())
+                    if target_branch_id:
+                        qg = qg.eq("branch_id", target_branch_id)
+                    g_rows = qg.limit(1).execute().data or []
+                    if g_rows and isinstance(g_rows[0], dict):
+                        resolved_grp_id = g_rows[0].get("group_id")
+                if not resolved_grp_id:
+                    qg2 = uow.client.table("groups").select("group_id").eq("name", payload.group_name)
+                    if target_branch_id:
+                        qg2 = qg2.eq("branch_id", target_branch_id)
+                    g_rows2 = qg2.limit(1).execute().data or []
+                    if g_rows2 and isinstance(g_rows2[0], dict):
+                        resolved_grp_id = g_rows2[0].get("group_id")
+            except Exception:
+                pass
+            grp_entry = {
                 "batch_id": batch_id,
                 "Date": date_str,
                 "Client ID": f"GROUP-{payload.group_name}",
@@ -1083,7 +1102,10 @@ def submit_batch_collections(
                 "Group Savings Deposit": g_dep,
                 "Group Savings Withdrawal": g_wd,
                 "Loan Repayment Amount": 0
-            })
+            }
+            if resolved_grp_id:
+                grp_entry["group_id"] = resolved_grp_id
+            to_insert.append(grp_entry)
 
         if not to_insert:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="No collection entries provided to save.")

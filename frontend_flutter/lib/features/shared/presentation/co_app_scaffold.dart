@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:animations/animations.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -11,6 +12,7 @@ import '../../../core/offline/offline_database_service.dart';
 import '../../../core/theme/icare_motion.dart';
 import '../../../core/theme/icare_theme_tokens.dart';
 import '../../../core/theme/theme_controller.dart';
+import '../../../core/utils/currency_formatter.dart';
 import '../../profile/presentation/settings_profile_screen.dart';
 import 'widgets/user_avatar_circle.dart';
 import '../../co/presentation/co_dashboard_screen.dart';
@@ -139,21 +141,27 @@ class CoAppScaffold extends ConsumerWidget {
   }
 
   Future<void> _handleSignOut(BuildContext context, WidgetRef ref) async {
-    final pendingCount = await ref.read(offlineDatabaseServiceProvider).getPendingOutboxCount();
+    final offlineDb = ref.read(offlineDatabaseServiceProvider);
+    final pendingCount = await offlineDb.getPendingOutboxCount();
+    final quarantinedCount = await offlineDb.getQuarantinedOutboxCount();
     await ref.read(pendingOutboxCountProvider.notifier).refresh();
+    await ref.read(quarantinedOutboxCountProvider.notifier).refresh();
+    final totalUnsynced = pendingCount + quarantinedCount;
 
-    if (pendingCount > 0 && context.mounted) {
+    if (totalUnsynced > 0 && context.mounted) {
       final isOnline = ref.read(isOnlineProvider);
       final choice = await showIcareDialog<String>(
         context: context,
         barrierDismissible: true,
         builder: (dialogCtx) => AlertDialog(
           title: const Text(
-            'Pending Offline Collections',
+            'Unsynchronized Offline Records',
             style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
           ),
           content: Text(
-            'You have $pendingCount unsynchronized offline transaction(s) queued on this device. Signing out will keep them safely saved for your account, and they will not be posted to the central ledger until you sign back in and sync.',
+            quarantinedCount > 0
+                ? 'You have $pendingCount pending and $quarantinedCount attention-needed offline transaction(s) stored on this device. Signing out will preserve them safely for your account until resolved.'
+                : 'You have $pendingCount unsynchronized offline transaction(s) queued on this device. Signing out will keep them safely saved for your account, and they will not be posted to the central ledger until you sign back in and sync.',
             style: const TextStyle(fontSize: 13, color: Color(0xFF334155), height: 1.4),
           ),
           actions: [
@@ -308,6 +316,12 @@ class CoAppScaffold extends ConsumerWidget {
             ref.invalidate(singleClientOptionsProvider);
             ref.invalidate(collectionsHistoryProvider);
             ref.invalidate(coDashboardProvider);
+            ref.invalidate(individualOptionsProvider);
+            ref.invalidate(groupOptionsProvider);
+            ref.invalidate(lapsOptionsProvider);
+            ref.invalidate(miscBalanceProvider);
+            ref.invalidate(dailyWithdrawalsProvider);
+            ref.invalidate(pendingApprovalsProvider);
             _triggerPageRefresh(ref, activePage, isBm, isAm, isAdmin: isAdmin);
           }
           if (context.mounted) {
@@ -316,7 +330,7 @@ class CoAppScaffold extends ConsumerWidget {
               SnackBar(
                 content: Row(
                   children: [
-                    const Icon(Icons.cloud_done, color: Colors.white, size: 16),
+                    Icon(res.success ? Icons.cloud_done : Icons.warning_amber_rounded, color: Colors.white, size: 16),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
@@ -328,9 +342,16 @@ class CoAppScaffold extends ConsumerWidget {
                     ),
                   ],
                 ),
-                backgroundColor: res.success ? const Color(0xFF065F46) : const Color(0xFFD97706),
+                backgroundColor: res.success ? const Color(0xFF065F46) : const Color(0xFFB45309),
                 behavior: SnackBarBehavior.floating,
-                duration: const Duration(seconds: 4),
+                duration: Duration(seconds: res.success ? 4 : 8),
+                action: res.success
+                    ? null
+                    : SnackBarAction(
+                        label: 'Review',
+                        textColor: Colors.white,
+                        onPressed: () => _showSyncDialog(context, ref),
+                      ),
               ),
             );
           }
@@ -1108,19 +1129,26 @@ class CoAppScaffold extends ConsumerWidget {
     return Consumer(
       builder: (context, ref, child) {
         final pendingCount = ref.watch(pendingOutboxCountProvider);
-        if (pendingCount == 0) return const SizedBox.shrink();
+        final quarantinedCount = ref.watch(quarantinedOutboxCountProvider);
+        final totalCount = pendingCount + quarantinedCount;
+        if (totalCount == 0) return const SizedBox.shrink();
+        final hasAttention = quarantinedCount > 0;
+        final badgeBg = hasAttention ? const Color(0xFFDC2626) : const Color(0xFFD97706);
+        final badgeText = expandedLabel
+            ? (pendingCount > 0 ? 'Sync ($totalCount)' : 'Review ($quarantinedCount)')
+            : '$totalCount';
         return ElevatedButton.icon(
           style: ElevatedButton.styleFrom(
-            backgroundColor: const Color(0xFFD97706),
+            backgroundColor: badgeBg,
             foregroundColor: Colors.white,
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
             minimumSize: const Size(0, 28),
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             elevation: 0,
           ),
-          icon: const Icon(Icons.sync, size: 13, color: Colors.white),
+          icon: Icon(hasAttention ? Icons.warning_amber_rounded : Icons.sync, size: 13, color: Colors.white),
           label: Text(
-            expandedLabel ? 'Sync ($pendingCount)' : '$pendingCount',
+            badgeText,
             style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
           ),
           onPressed: () => _showSyncDialog(context, ref),
@@ -1679,9 +1707,300 @@ class _SyncDialogState extends ConsumerState<_SyncDialog> {
   String? _statusMsg;
   bool _isSuccess = false;
 
+  void _invalidateAfterOutboxChange() {
+    ref.invalidate(collectionSheetFutureProvider);
+    ref.invalidate(singleClientOptionsProvider);
+    ref.invalidate(collectionsHistoryProvider);
+    ref.invalidate(coDashboardProvider);
+    ref.invalidate(individualOptionsProvider);
+    ref.invalidate(groupOptionsProvider);
+    ref.invalidate(lapsOptionsProvider);
+    ref.invalidate(miscBalanceProvider);
+    ref.invalidate(dailyWithdrawalsProvider);
+    ref.invalidate(pendingApprovalsProvider);
+  }
+
+  ({String typeLabel, double totalAmount, String amountDetail}) _summarizePayload(Map<String, dynamic> item) {
+    final opType = item['operation_type']?.toString() ?? 'BATCH_COLLECTION';
+    try {
+      final payload = jsonDecode(item['payload_json']?.toString() ?? '{}') as Map<String, dynamic>;
+      if (opType == 'WITHDRAWAL_REQUEST') {
+        final amt = (payload['amount'] as num?)?.toDouble() ?? 0.0;
+        final sType = payload['savings_type']?.toString() ?? 'Savings';
+        final opName = payload['operation_type']?.toString() ?? 'Request';
+        return (
+          typeLabel: '$sType Withdrawal Request ($opName)',
+          totalAmount: amt,
+          amountDetail: CurrencyFormatter.formatNaira(amt),
+        );
+      }
+      if (opType == 'SINGLE_COLLECTION') {
+        final rep = (payload['loan_repayment'] as num?)?.toDouble() ?? 0.0;
+        final sav = (payload['savings_deposit'] as num?)?.toDouble() ?? 0.0;
+        final grp = (payload['group_savings_deposit'] as num?)?.toDouble() ?? 0.0;
+        final fees = ((payload['app_fee'] as num?)?.toDouble() ?? 0.0) +
+            ((payload['passbook_fee'] as num?)?.toDouble() ?? 0.0) +
+            ((payload['misc_fee'] as num?)?.toDouble() ?? 0.0);
+        final tot = rep + sav + grp + fees;
+        return (
+          typeLabel: 'Single Client Collection',
+          totalAmount: tot,
+          amountDetail: CurrencyFormatter.formatNaira(tot),
+        );
+      }
+      final cols = (payload['collections'] as List?)?.whereType<Map>() ?? const Iterable.empty();
+      double tot = (payload['group_savings_deposit'] as num?)?.toDouble() ?? 0.0;
+      for (final c in cols) {
+        tot += ((c['loan_repayment_amount'] as num?)?.toDouble() ?? 0.0) +
+            ((c['savings_deposit_amount'] as num?)?.toDouble() ?? 0.0) +
+            ((c['app_fee'] as num?)?.toDouble() ?? 0.0) +
+            ((c['passbook_bonus'] as num?)?.toDouble() ?? 0.0) +
+            ((c['misc_fees'] as num?)?.toDouble() ?? 0.0);
+      }
+      return (
+        typeLabel: 'Group Collection (${cols.length} member${cols.length == 1 ? '' : 's'})',
+        totalAmount: tot,
+        amountDetail: CurrencyFormatter.formatNaira(tot),
+      );
+    } catch (_) {
+      return (
+        typeLabel: opType == 'WITHDRAWAL_REQUEST'
+            ? 'Withdrawal Request'
+            : (opType == 'SINGLE_COLLECTION' ? 'Single Client' : 'Group Batch'),
+        totalAmount: 0.0,
+        amountDetail: '',
+      );
+    }
+  }
+
+  Future<bool> _confirmDiscard(BuildContext context, String label, bool isQuarantined) async {
+    final res = await showIcareDialog<bool>(
+      context: context,
+      barrierDismissible: true,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Confirm Remove Offline Record', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+        content: Text(
+          isQuarantined
+              ? 'Removing "$label" deletes its local unposted offline copy from this device permanently. Confirm only if these figures have already been recorded separately.'
+              : 'Remove queued batch "$label" from this device?',
+          style: const TextStyle(fontSize: 13, height: 1.4),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
+          ElevatedButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFDC2626), foregroundColor: Colors.white),
+            child: const Text('Discard'),
+          ),
+        ],
+      ),
+    );
+    return res == true;
+  }
+
+  Widget _buildOutboxListSection({
+    required Future<List<Map<String, dynamic>>> future,
+    required bool isQuarantinedSection,
+    required bool isOnline,
+    required OfflineSyncManager syncMgr,
+    required IcareSurfaceTokens tokens,
+  }) {
+    return FutureBuilder<List<Map<String, dynamic>>>(
+      future: future,
+      builder: (context, snapshot) {
+        final items = snapshot.data ?? [];
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Padding(
+            padding: EdgeInsets.symmetric(vertical: 8),
+            child: Center(child: SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))),
+          );
+        }
+        if (items.isEmpty) return const SizedBox.shrink();
+
+        return Container(
+          constraints: const BoxConstraints(maxHeight: 200),
+          decoration: BoxDecoration(
+            color: isQuarantinedSection ? tokens.dangerBg.withValues(alpha: 0.35) : tokens.surfaceSubtle,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: isQuarantinedSection ? tokens.dangerBorder : tokens.borderSubtle),
+          ),
+          child: ListView.separated(
+            shrinkWrap: true,
+            itemCount: items.length,
+            separatorBuilder: (_, __) => Divider(height: 1, color: tokens.borderSubtle),
+            itemBuilder: (context, idx) {
+              final item = items[idx];
+              final opType = item['operation_type']?.toString() ?? 'BATCH_COLLECTION';
+              final groupOrClient = item['group_name']?.toString() ?? 'Transaction';
+              final colDate = item['collection_date']?.toString() ?? '';
+              final statusStr = item['status']?.toString() ?? 'pending';
+              final isFailed = statusStr == 'failed' || statusStr == 'quarantined';
+              final isQuarantined = statusStr == 'quarantined';
+              final errMsg = item['error_message']?.toString();
+              final summary = _summarizePayload(item);
+              final badgeColor = isQuarantined
+                  ? tokens.dangerBg
+                  : (isFailed ? tokens.warningBg : tokens.warningBg);
+              final badgeTextColor = isQuarantined
+                  ? tokens.dangerText
+                  : (isFailed ? tokens.dangerText : tokens.warningText);
+              final badgeLabel = isQuarantined ? 'Needs Review' : (isFailed ? 'Retrying' : 'Pending');
+
+              return Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(5),
+                          decoration: BoxDecoration(
+                            color: opType == 'WITHDRAWAL_REQUEST'
+                                ? tokens.warningBg
+                                : (opType == 'SINGLE_COLLECTION' ? tokens.infoBg : tokens.successBg),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Icon(
+                            opType == 'WITHDRAWAL_REQUEST'
+                                ? Icons.account_balance_wallet_outlined
+                                : (opType == 'SINGLE_COLLECTION' ? Icons.person_outline : Icons.groups_outlined),
+                            size: 16,
+                            color: opType == 'WITHDRAWAL_REQUEST'
+                                ? tokens.warningDot
+                                : (opType == 'SINGLE_COLLECTION' ? tokens.infoDot : tokens.successDot),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                groupOrClient,
+                                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: tokens.textPrimary),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              Text(
+                                '$colDate · ${summary.typeLabel}${summary.amountDetail.isNotEmpty ? ' · ${summary.amountDetail}' : ''}',
+                                style: TextStyle(fontSize: 10.5, color: tokens.textMuted),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(color: badgeColor, borderRadius: BorderRadius.circular(4)),
+                          child: Text(
+                            badgeLabel,
+                            style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: badgeTextColor),
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (isFailed && errMsg != null && errMsg.isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(7),
+                        decoration: BoxDecoration(
+                          color: tokens.dangerBg,
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: tokens.dangerBorder),
+                        ),
+                        child: Text(
+                          errMsg,
+                          style: TextStyle(fontSize: 10.5, color: tokens.dangerText, height: 1.3),
+                        ),
+                      ),
+                    ],
+                    if (isFailed) ...[
+                      const SizedBox(height: 6),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          if (isQuarantined)
+                            TextButton.icon(
+                              onPressed: _isSyncing
+                                  ? null
+                                  : () async {
+                                      final bId = item['id'] as int?;
+                                      if (bId == null) return;
+                                      setState(() {
+                                        _isSyncing = true;
+                                        _statusMsg = 'Retrying batch #$bId...';
+                                      });
+                                      final res = await syncMgr.retryQuarantinedBatch(bId, syncNow: isOnline);
+                                      _invalidateAfterOutboxChange();
+                                      if (mounted) {
+                                        setState(() {
+                                          _isSyncing = false;
+                                          if (res != null) {
+                                            _isSuccess = res.success;
+                                            _statusMsg = res.message;
+                                          } else {
+                                            _isSuccess = true;
+                                            _statusMsg = 'Batch #$bId returned to pending sync queue.';
+                                          }
+                                        });
+                                      }
+                                    },
+                              style: TextButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                minimumSize: const Size(0, 26),
+                              ),
+                              icon: Icon(Icons.refresh, size: 14, color: tokens.brandPrimary),
+                              label: Text(
+                                isOnline ? 'Retry Now' : 'Queue Retry',
+                                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: tokens.brandPrimary),
+                              ),
+                            ),
+                          const SizedBox(width: 6),
+                          TextButton.icon(
+                            onPressed: _isSyncing
+                                ? null
+                                : () async {
+                                    final bId = item['id'] as int?;
+                                    if (bId == null) return;
+                                    final confirmed = await _confirmDiscard(context, groupOrClient, isQuarantined);
+                                    if (!confirmed) return;
+                                    await syncMgr.discardOutboxBatch(bId);
+                                    _invalidateAfterOutboxChange();
+                                    if (mounted) {
+                                      setState(() {
+                                        _statusMsg = 'Batch #$bId discarded from outbox.';
+                                        _isSuccess = true;
+                                      });
+                                    }
+                                  },
+                            style: TextButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                              minimumSize: const Size(0, 26),
+                            ),
+                            icon: Icon(Icons.delete_outline, size: 14, color: tokens.dangerText),
+                            label: Text(
+                              'Discard',
+                              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: tokens.dangerText),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ],
+                ),
+              );
+            },
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final pendingCount = ref.watch(pendingOutboxCountProvider);
+    final quarantinedCount = ref.watch(quarantinedOutboxCountProvider);
     final isOnline = ref.watch(isOnlineProvider);
     final syncMgr = ref.read(offlineSyncManagerProvider);
     final tokens = IcareSurfaceTokens.of(context);
@@ -1725,11 +2044,12 @@ class _SyncDialogState extends ConsumerState<_SyncDialog> {
         ],
       ),
       content: SizedBox(
-        width: 420,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+        width: 440,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
             InkWell(
               onTap: () {
                 ref.read(isOnlineProvider.notifier).refresh();
@@ -1781,146 +2101,40 @@ class _SyncDialogState extends ConsumerState<_SyncDialog> {
             ),
             if (pendingCount > 0) ...[
               const SizedBox(height: 10),
-              FutureBuilder<List<Map<String, dynamic>>>(
+              _buildOutboxListSection(
                 future: ref.read(offlineDatabaseServiceProvider).getPendingOutboxBatches(),
-                builder: (context, snapshot) {
-                  final items = snapshot.data ?? [];
-                  if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 8),
-                      child: Center(child: SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))),
-                    );
-                  }
-                  if (items.isEmpty) return const SizedBox.shrink();
-
-                  return Container(
-                    constraints: const BoxConstraints(maxHeight: 180),
-                    decoration: BoxDecoration(
-                      color: tokens.surfaceSubtle,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: tokens.borderSubtle),
+                isQuarantinedSection: false,
+                isOnline: isOnline,
+                syncMgr: syncMgr,
+                tokens: tokens,
+              ),
+            ],
+            if (quarantinedCount > 0) ...[
+              const SizedBox(height: 14),
+              Row(
+                children: [
+                  Icon(Icons.warning_amber_rounded, size: 16, color: tokens.dangerText),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      'Rejected / Needs Review: $quarantinedCount item(s)',
+                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: tokens.dangerText),
                     ),
-                    child: ListView.separated(
-                      shrinkWrap: true,
-                      itemCount: items.length,
-                      separatorBuilder: (_, __) => Divider(height: 1, color: tokens.borderSubtle),
-                      itemBuilder: (context, idx) {
-                        final item = items[idx];
-                        final isSingle = item['operation_type'] == 'SINGLE_COLLECTION';
-                        final groupOrClient = item['group_name']?.toString() ?? 'Collection';
-                        final colDate = item['collection_date']?.toString() ?? '';
-                        final statusStr = item['status']?.toString() ?? 'pending';
-                        final isFailed = statusStr == 'failed';
-                        final errMsg = item['error_message']?.toString();
-
-                        return Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  Container(
-                                    padding: const EdgeInsets.all(5),
-                                    decoration: BoxDecoration(
-                                      color: isSingle ? tokens.infoBg : tokens.successBg,
-                                      borderRadius: BorderRadius.circular(6),
-                                    ),
-                                    child: Icon(
-                                      isSingle ? Icons.person_outline : Icons.groups_outlined,
-                                      size: 16,
-                                      color: isSingle ? tokens.infoDot : tokens.successDot,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          groupOrClient,
-                                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: tokens.textPrimary),
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                        Text(
-                                          '$colDate · ${isSingle ? "Single Client" : "Group Batch"}',
-                                          style: TextStyle(fontSize: 10.5, color: tokens.textMuted),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                        decoration: BoxDecoration(
-                                          color: isFailed ? tokens.dangerBg : tokens.warningBg,
-                                          borderRadius: BorderRadius.circular(4),
-                                        ),
-                                        child: Text(
-                                          isFailed ? 'Failed' : 'Pending',
-                                          style: TextStyle(
-                                            fontSize: 10,
-                                            fontWeight: FontWeight.w700,
-                                            color: isFailed ? tokens.dangerText : tokens.warningText,
-                                          ),
-                                        ),
-                                      ),
-                                      if (isFailed) ...[
-                                        const SizedBox(width: 6),
-                                        InkWell(
-                                          onTap: () async {
-                                            final bId = item['id'] as int?;
-                                            if (bId != null) {
-                                              await syncMgr.discardOutboxBatch(bId);
-                                              ref.invalidate(collectionSheetFutureProvider);
-                                              ref.invalidate(singleClientOptionsProvider);
-                                              if (mounted) {
-                                                setState(() {
-                                                  _statusMsg = 'Batch #$bId discarded from outbox.';
-                                                  _isSuccess = true;
-                                                });
-                                              }
-                                            }
-                                          },
-                                          borderRadius: BorderRadius.circular(4),
-                                          child: Padding(
-                                            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                                            child: Row(
-                                              mainAxisSize: MainAxisSize.min,
-                                              children: [
-                                                Icon(Icons.delete_outline, size: 14, color: tokens.dangerText),
-                                                const SizedBox(width: 2),
-                                                Text(
-                                                  'Discard',
-                                                  style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: tokens.dangerText),
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ],
-                                  ),
-                                ],
-                              ),
-                              if (isFailed && errMsg != null && errMsg.isNotEmpty) ...[
-                                const SizedBox(height: 4),
-                                Text(
-                                  errMsg,
-                                  style: TextStyle(fontSize: 10, color: tokens.dangerText),
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ],
-                            ],
-                          ),
-                        );
-                      },
-                    ),
-                  );
-                },
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'These records were rejected by the server and were preserved on this device so no field entry is lost. Review the rejection reason before retrying or discarding.',
+                style: TextStyle(fontSize: 11.5, color: tokens.textMuted),
+              ),
+              const SizedBox(height: 8),
+              _buildOutboxListSection(
+                future: ref.read(offlineDatabaseServiceProvider).getQuarantinedOutboxBatches(),
+                isQuarantinedSection: true,
+                isOnline: isOnline,
+                syncMgr: syncMgr,
+                tokens: tokens,
               ),
             ],
             if (_statusMsg != null) ...[
@@ -1955,6 +2169,7 @@ class _SyncDialogState extends ConsumerState<_SyncDialog> {
               ),
             ],
           ],
+          ),
         ),
       ),
       actions: [
@@ -1964,10 +2179,7 @@ class _SyncDialogState extends ConsumerState<_SyncDialog> {
                 ? null
                 : () async {
                     final cleared = await syncMgr.clearAllFailedBatches();
-                    if (cleared > 0) {
-                      ref.invalidate(collectionSheetFutureProvider);
-                      ref.invalidate(singleClientOptionsProvider);
-                    }
+                    if (cleared > 0) _invalidateAfterOutboxChange();
                     if (mounted) {
                       setState(() {
                         _statusMsg = cleared > 0 ? 'Cleared $cleared failed transaction(s).' : 'No failed transactions to clear.';
@@ -1977,6 +2189,25 @@ class _SyncDialogState extends ConsumerState<_SyncDialog> {
                   },
             icon: Icon(Icons.delete_sweep_outlined, size: 16, color: tokens.dangerText),
             label: Text('Clear Failed', style: TextStyle(color: tokens.dangerText, fontWeight: FontWeight.w700, fontSize: 12)),
+          ),
+        if (quarantinedCount > 0)
+          TextButton.icon(
+            onPressed: _isSyncing
+                ? null
+                : () async {
+                    final confirmed = await _confirmDiscard(context, '$quarantinedCount rejected item(s)', true);
+                    if (!confirmed) return;
+                    final cleared = await syncMgr.clearAllQuarantinedBatches();
+                    if (cleared > 0) _invalidateAfterOutboxChange();
+                    if (mounted) {
+                      setState(() {
+                        _statusMsg = cleared > 0 ? 'Cleared $cleared rejected transaction(s).' : 'No rejected items to clear.';
+                        _isSuccess = true;
+                      });
+                    }
+                  },
+            icon: Icon(Icons.delete_forever_outlined, size: 16, color: tokens.dangerText),
+            label: Text('Clear Review', style: TextStyle(color: tokens.dangerText, fontWeight: FontWeight.w700, fontSize: 12)),
           ),
         TextButton(
           onPressed: _isSyncing ? null : () => Navigator.of(context).pop(),
@@ -1992,10 +2223,7 @@ class _SyncDialogState extends ConsumerState<_SyncDialog> {
                   });
                   final res = await syncMgr.syncOutbox();
                   if (res.syncedCount > 0 || res.failedCount > 0) {
-                    ref.invalidate(collectionSheetFutureProvider);
-                    ref.invalidate(singleClientOptionsProvider);
-                    ref.invalidate(collectionsHistoryProvider);
-                    ref.invalidate(coDashboardProvider);
+                    _invalidateAfterOutboxChange();
                   }
                   if (mounted) {
                     setState(() {

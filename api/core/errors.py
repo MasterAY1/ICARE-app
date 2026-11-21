@@ -180,6 +180,7 @@ def translate_error_to_icare_response(exc: Exception) -> Dict[str, Any]:
             "error_code": "DB_DUPLICATE_ENTRY",
             "title": template["title"],
             "message": template["message"],
+            "detail": template["message"],
             "action": template["action"]
         }
 
@@ -190,6 +191,7 @@ def translate_error_to_icare_response(exc: Exception) -> Dict[str, Any]:
             "error_code": "DB_FOREIGN_KEY_VIOLATION",
             "title": template["title"],
             "message": template["message"],
+            "detail": template["message"],
             "action": template["action"]
         }
 
@@ -200,6 +202,7 @@ def translate_error_to_icare_response(exc: Exception) -> Dict[str, Any]:
             "error_code": "DB_NETWORK_TIMEOUT",
             "title": template["title"],
             "message": template["message"],
+            "detail": template["message"],
             "action": template["action"]
         }
 
@@ -210,6 +213,7 @@ def translate_error_to_icare_response(exc: Exception) -> Dict[str, Any]:
             "error_code": "VALIDATION_ERROR",
             "title": "Invalid Input Data",
             "message": clean_msg,
+            "detail": clean_msg,
             "action": "Please correct the highlighted value and try again."
         }
 
@@ -231,5 +235,6 @@ def translate_error_to_icare_response(exc: Exception) -> Dict[str, Any]:
         "error_code": "SYSTEM_UNEXPECTED_ERROR",
         "title": "Operation Could Not Be Completed",
         "message": msg,
+        "detail": msg,
         "action": "Please check your network and retry. If the issue persists, contact technical support."
     }

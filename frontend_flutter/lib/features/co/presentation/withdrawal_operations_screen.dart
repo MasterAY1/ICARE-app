@@ -1,4 +1,5 @@
 // ignore_for_file: deprecated_member_use, prefer_const_constructors
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -6,6 +7,9 @@ import '../../../core/utils/currency_formatter.dart';
 import '../../../core/errors/app_error_formatter.dart';
 import '../../../core/auth/auth_controller.dart';
 import '../../../core/auth/auth_state.dart';
+import '../../../core/network/api_client.dart';
+import '../../../core/offline/connectivity_service.dart';
+import '../../../core/offline/offline_sync_manager.dart';
 import '../data/datasources/co_api_service.dart';
 import '../../../core/widgets/icare_skeleton_loader.dart';
 import '../../../core/theme/icare_theme_tokens.dart';
@@ -19,7 +23,8 @@ import '../../bm/presentation/master_cashbook_screen.dart';
 // ==========================================
 
 final withdrawalTabProvider = StateProvider<String>((ref) => 'Individual Savings');
-final withdrawalBusinessDateProvider = FutureProvider.autoDispose<DateTime?>((ref) async {
+final withdrawalBusinessDateProvider = FutureProvider<DateTime?>((ref) async {
+  ref.watch(authControllerProvider);
   final api = ref.watch(coApiServiceProvider);
   try {
     final res = await api.getOriginationBusinessDate();
@@ -44,22 +49,26 @@ final dwSearchProvider = StateProvider<String>((ref) => '');
 // ASYNC DATA PROVIDERS
 // ==========================================
 
-final individualOptionsProvider = FutureProvider.autoDispose<Map<String, dynamic>>((ref) async {
+final individualOptionsProvider = FutureProvider<Map<String, dynamic>>((ref) async {
+  ref.watch(authControllerProvider);
   final api = ref.watch(coApiServiceProvider);
   return api.getIndividualWithdrawalOptions();
 });
 
-final groupOptionsProvider = FutureProvider.autoDispose<Map<String, dynamic>>((ref) async {
+final groupOptionsProvider = FutureProvider<Map<String, dynamic>>((ref) async {
+  ref.watch(authControllerProvider);
   final api = ref.watch(coApiServiceProvider);
   return api.getGroupWithdrawalOptions();
 });
 
-final miscBalanceProvider = FutureProvider.autoDispose<Map<String, dynamic>>((ref) async {
+final miscBalanceProvider = FutureProvider<Map<String, dynamic>>((ref) async {
+  ref.watch(authControllerProvider);
   final api = ref.watch(coApiServiceProvider);
   return api.getMiscWithdrawalBalance();
 });
 
-final lapsOptionsProvider = FutureProvider.autoDispose<Map<String, dynamic>>((ref) async {
+final lapsOptionsProvider = FutureProvider<Map<String, dynamic>>((ref) async {
+  ref.watch(authControllerProvider);
   final api = ref.watch(coApiServiceProvider);
   return api.getLapsWithdrawalOptions();
 });
@@ -287,6 +296,79 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
     });
   }
 
+  Future<void> _submitOrQueueWithdrawalRequest({
+    required Map<String, dynamic> payload,
+    required String displayLabel,
+    required String attemptKey,
+    required bool autoExecuteRequested,
+    required VoidCallback onCleared,
+    required String onlineDefaultMessage,
+  }) async {
+    final isOnline = ref.read(isOnlineProvider);
+    final syncMgr = ref.read(offlineSyncManagerProvider);
+    final dateStr = payload['operational_date']?.toString() ??
+        DateFormat('yyyy-MM-dd').format(ref.read(withdrawalOpDateProvider));
+
+    if (!isOnline && autoExecuteRequested) {
+      _showFlash(
+        'Live server connection is required for immediate authorization and payout. Uncheck immediate authorization to queue a request for later review.',
+        isSuccess: false,
+      );
+      return;
+    }
+
+    setState(() => _isSubmitting = true);
+    try {
+      if (!isOnline) {
+        final offlineRes = await syncMgr.queueOfflineWithdrawalRequest(
+          displayLabel: displayLabel,
+          operationalDate: dateStr,
+          payload: payload,
+        );
+        _showFlash(
+          offlineRes['message']?.toString() ??
+              'Withdrawal request queued offline for Manager approval. Do not disburse cash until synced and approved.',
+        );
+        onCleared();
+        _clearAttemptIdemKey(attemptKey);
+        _invalidateAfterWithdrawalMutation();
+        return;
+      }
+
+      try {
+        final api = ref.read(coApiServiceProvider);
+        final res = await api.submitWithdrawalRequest(payload);
+        _showFlash(res['message']?.toString() ?? onlineDefaultMessage);
+        onCleared();
+        _clearAttemptIdemKey(attemptKey);
+        _invalidateAfterWithdrawalMutation();
+      } catch (e) {
+        if (!autoExecuteRequested &&
+            e is DioException &&
+            !ApiClient.isPermanentError(e)) {
+          final offlineRes = await syncMgr.queueOfflineWithdrawalRequest(
+            displayLabel: displayLabel,
+            operationalDate: dateStr,
+            payload: payload,
+          );
+          _showFlash(
+            offlineRes['message']?.toString() ??
+                'Network interrupted: Withdrawal request queued offline with the same reference for Manager approval.',
+          );
+          onCleared();
+          _clearAttemptIdemKey(attemptKey);
+          _invalidateAfterWithdrawalMutation();
+          return;
+        }
+        _showFlash(AppErrorDetails.from(e).message, isSuccess: false);
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isSubmitting = false);
+      }
+    }
+  }
+
   // ==========================================================================
   // TAB 1: INDIVIDUAL SAVINGS SUBMISSION
   // ==========================================================================
@@ -359,42 +441,39 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
       }
     }
 
-    setState(() => _isSubmitting = true);
-    try {
-      final opDate = ref.read(withdrawalOpDateProvider);
-      final dateStr = DateFormat('yyyy-MM-dd').format(opDate);
+    final opDate = ref.read(withdrawalOpDateProvider);
+    final dateStr = DateFormat('yyyy-MM-dd').format(opDate);
+    final autoExec = (_isManager && ref.read(isOnlineProvider)) ? _indAutoExec : false;
 
-      final payload = <String, dynamic>{
-        'savings_type': 'Individual',
-        'operation_type': _indDestOp,
-        'client_id': cId,
-        'client_name': cName,
-        'loan_id': _indDestOp == 'Loan Repayment / Asset Debt Offset' ? _indSelectedLoanId : null,
-        'destination_id': destId,
-        'destination_name': destName,
-        'destination_type': destType,
-        'fee_type': _indDestOp == 'Fee Payment from Savings' ? _indFeeType : null,
-        'amount': amt,
-        'operational_date': dateStr,
-        'payout_method': _indDestOp == 'Client Bank Account (Transfer)' ? 'Bank Transfer' : 'Cash',
-        'remarks': _indRemarksCtrl.text.trim(),
-        'auto_execute': _isManager ? _indAutoExec : false,
-        'idempotency_key': _getAttemptIdemKey('ind'),
-      };
+    final payload = <String, dynamic>{
+      'savings_type': 'Individual',
+      'operation_type': _indDestOp,
+      'client_id': cId,
+      'client_name': cName,
+      'loan_id': _indDestOp == 'Loan Repayment / Asset Debt Offset' ? _indSelectedLoanId : null,
+      'destination_id': destId,
+      'destination_name': destName,
+      'destination_type': destType,
+      'fee_type': _indDestOp == 'Fee Payment from Savings' ? _indFeeType : null,
+      'amount': amt,
+      'operational_date': dateStr,
+      'payout_method': _indDestOp == 'Client Bank Account (Transfer)' ? 'Bank Transfer' : 'Cash',
+      'remarks': _indRemarksCtrl.text.trim(),
+      'auto_execute': autoExec,
+      'idempotency_key': _getAttemptIdemKey('ind'),
+    };
 
-      final api = ref.read(coApiServiceProvider);
-      final res = await api.submitWithdrawalRequest(payload);
-
-      _showFlash(res['message']?.toString() ?? 'Withdrawal request submitted successfully!');
-      _indAmountCtrl.clear();
-      _indRemarksCtrl.clear();
-      _clearAttemptIdemKey('ind');
-      _invalidateAfterWithdrawalMutation();
-    } catch (e) {
-      _showFlash(AppErrorDetails.from(e).message, isSuccess: false);
-    } finally {
-      setState(() => _isSubmitting = false);
-    }
+    await _submitOrQueueWithdrawalRequest(
+      payload: payload,
+      displayLabel: cName,
+      attemptKey: 'ind',
+      autoExecuteRequested: autoExec,
+      onCleared: () {
+        _indAmountCtrl.clear();
+        _indRemarksCtrl.clear();
+      },
+      onlineDefaultMessage: 'Withdrawal request submitted successfully!',
+    );
   }
 
   // ==========================================================================
@@ -502,44 +581,41 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
       destType = 'LAPS';
     }
 
-    setState(() => _isSubmitting = true);
-    try {
-      final opDate = ref.read(withdrawalOpDateProvider);
-      final dateStr = DateFormat('yyyy-MM-dd').format(opDate);
+    final opDate = ref.read(withdrawalOpDateProvider);
+    final dateStr = DateFormat('yyyy-MM-dd').format(opDate);
+    final autoExec = (_isManager && ref.read(isOnlineProvider)) ? _grpAutoExec : false;
 
-      final payload = <String, dynamic>{
-        'savings_type': 'Group',
-        'operation_type': _grpDestOp,
-        'client_id': reqClientId,
-        'client_name': reqClientName,
-        'group_id': gId,
-        'group_name': gName,
-        'loan_id': _grpDestOp.contains('Loan Repayment') ? _grpSelectedLoanId : null,
-        'destination_id': destId,
-        'destination_name': destName,
-        'destination_type': destType,
-        'fee_type': _grpDestOp.contains('Fee Payment') ? _grpFeeType : null,
-        'amount': amt,
-        'operational_date': dateStr,
-        'payout_method': _grpDestOp == 'Group Bank Account (Transfer)' ? 'Bank Transfer' : 'Cash',
-        'remarks': _grpRemarksCtrl.text.trim(),
-        'auto_execute': _isManager ? _grpAutoExec : false,
-        'idempotency_key': _getAttemptIdemKey('grp'),
-      };
+    final payload = <String, dynamic>{
+      'savings_type': 'Group',
+      'operation_type': _grpDestOp,
+      'client_id': reqClientId,
+      'client_name': reqClientName,
+      'group_id': gId,
+      'group_name': gName,
+      'loan_id': _grpDestOp.contains('Loan Repayment') ? _grpSelectedLoanId : null,
+      'destination_id': destId,
+      'destination_name': destName,
+      'destination_type': destType,
+      'fee_type': _grpDestOp.contains('Fee Payment') ? _grpFeeType : null,
+      'amount': amt,
+      'operational_date': dateStr,
+      'payout_method': _grpDestOp == 'Group Bank Account (Transfer)' ? 'Bank Transfer' : 'Cash',
+      'remarks': _grpRemarksCtrl.text.trim(),
+      'auto_execute': autoExec,
+      'idempotency_key': _getAttemptIdemKey('grp'),
+    };
 
-      final api = ref.read(coApiServiceProvider);
-      final res = await api.submitWithdrawalRequest(payload);
-
-      _showFlash(res['message']?.toString() ?? 'Group withdrawal request submitted successfully!');
-      _grpAmountCtrl.clear();
-      _grpRemarksCtrl.clear();
-      _clearAttemptIdemKey('grp');
-      _invalidateAfterWithdrawalMutation();
-    } catch (e) {
-      _showFlash(AppErrorDetails.from(e).message, isSuccess: false);
-    } finally {
-      setState(() => _isSubmitting = false);
-    }
+    await _submitOrQueueWithdrawalRequest(
+      payload: payload,
+      displayLabel: gName,
+      attemptKey: 'grp',
+      autoExecuteRequested: autoExec,
+      onCleared: () {
+        _grpAmountCtrl.clear();
+        _grpRemarksCtrl.clear();
+      },
+      onlineDefaultMessage: 'Group withdrawal request submitted successfully!',
+    );
   }
 
   // ==========================================================================
@@ -556,36 +632,33 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
       return;
     }
 
-    setState(() => _isSubmitting = true);
-    try {
-      final opDate = ref.read(withdrawalOpDateProvider);
-      final dateStr = DateFormat('yyyy-MM-dd').format(opDate);
-      final opType = _miscPayoutMethod == 'Bank Transfer' ? 'Bank Transfer' : 'Cash Withdrawal';
+    final opDate = ref.read(withdrawalOpDateProvider);
+    final dateStr = DateFormat('yyyy-MM-dd').format(opDate);
+    final opType = _miscPayoutMethod == 'Bank Transfer' ? 'Bank Transfer' : 'Cash Withdrawal';
+    final autoExec = (_isManager && ref.read(isOnlineProvider)) ? _miscAutoExec : false;
 
-      final payload = <String, dynamic>{
-        'savings_type': 'Misc',
-        'operation_type': opType,
-        'amount': amt,
-        'operational_date': dateStr,
-        'payout_method': _miscPayoutMethod,
-        'remarks': _miscRemarksCtrl.text.trim(),
-        'auto_execute': _isManager ? _miscAutoExec : false,
-        'idempotency_key': _getAttemptIdemKey('misc'),
-      };
+    final payload = <String, dynamic>{
+      'savings_type': 'Misc',
+      'operation_type': opType,
+      'amount': amt,
+      'operational_date': dateStr,
+      'payout_method': _miscPayoutMethod,
+      'remarks': _miscRemarksCtrl.text.trim(),
+      'auto_execute': autoExec,
+      'idempotency_key': _getAttemptIdemKey('misc'),
+    };
 
-      final api = ref.read(coApiServiceProvider);
-      final res = await api.submitWithdrawalRequest(payload);
-
-      _showFlash(res['message']?.toString() ?? 'Misc savings withdrawal processed successfully!');
-      _miscAmountCtrl.clear();
-      _miscRemarksCtrl.clear();
-      _clearAttemptIdemKey('misc');
-      _invalidateAfterWithdrawalMutation();
-    } catch (e) {
-      _showFlash(AppErrorDetails.from(e).message, isSuccess: false);
-    } finally {
-      setState(() => _isSubmitting = false);
-    }
+    await _submitOrQueueWithdrawalRequest(
+      payload: payload,
+      displayLabel: 'Branch Misc Savings',
+      attemptKey: 'misc',
+      autoExecuteRequested: autoExec,
+      onCleared: () {
+        _miscAmountCtrl.clear();
+        _miscRemarksCtrl.clear();
+      },
+      onlineDefaultMessage: 'Misc savings withdrawal processed successfully!',
+    );
   }
 
   // ==========================================================================
@@ -606,44 +679,45 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
       return;
     }
 
-    setState(() => _isSubmitting = true);
-    try {
-      final opDate = ref.read(withdrawalOpDateProvider);
-      final dateStr = DateFormat('yyyy-MM-dd').format(opDate);
+    final opDate = ref.read(withdrawalOpDateProvider);
+    final dateStr = DateFormat('yyyy-MM-dd').format(opDate);
+    final isReturn = _lapsPayoutMethod == 'Return to Savings';
+    final autoExec = (_isManager && ref.read(isOnlineProvider)) ? _lapsAutoExec : false;
 
-      final isReturn = _lapsPayoutMethod == 'Return to Savings';
-      final payload = <String, dynamic>{
-        'savings_type': 'LAPS',
-        'operation_type': isReturn ? 'LAPS Return to Customer Savings' : 'LAPS Payout',
-        'client_id': cId,
-        'client_name': cName,
-        'amount': amt,
-        'operational_date': dateStr,
-        'payout_method': _lapsPayoutMethod,
-        'remarks': _lapsRemarksCtrl.text.trim(),
-        'auto_execute': _isManager ? _lapsAutoExec : false,
-        'idempotency_key': _getAttemptIdemKey('laps'),
-      };
+    final payload = <String, dynamic>{
+      'savings_type': 'LAPS',
+      'operation_type': isReturn ? 'LAPS Return to Customer Savings' : 'LAPS Payout',
+      'client_id': cId,
+      'client_name': cName,
+      'amount': amt,
+      'operational_date': dateStr,
+      'payout_method': _lapsPayoutMethod,
+      'remarks': _lapsRemarksCtrl.text.trim(),
+      'auto_execute': autoExec,
+      'idempotency_key': _getAttemptIdemKey('laps'),
+    };
 
-      final api = ref.read(coApiServiceProvider);
-      final res = await api.submitWithdrawalRequest(payload);
-
-      _showFlash(res['message']?.toString() ?? 'LAPS payout submitted successfully!');
-      _lapsAmountCtrl.clear();
-      _lapsRemarksCtrl.clear();
-      _clearAttemptIdemKey('laps');
-      _invalidateAfterWithdrawalMutation();
-    } catch (e) {
-      _showFlash(AppErrorDetails.from(e).message, isSuccess: false);
-    } finally {
-      setState(() => _isSubmitting = false);
-    }
+    await _submitOrQueueWithdrawalRequest(
+      payload: payload,
+      displayLabel: cName ?? 'LAPS Account',
+      attemptKey: 'laps',
+      autoExecuteRequested: autoExec,
+      onCleared: () {
+        _lapsAmountCtrl.clear();
+        _lapsRemarksCtrl.clear();
+      },
+      onlineDefaultMessage: 'LAPS payout submitted successfully!',
+    );
   }
 
   // ==========================================================================
   // TAB 5 (BM ONLY): APPROVE / REJECT ACTIONS
   // ==========================================================================
   Future<void> _approveRequest(String reqId) async {
+    if (!ref.read(isOnlineProvider)) {
+      _showFlash('Live server connection is required to approve withdrawals.', isSuccess: false);
+      return;
+    }
     setState(() => _isSubmitting = true);
     try {
       final api = ref.read(coApiServiceProvider);
@@ -653,11 +727,15 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
     } catch (e) {
       _showFlash(AppErrorDetails.from(e).message, isSuccess: false);
     } finally {
-      setState(() => _isSubmitting = false);
+      if (mounted) setState(() => _isSubmitting = false);
     }
   }
 
   Future<void> _confirmRejectRequest(String reqId) async {
+    if (!ref.read(isOnlineProvider)) {
+      _showFlash('Live server connection is required to reject withdrawal requests.', isSuccess: false);
+      return;
+    }
     final reason = _rejectReasonCtrl.text.trim();
     if (reason.isEmpty) {
       _showFlash('Please specify a rejection reason.', isSuccess: false);
@@ -677,8 +755,76 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
     } catch (e) {
       _showFlash(AppErrorDetails.from(e).message, isSuccess: false);
     } finally {
-      setState(() => _isSubmitting = false);
+      if (mounted) setState(() => _isSubmitting = false);
     }
+  }
+
+  Widget _buildOfflineNoticeBanner(IcareSurfaceTokens tokens, {required bool isManager}) {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: tokens.warningBg,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: tokens.warningBorder),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.cloud_off_rounded, size: 18, color: tokens.warningDot),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Offline Mode · Cached Balances',
+                  style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: tokens.warningText),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  isManager
+                      ? 'Approvals, rejections, and immediate cash payouts require a live connection. Offline submissions are queued strictly as unapproved review requests.'
+                      : 'Withdrawal requests entered offline will be queued safely on this device and sent for Manager approval once your connection returns. Do not disburse cash yet.',
+                  style: TextStyle(fontSize: 11.5, color: tokens.textSecondary, height: 1.35),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAutoExecCheckbox({
+    required bool value,
+    required bool isOnline,
+    required IcareSurfaceTokens tokens,
+    required ValueChanged<bool?> onChanged,
+  }) {
+    return CheckboxListTile(
+      dense: true,
+      contentPadding: EdgeInsets.zero,
+      title: Text(
+        'Immediate Branch Manager Authorization',
+        style: TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+          color: isOnline ? tokens.textPrimary : tokens.textMuted,
+        ),
+      ),
+      subtitle: Text(
+        isOnline
+            ? 'Authorize and settle immediately without queuing for review.'
+            : 'Unavailable offline. Connect to internet to authorize immediate payout.',
+        style: TextStyle(fontSize: 11, color: tokens.textMuted),
+      ),
+      value: isOnline && value,
+      activeColor: tokens.brandPrimary,
+      onChanged: isOnline ? onChanged : null,
+      controlAffinity: ListTileControlAffinity.leading,
+    );
   }
 
   @override
@@ -687,6 +833,7 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
     final user = authState is AuthStateAuthenticated ? authState.user : null;
     final role = user?.role ?? 'Credit Officer';
     final isManager = role == 'Branch Manager' || role == 'BM' || role == 'Area Manager' || role == 'AM' || role == 'Admin' || role == 'Super Admin';
+    final isOnline = ref.watch(isOnlineProvider);
 
     final activeTab = ref.watch(withdrawalTabProvider);
     final opDate = ref.watch(withdrawalOpDateProvider);
@@ -730,6 +877,8 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
           },
         ),
 
+        if (!isOnline) _buildOfflineNoticeBanner(IcareSurfaceTokens.of(context), isManager: isManager),
+
         // 2. Flash Banner
         if (_flashMessage != null) ...[
           _buildFlashBanner(),
@@ -766,18 +915,18 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
   // ==========================================================================
   Widget _buildIndividualTab(bool isManager) {
     final tokens = IcareSurfaceTokens.of(context);
+    final isOnline = ref.watch(isOnlineProvider);
     final indAsync = ref.watch(individualOptionsProvider);
-    final grpVal = ref.watch(groupOptionsProvider).valueOrNull;
-    final allGroups = ((grpVal?['all_groups'] ?? grpVal?['groups']) as List<dynamic>?)
-            ?.map((e) => Map<String, dynamic>.from(e as Map))
-            .toList() ??
-        [];
 
     return indAsync.when(
       loading: () => const IcareFormSkeleton(fieldCount: 4),
       error: (err, _) => _buildErrorCard(AppErrorDetails.from(err).message, () => ref.refresh(individualOptionsProvider)),
       data: (data) {
         final groups = (data['groups'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? ['All Groups'];
+        final allGroups = (data['all_groups'] as List<dynamic>?)
+                ?.map((e) => Map<String, dynamic>.from(e as Map))
+                .toList() ??
+            [];
         final allClients = (data['clients'] as List<dynamic>?)?.map((e) => Map<String, dynamic>.from(e as Map)).toList() ?? [];
 
         // Filter clients by group
@@ -828,28 +977,31 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
         }
         Map<String, dynamic>? selLoan = loans.isNotEmpty ? loans.firstWhere((l) => l['loan_id'] == _indSelectedLoanId, orElse: () => loans.first) : null;
 
-        final validIndTransferItems = _indTransferTargetCat == 'GroupSavings'
-            ? allGroups
-                .map((g) => DropdownMenuItem<String>(
-                      value: g['group_id']?.toString(),
-                      child: Text(
-                        (g['label'] ?? g['name'] ?? 'Group').toString(),
-                        overflow: TextOverflow.ellipsis,
-                        softWrap: true,
-                      ),
-                    ))
-                .toList()
-            : allClients
-                .where((c) => c['client_id']?.toString() != _indSelectedClientId)
-                .map((c) => DropdownMenuItem<String>(
-                      value: c['client_id']?.toString(),
-                      child: Text(
-                        '${c['name']} (${c['client_code']})',
-                        overflow: TextOverflow.ellipsis,
-                        softWrap: true,
-                      ),
-                    ))
-                .toList();
+        final List<DropdownMenuItem<String>> validIndTransferItems =
+            _indDestOp != 'Another Member or Group Savings'
+                ? const []
+                : (_indTransferTargetCat == 'GroupSavings'
+                    ? allGroups
+                        .map((g) => DropdownMenuItem<String>(
+                              value: g['group_id']?.toString(),
+                              child: Text(
+                                (g['label'] ?? g['name'] ?? 'Group').toString(),
+                                overflow: TextOverflow.ellipsis,
+                                softWrap: true,
+                              ),
+                            ))
+                        .toList()
+                    : allClients
+                        .where((c) => c['client_id']?.toString() != _indSelectedClientId)
+                        .map((c) => DropdownMenuItem<String>(
+                              value: c['client_id']?.toString(),
+                              child: Text(
+                                '${c['name']} (${c['client_code']})',
+                                overflow: TextOverflow.ellipsis,
+                                softWrap: true,
+                              ),
+                            ))
+                        .toList());
         final safeIndTransferVal = validIndTransferItems.any((i) => i.value == _indTransferRecipientId)
             ? _indTransferRecipientId
             : null;
@@ -1132,15 +1284,11 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
 
             // 7. Manager Direct Posting Toggle
             if (isManager) ...[
-              CheckboxListTile(
-                dense: true,
-                contentPadding: EdgeInsets.zero,
-                title: Text('Immediate Branch Manager Authorization', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: tokens.textPrimary)),
-                subtitle: Text('Authorize and settle immediately without queuing for review.', style: TextStyle(fontSize: 11, color: tokens.textMuted)),
+              _buildAutoExecCheckbox(
                 value: _indAutoExec,
-                activeColor: tokens.brandPrimary,
+                isOnline: isOnline,
+                tokens: tokens,
                 onChanged: (v) => setState(() => _indAutoExec = v ?? false),
-                controlAffinity: ListTileControlAffinity.leading,
               ),
               const SizedBox(height: 10),
             ],
@@ -1151,7 +1299,7 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
               height: 42,
               child: ElevatedButton.icon(
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: (isManager && _indAutoExec) ? const Color(0xFF15803D) : tokens.brandPrimaryDark,
+                  backgroundColor: (isOnline && isManager && _indAutoExec) ? const Color(0xFF15803D) : tokens.brandPrimaryDark,
                   foregroundColor: Colors.white,
                   disabledBackgroundColor: tokens.surfaceSubtle,
                   disabledForegroundColor: tokens.textMuted,
@@ -1160,13 +1308,15 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                 ),
                 icon: _isSubmitting
                     ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                    : Icon((isManager && _indAutoExec) ? Icons.verified_rounded : Icons.send_rounded, size: 16),
+                    : Icon((isOnline && isManager && _indAutoExec) ? Icons.verified_rounded : Icons.send_rounded, size: 16),
                 label: Text(
                   _isSubmitting
                       ? 'Processing...'
-                      : (isManager && _indAutoExec)
-                          ? 'Authorize & Settle Withdrawal'
-                          : 'Submit for BM Approval',
+                      : !isOnline
+                          ? 'Queue Request Offline'
+                          : (isManager && _indAutoExec)
+                              ? 'Authorize & Settle Withdrawal'
+                              : 'Submit for BM Approval',
                   style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
                   softWrap: true,
                 ),
@@ -1190,8 +1340,11 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
   // ==========================================================================
   Widget _buildGroupTab(bool isManager) {
     final tokens = IcareSurfaceTokens.of(context);
+    final isOnline = ref.watch(isOnlineProvider);
     final grpAsync = ref.watch(groupOptionsProvider);
-    final indVal = ref.watch(individualOptionsProvider).valueOrNull;
+    final needsClientRecipients =
+        _grpDestOp == 'Another Member or Group Savings' && _grpTransferTargetCat != 'GroupSavings';
+    final indVal = needsClientRecipients ? ref.watch(individualOptionsProvider).valueOrNull : null;
     final allClients = (indVal?['clients'] as List<dynamic>?)
             ?.map((e) => Map<String, dynamic>.from(e as Map))
             .toList() ??
@@ -1267,28 +1420,31 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
             ? memberLoans.firstWhere((l) => l['loan_id']?.toString() == _grpSelectedLoanId, orElse: () => memberLoans.first)
             : null;
 
-        final validGrpTransferItems = _grpTransferTargetCat == 'GroupSavings'
-            ? allGroups
-                .where((g) => g['group_id']?.toString() != gId)
-                .map((g) => DropdownMenuItem<String>(
-                      value: g['group_id']?.toString(),
-                      child: Text(
-                        (g['label'] ?? g['name'] ?? 'Group').toString(),
-                        overflow: TextOverflow.ellipsis,
-                        softWrap: true,
-                      ),
-                    ))
-                .toList()
-            : allClients
-                .map((c) => DropdownMenuItem<String>(
-                      value: c['client_id']?.toString(),
-                      child: Text(
-                        '${c['name']} (${c['client_code']})',
-                        overflow: TextOverflow.ellipsis,
-                        softWrap: true,
-                      ),
-                    ))
-                .toList();
+        final List<DropdownMenuItem<String>> validGrpTransferItems =
+            _grpDestOp != 'Another Member or Group Savings'
+                ? const []
+                : (_grpTransferTargetCat == 'GroupSavings'
+                    ? allGroups
+                        .where((g) => g['group_id']?.toString() != gId)
+                        .map((g) => DropdownMenuItem<String>(
+                              value: g['group_id']?.toString(),
+                              child: Text(
+                                (g['label'] ?? g['name'] ?? 'Group').toString(),
+                                overflow: TextOverflow.ellipsis,
+                                softWrap: true,
+                              ),
+                            ))
+                        .toList()
+                    : allClients
+                        .map((c) => DropdownMenuItem<String>(
+                              value: c['client_id']?.toString(),
+                              child: Text(
+                                '${c['name']} (${c['client_code']})',
+                                overflow: TextOverflow.ellipsis,
+                                softWrap: true,
+                              ),
+                            ))
+                        .toList());
         final safeGrpTransferVal = validGrpTransferItems.any((i) => i.value == _grpTransferRecipientId)
             ? _grpTransferRecipientId
             : null;
@@ -1626,15 +1782,11 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
 
             // 7. BM Direct Authorization Toggle
             if (isManager) ...[
-              CheckboxListTile(
-                dense: true,
-                contentPadding: EdgeInsets.zero,
-                title: Text('Immediate Branch Manager Authorization', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: tokens.textPrimary)),
-                subtitle: Text('Authorize and settle immediately without queuing for review.', style: TextStyle(fontSize: 11, color: tokens.textMuted)),
+              _buildAutoExecCheckbox(
                 value: _grpAutoExec,
-                activeColor: tokens.brandPrimary,
+                isOnline: isOnline,
+                tokens: tokens,
                 onChanged: (v) => setState(() => _grpAutoExec = v ?? false),
-                controlAffinity: ListTileControlAffinity.leading,
               ),
               const SizedBox(height: 10),
             ],
@@ -1645,7 +1797,7 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
               height: 42,
               child: ElevatedButton.icon(
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: (isManager && _grpAutoExec) ? const Color(0xFF15803D) : tokens.brandPrimaryDark,
+                  backgroundColor: (isOnline && isManager && _grpAutoExec) ? const Color(0xFF15803D) : tokens.brandPrimaryDark,
                   foregroundColor: Colors.white,
                   disabledBackgroundColor: tokens.surfaceSubtle,
                   disabledForegroundColor: tokens.textMuted,
@@ -1654,13 +1806,15 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                 ),
                 icon: _isSubmitting
                     ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                    : Icon((isManager && _grpAutoExec) ? Icons.verified_rounded : Icons.send_rounded, size: 16),
+                    : Icon((isOnline && isManager && _grpAutoExec) ? Icons.verified_rounded : Icons.send_rounded, size: 16),
                 label: Text(
                   _isSubmitting
                       ? 'Processing...'
-                      : (isManager && _grpAutoExec)
-                          ? 'Authorize & Settle Group Withdrawal'
-                          : 'Submit for BM Approval',
+                      : !isOnline
+                          ? 'Queue Request Offline'
+                          : (isManager && _grpAutoExec)
+                              ? 'Authorize & Settle Group Withdrawal'
+                              : 'Submit for BM Approval',
                   style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
                   softWrap: true,
                 ),
@@ -1684,6 +1838,7 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
   // ==========================================================================
   Widget _buildMiscTab(bool isManager) {
     final tokens = IcareSurfaceTokens.of(context);
+    final isOnline = ref.watch(isOnlineProvider);
     final miscAsync = ref.watch(miscBalanceProvider);
 
     return miscAsync.when(
@@ -1788,15 +1943,11 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
               ),
               const SizedBox(height: 10),
               if (isManager) ...[
-                CheckboxListTile(
-                  dense: true,
-                  contentPadding: EdgeInsets.zero,
-                  title: Text('Immediate Branch Manager Authorization', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: tokens.textPrimary)),
-                  subtitle: Text('Authorize and settle immediately without queuing for review.', style: TextStyle(fontSize: 11, color: tokens.textMuted)),
+                _buildAutoExecCheckbox(
                   value: _miscAutoExec,
-                  activeColor: tokens.brandPrimary,
+                  isOnline: isOnline,
+                  tokens: tokens,
                   onChanged: (v) => setState(() => _miscAutoExec = v ?? true),
-                  controlAffinity: ListTileControlAffinity.leading,
                 ),
                 const SizedBox(height: 10),
               ],
@@ -1805,7 +1956,7 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                 height: 42,
                 child: ElevatedButton.icon(
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: (isManager && _miscAutoExec) ? const Color(0xFF15803D) : tokens.brandPrimaryDark,
+                    backgroundColor: (isOnline && isManager && _miscAutoExec) ? const Color(0xFF15803D) : tokens.brandPrimaryDark,
                     foregroundColor: Colors.white,
                     disabledBackgroundColor: tokens.surfaceSubtle,
                     disabledForegroundColor: tokens.textMuted,
@@ -1814,11 +1965,13 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                   ),
                   icon: _isSubmitting
                       ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                      : Icon((isManager && _miscAutoExec) ? Icons.verified_rounded : Icons.send_rounded, size: 16),
+                      : Icon((isOnline && isManager && _miscAutoExec) ? Icons.verified_rounded : Icons.send_rounded, size: 16),
                   label: Text(
                     _isSubmitting
                         ? 'Processing...'
-                        : ((isManager && _miscAutoExec) ? 'Authorize & Settle Misc Withdrawal' : 'Submit Misc Withdrawal Request'),
+                        : !isOnline
+                            ? 'Queue Request Offline'
+                            : ((isManager && _miscAutoExec) ? 'Authorize & Settle Misc Withdrawal' : 'Submit Misc Withdrawal Request'),
                     style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
                   ),
                   onPressed: (_isSubmitting || bal <= 0) ? null : () => _submitMiscWithdrawal(bal),
@@ -1836,6 +1989,7 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
   // ==========================================================================
   Widget _buildLapsTab(bool isManager) {
     final tokens = IcareSurfaceTokens.of(context);
+    final isOnline = ref.watch(isOnlineProvider);
     final lapsAsync = ref.watch(lapsOptionsProvider);
 
     return lapsAsync.when(
@@ -2041,15 +2195,11 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
 
             // 6. BM Direct Authorization Toggle
             if (isManager) ...[
-              CheckboxListTile(
-                dense: true,
-                contentPadding: EdgeInsets.zero,
-                title: Text('Immediate Branch Manager Authorization', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: tokens.textPrimary)),
-                subtitle: Text('Authorize and settle immediately without queuing for review.', style: TextStyle(fontSize: 11, color: tokens.textMuted)),
+              _buildAutoExecCheckbox(
                 value: _lapsAutoExec,
-                activeColor: tokens.brandPrimary,
+                isOnline: isOnline,
+                tokens: tokens,
                 onChanged: (v) => setState(() => _lapsAutoExec = v ?? false),
-                controlAffinity: ListTileControlAffinity.leading,
               ),
               const SizedBox(height: 10),
             ],
@@ -2060,7 +2210,7 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
               height: 42,
               child: ElevatedButton.icon(
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: (isManager && _lapsAutoExec) ? const Color(0xFF15803D) : tokens.brandPrimaryDark,
+                  backgroundColor: (isOnline && isManager && _lapsAutoExec) ? const Color(0xFF15803D) : tokens.brandPrimaryDark,
                   foregroundColor: Colors.white,
                   disabledBackgroundColor: tokens.surfaceSubtle,
                   disabledForegroundColor: tokens.textMuted,
@@ -2069,17 +2219,19 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                 ),
                 icon: _isSubmitting
                     ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                    : Icon((isManager && _lapsAutoExec) ? Icons.verified_rounded : Icons.send_rounded, size: 16),
+                    : Icon((isOnline && isManager && _lapsAutoExec) ? Icons.verified_rounded : Icons.send_rounded, size: 16),
                 label: Text(
                   _isSubmitting
                       ? 'Processing...'
-                      : (_lapsPayoutMethod == 'Return to Savings')
-                          ? ((isManager && _lapsAutoExec)
-                              ? 'Authorize & Restore Balance to Customer Savings'
-                              : 'Submit LAPS Restoration for BM Approval')
-                          : ((isManager && _lapsAutoExec)
-                              ? 'Authorize & Settle LAPS Payout'
-                              : 'Submit LAPS Payout for BM Approval'),
+                      : !isOnline
+                          ? 'Queue Request Offline'
+                          : (_lapsPayoutMethod == 'Return to Savings')
+                              ? ((isManager && _lapsAutoExec)
+                                  ? 'Authorize & Restore Balance to Customer Savings'
+                                  : 'Submit LAPS Restoration for BM Approval')
+                              : ((isManager && _lapsAutoExec)
+                                  ? 'Authorize & Settle LAPS Payout'
+                                  : 'Submit LAPS Payout for BM Approval'),
                   style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
                   softWrap: true,
                 ),
@@ -2097,6 +2249,7 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
   // ==========================================================================
   Widget _buildPendingApprovalsTab() {
     final tokens = IcareSurfaceTokens.of(context);
+    final isOnline = ref.watch(isOnlineProvider);
     final pendingAsync = ref.watch(pendingApprovalsProvider);
 
     return pendingAsync.when(
@@ -2491,7 +2644,7 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                                   child: const Text('Cancel', style: TextStyle(fontSize: 12)),
                                 ),
                                 ElevatedButton.icon(
-                                  onPressed: _isSubmitting ? null : () => _confirmRejectRequest(reqId),
+                                  onPressed: (_isSubmitting || !isOnline) ? null : () => _confirmRejectRequest(reqId),
                                   style: ElevatedButton.styleFrom(
                                     backgroundColor: const Color(0xFFDC2626),
                                     foregroundColor: Colors.white,
@@ -2513,7 +2666,7 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                         runSpacing: 6,
                         children: [
                           OutlinedButton.icon(
-                            onPressed: _isSubmitting
+                            onPressed: (_isSubmitting || !isOnline)
                                 ? null
                                 : () => setState(() {
                                       _rejectingRequestId = reqId;
@@ -2530,7 +2683,7 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                             label: const Text('Reject', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
                           ),
                           ElevatedButton.icon(
-                            onPressed: _isSubmitting ? null : () => _approveRequest(reqId),
+                            onPressed: (_isSubmitting || !isOnline) ? null : () => _approveRequest(reqId),
                             style: ElevatedButton.styleFrom(
                               backgroundColor: const Color(0xFF15803D),
                               foregroundColor: Colors.white,

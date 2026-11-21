@@ -173,6 +173,84 @@ def _fetch_pending_reserved_map(
     return ind_pending, grp_pending, laps_pending, misc_pending
 
 
+def _chunked(items: List[str], size: int = 100):
+    """Yield sequential fixed-size slices to avoid oversized PostgREST IN clauses."""
+    for i in range(0, len(items), size):
+        yield items[i:i + size]
+
+
+def _fetch_repaid_totals_by_loan(uow: SupabaseUnitOfWork, loan_ids: List[str]) -> Dict[str, float]:
+    """Batch-aggregates repaid amounts per loan via SQL RPC with chunked table fallback."""
+    totals: Dict[str, float] = {}
+    unique_ids = list(dict.fromkeys(str(lid) for lid in loan_ids if lid))
+    if not unique_ids:
+        return totals
+
+    try:
+        rpc_res = uow.client.rpc("get_loan_repaid_totals_batch", {"p_loan_ids": unique_ids}).execute()
+        rows = getattr(rpc_res, "data", None)
+        if isinstance(rows, list) and rows and isinstance(rows[0], dict) and "loan_id" in rows[0]:
+            for r in rows:
+                lid = r.get("loan_id")
+                if lid:
+                    totals[str(lid)] = float(r.get("total_paid") or 0.0)
+            return totals
+    except Exception:
+        pass
+
+    for chunk in _chunked(unique_ids):
+        reps = uow.client.table("repayments").select("loan_id, amount_paid").in_("loan_id", chunk).execute().data or []
+        for r in reps:
+            if isinstance(r, dict) and r.get("loan_id"):
+                lid = str(r["loan_id"])
+                totals[lid] = totals.get(lid, 0.0) + float(r.get("amount_paid") or 0.0)
+    return totals
+
+
+def _fetch_individual_balances_batch(
+    uow: SupabaseUnitOfWork,
+    client_ids: List[str],
+) -> tuple[Dict[str, float], bool]:
+    """Batch-computes net individual savings balances via SQL RPC with chunked table fallback."""
+    balances: Dict[str, float] = {}
+    unique_ids = list(dict.fromkeys(str(cid) for cid in client_ids if cid))
+    if not unique_ids:
+        return balances, True
+
+    try:
+        rpc_res = uow.client.rpc("get_individual_savings_balances_batch", {"p_client_ids": unique_ids}).execute()
+        rows = getattr(rpc_res, "data", None)
+        if isinstance(rows, list) and rows and isinstance(rows[0], dict) and "client_id" in rows[0]:
+            for r in rows:
+                cid = r.get("client_id")
+                if cid:
+                    balances[str(cid)] = float(r.get("net_balance") or 0.0)
+            return balances, True
+    except Exception:
+        pass
+
+    try:
+        for chunk in _chunked(unique_ids):
+            sav_rows = (
+                uow.client.table("individual_savings")
+                .select("client_id, deposit_amount, withdrawal_amount")
+                .in_("client_id", chunk)
+                .execute()
+                .data
+                or []
+            )
+            for r in sav_rows:
+                if isinstance(r, dict) and r.get("client_id"):
+                    cid = str(r["client_id"])
+                    balances[cid] = balances.get(cid, 0.0) + (
+                        float(r.get("deposit_amount") or 0.0) - float(r.get("withdrawal_amount") or 0.0)
+                    )
+        return balances, True
+    except Exception as e:
+        logger.warning(f"Batch fetch individual savings failed: {e}")
+        return balances, False
+
+
 router = APIRouter(prefix="/api/v1/co/withdrawals", tags=["CO Withdrawals"])
 
 
@@ -243,19 +321,15 @@ def get_individual_options(
 
     if client_ids:
         try:
-            res_l = uow.client.table("loans").select(
-                "loan_id, client_id, loan_amount, active_credit, total_due, product_category, extra_fields, loan_products(name)"
-            ).in_("client_id", client_ids).in_("status", ["Active", "Approved", "ACTIVE"]).execute()
+            raw_loans = []
+            for chunk in _chunked(client_ids):
+                res_l = uow.client.table("loans").select(
+                    "loan_id, client_id, loan_amount, active_credit, total_due, product_category, extra_fields, loan_products(name)"
+                ).in_("client_id", chunk).in_("status", ["Active", "Approved", "ACTIVE"]).execute()
+                raw_loans.extend(res_l.data or [])
 
-            raw_loans = res_l.data or []
-            loan_ids = [l["loan_id"] for l in raw_loans]
-            repaid_by_loan: Dict[str, float] = {}
-            if loan_ids:
-                reps = uow.client.table("repayments").select("loan_id, amount_paid").in_("loan_id", loan_ids).execute().data or []
-                for r in reps:
-                    lid = r.get("loan_id")
-                    if lid:
-                        repaid_by_loan[lid] = repaid_by_loan.get(lid, 0.0) + float(r.get("amount_paid") or 0.0)
+            loan_ids = [l["loan_id"] for l in raw_loans if l.get("loan_id")]
+            repaid_by_loan = _fetch_repaid_totals_by_loan(uow, loan_ids)
 
             for l in raw_loans:
                 cid = l["client_id"]
@@ -291,17 +365,8 @@ def get_individual_options(
         except Exception as e:
             logger.warning(f"Batch fetch loans failed: {e}")
 
-    # 4. Batch-fetch individual savings balances in ONE single query
-    bal_by_client: Dict[str, float] = {}
-    if client_ids:
-        try:
-            sav_rows = uow.client.table("individual_savings").select("client_id, deposit_amount, withdrawal_amount").in_("client_id", client_ids).execute().data or []
-            for r in sav_rows:
-                cid = r.get("client_id")
-                if cid:
-                    bal_by_client[cid] = bal_by_client.get(cid, 0.0) + (float(r.get("deposit_amount") or 0.0) - float(r.get("withdrawal_amount") or 0.0))
-        except Exception as e:
-            logger.warning(f"Batch fetch individual savings failed: {e}")
+    # 4. Batch-fetch individual savings balances without per-client N+1 fallbacks
+    bal_by_client, batch_sav_ok = _fetch_individual_balances_batch(uow, client_ids)
 
     ind_pending, _, _, _ = _fetch_pending_reserved_map(
         uow, None if current_user.role in ["Admin", "Super Admin"] else current_user.branch_id
@@ -311,7 +376,7 @@ def get_individual_options(
     for c in all_clients:
         cid = c["client_id"]
         sav_bal = max(0.0, bal_by_client.get(cid, 0.0))
-        if sav_bal == 0.0 and hasattr(uow, "individual_savings") and hasattr(uow.individual_savings, "get_total_balance"):
+        if not batch_sav_ok and sav_bal == 0.0 and hasattr(uow, "individual_savings") and hasattr(uow.individual_savings, "get_total_balance"):
             try:
                 repo_bal = uow.individual_savings.get_total_balance(client_id=cid)
                 if repo_bal:
@@ -384,52 +449,50 @@ def get_group_options(
     all_groups_payload = []
     gid_list = [g["group_id"] for g in _g_list]
 
-    # Batch-fetch group savings balances in ONE query
+    # Batch-fetch group savings balances in chunked queries
     bal_by_group: Dict[str, float] = {}
     if gid_list:
         try:
-            grp_sav_rows = uow.client.table("group_savings").select("group_id, deposit_amount, withdrawal_amount").in_("group_id", gid_list).execute().data or []
-            for r in grp_sav_rows:
-                gid = r.get("group_id")
-                if gid:
-                    bal_by_group[gid] = bal_by_group.get(gid, 0.0) + (float(r.get("deposit_amount") or 0.0) - float(r.get("withdrawal_amount") or 0.0))
+            for chunk in _chunked(gid_list):
+                grp_sav_rows = uow.client.table("group_savings").select("group_id, deposit_amount, withdrawal_amount").in_("group_id", chunk).execute().data or []
+                for r in grp_sav_rows:
+                    gid = r.get("group_id")
+                    if gid:
+                        bal_by_group[gid] = bal_by_group.get(gid, 0.0) + (float(r.get("deposit_amount") or 0.0) - float(r.get("withdrawal_amount") or 0.0))
         except Exception as e:
             logger.warning(f"Batch fetch group savings failed: {e}")
 
-    # Batch-fetch memberships for all groups in ONE query
+    # Batch-fetch memberships for all groups in chunked queries
     members_by_group: Dict[str, List[dict]] = {}
     all_member_client_ids = set()
     if gid_list:
         try:
-            res_m = uow.client.table("client_memberships").select("group_id, clients(client_id, client_code, name)").in_("group_id", gid_list).execute().data or []
-            for m in res_m:
-                gid = m.get("group_id")
-                cl = m.get("clients")
-                if gid and cl and isinstance(cl, dict) and cl.get("client_id"):
-                    if gid not in members_by_group:
-                        members_by_group[gid] = []
-                    members_by_group[gid].append(cl)
-                    all_member_client_ids.add(cl["client_id"])
+            for chunk in _chunked(gid_list):
+                res_m = uow.client.table("client_memberships").select("group_id, clients(client_id, client_code, name)").in_("group_id", chunk).execute().data or []
+                for m in res_m:
+                    gid = m.get("group_id")
+                    cl = m.get("clients")
+                    if gid and cl and isinstance(cl, dict) and cl.get("client_id"):
+                        if gid not in members_by_group:
+                            members_by_group[gid] = []
+                        members_by_group[gid].append(cl)
+                        all_member_client_ids.add(cl["client_id"])
         except Exception as e:
             logger.warning(f"Batch fetch memberships failed: {e}")
 
-    # Batch-fetch loans for all members in ONE query
+    # Batch-fetch loans for all members in chunked queries + aggregated repayments
     loans_by_member: Dict[str, List[EligibleLoan]] = {}
     if all_member_client_ids:
         try:
-            res_l = uow.client.table("loans").select(
-                "loan_id, client_id, loan_amount, active_credit, total_due, product_category, extra_fields, loan_products(name)"
-            ).in_("client_id", list(all_member_client_ids)).in_("status", ["Active", "Approved", "ACTIVE"]).execute().data or []
+            raw_m_loans = []
+            for chunk in _chunked(list(all_member_client_ids)):
+                res_l = uow.client.table("loans").select(
+                    "loan_id, client_id, loan_amount, active_credit, total_due, product_category, extra_fields, loan_products(name)"
+                ).in_("client_id", chunk).in_("status", ["Active", "Approved", "ACTIVE"]).execute().data or []
+                raw_m_loans.extend(res_l)
 
-            raw_m_loans = res_l
-            m_loan_ids = [l["loan_id"] for l in raw_m_loans]
-            repaid_by_m_loan: Dict[str, float] = {}
-            if m_loan_ids:
-                reps = uow.client.table("repayments").select("loan_id, amount_paid").in_("loan_id", m_loan_ids).execute().data or []
-                for r in reps:
-                    lid = r.get("loan_id")
-                    if lid:
-                        repaid_by_m_loan[lid] = repaid_by_m_loan.get(lid, 0.0) + float(r.get("amount_paid") or 0.0)
+            m_loan_ids = [l["loan_id"] for l in raw_m_loans if l.get("loan_id")]
+            repaid_by_m_loan = _fetch_repaid_totals_by_loan(uow, m_loan_ids)
 
             for l in raw_m_loans:
                 cid = l["client_id"]
@@ -1217,15 +1280,7 @@ def get_daily_withdrawals(
         except Exception:
             pass
 
-    # 2. Client memberships for group names
-    dw_cm_res = uow.client.table("client_memberships").select("client_id, groups(group_id, name)").execute()
-    dw_group_map = {}
-    for m in (dw_cm_res.data or []):
-        cid = m.get("client_id")
-        if cid and m.get("groups"):
-            dw_group_map[cid] = m["groups"].get("name", "Individual")
-
-    # 3. Query withdrawal_requests first (upper-bounded) to accurately classify structured categories
+    # 2. Query withdrawal_requests first (upper-bounded) to accurately classify structured categories
     wr_q = uow.client.table("withdrawal_requests").select("*")
     if not is_manager:
         wr_q = wr_q.eq("requested_by", current_user.username)
@@ -1271,6 +1326,28 @@ def get_daily_withdrawals(
         raw_laps_w = _scope_table_query("laps_savings").execute().data or []
     except Exception:
         raw_laps_w = []
+
+    # Resolve client memberships only for scoped clients present in this branch/result set
+    dw_group_map = {}
+    scoped_cm_cids = list(dict.fromkeys(
+        list(branch_c_map.keys())
+        + [r.get("client_id") for r in raw_ind_w if isinstance(r, dict) and r.get("client_id")]
+    ))
+    if scoped_cm_cids:
+        for chunk in _chunked(scoped_cm_cids):
+            try:
+                dw_cm_res = (
+                    uow.client.table("client_memberships")
+                    .select("client_id, groups(group_id, name)")
+                    .in_("client_id", chunk)
+                    .execute()
+                )
+                for m in (dw_cm_res.data or []):
+                    cid = m.get("client_id")
+                    if cid and m.get("groups"):
+                        dw_group_map[cid] = m["groups"].get("name", "Individual")
+            except Exception:
+                pass
 
     def _classify_wr_row(remarks: str, ref: str, table_name: str, wr_row: Optional[dict]) -> tuple:
         r_low = remarks.lower()
