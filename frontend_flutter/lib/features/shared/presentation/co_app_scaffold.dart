@@ -32,6 +32,8 @@ import '../../onboarding/presentation/branch_onboarding_admin_screen.dart';
 import '../../admin/data/datasources/admin_api_service.dart';
 import '../../admin/presentation/admin_dashboard_screen.dart';
 import '../../admin/presentation/admin_portfolio_screen.dart';
+import '../../procurement/data/datasources/procurement_api_service.dart';
+import '../../procurement/presentation/asset_procurement_screen.dart';
 import '../../auth/presentation/login_screen.dart';
 
 /// Active page state provider for Streamlit-style radio navigation
@@ -61,8 +63,9 @@ class CoAppScaffold extends ConsumerWidget {
     String activePage,
     bool isBm,
     bool isAm,
-    bool isAdmin,
-  ) {
+    bool isAdmin, {
+    bool isProcurement = false,
+  }) {
     return PageTransitionSwitcher(
       duration: IcareFluidMotion.resolveDuration(context, IcareFluidMotion.tabDuration),
       transitionBuilder: (child, primaryAnimation, secondaryAnimation) {
@@ -75,12 +78,20 @@ class CoAppScaffold extends ConsumerWidget {
       },
       child: KeyedSubtree(
         key: ValueKey<String>(activePage),
-        child: _buildActiveView(context, ref, activePage, isBm, isAm, isAdmin),
+        child: _buildActiveView(
+          context,
+          ref,
+          activePage,
+          isBm,
+          isAm,
+          isAdmin,
+          isProcurement: isProcurement,
+        ),
       ),
     );
   }
 
-  Future<void> _triggerPageRefresh(WidgetRef ref, String activePage, bool isBm, bool isAm, {bool isAdmin = false}) async {
+  Future<void> _triggerPageRefresh(WidgetRef ref, String activePage, bool isBm, bool isAm, {bool isAdmin = false, bool isProcurement = false}) async {
     try {
       await ref.read(isOnlineProvider.notifier).refresh();
     } catch (_) {}
@@ -89,7 +100,9 @@ class CoAppScaffold extends ConsumerWidget {
 
     switch (activePage) {
       case 'Dashboard':
-        if (isAdmin) {
+        if (isProcurement) {
+          ref.read(procurementRefreshSignalProvider.notifier).state++;
+        } else if (isAdmin) {
           ref.invalidate(adminOperationsProvider);
           ref.invalidate(institutionPerformanceProvider);
           ref.invalidate(adminRiskHealthProvider);
@@ -104,6 +117,9 @@ class CoAppScaffold extends ConsumerWidget {
         } else {
           ref.invalidate(coDashboardProvider);
         }
+        break;
+      case 'Asset & Procurement':
+        ref.read(procurementRefreshSignalProvider.notifier).state++;
         break;
       case 'Loan Origination':
         ref.invalidate(originationGroupsProvider);
@@ -299,14 +315,20 @@ class CoAppScaffold extends ConsumerWidget {
     final displayName = user.fullName.isNotEmpty ? user.fullName : user.username;
     final branchName = user.branch;
     final role = user.role.trim();
+    final roleLower = role.toLowerCase();
     final isBm = role == 'Branch Manager' || role == 'BM';
     final isDirector = role == 'Director' || role == 'DIRECTOR' || role == 'Executive Director';
+    final isProcurement = roleLower == 'procurement officer' ||
+        roleLower == 'procurement_officer' ||
+        roleLower == 'asset manager' ||
+        roleLower == 'asset_manager' ||
+        roleLower == 'procurement';
     final isAdmin = role == 'Admin' || role == 'Super Admin' || role == 'ADMIN' || isDirector;
     final isAm = role == 'Area Manager' || role == 'AM';
 
     ref.listen<bool>(isOnlineProvider, (previous, next) async {
       if (previous == false && next == true) {
-        _triggerPageRefresh(ref, activePage, isBm, isAm, isAdmin: isAdmin);
+        _triggerPageRefresh(ref, activePage, isBm, isAm, isAdmin: isAdmin, isProcurement: isProcurement);
         final pendingCount = ref.read(pendingOutboxCountProvider);
         if (pendingCount > 0) {
           final syncMgr = ref.read(offlineSyncManagerProvider);
@@ -322,7 +344,7 @@ class CoAppScaffold extends ConsumerWidget {
             ref.invalidate(miscBalanceProvider);
             ref.invalidate(dailyWithdrawalsProvider);
             ref.invalidate(pendingApprovalsProvider);
-            _triggerPageRefresh(ref, activePage, isBm, isAm, isAdmin: isAdmin);
+            _triggerPageRefresh(ref, activePage, isBm, isAm, isAdmin: isAdmin, isProcurement: isProcurement);
           }
           if (context.mounted) {
             ScaffoldMessenger.of(context).hideCurrentSnackBar();
@@ -379,19 +401,23 @@ class CoAppScaffold extends ConsumerWidget {
         ? 'Branch Manager'
         : (isDirector
             ? 'Director'
-            : (isAdmin
-                ? 'Admin'
-                : (isAm
-                    ? 'Area Manager'
-                    : (role.isNotEmpty ? role : 'Credit Officer'))));
+            : (isProcurement
+                ? 'Procurement Officer'
+                : (isAdmin
+                    ? 'Admin'
+                    : (isAm
+                        ? 'Area Manager'
+                        : (role.isNotEmpty ? role : 'Credit Officer')))));
 
     final badgeColor = isBm
         ? const Color(0xFF2563EB)
-        : (isAdmin
-            ? const Color(0xFF7C3AED)
-            : (isAm
-                ? const Color(0xFF0F766E)
-                : const Color(0xFF8CC63F)));
+        : (isProcurement
+            ? const Color(0xFF0D9488)
+            : (isAdmin
+                ? const Color(0xFF7C3AED)
+                : (isAm
+                    ? const Color(0xFF0F766E)
+                    : const Color(0xFF8CC63F))));
 
     List<String> navItems;
     if (isBm) {
@@ -403,9 +429,15 @@ class CoAppScaffold extends ConsumerWidget {
         'Audit Ledger',
         'Reports & Export',
       ];
+    } else if (isProcurement) {
+      navItems = [
+        'Dashboard',
+        'Asset & Procurement',
+      ];
     } else if (isAdmin) {
       navItems = [
         'Dashboard',
+        'Asset & Procurement',
         'Withdrawal Operations',
         'Portfolio',
         'User Management',
@@ -499,6 +531,7 @@ class CoAppScaffold extends ConsumerWidget {
                     isBm: isBm,
                     isAm: isAm,
                     isAdmin: isAdmin,
+                    isProcurement: isProcurement,
                   ),
                 ),
 
@@ -517,7 +550,7 @@ class CoAppScaffold extends ConsumerWidget {
                     IcareFluidMotion.lightImpactHaptic(
                       ref.read(themeControllerProvider).hapticsEnabled,
                     );
-                    await _triggerPageRefresh(ref, activePage, isBm, isAm, isAdmin: isAdmin);
+                    await _triggerPageRefresh(ref, activePage, isBm, isAm, isAdmin: isAdmin, isProcurement: isProcurement);
                     if (context.mounted) {
                       ScaffoldMessenger.of(context).hideCurrentSnackBar();
                       ScaffoldMessenger.of(context).showSnackBar(
@@ -590,6 +623,7 @@ class CoAppScaffold extends ConsumerWidget {
               isBm,
               isAm,
               isAdmin,
+              isProcurement: isProcurement,
             ),
       body: Column(
         children: [
@@ -628,6 +662,7 @@ class CoAppScaffold extends ConsumerWidget {
                           isBm: isBm,
                           isAm: isAm,
                           isAdmin: isAdmin,
+                          isProcurement: isProcurement,
                         ),
                       ),
 
@@ -641,7 +676,7 @@ class CoAppScaffold extends ConsumerWidget {
                             IcareFluidMotion.lightImpactHaptic(
                               ref.read(themeControllerProvider).hapticsEnabled,
                             );
-                            await _triggerPageRefresh(ref, activePage, isBm, isAm, isAdmin: isAdmin);
+                            await _triggerPageRefresh(ref, activePage, isBm, isAm, isAdmin: isAdmin, isProcurement: isProcurement);
                           },
                           child: SingleChildScrollView(
                             physics: const AlwaysScrollableScrollPhysics(),
@@ -655,7 +690,7 @@ class CoAppScaffold extends ConsumerWidget {
                                 ],
 
                                 // Active View Dispatcher
-                                _buildTransitionedActiveView(context, ref, activePage, isBm, isAm, isAdmin),
+                                _buildTransitionedActiveView(context, ref, activePage, isBm, isAm, isAdmin, isProcurement: isProcurement),
                               ],
                             ),
                           ),
@@ -671,7 +706,7 @@ class CoAppScaffold extends ConsumerWidget {
                       IcareFluidMotion.lightImpactHaptic(
                         ref.read(themeControllerProvider).hapticsEnabled,
                       );
-                      await _triggerPageRefresh(ref, activePage, isBm, isAm, isAdmin: isAdmin);
+                      await _triggerPageRefresh(ref, activePage, isBm, isAm, isAdmin: isAdmin, isProcurement: isProcurement);
                     },
                     child: SingleChildScrollView(
                       physics: const AlwaysScrollableScrollPhysics(),
@@ -686,7 +721,7 @@ class CoAppScaffold extends ConsumerWidget {
                           ],
 
                           // Active View Dispatcher
-                          _buildTransitionedActiveView(context, ref, activePage, isBm, isAm, isAdmin),
+                          _buildTransitionedActiveView(context, ref, activePage, isBm, isAm, isAdmin, isProcurement: isProcurement),
                         ],
                       ),
                     ),
@@ -705,10 +740,16 @@ class CoAppScaffold extends ConsumerWidget {
     String activePage,
     bool isBm,
     bool isAm,
-    bool isAdmin,
-  ) {
+    bool isAdmin, {
+    bool isProcurement = false,
+  }) {
     final List<({String key, String shortLabel, IconData icon, IconData activeIcon})> destinations;
-    if (isAdmin) {
+    if (isProcurement) {
+      destinations = [
+        (key: 'Dashboard', shortLabel: 'Overview', icon: Icons.analytics_outlined, activeIcon: Icons.analytics),
+        (key: 'Asset & Procurement', shortLabel: 'Asset Hub', icon: Icons.inventory_2_outlined, activeIcon: Icons.inventory_2),
+      ];
+    } else if (isAdmin) {
       destinations = [
         (key: 'Dashboard', shortLabel: 'Dashboard', icon: Icons.dashboard_outlined, activeIcon: Icons.dashboard),
         (key: 'Portfolio', shortLabel: 'Branches', icon: Icons.domain_outlined, activeIcon: Icons.domain),
@@ -1047,6 +1088,7 @@ class CoAppScaffold extends ConsumerWidget {
     required bool isBm,
     required bool isAm,
     required bool isAdmin,
+    bool isProcurement = false,
   }) {
     return Consumer(
       builder: (context, ref, child) {
@@ -1084,7 +1126,7 @@ class CoAppScaffold extends ConsumerWidget {
               );
             }
             if (connected) {
-              _triggerPageRefresh(ref, activePage, isBm, isAm, isAdmin: isAdmin);
+              _triggerPageRefresh(ref, activePage, isBm, isAm, isAdmin: isAdmin, isProcurement: isProcurement);
             }
           },
           child: Container(
@@ -1171,6 +1213,7 @@ class CoAppScaffold extends ConsumerWidget {
     required bool isBm,
     required bool isAm,
     required bool isAdmin,
+    bool isProcurement = false,
   }) {
     final tokens = IcareSurfaceTokens.of(context);
     return Column(
@@ -1339,12 +1382,13 @@ class CoAppScaffold extends ConsumerWidget {
                     isBm: isBm,
                     isAm: isAm,
                     isAdmin: isAdmin,
+                    isProcurement: isProcurement,
                   ),
                   const Spacer(),
                   _buildOutboxSyncBadge(context, ref, expandedLabel: true),
                   const SizedBox(width: 4),
                   InkWell(
-                    onTap: () => _triggerPageRefresh(ref, activePage, isBm, isAm, isAdmin: isAdmin),
+                    onTap: () => _triggerPageRefresh(ref, activePage, isBm, isAm, isAdmin: isAdmin, isProcurement: isProcurement),
                     borderRadius: BorderRadius.circular(6),
                     child: Padding(
                       padding: const EdgeInsets.all(4),
@@ -1496,6 +1540,8 @@ class CoAppScaffold extends ConsumerWidget {
     switch (item) {
       case 'Dashboard':
         return active ? Icons.dashboard : Icons.dashboard_outlined;
+      case 'Asset & Procurement':
+        return active ? Icons.inventory_2 : Icons.inventory_2_outlined;
       case 'Collections':
         return active ? Icons.payments : Icons.payments_outlined;
       case 'Loan Origination':
@@ -1634,13 +1680,16 @@ class CoAppScaffold extends ConsumerWidget {
     );
   }
 
-  Widget _buildActiveView(BuildContext context, WidgetRef ref, String page, bool isBm, bool isAm, bool isAdmin) {
+  Widget _buildActiveView(BuildContext context, WidgetRef ref, String page, bool isBm, bool isAm, bool isAdmin, {bool isProcurement = false}) {
     final tokens = IcareSurfaceTokens.of(context);
     switch (page) {
       case 'Dashboard':
+        if (isProcurement) return const AssetProcurementScreen(initialTabIndex: 0);
         if (isAdmin) return const AdminDashboardScreen();
         if (isAm) return const AmDashboardScreen();
         return isBm ? const BmDashboardScreen() : const CoDashboardScreen();
+      case 'Asset & Procurement':
+        return AssetProcurementScreen(initialTabIndex: isProcurement ? 1 : 0);
       case 'Loan Origination':
         return const LoanOriginationScreen();
       case 'Collections':

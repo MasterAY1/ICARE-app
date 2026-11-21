@@ -380,6 +380,19 @@ class LoanService:
         # Execute all accumulated operations atomically (fail-closed if any leg errors)
         uow.client.rpc("atomic_execute_operations", {"p_operations": operations}).execute()
 
+        # Commit physical stock deduction for Asset / Cash & Carry disbursements
+        if is_asset_loan or is_cash_and_carry or (isinstance(extra, dict) and extra.get("asset_items")):
+            from services.asset_inventory_service import AssetInventoryService
+            AssetInventoryService.commit_disbursed_stock(
+                uow,
+                loan_id=loan.id,
+                branch_id=b_uuid_resolved,
+                extra_fields=extra,
+                performed_by=user_id or loan.credit_officer,
+                is_cash_and_carry=is_cash_and_carry,
+                product_type=loan.product_type,
+            )
+
         # Rebuild projection
         try:
             b_id = uow.loans._resolve_branch_id(loan.branch)
@@ -413,15 +426,26 @@ class LoanService:
         BM rejects a pending loan application atomically:
         1. Updates loans table status to 'Rejected'.
         2. Transitions client lifecycle status back to Registered / On Loan / Completed.
+        3. Releases any reserved Asset Program branch stock.
         """
         from services.client_status_service import ClientStatusService
 
-        res = uow.client.table("loans").select("loan_id, client_id, branch_id, status").eq("loan_id", loan_id).execute()
+        res = uow.client.table("loans").select("loan_id, client_id, branch_id, status, extra_fields").eq("loan_id", loan_id).execute()
         if not res.data:
             raise ValueError(f"Loan application {loan_id} not found.")
         loan_row = res.data[0]
         if str(loan_row.get("status") or "") != "Pending":
             raise ValueError(f"Loan application {loan_id} is '{loan_row.get('status')}', not Pending.")
+
+        existing_extra = loan_row.get("extra_fields") or {}
+        if not isinstance(existing_extra, dict):
+            existing_extra = {}
+        updated_extra = dict(existing_extra)
+        updated_extra.update({
+            "lifecycle_status": "Rejected",
+            "rejected_by": rejected_by,
+            "rejection_reason": reason or "Not approved",
+        })
 
         operations: List[Dict[str, Any]] = [
             {
@@ -430,11 +454,7 @@ class LoanService:
                 "match": {"loan_id": loan_id},
                 "record": {
                     "status": "Rejected",
-                    "extra_fields": {
-                        "lifecycle_status": "Rejected",
-                        "rejected_by": rejected_by,
-                        "rejection_reason": reason or "Not approved",
-                    },
+                    "extra_fields": updated_extra,
                 },
             }
         ]
@@ -462,3 +482,15 @@ class LoanService:
             )
 
         uow.client.rpc("atomic_execute_operations", {"p_operations": operations}).execute()
+
+        # Release reserved branch stock back into available branch pool
+        if existing_extra.get("asset_items"):
+            from services.asset_inventory_service import AssetInventoryService
+            AssetInventoryService.release_reserved_stock(
+                uow,
+                loan_id=loan_id,
+                branch_id=loan_row.get("branch_id"),
+                extra_fields=existing_extra,
+                performed_by=rejected_by,
+                reason=reason,
+            )

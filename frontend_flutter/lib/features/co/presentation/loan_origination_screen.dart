@@ -9,7 +9,9 @@ import '../../shared/utils/file_picker_helper.dart';
 import '../../../core/widgets/icare_skeleton_loader.dart';
 import '../../../core/theme/icare_theme_tokens.dart';
 import '../../../core/errors/app_error_formatter.dart';
+import '../../../core/offline/offline_database_service.dart';
 import '../data/datasources/co_api_service.dart';
+import 'widgets/asset_catalog_picker_card.dart';
 import 'package:frontend_flutter/core/theme/icare_motion.dart';
 
 final loanOriginationTabProvider = StateProvider<String>((ref) => 'Client Registration');
@@ -121,6 +123,16 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
   bool _isLoadingSchedule = false;
   Timer? _calcDebounce;
 
+  // Asset Catalog & Branch Inventory State
+  List<Map<String, dynamic>> _assetCatalogItems = [];
+  List<Map<String, dynamic>> _assetCatalogCategories = [];
+  Map<String, dynamic> _assetCatalogSummary = {};
+  String _assetBranchName = '';
+  bool _isLoadingAssetCatalog = false;
+  bool _isOfflineAssetCatalog = false;
+  String? _assetCatalogError;
+  final List<Map<String, dynamic>> _selectedAssetCart = [];
+
   // ==========================================
   // TAB 3: PENDING DISBURSEMENTS CONTROLLERS
   // ==========================================
@@ -165,7 +177,10 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
   void initState() {
     super.initState();
     _recomputeFinanceGapDefault();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _loadBranchBusinessDate());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadBranchBusinessDate();
+      _loadBranchAssetCatalog();
+    });
   }
 
   Future<void> _loadBranchBusinessDate() async {
@@ -235,6 +250,232 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
     _editGuarOfficeCtrl.dispose();
     _editGuarIdNumberCtrl.dispose();
     super.dispose();
+  }
+
+  bool get _isAssetOrCashAndCarry =>
+      _loanAppCategory == 'Asset' ||
+      _loanAppProduct.toLowerCase().contains('cash and carry');
+
+  bool _canManageAssetInventory(AuthUser? user) {
+    final role = (user?.role ?? '').trim().toLowerCase();
+    return role == 'procurement officer' ||
+        role == 'procurement_officer' ||
+        role == 'asset manager' ||
+        role == 'asset_manager' ||
+        role == 'admin' ||
+        role == 'super admin';
+  }
+
+  Future<void> _loadBranchAssetCatalog() async {
+    if (_isLoadingAssetCatalog) return;
+    setState(() {
+      _isLoadingAssetCatalog = true;
+      _assetCatalogError = null;
+    });
+    final authState = ref.read(authControllerProvider);
+    final user = authState is AuthStateAuthenticated ? authState.user : null;
+    final branchKey = user?.branchId ?? user?.branch ?? 'default';
+    final offlineDb = ref.read(offlineDatabaseServiceProvider);
+
+    try {
+      final api = ref.read(coApiServiceProvider);
+      final res = await api.getBranchAssetCatalog(inStockOnly: false);
+      await offlineDb.cacheBranchAssetCatalog(branchKey, res);
+      if (!mounted) return;
+      _applyAssetCatalogPayload(res, isOffline: false);
+    } catch (e) {
+      final cached = await offlineDb.getCachedBranchAssetCatalog(branchKey);
+      if (!mounted) return;
+      if (cached != null) {
+        _applyAssetCatalogPayload(cached, isOffline: true);
+      } else {
+        setState(() {
+          _assetCatalogError = 'Unable to load branch inventory (${AppErrorDetails.from(e).message}).';
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _isLoadingAssetCatalog = false);
+    }
+  }
+
+  void _applyAssetCatalogPayload(Map<String, dynamic> res, {required bool isOffline}) {
+    final rawItems = (res['items'] as List<dynamic>?) ?? const [];
+    final rawCats = (res['categories'] as List<dynamic>?) ?? const [];
+    final rawSum = res['summary'];
+    setState(() {
+      _assetBranchName = res['branch_name']?.toString() ?? '';
+      _assetCatalogItems = rawItems.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+      _assetCatalogCategories = rawCats.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+      _assetCatalogSummary = rawSum is Map ? Map<String, dynamic>.from(rawSum) : {};
+      _isOfflineAssetCatalog = isOffline;
+      _assetCatalogError = null;
+    });
+  }
+
+  void _syncAmountFromAssetCart() {
+    if (_selectedAssetCart.isEmpty) {
+      if (_isAssetOrCashAndCarry) {
+        _loanAppAmountCtrl.clear();
+      }
+      setState(() {});
+      _scheduleRefreshCalculations(immediate: true);
+      return;
+    }
+    final totalCash = _selectedAssetCart.fold<double>(0.0, (sum, line) {
+      final qty = (line['quantity'] as num?)?.toInt() ?? 1;
+      final unitCash = (line['unit_cash_price'] as num?)?.toDouble() ?? 0.0;
+      return sum + (qty * unitCash);
+    });
+    _loanAppAmountCtrl.text = totalCash.toStringAsFixed(0);
+    setState(() {});
+    _recomputeFinanceGapDefault();
+    _scheduleRefreshCalculations(immediate: true);
+  }
+
+  Future<double?> _promptCustomUnitPrice(String itemName) async {
+    final priceCtrl = TextEditingController();
+    double? confirmed;
+    await showIcareDialog(
+      context: context,
+      builder: (ctx) {
+        final tokens = IcareSurfaceTokens.of(ctx);
+        return AlertDialog(
+          backgroundColor: tokens.surfaceElevated,
+          title: Text('Enter Approved Price', style: TextStyle(fontWeight: FontWeight.w800, color: tokens.textPrimary)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '$itemName is a branch-specific stock item without a fixed October 2026 sheet price. Enter the Cash & Carry price (₦):',
+                style: TextStyle(fontSize: 13, color: tokens.textSecondary),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: priceCtrl,
+                keyboardType: TextInputType.number,
+                autofocus: true,
+                decoration: const InputDecoration(
+                  labelText: 'Cash & Carry Price (₦)',
+                  prefixText: '₦ ',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Cancel')),
+            ElevatedButton(
+              onPressed: () {
+                final val = double.tryParse(priceCtrl.text.replaceAll(',', '').trim());
+                if (val != null && val > 0) {
+                  confirmed = val;
+                  Navigator.of(ctx).pop();
+                }
+              },
+              child: const Text('Apply Price'),
+            ),
+          ],
+        );
+      },
+    );
+    priceCtrl.dispose();
+    return confirmed;
+  }
+
+  Future<void> _addAssetToCart(Map<String, dynamic> catalogItem) async {
+    final iid = catalogItem['item_id']?.toString() ?? '';
+    final name = catalogItem['item_name']?.toString() ?? '';
+    final avail = (catalogItem['quantity_available'] as num?)?.toInt() ?? 0;
+    if (avail <= 0) {
+      _showErrorSnack('$name is currently out of stock at this branch.');
+      return;
+    }
+
+    final existingIdx = _selectedAssetCart.indexWhere((e) => e['item_id'] == iid);
+    if (existingIdx >= 0) {
+      final currQty = (_selectedAssetCart[existingIdx]['quantity'] as num?)?.toInt() ?? 1;
+      if (currQty >= avail) {
+        _showErrorSnack('Only $avail unit(s) of $name available in branch stock.');
+        return;
+      }
+      _selectedAssetCart[existingIdx]['quantity'] = currQty + 1;
+      _syncAmountFromAssetCart();
+      return;
+    }
+
+    var cashPrice = (catalogItem['cash_and_carry_price'] as num?)?.toDouble() ?? 0.0;
+    var p60 = (catalogItem['easy_buy_60d_price'] as num?)?.toDouble() ?? (cashPrice * 1.12);
+    var p120 = (catalogItem['easy_buy_120d_price'] as num?)?.toDouble() ?? (cashPrice * 1.21);
+
+    if (cashPrice <= 0) {
+      final entered = await _promptCustomUnitPrice(name);
+      if (entered == null || entered <= 0) return;
+      cashPrice = entered;
+      p60 = double.parse((entered * 1.12).toStringAsFixed(2));
+      p120 = double.parse((entered * 1.21).toStringAsFixed(2));
+    }
+
+    _selectedAssetCart.add({
+      'item_id': iid,
+      'sku_code': catalogItem['sku_code']?.toString() ?? '',
+      'category': catalogItem['category']?.toString() ?? '',
+      'item_name': name,
+      'quantity': 1,
+      'quantity_available': avail,
+      'unit_cash_price': cashPrice,
+      'unit_easy_buy_60d_price': p60,
+      'unit_easy_buy_120d_price': p120,
+    });
+    _syncAmountFromAssetCart();
+  }
+
+  void _updateAssetCartQty(String itemId, int delta) {
+    final idx = _selectedAssetCart.indexWhere((e) => e['item_id'] == itemId);
+    if (idx < 0) return;
+    final curr = (_selectedAssetCart[idx]['quantity'] as num?)?.toInt() ?? 1;
+    final avail = (_selectedAssetCart[idx]['quantity_available'] as num?)?.toInt() ?? curr;
+    final next = (curr + delta).clamp(1, avail);
+    _selectedAssetCart[idx]['quantity'] = next;
+    _syncAmountFromAssetCart();
+  }
+
+  void _removeAssetCartItem(String itemId) {
+    _selectedAssetCart.removeWhere((e) => e['item_id'] == itemId);
+    _syncAmountFromAssetCart();
+  }
+
+  void _clearAssetCart() {
+    _selectedAssetCart.clear();
+    _syncAmountFromAssetCart();
+  }
+
+  Future<void> _openAssetCatalogModal() async {
+    if (_assetCatalogItems.isEmpty && !_isLoadingAssetCatalog) {
+      await _loadBranchAssetCatalog();
+    }
+    if (!mounted) return;
+    final authState = ref.read(authControllerProvider);
+    final user = authState is AuthStateAuthenticated ? authState.user : null;
+    await showBranchAssetCatalogDialog(
+      context: context,
+      branchName: _assetBranchName.isNotEmpty ? _assetBranchName : (user?.branch ?? 'Branch'),
+      canManageInventory: _canManageAssetInventory(user),
+      initialItems: _assetCatalogItems,
+      categories: _assetCatalogCategories,
+      summary: _assetCatalogSummary,
+      onAdjustItem: (itemId, qtyDelta, newPrice, newCostPrice, remarks) async {
+        final api = ref.read(coApiServiceProvider);
+        return api.adjustBranchAssetInventory({
+          'item_id': itemId,
+          'quantity_delta': qtyDelta,
+          if (newPrice != null) 'new_cash_price': newPrice,
+          if (newCostPrice != null) 'new_cost_price': newCostPrice,
+          'remarks': remarks,
+        });
+      },
+      onChanged: () => _loadBranchAssetCatalog(),
+    );
   }
 
   // ==========================================
@@ -563,6 +804,11 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
       return;
     }
     final amt = _currentAmount;
+    final branchStockUnits = (_assetCatalogSummary['total_units_available'] as num?)?.toInt() ?? 0;
+    if (_isAssetOrCashAndCarry && _selectedAssetCart.isEmpty && branchStockUnits > 0) {
+      _showErrorSnack('Please select at least one asset item from Branch Asset Stock above.');
+      return;
+    }
     if (amt <= 0) {
       _showErrorSnack('Please enter a valid loan amount.');
       return;
@@ -603,6 +849,16 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
         'gap_fee': gapFee,
         'application_date': _appDate.toIsoformatDate(),
         'notes': _loanAppNotesCtrl.text.trim(),
+        if (_selectedAssetCart.isNotEmpty)
+          'selected_assets': _selectedAssetCart
+              .map((line) => {
+                    'item_id': line['item_id'],
+                    'sku_code': line['sku_code'],
+                    'item_name': line['item_name'],
+                    'quantity': line['quantity'],
+                    'unit_cash_price': line['unit_cash_price'],
+                  })
+              .toList(),
       });
 
       setState(() {
@@ -612,9 +868,12 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
         _schedulePreview = null;
         _appSearchCtrl.clear();
         _appSearchResults = [];
+        _selectedAssetCart.clear();
+        _loanAppAmountCtrl.clear();
       });
 
-      // Switch to Pending Disbursements tab
+      // Refresh branch stock (reserved qty updated) and switch to Pending Disbursements tab
+      _loadBranchAssetCatalog();
       ref.read(loanOriginationTabProvider.notifier).state = 'Pending Disbursements';
       ref.invalidate(pendingDisbursementsProvider);
     } catch (e) {
@@ -650,6 +909,77 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
         }
         _selectedPendingLoanId = null;
       });
+      _loadBranchAssetCatalog();
+      ref.invalidate(pendingDisbursementsProvider);
+    } catch (e) {
+      _showErrorSnack(AppErrorDetails.from(e).message);
+    } finally {
+      if (mounted) setState(() => _isSubmitting = false);
+    }
+  }
+
+  Future<void> _handleRejectPendingLoan() async {
+    final loanId = _selectedPendingLoanId;
+    if (loanId == null) {
+      _showErrorSnack('Please select a pending loan application to reject.');
+      return;
+    }
+
+    final reasonCtrl = TextEditingController();
+    String? confirmedReason;
+    await showIcareDialog(
+      context: context,
+      builder: (ctx) {
+        final tokens = IcareSurfaceTokens.of(ctx);
+        return AlertDialog(
+          backgroundColor: tokens.surfaceElevated,
+          title: Text('Reject Loan Application', style: TextStyle(fontWeight: FontWeight.w800, color: tokens.textPrimary)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Rejecting this application returns the client status to prior state and immediately releases any reserved asset stock back into available branch inventory.',
+                style: TextStyle(fontSize: 13, color: tokens.textSecondary),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: reasonCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Rejection Reason',
+                  hintText: 'e.g. Client requested change / incomplete verification',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Cancel')),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFDC2626), foregroundColor: Colors.white),
+              onPressed: () {
+                confirmedReason = reasonCtrl.text.trim().isEmpty ? 'Not approved' : reasonCtrl.text.trim();
+                Navigator.of(ctx).pop();
+              },
+              child: const Text('Confirm Reject'),
+            ),
+          ],
+        );
+      },
+    );
+    reasonCtrl.dispose();
+    if (confirmedReason == null) return;
+
+    setState(() => _isSubmitting = true);
+    try {
+      final api = ref.read(coApiServiceProvider);
+      final res = await api.rejectPendingLoan(loanId: loanId, reason: confirmedReason!);
+      setState(() {
+        _disbSuccessNotice = res['message']?.toString() ?? 'Loan application rejected and reserved stock released.';
+        _disbAdjustNotice = null;
+        _selectedPendingLoanId = null;
+      });
+      _loadBranchAssetCatalog();
       ref.invalidate(pendingDisbursementsProvider);
     } catch (e) {
       _showErrorSnack(AppErrorDetails.from(e).message);
@@ -824,10 +1154,32 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-          // Title
-          Text(
-            'Origination & Registration',
-            style: TextStyle(fontSize: 26, fontWeight: FontWeight.w800, color: tokens.textPrimary, letterSpacing: -0.5),
+          // Title & Quick Catalog Access
+          Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            runSpacing: 10,
+            spacing: 12,
+            children: [
+              Text(
+                'Origination & Registration',
+                style: TextStyle(fontSize: 26, fontWeight: FontWeight.w800, color: tokens.textPrimary, letterSpacing: -0.5),
+              ),
+              OutlinedButton.icon(
+                onPressed: _openAssetCatalogModal,
+                icon: Icon(Icons.inventory_2_outlined, size: 17, color: tokens.infoText),
+                label: Text(
+                  'Asset Stock & Price List (${(_assetCatalogSummary['total_units_available'] as num?)?.toInt() ?? 0})',
+                  style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: tokens.infoText),
+                ),
+                style: OutlinedButton.styleFrom(
+                  side: BorderSide(color: tokens.infoBorder),
+                  backgroundColor: tokens.infoBg,
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 16),
 
@@ -2564,6 +2916,7 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                         : () {
                             setState(() {
                               _loanAppCategory = 'Finance';
+                              _selectedAssetCart.clear();
                               if (!financeProducts.contains(_loanAppProduct) && financeProducts.isNotEmpty) {
                                 _loanAppProduct = financeProducts.first;
                               }
@@ -2611,6 +2964,9 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                               }
                             });
                             _financeGapFeeCtrl.clear();
+                            if (_assetCatalogItems.isEmpty) {
+                              _loadBranchAssetCatalog();
+                            }
                             _recomputeFinanceGapDefault();
                             _scheduleRefreshCalculations(immediate: true);
                           },
@@ -2645,6 +3001,27 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
             ),
             const SizedBox(height: 12),
 
+            if (_isAssetOrCashAndCarry) ...[
+              AssetCatalogPickerSection(
+                branchName: _assetBranchName.isNotEmpty ? _assetBranchName : (user?.branch ?? ''),
+                selectedProduct: _loanAppProduct,
+                catalogItems: _assetCatalogItems,
+                categories: _assetCatalogCategories,
+                summary: _assetCatalogSummary,
+                cartItems: _selectedAssetCart,
+                isLoading: _isLoadingAssetCatalog,
+                isOfflineCache: _isOfflineAssetCatalog,
+                errorMessage: _assetCatalogError,
+                onRefresh: _loadBranchAssetCatalog,
+                onOpenFullCatalog: _openAssetCatalogModal,
+                onAddItem: _addAssetToCart,
+                onChangeQty: _updateAssetCartQty,
+                onRemoveItem: _removeAssetCartItem,
+                onClearCart: _clearAssetCart,
+              ),
+              const SizedBox(height: 12),
+            ],
+
             _buildResponsiveInputRow(
               children: [
                 DropdownButtonFormField<String>(
@@ -2674,11 +3051,15 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                 ),
                 TextField(
                   controller: _loanAppAmountCtrl,
+                  readOnly: _isAssetOrCashAndCarry && _selectedAssetCart.isNotEmpty,
                   style: TextStyle(color: tokens.textPrimary),
                   keyboardType: TextInputType.number,
                   decoration: InputDecoration(
                     labelText: _loanAppCategory == 'Asset' ? 'Asset Cost (₦)' : 'Requested Amount (₦)',
-                    hintText: 'e.g. 100,000',
+                    hintText: _isAssetOrCashAndCarry && _selectedAssetCart.isEmpty ? 'Select items above or enter cost' : 'e.g. 100,000',
+                    helperText: _isAssetOrCashAndCarry && _selectedAssetCart.isNotEmpty
+                        ? 'Locked to selected October 2026 catalog items'
+                        : null,
                     prefixText: '₦ ',
                     border: const OutlineInputBorder(),
                   ),
@@ -3254,6 +3635,7 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                               DataColumn(label: Text('Officer', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
                               DataColumn(label: Text('Loan Amount', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12)), numeric: true),
                               DataColumn(label: Text('Loan Product', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
+                              DataColumn(label: Text('Reserved Assets', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
                             ],
                             rows: loans.map((l) {
                               final cName = l['client_name']?.toString() ?? '-';
@@ -3262,6 +3644,7 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                               final off = l['credit_officer']?.toString() ?? '-';
                               final amt = (l['loan_amount'] as num?)?.toDouble() ?? 0.0;
                               final prod = l['loan_product']?.toString() ?? '-';
+                              final assetSum = l['asset_summary']?.toString() ?? '—';
 
                               return DataRow(cells: [
                                 DataCell(Text(cName, style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12, color: tokens.textPrimary))),
@@ -3270,6 +3653,7 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                                 DataCell(Text(off, style: TextStyle(fontSize: 12, color: tokens.textSecondary))),
                                 DataCell(Text(CurrencyFormatter.formatNaira(amt), style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: tokens.brandPrimary, fontFeatures: const [FontFeature.tabularFigures()]))),
                                 DataCell(Text(prod, style: TextStyle(fontSize: 12, color: tokens.textSecondary))),
+                                DataCell(Text(assetSum, style: TextStyle(fontSize: 11.5, color: assetSum != '—' ? tokens.infoText : tokens.textMuted, fontWeight: assetSum != '—' ? FontWeight.w600 : FontWeight.w400))),
                               ]);
                             }).toList(),
                           ),
@@ -3369,24 +3753,44 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                     ),
                     const SizedBox(height: 20),
 
-                    SizedBox(
-                      width: double.infinity,
-                      height: 48,
-                      child: ElevatedButton(
-                        onPressed: (_isSubmitting ||
-                                _selectedPendingLoanId == null ||
-                                loans.any((l) => l['loan_id']?.toString() == _selectedPendingLoanId && l['exceeds_bm_limit'] == true))
-                            ? null
-                            : _handleAuthorizeDisbursement,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: tokens.brandPrimaryDark,
-                          foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                    _buildResponsiveInputRow(
+                      breakpoint: 550,
+                      children: [
+                        SizedBox(
+                          width: double.infinity,
+                          height: 48,
+                          child: ElevatedButton(
+                            onPressed: (_isSubmitting ||
+                                    _selectedPendingLoanId == null ||
+                                    loans.any((l) => l['loan_id']?.toString() == _selectedPendingLoanId && l['exceeds_bm_limit'] == true))
+                                ? null
+                                : _handleAuthorizeDisbursement,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: tokens.brandPrimaryDark,
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                            ),
+                            child: _isSubmitting
+                                ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                                : const Text('Authorize & Activate Disbursement', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
+                          ),
                         ),
-                        child: _isSubmitting
-                            ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                            : const Text('Authorize & Activate Disbursement', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
-                      ),
+                        SizedBox(
+                          width: double.infinity,
+                          height: 48,
+                          child: OutlinedButton.icon(
+                            onPressed: (_isSubmitting || _selectedPendingLoanId == null)
+                                ? null
+                                : _handleRejectPendingLoan,
+                            icon: Icon(Icons.cancel_outlined, size: 18, color: tokens.dangerText),
+                            label: Text('Reject Application', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: tokens.dangerText)),
+                            style: OutlinedButton.styleFrom(
+                              side: BorderSide(color: tokens.dangerBorder),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ],

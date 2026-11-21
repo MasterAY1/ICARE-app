@@ -22,6 +22,8 @@ from api.schemas.origination import (
     ApplyLoanInput, ApplyLoanResponse,
     PendingDisbursementsResponse, PendingLoanItem,
     DisburseLoanRequest, DisburseLoanResponse,
+    RejectLoanApplicationRequest, RejectLoanApplicationResponse,
+    BranchAssetCatalogResponse, AdjustBranchInventoryInput, AdjustBranchInventoryResponse,
     UpdateClientGuarantorInput, UpdateClientGuarantorResponse
 )
 from models.user import CurrentUser
@@ -29,6 +31,7 @@ from domain.entities.client import Client
 from domain.entities.loan import Loan
 from domain.enums import LoanStatus
 from mappers.base_mappers import LoanMapper
+from services.asset_inventory_service import AssetInventoryService
 from services.loan_product_engine import LoanProductEngine
 from services.schedule_service import ScheduleService
 from services.renewal_service import RenewalService
@@ -129,6 +132,82 @@ def get_origination_business_date(
     """Returns the authoritative active business date for the user's branch."""
     b_date = BusinessDateService.get_business_date(uow, current_user.branch_id)
     return {"business_date": b_date.isoformat()}
+
+
+@router.get("/asset-catalog", response_model=BranchAssetCatalogResponse)
+def get_branch_asset_catalog(
+    branch_id: Optional[str] = Query(None, description="Target branch ID (defaults to signed-in user branch)"),
+    category: Optional[str] = Query(None, description="Filter by October 2026 category"),
+    search: Optional[str] = Query(None, description="Search item name, SKU, or branch alias"),
+    in_stock_only: bool = Query(False, description="Only return SKUs with available units > 0"),
+    current_user: CurrentUser = Depends(require_role(["CO", "Credit Officer", "Officer", "BM", "Branch Manager", "AM", "Area Manager", "Procurement Officer", "Asset Manager", "Admin", "Super Admin"])),
+    uow: SupabaseUnitOfWork = Depends(get_uow)
+):
+    """
+    Returns the October 2026 Master Asset Price Catalog joined with live branch inventory.
+    """
+    target_branch_id = branch_id or current_user.branch_id
+    if branch_id:
+        check_branch_access(current_user, branch_id, "view branch asset inventory")
+    res = AssetInventoryService.get_branch_asset_catalog(
+        uow=uow,
+        branch_id=target_branch_id,
+        branch_name=None if branch_id else current_user.branch,
+        category=category,
+        search=search,
+        in_stock_only=in_stock_only,
+    )
+    return BranchAssetCatalogResponse(**res)
+
+
+@router.post("/branch-inventory/adjust", response_model=AdjustBranchInventoryResponse)
+def adjust_branch_asset_inventory(
+    payload: AdjustBranchInventoryInput,
+    current_user: CurrentUser = Depends(require_role(["Procurement Officer", "Asset Manager", "Admin", "Super Admin"])),
+    uow: SupabaseUnitOfWork = Depends(get_uow)
+):
+    """
+    Strictly restricted to Procurement Officer / Asset Manager or Admin to restock physical units or update cost & selling prices.
+    """
+    target_branch_id = payload.branch_id or current_user.branch_id
+    if target_branch_id:
+        check_branch_access(current_user, target_branch_id, "adjust branch asset inventory")
+    try:
+        updated_item = AssetInventoryService.adjust_branch_inventory(
+            uow=uow,
+            branch_id=target_branch_id,
+            branch_name=None if payload.branch_id else current_user.branch,
+            item_id=payload.item_id,
+            quantity_delta=payload.quantity_delta,
+            new_cash_price=payload.new_cash_price,
+            new_cost_price=payload.new_cost_price,
+            supplier_name=payload.supplier_name,
+            reference_code=payload.reference_code,
+            remarks=payload.remarks or "",
+            performed_by=current_user.username,
+        )
+    except ValueError as ve:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(ve))
+    except RuntimeError as re_err:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(re_err))
+
+    try:
+        uow.client.table("audit_logs").insert({
+            "id": str(uuid.uuid4()),
+            "user_id": current_user.id,
+            "action": "ADJUST_ASSET_INVENTORY",
+            "description": f"Adjusted {updated_item['item_name']} ({updated_item['sku_code']}): delta={payload.quantity_delta:+d}, cash_price=₦{updated_item['cash_and_carry_price']:,.2f}",
+            "table_name": "branch_asset_inventory",
+            "record_id": updated_item["item_id"],
+        }).execute()
+    except Exception:
+        pass
+
+    return AdjustBranchInventoryResponse(
+        success=True,
+        message=f"Updated {updated_item['item_name']}: {updated_item['quantity_available']} available (₦{updated_item['cash_and_carry_price']:,.2f}).",
+        item=updated_item,
+    )
 
 
 @router.get("/groups", response_model=List[GroupOption])
@@ -841,6 +920,32 @@ def apply_for_loan(
                 detail=f"You are not authorized to originate loans for '{payload.product_type}'. Please select from your assigned products: {', '.join(current_user.allowed_products)}."
             )
 
+    # Resolve branch up front so catalog & stock checks scope accurately
+    res_b = uow.client.table("branches").select("name").eq("branch_id", client.branch_id).execute() if client.branch_id else None
+    loan_branch_name = res_b.data[0]["name"] if res_b and isinstance(res_b.data, list) and res_b.data else (current_user.branch or "")
+    loan_branch_id = client.branch_id or current_user.branch_id
+
+    # Validate selected physical assets from branch stock and lock authoritative catalog base price
+    resolved_asset_items: List[Dict[str, Any]] = []
+    resolved_asset_summary = ""
+    if payload.selected_assets:
+        try:
+            asset_check = AssetInventoryService.validate_selected_assets(
+                uow=uow,
+                branch_id=loan_branch_id,
+                branch_name=loan_branch_name,
+                selected_assets=payload.selected_assets,
+            )
+            resolved_asset_items = asset_check["asset_items"]
+            resolved_asset_summary = asset_check["asset_summary"]
+            if asset_check["total_cash_price"] > 0:
+                payload.requested_amount = float(asset_check["total_cash_price"])
+        except ValueError as stock_err:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(stock_err),
+            )
+
     # 1b. Enforce authoritative RenewalService eligibility gate on server
     is_eligible, elig_reasons, _elig_warnings = RenewalService.check_eligibility(
         uow, payload.client_id, payload.requested_amount, payload.product_type, payload.product_category
@@ -942,9 +1047,6 @@ def apply_for_loan(
 
     # 6. Create Loan Entity + Provisional Schedule + Client Status atomically
     loan_id = str(uuid.uuid4())
-    res_b = uow.client.table("branches").select("name").eq("branch_id", client.branch_id).execute() if client.branch_id else None
-    loan_branch_name = res_b.data[0]["name"] if res_b and isinstance(res_b.data, list) and res_b.data else current_user.branch
-    loan_branch_id = client.branch_id or current_user.branch_id
     app_date = (
         date.fromisoformat(payload.application_date)
         if payload.application_date
@@ -992,10 +1094,14 @@ def apply_for_loan(
     prev_l = res_prev_l.data[0] if res_prev_l and isinstance(res_prev_l.data, list) and res_prev_l.data and isinstance(res_prev_l.data[0], dict) else {}
     prev_extra = prev_l.get("extra_fields") if isinstance(prev_l.get("extra_fields"), dict) else {}
 
+    combined_notes = (payload.notes or "").strip()
+    if resolved_asset_summary and resolved_asset_summary not in combined_notes:
+        combined_notes = f"{resolved_asset_summary}" + (f" | {combined_notes}" if combined_notes else "")
+
     loan_extra = {
         "lifecycle_status": "Submitted",
         "product_type": payload.product_type,
-        "notes": payload.notes,
+        "notes": combined_notes,
         "product_category": payload.product_category,
         "downpayment_source": payload.downpayment_mode if payload.product_category == "Asset" else None,
         "downpayment_cash": cash_dp if payload.product_category == "Asset" else 0.0,
@@ -1007,6 +1113,8 @@ def apply_for_loan(
         "gap_fee": gap_fee,
         "upfront_interest": interest if (payload.product_category == "Finance" and not is_cash_and_carry) else 0.0,
         "total_upfront_required": total_upfront_required,
+        "asset_items": resolved_asset_items,
+        "asset_summary": resolved_asset_summary or None,
         "guarantor_name": prev_extra.get("guarantor_name") or nok_g.get("full_name") or nok_g.get("name"),
         "guarantor_nickname": prev_extra.get("guarantor_nickname") or nok_g.get("nickname"),
         "guarantor_phone": prev_extra.get("guarantor_phone") or nok_g.get("phone"),
@@ -1092,6 +1200,15 @@ def apply_for_loan(
     })
 
     uow.client.rpc("atomic_execute_operations", {"p_operations": operations}).execute()
+
+    if resolved_asset_items:
+        AssetInventoryService.reserve_stock_for_loan(
+            uow=uow,
+            branch_id=loan_branch_id,
+            loan_id=loan_id,
+            asset_items=resolved_asset_items,
+            performed_by=current_user.username,
+        )
 
     # Link guarantor row if available
     g_phone_link = loan_extra.get("guarantor_phone")
@@ -1184,6 +1301,8 @@ def get_pending_disbursements(
             loan_product=prod_name,
             product_category=prod_cat,
             exceeds_bm_limit=(norm_role == "Branch Manager" and amt > _BM_DISBURSEMENT_CEILING),
+            asset_summary=extra.get("asset_summary"),
+            selected_assets=extra.get("asset_items"),
         ))
 
     can_auth = current_user.role in ["BM", "Branch Manager", "AM", "Area Manager", "Admin", "Super Admin"]
@@ -1300,6 +1419,42 @@ def disburse_loan(
         schedule_adjusted=is_adjusted,
         final_start_date=final_start_date.strftime("%Y-%m-%d"),
         shift_reason=shift_msg
+    )
+
+
+@router.post("/reject", response_model=RejectLoanApplicationResponse)
+def reject_pending_loan(
+    payload: RejectLoanApplicationRequest,
+    current_user: CurrentUser = Depends(require_role(["BM", "Branch Manager", "AM", "Area Manager", "Admin", "Super Admin"])),
+    uow: SupabaseUnitOfWork = Depends(get_uow)
+):
+    """
+    Checker Action: Rejects a pending loan application and releases any reserved branch asset stock.
+    """
+    res_l = (
+        uow.client.table("loans")
+        .select("loan_id, branch_id, status")
+        .eq("loan_id", payload.loan_id)
+        .execute()
+    )
+    if not res_l.data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Loan application not found.")
+    loan_row = res_l.data[0]
+    check_branch_access(current_user, loan_row.get("branch_id"), "reject loans")
+
+    try:
+        LoanService.reject_loan(
+            uow=uow,
+            loan_id=payload.loan_id,
+            rejected_by=current_user.username,
+            reason=payload.reason.strip() or "Not approved",
+        )
+    except ValueError as ve:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(ve))
+
+    return RejectLoanApplicationResponse(
+        success=True,
+        message=f"Loan application #{payload.loan_id[:8]} rejected and any reserved stock released.",
     )
 
 

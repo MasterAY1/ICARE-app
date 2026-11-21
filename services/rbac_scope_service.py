@@ -45,8 +45,11 @@ class RBACScopeService:
         "Account Manager": [
             "Dashboard", "Master Cashbook", "Reports & Export"
         ],
+        "Procurement Officer": [
+            "Dashboard", "Asset & Procurement"
+        ],
         "Admin": [
-            "Dashboard", "Portfolio", "Loan Origination", "Collections", "Withdrawal Operations", "Legacy LAPS Migration", "CO Cashbook",
+            "Dashboard", "Asset & Procurement", "Portfolio", "Loan Origination", "Collections", "Withdrawal Operations", "Legacy LAPS Migration", "CO Cashbook",
             "Master Cashbook", "User Management", "Audit Ledger",
             "Reports & Export"
         ],
@@ -74,6 +77,12 @@ class RBACScopeService:
         "ACCOUNT MANAGER": "Account Manager",
         "ACCOUNT_MANAGER": "Account Manager",
         "ACCOUNTANT": "Account Manager",
+        "PROCUREMENT OFFICER": "Procurement Officer",
+        "PROCUREMENT_OFFICER": "Procurement Officer",
+        "PROCUREMENT": "Procurement Officer",
+        "ASSET MANAGER": "Procurement Officer",
+        "ASSET_MANAGER": "Procurement Officer",
+        "PO": "Procurement Officer",
         "ADMIN": "Admin",
         "ADMINISTRATOR": "Admin",
         "SUPER_ADMIN": "Admin",
@@ -153,7 +162,7 @@ class RBACScopeService:
             level = "BRANCH"
         elif norm_role == "Area Manager":
             level = "REGION"
-        elif norm_role in ("Director", "Admin"):
+        elif norm_role in ("Director", "Admin", "Procurement Officer"):
             level = "INSTITUTION"
         else:
             raise UnknownRoleError(f"Unrecognized normalized role: '{norm_role}'.")

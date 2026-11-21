@@ -312,6 +312,41 @@ class CoApiService {
     return response.data as Map<String, dynamic>;
   }
 
+  /// POST /api/v1/co/origination/reject
+  Future<Map<String, dynamic>> rejectPendingLoan({
+    required String loanId,
+    required String reason,
+  }) async {
+    final response = await _client.post('/api/v1/co/origination/reject', data: {
+      'loan_id': loanId,
+      'reason': reason,
+    });
+    return response.data as Map<String, dynamic>;
+  }
+
+  /// GET /api/v1/co/origination/asset-catalog
+  Future<Map<String, dynamic>> getBranchAssetCatalog({
+    String? branchId,
+    String? category,
+    String? search,
+    bool inStockOnly = false,
+  }) async {
+    final q = <String, dynamic>{
+      'in_stock_only': inStockOnly,
+    };
+    if (branchId != null && branchId.isNotEmpty) q['branch_id'] = branchId;
+    if (category != null && category.isNotEmpty && category != 'ALL') q['category'] = category;
+    if (search != null && search.trim().isNotEmpty) q['search'] = search.trim();
+    final response = await _client.get('/api/v1/co/origination/asset-catalog', queryParameters: q);
+    return response.data as Map<String, dynamic>;
+  }
+
+  /// POST /api/v1/co/origination/branch-inventory/adjust
+  Future<Map<String, dynamic>> adjustBranchAssetInventory(Map<String, dynamic> payload) async {
+    final response = await _client.post('/api/v1/co/origination/branch-inventory/adjust', data: payload);
+    return response.data as Map<String, dynamic>;
+  }
+
   /// PUT /api/v1/co/origination/update-client/{clientId}
   Future<Map<String, dynamic>> updateClientAndGuarantor(String clientId, Map<String, dynamic> payload) async {
     final response = await _client.put('/api/v1/co/origination/update-client/$clientId', data: payload);

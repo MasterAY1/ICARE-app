@@ -25,6 +25,7 @@ from api.routes import onboarding
 from api.routes import telemetry
 from api.routes import transactions
 from api.routes import observability
+from api.routes import procurement
 from auth.session import get_auth_secret
 from database.connection import verify_supabase_credentials
 import os
@@ -271,6 +272,7 @@ app.include_router(onboarding.router)
 app.include_router(telemetry.router)
 app.include_router(transactions.router)
 app.include_router(observability.router)
+app.include_router(procurement.router)
 
 
 @app.get("/health")

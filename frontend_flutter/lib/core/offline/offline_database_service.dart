@@ -402,6 +402,21 @@ class OfflineDatabaseService {
     return null;
   }
 
+  /// Caches the branch's October 2026 Master Asset Catalog and live physical stock locally
+  Future<void> cacheBranchAssetCatalog(String branchKey, Map<String, dynamic> catalogData) async {
+    final safeKey = _sanitizeScope(branchKey);
+    await cacheApiResponse('asset_catalog_$safeKey', catalogData);
+  }
+
+  /// Retrieves cached branch Asset Catalog & stock inventory for offline browsing
+  Future<Map<String, dynamic>?> getCachedBranchAssetCatalog(String branchKey) async {
+    final safeKey = _sanitizeScope(branchKey);
+    final raw = await getCachedApiResponse('asset_catalog_$safeKey');
+    if (raw is Map<String, dynamic>) return raw;
+    if (raw is Map) return Map<String, dynamic>.from(raw);
+    return null;
+  }
+
   // ==========================================
   // 1. CACHE MANAGEMENT (SYNC-DOWN)
   // ==========================================

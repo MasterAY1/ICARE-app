@@ -230,6 +230,15 @@ def check_branch_access(current_user: CurrentUser, target_branch_id: Optional[st
     if norm_role in ["Admin", "Director"]:
         return
 
+    if norm_role == "Procurement Officer":
+        act_lower = (action_desc or "").lower()
+        if "asset" in act_lower or "inventory" in act_lower:
+            return
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Forbidden: Procurement Officer cannot {action_desc}."
+        )
+
     if not target_branch_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

@@ -165,9 +165,26 @@ class SupabaseUserRepository(BaseRepository[User], UserRepository):
             "Area Manager": "b0c790ef-8bfa-4cda-92ee-63c631a7428f",
             "Branch Manager": "3ea1496a-0498-4a1d-872a-1c7ecdf77b06",
             "Credit Officer": "bd8790ee-c0eb-485a-8b6a-93f54519965d",
-            "Account Manager": "d04a628a-789a-411d-b8aa-3dfc8296a2bf"
+            "Account Manager": "d04a628a-789a-411d-b8aa-3dfc8296a2bf",
+            "Procurement Officer": "7b9e4a12-5c38-4d91-9a2e-6f1c8d3b5e70",
+            "Asset Manager": "7b9e4a12-5c38-4d91-9a2e-6f1c8d3b5e70",
         }
-        role_id = role_map.get(role_name, "bd8790ee-c0eb-485a-8b6a-93f54519965d")
+        role_id = role_map.get(role_name)
+        if not role_id and role_name:
+            try:
+                res_r = (
+                    self.client.table("roles")
+                    .select("role_id")
+                    .ilike("name", role_name.strip())
+                    .limit(1)
+                    .execute()
+                )
+                if res_r.data:
+                    role_id = res_r.data[0].get("role_id")
+            except Exception:
+                pass
+        if not role_id:
+            role_id = "bd8790ee-c0eb-485a-8b6a-93f54519965d"
         try:
             self.client.table("user_roles").upsert({"user_id": user_id, "role_id": role_id}).execute()
         except Exception:

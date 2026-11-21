@@ -70,6 +70,18 @@ PERMISSIONS = {
     ROLE_ACCOUNT_MANAGER: {
         "cashbook.view", "cashbook.edit", "report.view",
     },
+    ROLE_PROCUREMENT_OFFICER: {
+        "asset.view", "asset.manage", "asset.price_edit",
+        "asset.transfer", "asset.report", "branch.view",
+    },
+    "Procurement Officer": {
+        "asset.view", "asset.manage", "asset.price_edit",
+        "asset.transfer", "asset.report", "branch.view",
+    },
+    "Asset Manager": {
+        "asset.view", "asset.manage", "asset.price_edit",
+        "asset.transfer", "asset.report", "branch.view",
+    },
 }
 
 # ---------------------------------------------------------------------------

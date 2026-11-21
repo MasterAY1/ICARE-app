@@ -303,6 +303,8 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
     final lower = role.toLowerCase();
     if (lower.contains('admin') || lower.contains('director')) {
       return isDark ? const Color(0xFFA78BFA) : const Color(0xFF7C3AED);
+    } else if (lower.contains('procurement') || lower.contains('asset')) {
+      return isDark ? const Color(0xFF2DD4BF) : const Color(0xFF0D9488);
     } else if (lower.contains('branch manager') || lower.contains('bm')) {
       return isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
     } else if (lower.contains('area manager') || lower.contains('am')) {
@@ -460,8 +462,17 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
           }
           if (_userRoleFilter == 'ACTIVE' && !u.isActive) return false;
           if (_userRoleFilter == 'INACTIVE' && u.isActive) return false;
-          if (_userRoleFilter == 'CO' && !u.role.toLowerCase().contains('officer')) return false;
-          if (_userRoleFilter == 'BM' && !u.role.toLowerCase().contains('branch manager')) return false;
+          if (_userRoleFilter == 'CO' && (!u.role.toLowerCase().contains('officer') || u.role.toLowerCase().contains('procurement'))) {
+            return false;
+          }
+          if (_userRoleFilter == 'BM' && !u.role.toLowerCase().contains('branch manager')) {
+            return false;
+          }
+          if (_userRoleFilter == 'PROC' &&
+              !u.role.toLowerCase().contains('procurement') &&
+              !u.role.toLowerCase().contains('asset')) {
+            return false;
+          }
           if (_userRoleFilter == 'ADMIN' && !u.role.toLowerCase().contains('admin') && !u.role.toLowerCase().contains('director')) return false;
           return true;
         }).toList();
@@ -598,8 +609,9 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
                   ('ALL', 'All (${allUsers.length})'),
                   ('ACTIVE', 'Active (${allUsers.where((u) => u.isActive).length})'),
                   ('INACTIVE', 'Inactive (${allUsers.where((u) => !u.isActive).length})'),
-                  ('CO', 'Credit Officers (${allUsers.where((u) => u.role.toLowerCase().contains('officer')).length})'),
+                  ('CO', 'Credit Officers (${allUsers.where((u) => u.role.toLowerCase().contains('officer') && !u.role.toLowerCase().contains('procurement')).length})'),
                   ('BM', 'Branch Managers (${allUsers.where((u) => u.role.toLowerCase().contains('branch manager')).length})'),
+                  ('PROC', 'Procurement (${allUsers.where((u) => u.role.toLowerCase().contains('procurement') || u.role.toLowerCase().contains('asset')).length})'),
                 ].map((f) {
                   final isSelected = _userRoleFilter == f.$1;
                   return Padding(
@@ -1096,6 +1108,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
         'Credit Officer',
         'Branch Manager',
         'Area Manager',
+        'Procurement Officer',
         'Admin',
         'Super Admin',
         'Account Manager',
