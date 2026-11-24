@@ -34,6 +34,7 @@ import '../../admin/presentation/admin_dashboard_screen.dart';
 import '../../admin/presentation/admin_portfolio_screen.dart';
 import '../../procurement/data/datasources/procurement_api_service.dart';
 import '../../procurement/presentation/asset_procurement_screen.dart';
+import '../../procurement/presentation/procurement_dashboard_screen.dart';
 import '../../auth/presentation/login_screen.dart';
 
 /// Active page state provider for Streamlit-style radio navigation
@@ -226,6 +227,9 @@ class CoAppScaffold extends ConsumerWidget {
     }
 
     ref.read(activeCoPageProvider.notifier).state = 'Dashboard';
+    ref.read(activeProcurementTabProvider.notifier).state = 0;
+    ref.read(activeProcurementStockOpModeProvider.notifier).state = 0;
+    ref.read(activeProcurementCostFilterProvider.notifier).state = 'ALL';
     await ref.read(authControllerProvider.notifier).logout();
     if (!context.mounted) return;
     Navigator.of(context).pushAndRemoveUntil(
@@ -322,7 +326,8 @@ class CoAppScaffold extends ConsumerWidget {
         roleLower == 'procurement_officer' ||
         roleLower == 'asset manager' ||
         roleLower == 'asset_manager' ||
-        roleLower == 'procurement';
+        roleLower == 'procurement' ||
+        roleLower == 'po';
     final isAdmin = role == 'Admin' || role == 'Super Admin' || role == 'ADMIN' || isDirector;
     final isAm = role == 'Area Manager' || role == 'AM';
 
@@ -1684,12 +1689,12 @@ class CoAppScaffold extends ConsumerWidget {
     final tokens = IcareSurfaceTokens.of(context);
     switch (page) {
       case 'Dashboard':
-        if (isProcurement) return const AssetProcurementScreen(initialTabIndex: 0);
+        if (isProcurement) return const ProcurementDashboardScreen();
         if (isAdmin) return const AdminDashboardScreen();
         if (isAm) return const AmDashboardScreen();
         return isBm ? const BmDashboardScreen() : const CoDashboardScreen();
       case 'Asset & Procurement':
-        return AssetProcurementScreen(initialTabIndex: isProcurement ? 1 : 0);
+        return const AssetProcurementScreen();
       case 'Loan Origination':
         return const LoanOriginationScreen();
       case 'Collections':

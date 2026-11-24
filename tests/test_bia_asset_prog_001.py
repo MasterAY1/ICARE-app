@@ -584,5 +584,78 @@ def test_price_and_procurement_routes_enforce_strict_role_lock():
         res_po_ov = client.get("/api/v1/procurement/overview")
         assert res_po_ov.status_code == 200
         assert res_po_ov.json()["catalog_readiness"]["cost_configured_skus"] == 1
+
+        # 3. Admin MUST have view-only access (200 on GET) and MUST be rejected (403) on all mutations
+        active_user_holder["user"] = CurrentUser(
+            id="admin-1",
+            username="admin",
+            role="Admin",
+            branch="Head Office",
+            branch_id="ho-uuid",
+        )
+        assert client.get("/api/v1/procurement/overview").status_code == 200
+        assert client.get("/api/v1/procurement/stock-matrix").status_code == 200
+
+        assert (
+            client.post(
+                "/api/v1/co/origination/branch-inventory/adjust",
+                json={"item_id": cyl_id, "quantity_delta": 1, "new_cash_price": 30000.0},
+            ).status_code
+            == 403
+        )
+        assert (
+            client.post(
+                "/api/v1/procurement/receive-stock",
+                json={
+                    "branch_id": ogijo_id,
+                    "items": [{"item_id": cyl_id, "quantity_received": 1}],
+                },
+            ).status_code
+            == 403
+        )
+        assert (
+            client.post(
+                "/api/v1/procurement/transfer-stock",
+                json={
+                    "from_branch_id": ogijo_id,
+                    "to_branch_id": "22222222-2222-2222-2222-222222222222",
+                    "item_id": cyl_id,
+                    "quantity": 1,
+                },
+            ).status_code
+            == 403
+        )
+        assert (
+            client.post(
+                "/api/v1/procurement/write-off",
+                json={
+                    "branch_id": ogijo_id,
+                    "item_id": cyl_id,
+                    "quantity": 1,
+                    "reason": "Test admin blocked",
+                },
+            ).status_code
+            == 403
+        )
+        assert (
+            client.post(
+                "/api/v1/procurement/catalog-item",
+                json={
+                    "category": "TELEVISION",
+                    "item_name": "TEST TV",
+                    "cash_and_carry_price": 100000.0,
+                },
+            ).status_code
+            == 403
+        )
+        assert (
+            client.post(
+                "/api/v1/procurement/catalog-prices/bulk",
+                json={
+                    "updates": [{"item_id": cyl_id, "cash_and_carry_price": 29000.0}],
+                },
+            ).status_code
+            == 403
+        )
     finally:
         app.dependency_overrides.clear()

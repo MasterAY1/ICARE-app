@@ -10,16 +10,35 @@ import '../../../core/utils/currency_formatter.dart';
 import '../../../core/widgets/icare_skeleton_loader.dart';
 import '../data/datasources/procurement_api_service.dart';
 
-/// Enterprise Asset & Procurement Command Hub (`BIA-ASSET-PROC-001`).
-/// Provides multi-branch physical inventory control, supplier GRN receiving,
-/// inter-branch stock transfers, damaged/lost write-offs, master cost & retail
-/// price governance, and Profit & Loss reporting across all ICARE branches.
+/// Shared navigation & filter coordination providers so quick actions on
+/// ProcurementDashboardScreen can land directly on any Asset & Procurement tab.
+final activeProcurementTabProvider = StateProvider<int>((ref) => 0);
+final activeProcurementStockOpModeProvider = StateProvider<int>((ref) => 0);
+final activeProcurementCostFilterProvider =
+    StateProvider<String>((ref) => 'ALL');
+
+/// Strict client-side write permission check: only Procurement Officer / Asset Manager.
+bool isProcurementOperatorRole(AuthUser? user) {
+  final role = (user?.role ?? '').trim().toLowerCase();
+  return role == 'procurement officer' ||
+      role == 'procurement_officer' ||
+      role == 'asset manager' ||
+      role == 'asset_manager' ||
+      role == 'procurement' ||
+      role == 'po';
+}
+
+/// Asset Catalog & Procurement Operations workspace.
+/// - For Procurement Officers: full catalog/pricing management, multi-branch stock
+///   transfers, supplier GRN receipts, and damage/loss write-offs.
+/// - For Admin / Executive viewers: read-only institution directory, stock matrix,
+///   branch valuation breakdown, and movement audit log.
 class AssetProcurementScreen extends ConsumerStatefulWidget {
-  final int initialTabIndex;
+  final int? initialTabIndex;
 
   const AssetProcurementScreen({
     super.key,
-    this.initialTabIndex = 0,
+    this.initialTabIndex,
   });
 
   @override
@@ -29,24 +48,29 @@ class AssetProcurementScreen extends ConsumerStatefulWidget {
 
 class _AssetProcurementScreenState
     extends ConsumerState<AssetProcurementScreen> {
-  late int _activeTab;
   bool _isLoading = true;
   bool _isSubmitting = false;
   String? _loadError;
   String? _flashSuccess;
   String? _flashError;
 
-  String _selectedBranchFilter = 'ALL';
   Map<String, dynamic> _overview = {};
   Map<String, dynamic> _matrix = {};
 
-  // Tab 1 (Multi-Branch Matrix) filters
+  // Tab 0 (Master Catalog & Pricing) state
+  final _priceSearchCtrl = TextEditingController();
+  String _priceCategory = 'ALL';
+  int _pricePage = 0;
+  int _pricePageSize = 50;
+
+  // Tab 1 (Multi-Branch Stock Matrix) state
   final _matrixSearchCtrl = TextEditingController();
   String _matrixCategory = 'ALL';
   bool _matrixInStockOnly = false;
+  int _matrixPage = 0;
+  int _matrixPageSize = 50;
 
-  // Tab 2 (Receive Stock GRN vs Write-Off) state
-  int _stockOpMode = 0; // 0 = Receive GRN, 1 = Write-Off
+  // Tab 2 (Procurement Officer: GRN vs Write-Off) state
   String? _grnBranchId;
   final _grnSupplierCtrl = TextEditingController();
   final _grnReferenceCtrl = TextEditingController();
@@ -60,30 +84,35 @@ class _AssetProcurementScreenState
   final _woRefCtrl = TextEditingController();
   final _woReasonCtrl = TextEditingController();
 
-  // Tab 3 (Price & Cost Manager) filters
-  final _priceSearchCtrl = TextEditingController();
-  String _priceCategory = 'ALL';
-  String _costStatusFilter = 'ALL'; // ALL, PENDING, CONFIGURED, IN_STOCK
-
   @override
   void initState() {
     super.initState();
-    _activeTab = widget.initialTabIndex.clamp(0, 3);
+    if (widget.initialTabIndex != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ref.read(activeProcurementTabProvider.notifier).state =
+            widget.initialTabIndex!.clamp(0, 2);
+      });
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadData());
   }
 
   @override
   void didUpdateWidget(covariant AssetProcurementScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.initialTabIndex != widget.initialTabIndex) {
-      setState(() {
-        _activeTab = widget.initialTabIndex.clamp(0, 3);
+    if (widget.initialTabIndex != null &&
+        oldWidget.initialTabIndex != widget.initialTabIndex) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ref.read(activeProcurementTabProvider.notifier).state =
+            widget.initialTabIndex!.clamp(0, 2);
       });
     }
   }
 
   @override
   void dispose() {
+    _priceSearchCtrl.dispose();
     _matrixSearchCtrl.dispose();
     _grnSupplierCtrl.dispose();
     _grnReferenceCtrl.dispose();
@@ -91,18 +120,7 @@ class _AssetProcurementScreenState
     _woQtyCtrl.dispose();
     _woRefCtrl.dispose();
     _woReasonCtrl.dispose();
-    _priceSearchCtrl.dispose();
     super.dispose();
-  }
-
-  bool _canEditProcurement(AuthUser? user) {
-    final role = (user?.role ?? '').trim().toLowerCase();
-    return role == 'procurement officer' ||
-        role == 'procurement_officer' ||
-        role == 'asset manager' ||
-        role == 'asset_manager' ||
-        role == 'admin' ||
-        role == 'super admin';
   }
 
   Future<void> _loadData({bool silent = false}) async {
@@ -115,15 +133,13 @@ class _AssetProcurementScreenState
     try {
       final api = ref.read(procurementApiServiceProvider);
       final results = await Future.wait([
-        api.getOverview(
-          branchId: _selectedBranchFilter == 'ALL' ? null : _selectedBranchFilter,
-        ),
+        api.getOverview(),
         api.getStockMatrix(),
       ]);
       if (!mounted) return;
       final ov = results[0];
       final mx = results[1];
-      final branches = (ov['branches'] as List<dynamic>? ?? [])
+      final branches = (ov['branches'] as List<dynamic>? ?? const [])
           .whereType<Map>()
           .map((e) => Map<String, dynamic>.from(e))
           .toList();
@@ -158,7 +174,8 @@ class _AssetProcurementScreenState
   }
 
   List<String> get _categories {
-    final raw = (_matrix['categories'] ?? _overview['categories']) as List<dynamic>?;
+    final raw =
+        (_matrix['categories'] ?? _overview['categories']) as List<dynamic>?;
     return (raw ?? const []).map((e) => e.toString()).toList();
   }
 
@@ -183,7 +200,8 @@ class _AssetProcurementScreenState
     final tokens = IcareSurfaceTokens.of(context);
     final authState = ref.watch(authControllerProvider);
     final user = authState is AuthStateAuthenticated ? authState.user : null;
-    final canEdit = _canEditProcurement(user);
+    final canEdit = isProcurementOperatorRole(user);
+    final activeTab = ref.watch(activeProcurementTabProvider).clamp(0, 2);
 
     ref.listen<int>(procurementRefreshSignalProvider, (prev, next) {
       if (prev != next) {
@@ -197,119 +215,484 @@ class _AssetProcurementScreenState
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Header bar
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Asset & Procurement Control Hub',
-                    style: TextStyle(
-                      fontSize: isMobile ? 20 : 24,
-                      fontWeight: FontWeight.w800,
-                      color: tokens.textPrimary,
-                      fontFamily: 'Plus Jakarta Sans',
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Cross-branch asset inventory, supplier receiving (GRN), stock transfers, cost/selling governance, and Asset P&L.',
-                    style: TextStyle(fontSize: 13, color: tokens.textMuted),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 12),
-            OutlinedButton.icon(
-              onPressed: _isLoading ? null : () => _loadData(),
-              icon: const Icon(Icons.refresh, size: 16),
-              label: const Text('Refresh'),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: tokens.textPrimary,
-                side: BorderSide(color: tokens.borderStrong),
-                backgroundColor: tokens.surface,
-              ),
-            ),
-          ],
+        _buildWorkspaceHeader(
+          tokens: tokens,
+          canEdit: canEdit,
+          isMobile: isMobile,
         ),
         const SizedBox(height: 14),
 
+        if (!canEdit) ...[
+          _buildReadOnlyGovernanceBanner(tokens),
+          const SizedBox(height: 14),
+        ],
+
         if (_flashSuccess != null) ...[
           _buildBanner(_flashSuccess!, isError: false, tokens: tokens),
-          const SizedBox(height: 10),
+          const SizedBox(height: 12),
         ],
         if (_flashError != null) ...[
           _buildBanner(_flashError!, isError: true, tokens: tokens),
-          const SizedBox(height: 10),
+          const SizedBox(height: 12),
         ],
 
-        // 4 Pill Tabs
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: Row(
+        if (!_isLoading && _loadError == null) ...[
+          _buildSummaryStrip(tokens),
+          const SizedBox(height: 16),
+        ],
+
+        _buildWorkspaceTabs(tokens, activeTab: activeTab, canEdit: canEdit),
+        const SizedBox(height: 16),
+
+        if (_isLoading)
+          const IcareTableSkeleton(rowCount: 7, hasFilterBar: true)
+        else if (_loadError != null)
+          _buildBanner(
+            'Unable to load asset inventory data: $_loadError',
+            isError: true,
+            tokens: tokens,
+          )
+        else
+          _buildTabBody(
+            tokens,
+            activeTab: activeTab,
+            canEdit: canEdit,
+            isMobile: isMobile,
+          ),
+      ],
+    );
+  }
+
+  Widget _buildWorkspaceHeader({
+    required IcareSurfaceTokens tokens,
+    required bool canEdit,
+    required bool isMobile,
+  }) {
+    final eyebrow = canEdit
+        ? 'PROCUREMENT OPERATIONS WORKSPACE'
+        : 'EXECUTIVE READ-ONLY OVERSIGHT';
+    final title = canEdit
+        ? 'Asset Catalog & Procurement Operations'
+        : 'Institution Asset & Inventory Directory';
+    final subtitle = canEdit
+        ? 'Manage master asset pricing, supplier cost prices, multi-branch stock transfers, GRN stock receiving, and write-offs.'
+        : 'Executive read-only oversight of all master catalog assets, branch stock levels, pricing tiers, and movement logs.';
+
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.all(isMobile ? 16 : 20),
+      decoration: BoxDecoration(
+        color: tokens.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: tokens.borderSubtle),
+      ),
+      child: Wrap(
+        spacing: 16,
+        runSpacing: 12,
+        alignment: WrapAlignment.spaceBetween,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: isMobile ? double.infinity : 760,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: canEdit ? tokens.brandSoftBg : tokens.infoBg,
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(
+                      color: canEdit
+                          ? tokens.brandSoftBorder
+                          : tokens.infoBorder,
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        canEdit
+                            ? Icons.inventory_2_outlined
+                            : Icons.visibility_outlined,
+                        size: 13,
+                        color:
+                            canEdit ? tokens.brandSoftText : tokens.infoText,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        eyebrow,
+                        style: TextStyle(
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0.7,
+                          color:
+                              canEdit ? tokens.brandSoftText : tokens.infoText,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  title,
+                  style: TextStyle(
+                    fontSize: isMobile ? 20 : 23,
+                    fontWeight: FontWeight.w800,
+                    color: tokens.textPrimary,
+                    fontFamily: 'Plus Jakarta Sans',
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  subtitle,
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: tokens.textMuted,
+                    height: 1.35,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              (0, 'Stock & P&L Overview', Icons.analytics_outlined),
-              (1, 'Multi-Branch Matrix & Transfers', Icons.swap_horiz_outlined),
-              (2, 'Receive Stock (GRN) & Write-Offs', Icons.inventory_2_outlined),
-              (3, 'Master Price & Cost List', Icons.sell_outlined),
-            ].map((tab) {
-              final selected = _activeTab == tab.$1;
-              return Padding(
-                padding: const EdgeInsets.only(right: 8),
-                child: InkWell(
-                  onTap: () => setState(() => _activeTab = tab.$1),
-                  borderRadius: BorderRadius.circular(20),
-                  child: Container(
+              if (canEdit) ...[
+                ElevatedButton.icon(
+                  onPressed: _isLoading
+                      ? null
+                      : () => _openCatalogItemModal(tokens),
+                  icon: const Icon(Icons.add_box_outlined, size: 17),
+                  label: const Text('Add New SKU'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: tokens.brandPrimary,
+                    foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(
                       horizontal: 14,
-                      vertical: 9,
-                    ),
-                    decoration: BoxDecoration(
-                      color: selected ? tokens.brandPrimary : tokens.surface,
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(
-                        color: selected ? tokens.brandPrimary : tokens.borderStrong,
-                      ),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          tab.$3,
-                          size: 16,
-                          color: selected ? Colors.white : tokens.textMuted,
-                        ),
-                        const SizedBox(width: 6),
-                        Text(
-                          tab.$2,
-                          style: TextStyle(
-                            fontSize: 12.5,
-                            fontWeight:
-                                selected ? FontWeight.w700 : FontWeight.w600,
-                            color: selected ? Colors.white : tokens.textSecondary,
-                          ),
-                        ),
-                      ],
+                      vertical: 11,
                     ),
                   ),
                 ),
-              );
-            }).toList(),
+                const SizedBox(width: 8),
+              ],
+              OutlinedButton.icon(
+                onPressed: _isLoading ? null : () => _loadData(),
+                icon: const Icon(Icons.refresh, size: 16),
+                label: const Text('Refresh'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: tokens.textPrimary,
+                  side: BorderSide(color: tokens.borderStrong),
+                  backgroundColor: tokens.surfaceSubtle,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 11,
+                  ),
+                ),
+              ),
+            ],
           ),
-        ),
-        const SizedBox(height: 18),
+        ],
+      ),
+    );
+  }
 
-        if (_isLoading)
-          const IcareTableSkeleton(rowCount: 6, hasFilterBar: true)
-        else if (_loadError != null)
-          _buildBanner('Unable to load procurement data: $_loadError',
-              isError: true, tokens: tokens)
-        else
-          _buildTabBody(tokens, canEdit: canEdit, isMobile: isMobile),
-      ],
+  Widget _buildReadOnlyGovernanceBanner(IcareSurfaceTokens tokens) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+      decoration: BoxDecoration(
+        color: tokens.infoBg,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: tokens.infoBorder),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(7),
+            decoration: BoxDecoration(
+              color: tokens.surface.withValues(alpha: 0.7),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: tokens.infoBorder),
+            ),
+            child: Icon(Icons.shield_outlined, size: 18, color: tokens.infoDot),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Executive Read-Only View',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                    color: tokens.infoText,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  'You can inspect all asset catalog prices, multi-branch stock levels, valuations, and movement history. Stock adjustments, transfers, GRN receiving, and price edits are restricted exclusively to the Procurement Officer.',
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w500,
+                    color: tokens.textSecondary,
+                    height: 1.4,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSummaryStrip(IcareSurfaceTokens tokens) {
+    final items = _matrixItems;
+    final totalSkus = items.length;
+    final inStockSkus = items
+        .where((x) => ((x['total_available'] as num?)?.toInt() ?? 0) > 0)
+        .length;
+    final costConfigured =
+        items.where((x) => x['has_cost_price'] == true).length;
+    final costPending = totalSkus - costConfigured;
+
+    final totalAvail = items.fold<int>(
+      0,
+      (s, x) => s + ((x['total_available'] as num?)?.toInt() ?? 0),
+    );
+    final totalOnHand = items.fold<int>(
+      0,
+      (s, x) => s + ((x['total_on_hand'] as num?)?.toInt() ?? 0),
+    );
+    final totalReserved = items.fold<int>(
+      0,
+      (s, x) => s + ((x['total_reserved'] as num?)?.toInt() ?? 0),
+    );
+
+    final invSum = Map<String, dynamic>.from(
+      (_overview['inventory_summary'] as Map?) ?? const {},
+    );
+    final retailValue =
+        (invSum['inventory_cash_value'] as num?)?.toDouble() ??
+            items.fold<double>(0.0, (s, x) {
+              final oh = (x['total_on_hand'] as num?)?.toInt() ?? 0;
+              final cash = (x['cash_and_carry_price'] as num?)?.toDouble() ?? 0.0;
+              return s + (oh * cash);
+            });
+    final costValue =
+        (invSum['inventory_cost_value'] as num?)?.toDouble() ?? 0.0;
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final cols = constraints.maxWidth >= 980
+            ? 4
+            : (constraints.maxWidth >= 560 ? 2 : 1);
+        const spacing = 12.0;
+        final tileWidth =
+            (constraints.maxWidth - (cols - 1) * spacing) / cols;
+
+        return Wrap(
+          spacing: spacing,
+          runSpacing: spacing,
+          children: [
+            _summaryMetricTile(
+              tokens: tokens,
+              width: tileWidth,
+              icon: Icons.category_outlined,
+              accent: tokens.brandPrimary,
+              label: 'Total Catalog SKUs',
+              value: '$totalSkus SKUs',
+              detail: '$costConfigured costed  •  $costPending pending cost',
+            ),
+            _summaryMetricTile(
+              tokens: tokens,
+              width: tileWidth,
+              icon: Icons.check_circle_outline,
+              accent: tokens.successDot,
+              label: 'In-Stock SKUs',
+              value: '$inStockSkus SKUs',
+              detail: 'Across ${_categories.length} active asset categories',
+            ),
+            _summaryMetricTile(
+              tokens: tokens,
+              width: tileWidth,
+              icon: Icons.inventory_2_outlined,
+              accent: tokens.infoDot,
+              label: 'Total Available Units',
+              value: '$totalAvail units',
+              detail: '$totalOnHand on hand  •  $totalReserved reserved',
+            ),
+            _summaryMetricTile(
+              tokens: tokens,
+              width: tileWidth,
+              icon: Icons.account_balance_wallet_outlined,
+              accent: tokens.brandPrimaryLight,
+              label: 'Total Retail Stock Value',
+              value: CurrencyFormatter.formatNaira(retailValue),
+              detail: costValue > 0
+                  ? 'Wholesale Cost: ${CurrencyFormatter.formatNaira(costValue)}'
+                  : 'Wholesale Cost Valuation: Pending',
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _summaryMetricTile({
+    required IcareSurfaceTokens tokens,
+    required double width,
+    required IconData icon,
+    required Color accent,
+    required String label,
+    required String value,
+    required String detail,
+  }) {
+    return Container(
+      width: width,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+      decoration: BoxDecoration(
+        color: tokens.surface,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: tokens.borderSubtle),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(9),
+            decoration: BoxDecoration(
+              color: accent.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(9),
+            ),
+            child: Icon(icon, size: 20, color: accent),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w700,
+                    color: tokens.textMuted,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  value,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w800,
+                    color: tokens.textPrimary,
+                    fontFeatures: const [FontFeature.tabularFigures()],
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  detail,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 11, color: tokens.textSecondary),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildWorkspaceTabs(
+    IcareSurfaceTokens tokens, {
+    required int activeTab,
+    required bool canEdit,
+  }) {
+    final tabs = [
+      (0, 'Master Catalog & Pricing', Icons.sell_outlined),
+      (1, 'Multi-Branch Stock Matrix', Icons.swap_horiz_outlined),
+      if (canEdit)
+        (2, 'Receive Stock (GRN) & Write-Offs', Icons.inventory_2_outlined)
+      else
+        (2, 'Branch Valuation & Movement Log', Icons.history_edu_outlined),
+    ];
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(6),
+      decoration: BoxDecoration(
+        color: tokens.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: tokens.borderSubtle),
+      ),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: tabs.map((tab) {
+            final selected = activeTab == tab.$1;
+            return Padding(
+              padding: const EdgeInsets.only(right: 6),
+              child: InkWell(
+                onTap: () {
+                  ref.read(activeProcurementTabProvider.notifier).state =
+                      tab.$1;
+                },
+                borderRadius: BorderRadius.circular(9),
+                child: AnimatedContainer(
+                  duration: IcareFluidMotion.resolveDuration(
+                    context,
+                    IcareFluidMotion.microDuration,
+                  ),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 10,
+                  ),
+                  decoration: BoxDecoration(
+                    color: selected ? tokens.brandPrimary : Colors.transparent,
+                    borderRadius: BorderRadius.circular(9),
+                    border: Border.all(
+                      color: selected
+                          ? tokens.brandPrimary
+                          : Colors.transparent,
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        tab.$3,
+                        size: 16,
+                        color: selected ? Colors.white : tokens.textMuted,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        tab.$2,
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight:
+                              selected ? FontWeight.w700 : FontWeight.w600,
+                          color: selected ? Colors.white : tokens.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          }).toList(),
+        ),
+      ),
     );
   }
 
@@ -363,515 +746,399 @@ class _AssetProcurementScreenState
 
   Widget _buildTabBody(
     IcareSurfaceTokens tokens, {
+    required int activeTab,
     required bool canEdit,
     required bool isMobile,
   }) {
-    switch (_activeTab) {
+    switch (activeTab) {
       case 0:
-        return _buildOverviewTab(tokens, isMobile: isMobile);
+        return _buildPriceCatalogTab(tokens, canEdit: canEdit);
       case 1:
         return _buildMatrixTab(tokens, canEdit: canEdit);
       case 2:
-        return _buildReceiveAndWriteOffTab(tokens, canEdit: canEdit);
-      case 3:
-        return _buildPriceCatalogTab(tokens, canEdit: canEdit);
+        if (canEdit) {
+          return _buildReceiveAndWriteOffTab(tokens);
+        }
+        return _buildAdminAuditAndValuationTab(tokens, isMobile: isMobile);
       default:
         return const SizedBox.shrink();
     }
   }
 
   // ===========================================================================
-  // TAB 0: STOCK & PROFIT/LOSS OVERVIEW
+  // TAB 0: MASTER CATALOG & PRICING
   // ===========================================================================
-  Widget _buildOverviewTab(
+  Widget _buildPriceCatalogTab(
     IcareSurfaceTokens tokens, {
-    required bool isMobile,
+    required bool canEdit,
   }) {
-    final invSum = Map<String, dynamic>.from(
-        (_overview['inventory_summary'] as Map?) ?? const {});
-    final pnlSum = Map<String, dynamic>.from(
-        (_overview['pnl_summary'] as Map?) ?? const {});
-    final readiness = Map<String, dynamic>.from(
-        (_overview['catalog_readiness'] as Map?) ?? const {});
-    final branchSummaries =
-        (_overview['branch_summaries'] as List<dynamic>? ?? const [])
-            .whereType<Map>()
-            .map((e) => Map<String, dynamic>.from(e))
-            .toList();
-    final breakdown =
-        (_overview['profit_breakdown_by_item'] as List<dynamic>? ?? const [])
-            .whereType<Map>()
-            .map((e) => Map<String, dynamic>.from(e))
-            .toList();
-    final movements =
-        (_overview['recent_movements'] as List<dynamic>? ?? const [])
-            .whereType<Map>()
-            .map((e) => Map<String, dynamic>.from(e))
-            .toList();
+    final costStatusFilter = ref.watch(activeProcurementCostFilterProvider);
+    final q = _priceSearchCtrl.text.trim().toLowerCase();
 
-    final costPendingSkus =
-        (readiness['cost_pending_skus'] as num?)?.toInt() ?? 0;
-    final costConfiguredSkus =
-        (readiness['cost_configured_skus'] as num?)?.toInt() ?? 0;
-    final totalCatalogSkus =
-        (readiness['total_catalog_skus'] as num?)?.toInt() ?? 0;
+    final filtered = _matrixItems.where((it) {
+      if (_priceCategory != 'ALL' &&
+          (it['category']?.toString().toUpperCase() ?? '') != _priceCategory) {
+        return false;
+      }
+      final hasCost = it['has_cost_price'] == true;
+      final totAvail = (it['total_available'] as num?)?.toInt() ?? 0;
+      if (costStatusFilter == 'PENDING' && hasCost) return false;
+      if (costStatusFilter == 'CONFIGURED' && !hasCost) return false;
+      if (costStatusFilter == 'IN_STOCK' && totAvail <= 0) return false;
+      if (costStatusFilter == 'OUT_OF_STOCK' && totAvail > 0) return false;
+      if (q.isNotEmpty) {
+        final hay =
+            '${it['item_name']} ${it['sku_code']} ${it['category']} ${it['supplier_name'] ?? ''}'
+                .toLowerCase();
+        if (!hay.contains(q)) return false;
+      }
+      return true;
+    }).toList();
+
+    final totalCount = filtered.length;
+    final totalPages = totalCount == 0 ? 1 : (totalCount / _pricePageSize).ceil();
+    final safePage = _pricePage.clamp(0, totalPages - 1);
+    final startIdx = safePage * _pricePageSize;
+    final endIdx = (startIdx + _pricePageSize).clamp(0, totalCount);
+    final pageRows = filtered.sublist(startIdx, endIdx);
+
+    final inStockCount = _matrixItems
+        .where((x) => ((x['total_available'] as num?)?.toInt() ?? 0) > 0)
+        .length;
+    final outStockCount = _matrixItems.length - inStockCount;
+    final costConfiguredCount =
+        _matrixItems.where((x) => x['has_cost_price'] == true).length;
+    final costPendingCount = _matrixItems.length - costConfiguredCount;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Branch Scope Filter
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          width: double.infinity,
+          padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
             color: tokens.surface,
             borderRadius: BorderRadius.circular(10),
             border: Border.all(color: tokens.borderSubtle),
           ),
-          child: Wrap(
-            spacing: 12,
-            runSpacing: 8,
-            crossAxisAlignment: WrapCrossAlignment.center,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
-                mainAxisSize: MainAxisSize.min,
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
-                  Icon(Icons.business_outlined, size: 17, color: tokens.brandPrimary),
-                  const SizedBox(width: 6),
-                  Text(
-                    'Scope Filter:',
-                    style: TextStyle(
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w700,
-                      color: tokens.textSecondary,
+                  SizedBox(
+                    width: 270,
+                    child: TextField(
+                      controller: _priceSearchCtrl,
+                      onChanged: (_) => setState(() => _pricePage = 0),
+                      decoration: const InputDecoration(
+                        isDense: true,
+                        prefixIcon: Icon(Icons.search, size: 18),
+                        hintText: 'Search SKU, item, supplier...',
+                        border: OutlineInputBorder(),
+                      ),
                     ),
                   ),
+                  SizedBox(
+                    width: 240,
+                    child: DropdownButtonFormField<String>(
+                      value: _priceCategory,
+                      isExpanded: true,
+                      dropdownColor: tokens.surfaceElevated,
+                      decoration: const InputDecoration(
+                        isDense: true,
+                        labelText: 'Category',
+                        border: OutlineInputBorder(),
+                      ),
+                      items: [
+                        const DropdownMenuItem(
+                            value: 'ALL', child: Text('All Categories')),
+                        ..._categories.map(
+                          (c) => DropdownMenuItem(
+                            value: c,
+                            child: Text(c, overflow: TextOverflow.ellipsis),
+                          ),
+                        ),
+                      ],
+                      onChanged: (v) {
+                        if (v != null) {
+                          setState(() {
+                            _priceCategory = v;
+                            _pricePage = 0;
+                          });
+                        }
+                      },
+                    ),
+                  ),
+                  if (canEdit)
+                    ElevatedButton.icon(
+                      onPressed: () => _openCatalogItemModal(tokens),
+                      icon: const Icon(Icons.add, size: 17),
+                      label: const Text('Add New Asset SKU'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: tokens.brandPrimary,
+                        foregroundColor: Colors.white,
+                      ),
+                    ),
                 ],
               ),
-              SizedBox(
-                width: 240,
-                child: DropdownButtonFormField<String>(
-                  value: _selectedBranchFilter,
-                  isExpanded: true,
-                  dropdownColor: tokens.surfaceElevated,
-                  decoration: const InputDecoration(
-                    isDense: true,
-                    border: OutlineInputBorder(),
-                    contentPadding:
-                        EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                  ),
-                  items: [
-                    const DropdownMenuItem(
-                      value: 'ALL',
-                      child: Text('All ICARE Branches (Institution)'),
-                    ),
-                    ..._branches.map(
-                      (b) => DropdownMenuItem(
-                        value: b['branch_id']?.toString(),
-                        child: Text(b['name']?.toString() ?? 'Branch'),
+              const SizedBox(height: 12),
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    ('ALL', 'All SKUs (${_matrixItems.length})'),
+                    ('IN_STOCK', 'In Stock ($inStockCount)'),
+                    ('OUT_OF_STOCK', 'Out of Stock ($outStockCount)'),
+                    ('PENDING', 'Cost Pending ($costPendingCount)'),
+                    ('CONFIGURED', 'Cost Configured ($costConfiguredCount)'),
+                  ].map((f) {
+                    final selected = costStatusFilter == f.$1;
+                    return Padding(
+                      padding: const EdgeInsets.only(right: 6),
+                      child: ChoiceChip(
+                        selected: selected,
+                        label: Text(f.$2),
+                        onSelected: (_) {
+                          ref
+                              .read(activeProcurementCostFilterProvider.notifier)
+                              .state = f.$1;
+                          setState(() => _pricePage = 0);
+                        },
                       ),
-                    ),
-                  ],
-                  onChanged: (val) {
-                    if (val != null) {
-                      setState(() => _selectedBranchFilter = val);
-                      _loadData();
-                    }
-                  },
+                    );
+                  }).toList(),
                 ),
               ),
-              if (costPendingSkus > 0)
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 6,
-                  ),
-                  decoration: BoxDecoration(
-                    color: tokens.warningBg,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: tokens.warningBorder),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.info_outline, size: 15, color: tokens.warningDot),
-                      const SizedBox(width: 6),
-                      Text(
-                        'Cost Pending on $costPendingSkus/$totalCatalogSkus SKUs — enter wholesale cost prices in Master Price & Cost List when ready.',
-                        style: TextStyle(
-                          fontSize: 11.5,
-                          fontWeight: FontWeight.w600,
-                          color: tokens.warningText,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
             ],
           ),
         ),
-        const SizedBox(height: 16),
-
-        // 6 KPI Cards
-        LayoutBuilder(
-          builder: (context, constraints) {
-            final cols = constraints.maxWidth >= 1020
-                ? 3
-                : (constraints.maxWidth >= 620 ? 2 : 1);
-            const spacing = 12.0;
-            final cardWidth =
-                (constraints.maxWidth - (cols - 1) * spacing) / cols;
-
-            final availUnits = (invSum['units_available'] as num?)?.toInt() ?? 0;
-            final onHandUnits = (invSum['units_on_hand'] as num?)?.toInt() ?? 0;
-            final reservedUnits =
-                (invSum['units_reserved'] as num?)?.toInt() ?? 0;
-            final stockedSkus = (invSum['stocked_skus'] as num?)?.toInt() ?? 0;
-            final cashVal =
-                (invSum['inventory_cash_value'] as num?)?.toDouble() ?? 0.0;
-            final costVal =
-                (invSum['inventory_cost_value'] as num?)?.toDouble() ?? 0.0;
-
-            final unitsSold = (pnlSum['units_sold'] as num?)?.toInt() ?? 0;
-            final pkgRev =
-                (pnlSum['realized_package_revenue'] as num?)?.toDouble() ?? 0.0;
-            final grossProf =
-                (pnlSum['gross_profit'] as num?)?.toDouble() ?? 0.0;
-            final tradeProf =
-                (pnlSum['realized_trading_profit'] as num?)?.toDouble() ?? 0.0;
-            final finMarkup =
-                (pnlSum['realized_financing_markup'] as num?)?.toDouble() ?? 0.0;
-            final netProf =
-                (pnlSum['net_realized_profit'] as num?)?.toDouble() ?? 0.0;
-            final woUnits = (pnlSum['write_off_units'] as num?)?.toInt() ?? 0;
-            final woLoss =
-                (pnlSum['write_off_cost_loss'] as num?)?.toDouble() ?? 0.0;
-            final netMarginPct =
-                (pnlSum['net_margin_pct'] as num?)?.toDouble() ?? 0.0;
-
-            final kpis = [
-              _kpiCard(
-                tokens: tokens,
-                width: cardWidth,
-                icon: Icons.inventory_2_outlined,
-                accentColor: tokens.brandPrimary,
-                title: 'Physical Stock Available',
-                value: '$availUnits units',
-                subtitle:
-                    '$onHandUnits on hand  •  $reservedUnits reserved  •  $stockedSkus stocked SKUs',
-              ),
-              _kpiCard(
-                tokens: tokens,
-                width: cardWidth,
-                icon: Icons.account_balance_wallet_outlined,
-                accentColor: tokens.infoDot,
-                title: 'Inventory Valuation (Retail vs Cost)',
-                value: CurrencyFormatter.formatNaira(cashVal),
-                subtitle: costVal > 0
-                    ? 'Cost Valuation: ${CurrencyFormatter.formatNaira(costVal)} (Projected Retail Margin: ${CurrencyFormatter.formatNaira(cashVal - costVal)})'
-                    : 'Cost Valuation: Pending supplier cost entry',
-              ),
-              _kpiCard(
-                tokens: tokens,
-                width: cardWidth,
-                icon: Icons.price_check_outlined,
-                accentColor: costConfiguredSkus > 0
-                    ? tokens.successDot
-                    : tokens.warningDot,
-                title: 'Supplier Cost Price Readiness',
-                value: '$costConfiguredSkus / $totalCatalogSkus SKUs',
-                subtitle: costPendingSkus > 0
-                    ? '$costPendingSkus SKUs currently flagged Cost Pending'
-                    : 'All catalog SKUs have supplier cost prices',
-              ),
-              _kpiCard(
-                tokens: tokens,
-                width: cardWidth,
-                icon: Icons.point_of_sale_outlined,
-                accentColor: tokens.brandPrimary,
-                title: 'Realized Disbursed Revenue',
-                value: CurrencyFormatter.formatNaira(pkgRev),
-                subtitle:
-                    '$unitsSold units disbursed across Cash & Carry and Easy Buy plans',
-              ),
-              _kpiCard(
-                tokens: tokens,
-                width: cardWidth,
-                icon: Icons.trending_up_outlined,
-                accentColor: tokens.successDot,
-                title: 'Realized Gross Profit',
-                value: CurrencyFormatter.formatNaira(grossProf),
-                subtitle:
-                    'Trading: ${CurrencyFormatter.formatNaira(tradeProf)}  •  Easy Buy Markup: ${CurrencyFormatter.formatNaira(finMarkup)}',
-              ),
-              _kpiCard(
-                tokens: tokens,
-                width: cardWidth,
-                icon: netProf >= 0
-                    ? Icons.assessment_outlined
-                    : Icons.warning_amber_outlined,
-                accentColor:
-                    netProf >= 0 ? tokens.successDot : tokens.dangerDot,
-                title: 'Net Asset P&L (After Write-Offs)',
-                value: CurrencyFormatter.formatNaira(netProf),
-                subtitle:
-                    'Write-Off Loss: ${CurrencyFormatter.formatNaira(woLoss)} ($woUnits units)  •  Net Margin: ${netMarginPct.toStringAsFixed(1)}%',
-              ),
-            ];
-
-            return Wrap(
-              spacing: spacing,
-              runSpacing: spacing,
-              children: kpis,
-            );
-          },
-        ),
-        const SizedBox(height: 20),
-
-        // Per-Branch Valuation Table
-        _sectionCard(
+        const SizedBox(height: 14),
+        ProcurementSectionCard(
           tokens: tokens,
-          title: 'Branch Stock & Valuation Breakdown',
-          subtitle:
-              'Physical units and valuation at cost vs Cash & Carry selling price across all branches',
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: DataTable(
-              headingRowColor: WidgetStateProperty.all(tokens.surfaceSubtle),
-              columns: const [
-                DataColumn(label: Text('Branch')),
-                DataColumn(label: Text('Stocked SKUs'), numeric: true),
-                DataColumn(label: Text('On Hand'), numeric: true),
-                DataColumn(label: Text('Reserved'), numeric: true),
-                DataColumn(label: Text('Available'), numeric: true),
-                DataColumn(label: Text('Cost Value'), numeric: true),
-                DataColumn(label: Text('Retail Cash Value'), numeric: true),
-                DataColumn(label: Text('Projected Margin'), numeric: true),
-              ],
-              rows: branchSummaries.map((b) {
-                final costV =
-                    (b['inventory_cost_value'] as num?)?.toDouble() ?? 0.0;
-                final cashV =
-                    (b['inventory_cash_value'] as num?)?.toDouble() ?? 0.0;
-                final projMargin =
-                    (b['projected_retail_profit'] as num?)?.toDouble() ?? 0.0;
-                return DataRow(
-                  cells: [
-                    DataCell(Text(
-                      b['branch_name']?.toString() ?? 'Branch',
-                      style: const TextStyle(fontWeight: FontWeight.w700),
-                    )),
-                    DataCell(Text('${b['stocked_skus'] ?? 0}')),
-                    DataCell(Text('${b['units_on_hand'] ?? 0}')),
-                    DataCell(Text('${b['units_reserved'] ?? 0}')),
-                    DataCell(Text(
-                      '${b['units_available'] ?? 0}',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w700,
-                        color: ((b['units_available'] as num?)?.toInt() ?? 0) > 0
-                            ? tokens.successText
-                            : tokens.textMuted,
-                      ),
-                    )),
-                    DataCell(Text(costV > 0
-                        ? CurrencyFormatter.formatNaira(costV)
-                        : 'Pending')),
-                    DataCell(Text(CurrencyFormatter.formatNaira(cashV))),
-                    DataCell(Text(costV > 0
-                        ? CurrencyFormatter.formatNaira(projMargin)
-                        : 'Pending')),
-                  ],
-                );
-              }).toList(),
-            ),
-          ),
-        ),
-        const SizedBox(height: 18),
-
-        // Itemized Profit & Margin Breakdown
-        _sectionCard(
-          tokens: tokens,
-          title: 'Itemized Cost, Margin & Sales P&L (${breakdown.length} active/stocked SKUs)',
-          subtitle:
-              'Tracks stocked or sold assets with live cost-to-retail margins and realized net profit',
-          child: breakdown.isEmpty
-              ? Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Text(
-                    'No stocked or sold SKUs match the selected scope.',
-                    style: TextStyle(color: tokens.textMuted),
-                  ),
+          title: 'Master Asset Catalog & Pricing ($totalCount matching SKUs)',
+          subtitle: canEdit
+              ? 'Edit wholesale cost prices and approved Cash & Carry retail tiers across all catalog SKUs'
+              : 'Read-only directory of approved wholesale cost prices, retail tiers, and available stock',
+          trailing: _paginationSummaryPill(tokens, startIdx, endIdx, totalCount),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (pageRows.isEmpty)
+                _emptyTableState(
+                  tokens,
+                  'No catalog SKUs match your current search or filter criteria.',
                 )
-              : SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
+              else
+                ProcurementFullWidthTable(
+                  tokens: tokens,
                   child: DataTable(
                     headingRowColor:
                         WidgetStateProperty.all(tokens.surfaceSubtle),
-                    columns: const [
-                      DataColumn(label: Text('SKU')),
-                      DataColumn(label: Text('Item Name')),
-                      DataColumn(label: Text('Avail'), numeric: true),
-                      DataColumn(label: Text('Unit Cost'), numeric: true),
-                      DataColumn(label: Text('Cash Price'), numeric: true),
-                      DataColumn(label: Text('Retail Margin'), numeric: true),
-                      DataColumn(label: Text('Sold'), numeric: true),
-                      DataColumn(label: Text('Revenue'), numeric: true),
-                      DataColumn(label: Text('Net Profit'), numeric: true),
+                    columnSpacing: 20,
+                    horizontalMargin: 16,
+                    dataRowMinHeight: 50,
+                    dataRowMaxHeight: 62,
+                    columns: [
+                      const DataColumn(label: Text('SKU')),
+                      const DataColumn(label: Text('Asset Item & Category')),
+                      const DataColumn(
+                          label: Text('Unit Cost Price'), numeric: true),
+                      const DataColumn(
+                          label: Text('Cash & Carry'), numeric: true),
+                      const DataColumn(
+                          label: Text('Easy Buy 60D (+12%)'), numeric: true),
+                      const DataColumn(
+                          label: Text('Easy Buy 120D (+21%)'), numeric: true),
+                      const DataColumn(
+                          label: Text('Retail Margin'), numeric: true),
+                      const DataColumn(
+                          label: Text('Available Stock'), numeric: true),
+                      if (canEdit) const DataColumn(label: Text('Actions')),
                     ],
-                    rows: breakdown.take(100).map((it) {
+                    rows: pageRows.map((it) {
                       final hasCost = it['has_cost_price'] == true;
                       final costP =
                           (it['unit_cost_price'] as num?)?.toDouble() ?? 0.0;
                       final cashP =
                           (it['cash_and_carry_price'] as num?)?.toDouble() ??
                               0.0;
+                      final p60 =
+                          (it['easy_buy_60d_price'] as num?)?.toDouble() ?? 0.0;
+                      final p120 =
+                          (it['easy_buy_120d_price'] as num?)?.toDouble() ??
+                              0.0;
                       final marginAmt =
                           (it['retail_margin_amount'] as num?)?.toDouble() ??
                               0.0;
                       final marginPct =
                           (it['retail_margin_pct'] as num?)?.toDouble() ?? 0.0;
-                      final netProf =
-                          (it['realized_net_profit'] as num?)?.toDouble() ??
-                              0.0;
+                      final avail =
+                          (it['total_available'] as num?)?.toInt() ?? 0;
+
                       return DataRow(
                         cells: [
-                          DataCell(Text(it['sku_code']?.toString() ?? '')),
                           DataCell(
-                            SizedBox(
-                              width: isMobile ? 160 : 230,
-                              child: Text(
-                                it['item_name']?.toString() ?? '',
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                    fontWeight: FontWeight.w600),
+                            Text(
+                              it['sku_code']?.toString() ?? '',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w700,
+                                fontSize: 12,
+                                color: tokens.textSecondary,
                               ),
                             ),
                           ),
-                          DataCell(Text('${it['available'] ?? 0}')),
+                          DataCell(
+                            ConstrainedBox(
+                              constraints: const BoxConstraints(
+                                  minWidth: 180, maxWidth: 260),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Text(
+                                    it['item_name']?.toString() ?? '',
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                      color: tokens.textPrimary,
+                                    ),
+                                  ),
+                                  Text(
+                                    '${it['category']}${it['supplier_name'] != null ? ' • ${it['supplier_name']}' : ''}',
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: tokens.textMuted,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
                           DataCell(
                             hasCost
-                                ? Text(CurrencyFormatter.formatNaira(costP))
-                                : _statusPill(
-                                    tokens,
-                                    'Cost Pending',
-                                    tokens.warningBg,
-                                    tokens.warningText,
-                                    tokens.warningBorder,
+                                ? Text(
+                                    CurrencyFormatter.formatNaira(costP),
+                                    style: const TextStyle(
+                                      fontFeatures: [
+                                        FontFeature.tabularFigures()
+                                      ],
+                                    ),
+                                  )
+                                : ProcurementStatusPill(
+                                    label: 'Cost Pending',
+                                    bg: tokens.warningBg,
+                                    fg: tokens.warningText,
+                                    border: tokens.warningBorder,
                                   ),
                           ),
-                          DataCell(Text(CurrencyFormatter.formatNaira(cashP))),
-                          DataCell(Text(hasCost
-                              ? '${CurrencyFormatter.formatNaira(marginAmt)} (${marginPct.toStringAsFixed(1)}%)'
-                              : 'Pending')),
-                          DataCell(Text('${it['units_sold'] ?? 0}')),
-                          DataCell(Text(CurrencyFormatter.formatNaira(
-                              (it['realized_package_revenue'] as num?)
-                                      ?.toDouble() ??
-                                  0.0))),
                           DataCell(Text(
-                            CurrencyFormatter.formatNaira(netProf),
-                            style: TextStyle(
+                            CurrencyFormatter.formatNaira(cashP),
+                            style: const TextStyle(
                               fontWeight: FontWeight.w700,
-                              color: netProf > 0
-                                  ? tokens.successText
-                                  : (netProf < 0
-                                      ? tokens.dangerText
-                                      : tokens.textMuted),
+                              fontFeatures: [FontFeature.tabularFigures()],
                             ),
                           )),
-                        ],
-                      );
-                    }).toList(),
-                  ),
-                ),
-        ),
-        const SizedBox(height: 18),
-
-        // Recent Movements Audit Log
-        _sectionCard(
-          tokens: tokens,
-          title: 'Recent Stock & Price Movement Ledger (${movements.length})',
-          subtitle:
-              'Immutable movement log of stock receipts, transfers, disbursements, write-offs, and price updates',
-          child: movements.isEmpty
-              ? Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Text(
-                    'No asset stock or price movements logged yet.',
-                    style: TextStyle(color: tokens.textMuted),
-                  ),
-                )
-              : SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: DataTable(
-                    headingRowColor:
-                        WidgetStateProperty.all(tokens.surfaceSubtle),
-                    columns: const [
-                      DataColumn(label: Text('Type')),
-                      DataColumn(label: Text('Branch')),
-                      DataColumn(label: Text('Item')),
-                      DataColumn(label: Text('Qty Delta'), numeric: true),
-                      DataColumn(label: Text('Balance'), numeric: true),
-                      DataColumn(label: Text('Unit Cost'), numeric: true),
-                      DataColumn(label: Text('Selling Price'), numeric: true),
-                      DataColumn(label: Text('Ref / By')),
-                      DataColumn(label: Text('Remarks')),
-                    ],
-                    rows: movements.map((m) {
-                      final mType = m['movement_type']?.toString() ?? '';
-                      final qDelta = (m['quantity_delta'] as num?)?.toInt() ?? 0;
-                      final cp = m['counterparty_branch_name']?.toString();
-                      final bLabel = cp != null && cp.isNotEmpty
-                          ? '${m['branch_name']} (${mType == 'TRANSFER_OUT' ? 'to' : 'from'} $cp)'
-                          : (m['branch_name']?.toString() ?? '');
-                      return DataRow(
-                        cells: [
-                          DataCell(_movementBadge(tokens, mType)),
-                          DataCell(Text(bLabel)),
-                          DataCell(Text('${m['item_name']} (${m['sku_code']})')),
                           DataCell(Text(
-                            qDelta > 0 ? '+$qDelta' : '$qDelta',
-                            style: TextStyle(
-                              fontWeight: FontWeight.w700,
-                              color: qDelta > 0
-                                  ? tokens.successText
-                                  : (qDelta < 0
-                                      ? tokens.dangerText
-                                      : tokens.textMuted),
+                            CurrencyFormatter.formatNaira(p60),
+                            style: const TextStyle(
+                              fontFeatures: [FontFeature.tabularFigures()],
                             ),
                           )),
-                          DataCell(Text('${m['balance_after'] ?? 0}')),
                           DataCell(Text(
-                            ((m['unit_cost_price'] as num?)?.toDouble() ?? 0) > 0
-                                ? CurrencyFormatter.formatNaira(
-                                    (m['unit_cost_price'] as num).toDouble())
-                                : '-',
+                            CurrencyFormatter.formatNaira(p120),
+                            style: const TextStyle(
+                              fontFeatures: [FontFeature.tabularFigures()],
+                            ),
                           )),
-                          DataCell(Text(CurrencyFormatter.formatNaira(
-                              (m['unit_selling_price'] as num?)?.toDouble() ??
-                                  0.0))),
                           DataCell(Text(
-                              '${m['reference_code'] ?? '-'} • ${m['performed_by']}')),
+                            hasCost
+                                ? '${CurrencyFormatter.formatNaira(marginAmt)} (${marginPct.toStringAsFixed(1)}%)'
+                                : 'Pending',
+                            style: TextStyle(
+                              color: hasCost
+                                  ? (marginAmt >= 0
+                                      ? tokens.successText
+                                      : tokens.dangerText)
+                                  : tokens.textMuted,
+                              fontWeight: hasCost
+                                  ? FontWeight.w700
+                                  : FontWeight.w500,
+                              fontFeatures: const [
+                                FontFeature.tabularFigures()
+                              ],
+                            ),
+                          )),
                           DataCell(
-                            SizedBox(
-                              width: 220,
-                              child: Text(
-                                m['remarks']?.toString() ?? '',
-                                overflow: TextOverflow.ellipsis,
-                              ),
+                            ProcurementStatusPill(
+                              label: avail > 0 ? '$avail in stock' : '0 units',
+                              bg: avail > 0
+                                  ? tokens.successBg
+                                  : tokens.surfaceSubtle,
+                              fg: avail > 0
+                                  ? tokens.successText
+                                  : tokens.textMuted,
+                              border: avail > 0
+                                  ? tokens.successBorder
+                                  : tokens.borderSubtle,
                             ),
                           ),
+                          if (canEdit)
+                            DataCell(
+                              OutlinedButton.icon(
+                                onPressed: () => _openCatalogItemModal(
+                                  tokens,
+                                  existingItem: it,
+                                ),
+                                icon: Icon(Icons.edit_outlined,
+                                    size: 15, color: tokens.brandPrimary),
+                                label: Text(
+                                  'Edit',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                    color: tokens.brandPrimary,
+                                  ),
+                                ),
+                                style: OutlinedButton.styleFrom(
+                                  side:
+                                      BorderSide(color: tokens.borderStrong),
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 10, vertical: 6),
+                                ),
+                              ),
+                            ),
                         ],
                       );
                     }).toList(),
                   ),
                 ),
+              const SizedBox(height: 12),
+              _buildPaginationBar(
+                tokens: tokens,
+                page: safePage,
+                totalPages: totalPages,
+                pageSize: _pricePageSize,
+                totalCount: totalCount,
+                onPageChanged: (p) => setState(() => _pricePage = p),
+                onPageSizeChanged: (sz) => setState(() {
+                  _pricePageSize = sz;
+                  _pricePage = 0;
+                }),
+              ),
+            ],
+          ),
         ),
       ],
     );
   }
 
   // ===========================================================================
-  // TAB 1: MULTI-BRANCH STOCK MATRIX & INTER-BRANCH TRANSFERS
+  // TAB 1: MULTI-BRANCH STOCK MATRIX
   // ===========================================================================
   Widget _buildMatrixTab(
     IcareSurfaceTokens tokens, {
@@ -895,10 +1162,19 @@ class _AssetProcurementScreenState
       return true;
     }).toList();
 
+    final totalCount = filtered.length;
+    final totalPages =
+        totalCount == 0 ? 1 : (totalCount / _matrixPageSize).ceil();
+    final safePage = _matrixPage.clamp(0, totalPages - 1);
+    final startIdx = safePage * _matrixPageSize;
+    final endIdx = (startIdx + _matrixPageSize).clamp(0, totalCount);
+    final pageRows = filtered.sublist(startIdx, endIdx);
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Container(
+          width: double.infinity,
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
             color: tokens.surface,
@@ -911,10 +1187,10 @@ class _AssetProcurementScreenState
             crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               SizedBox(
-                width: 260,
+                width: 270,
                 child: TextField(
                   controller: _matrixSearchCtrl,
-                  onChanged: (_) => setState(() {}),
+                  onChanged: (_) => setState(() => _matrixPage = 0),
                   decoration: const InputDecoration(
                     isDense: true,
                     prefixIcon: Icon(Icons.search, size: 18),
@@ -924,7 +1200,7 @@ class _AssetProcurementScreenState
                 ),
               ),
               SizedBox(
-                width: 230,
+                width: 240,
                 child: DropdownButtonFormField<String>(
                   value: _matrixCategory,
                   isExpanded: true,
@@ -945,14 +1221,22 @@ class _AssetProcurementScreenState
                     ),
                   ],
                   onChanged: (v) {
-                    if (v != null) setState(() => _matrixCategory = v);
+                    if (v != null) {
+                      setState(() {
+                        _matrixCategory = v;
+                        _matrixPage = 0;
+                      });
+                    }
                   },
                 ),
               ),
               FilterChip(
                 selected: _matrixInStockOnly,
                 label: const Text('In Stock Anywhere'),
-                onSelected: (v) => setState(() => _matrixInStockOnly = v),
+                onSelected: (v) => setState(() {
+                  _matrixInStockOnly = v;
+                  _matrixPage = 0;
+                }),
               ),
               if (canEdit)
                 ElevatedButton.icon(
@@ -970,142 +1254,322 @@ class _AssetProcurementScreenState
           ),
         ),
         const SizedBox(height: 14),
-        _sectionCard(
+        ProcurementSectionCard(
           tokens: tokens,
           title:
-              'Cross-Branch Physical Inventory Matrix (${filtered.length} SKUs shown)',
-          subtitle:
-              'Displays available / on-hand units side-by-side across all active branches',
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: DataTable(
-              headingRowColor: WidgetStateProperty.all(tokens.surfaceSubtle),
-              columns: [
-                const DataColumn(label: Text('SKU')),
-                const DataColumn(label: Text('Item Name')),
-                const DataColumn(label: Text('Cash Price'), numeric: true),
-                const DataColumn(label: Text('Total Avail'), numeric: true),
-                ...branches.map(
-                  (b) => DataColumn(
-                    label: Text(b['name']?.toString() ?? 'Branch'),
-                    numeric: true,
-                  ),
-                ),
-                if (canEdit) const DataColumn(label: Text('Action')),
-              ],
-              rows: filtered.take(150).map((it) {
-                final bStocks = (it['branch_stocks'] as Map?) ?? const {};
-                final totAvail = (it['total_available'] as num?)?.toInt() ?? 0;
-                return DataRow(
-                  cells: [
-                    DataCell(Text(it['sku_code']?.toString() ?? '')),
-                    DataCell(
-                      SizedBox(
-                        width: 220,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
+              'Cross-Branch Physical Inventory Matrix ($totalCount matching SKUs)',
+          subtitle: canEdit
+              ? 'Available physical units across all active ICARE branches with inter-branch dispatch controls'
+              : 'Read-only view of available and reserved physical units across all active branches',
+          trailing: _paginationSummaryPill(tokens, startIdx, endIdx, totalCount),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (pageRows.isEmpty)
+                _emptyTableState(
+                  tokens,
+                  'No branch inventory items match the active filters.',
+                )
+              else
+                ProcurementFullWidthTable(
+                  tokens: tokens,
+                  child: DataTable(
+                    headingRowColor:
+                        WidgetStateProperty.all(tokens.surfaceSubtle),
+                    columnSpacing: 20,
+                    horizontalMargin: 16,
+                    dataRowMinHeight: 50,
+                    dataRowMaxHeight: 62,
+                    columns: [
+                      const DataColumn(label: Text('SKU')),
+                      const DataColumn(label: Text('Item Name & Category')),
+                      const DataColumn(
+                          label: Text('Cash Price'), numeric: true),
+                      const DataColumn(
+                          label: Text('Total Avail'), numeric: true),
+                      ...branches.map(
+                        (b) => DataColumn(
+                          label: Text(b['name']?.toString() ?? 'Branch'),
+                          numeric: true,
+                        ),
+                      ),
+                      if (canEdit) const DataColumn(label: Text('Action')),
+                    ],
+                    rows: pageRows.map((it) {
+                      final bStocks = (it['branch_stocks'] as Map?) ?? const {};
+                      final totAvail =
+                          (it['total_available'] as num?)?.toInt() ?? 0;
+                      return DataRow(
+                        cells: [
+                          DataCell(
                             Text(
-                              it['item_name']?.toString() ?? '',
-                              overflow: TextOverflow.ellipsis,
-                              style:
-                                  const TextStyle(fontWeight: FontWeight.w700),
-                            ),
-                            Text(
-                              it['category']?.toString() ?? '',
-                              overflow: TextOverflow.ellipsis,
+                              it['sku_code']?.toString() ?? '',
                               style: TextStyle(
-                                fontSize: 10.5,
-                                color: tokens.textMuted,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 12,
+                                color: tokens.textSecondary,
                               ),
                             ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    DataCell(Text(CurrencyFormatter.formatNaira(
-                        (it['cash_and_carry_price'] as num?)?.toDouble() ??
-                            0.0))),
-                    DataCell(
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: totAvail > 0
-                              ? tokens.successBg
-                              : tokens.surfaceSubtle,
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(
-                            color: totAvail > 0
-                                ? tokens.successBorder
-                                : tokens.borderSubtle,
                           ),
-                        ),
-                        child: Text(
-                          '$totAvail',
-                          style: TextStyle(
-                            fontWeight: FontWeight.w800,
-                            color: totAvail > 0
-                                ? tokens.successText
-                                : tokens.textMuted,
-                          ),
-                        ),
-                      ),
-                    ),
-                    ...branches.map((b) {
-                      final bid = b['branch_id']?.toString() ?? '';
-                      final st =
-                          (bStocks[bid] as Map?) ?? const <String, dynamic>{};
-                      final av = (st['quantity_available'] as num?)?.toInt() ?? 0;
-                      final rsv =
-                          (st['quantity_reserved'] as num?)?.toInt() ?? 0;
-                      return DataCell(
-                        Text(
-                          rsv > 0 ? '$av ($rsv rsv)' : '$av',
-                          style: TextStyle(
-                            fontWeight:
-                                av > 0 ? FontWeight.w700 : FontWeight.w400,
-                            color:
-                                av > 0 ? tokens.successText : tokens.textMuted,
-                          ),
-                        ),
-                      );
-                    }),
-                    if (canEdit)
-                      DataCell(
-                        TextButton.icon(
-                          onPressed: totAvail <= 0 || branches.length < 2
-                              ? null
-                              : () => _openTransferDialog(
-                                    tokens,
-                                    preselectedItem: it,
+                          DataCell(
+                            ConstrainedBox(
+                              constraints: const BoxConstraints(
+                                  minWidth: 180, maxWidth: 250),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Text(
+                                    it['item_name']?.toString() ?? '',
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                      color: tokens.textPrimary,
+                                    ),
                                   ),
-                          icon: const Icon(Icons.swap_horiz, size: 16),
-                          label: const Text('Transfer'),
-                        ),
-                      ),
-                  ],
-                );
-              }).toList(),
-            ),
+                                  Text(
+                                    it['category']?.toString() ?? '',
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: tokens.textMuted,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                          DataCell(Text(
+                            CurrencyFormatter.formatNaira(
+                              (it['cash_and_carry_price'] as num?)
+                                      ?.toDouble() ??
+                                  0.0,
+                            ),
+                            style: const TextStyle(
+                              fontFeatures: [FontFeature.tabularFigures()],
+                            ),
+                          )),
+                          DataCell(
+                            ProcurementStatusPill(
+                              label: '$totAvail',
+                              bg: totAvail > 0
+                                  ? tokens.successBg
+                                  : tokens.surfaceSubtle,
+                              fg: totAvail > 0
+                                  ? tokens.successText
+                                  : tokens.textMuted,
+                              border: totAvail > 0
+                                  ? tokens.successBorder
+                                  : tokens.borderSubtle,
+                            ),
+                          ),
+                          ...branches.map((b) {
+                            final bid = b['branch_id']?.toString() ?? '';
+                            final st = (bStocks[bid] as Map?) ??
+                                const <String, dynamic>{};
+                            final av =
+                                (st['quantity_available'] as num?)?.toInt() ??
+                                    0;
+                            final rsv =
+                                (st['quantity_reserved'] as num?)?.toInt() ?? 0;
+                            return DataCell(
+                              Text(
+                                rsv > 0 ? '$av ($rsv rsv)' : '$av',
+                                style: TextStyle(
+                                  fontWeight: av > 0
+                                      ? FontWeight.w800
+                                      : FontWeight.w400,
+                                  color: av > 0
+                                      ? tokens.successText
+                                      : tokens.textMuted,
+                                  fontFeatures: const [
+                                    FontFeature.tabularFigures()
+                                  ],
+                                ),
+                              ),
+                            );
+                          }),
+                          if (canEdit)
+                            DataCell(
+                              OutlinedButton.icon(
+                                onPressed:
+                                    totAvail <= 0 || branches.length < 2
+                                        ? null
+                                        : () => _openTransferDialog(
+                                              tokens,
+                                              preselectedItem: it,
+                                            ),
+                                icon: const Icon(Icons.swap_horiz, size: 15),
+                                label: const Text('Transfer'),
+                                style: OutlinedButton.styleFrom(
+                                  side:
+                                      BorderSide(color: tokens.borderStrong),
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 10, vertical: 6),
+                                ),
+                              ),
+                            ),
+                        ],
+                      );
+                    }).toList(),
+                  ),
+                ),
+              const SizedBox(height: 12),
+              _buildPaginationBar(
+                tokens: tokens,
+                page: safePage,
+                totalPages: totalPages,
+                pageSize: _matrixPageSize,
+                totalCount: totalCount,
+                onPageChanged: (p) => setState(() => _matrixPage = p),
+                onPageSizeChanged: (sz) => setState(() {
+                  _matrixPageSize = sz;
+                  _matrixPage = 0;
+                }),
+              ),
+            ],
           ),
         ),
       ],
     );
   }
 
+  // ===========================================================================
+  // TAB 2 (PROCUREMENT OFFICER): RECEIVE STOCK (GRN) & WRITE-OFFS
+  // ===========================================================================
+  Widget _buildReceiveAndWriteOffTab(IcareSurfaceTokens tokens) {
+    final stockOpMode = ref.watch(activeProcurementStockOpModeProvider);
+    final movements =
+        (_overview['recent_movements'] as List<dynamic>? ?? const [])
+            .whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: tokens.surface,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: tokens.borderSubtle),
+          ),
+          child: Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              ChoiceChip(
+                selected: stockOpMode == 0,
+                label: const Text('Receive Supplier Stock (GRN)'),
+                onSelected: (_) {
+                  ref
+                      .read(activeProcurementStockOpModeProvider.notifier)
+                      .state = 0;
+                },
+              ),
+              ChoiceChip(
+                selected: stockOpMode == 1,
+                label: const Text('Record Damaged / Lost Write-Off'),
+                onSelected: (_) {
+                  ref
+                      .read(activeProcurementStockOpModeProvider.notifier)
+                      .state = 1;
+                },
+              ),
+              OutlinedButton.icon(
+                onPressed: () => _openCatalogItemModal(tokens),
+                icon: const Icon(Icons.add_box_outlined, size: 17),
+                label: const Text('Create New Catalog SKU'),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 14),
+        if (stockOpMode == 0)
+          _buildGrnForm(tokens)
+        else
+          _buildWriteOffForm(tokens),
+        const SizedBox(height: 18),
+        ProcurementMovementLedgerCard(
+          tokens: tokens,
+          movements: movements,
+          branches: _branches,
+          title: 'Recent Stock Receipts & Write-Off Ledger',
+          subtitle:
+              'Latest posted deliveries, transfers, disbursements, write-offs, and price updates',
+          showBranchFilter: true,
+        ),
+      ],
+    );
+  }
+
+  // ===========================================================================
+  // TAB 2 (ADMIN READ-ONLY): BRANCH VALUATION & MOVEMENT LOG
+  // ===========================================================================
+  Widget _buildAdminAuditAndValuationTab(
+    IcareSurfaceTokens tokens, {
+    required bool isMobile,
+  }) {
+    final branchSummaries =
+        (_overview['branch_summaries'] as List<dynamic>? ?? const [])
+            .whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList();
+    final movements =
+        (_overview['recent_movements'] as List<dynamic>? ?? const [])
+            .whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        ProcurementSectionCard(
+          tokens: tokens,
+          title: 'Branch Stock & Valuation Breakdown',
+          subtitle:
+              'Physical units and valuation at wholesale cost vs Cash & Carry selling price across all branches',
+          child: ProcurementBranchValuationTable(
+            tokens: tokens,
+            branchSummaries: branchSummaries,
+          ),
+        ),
+        const SizedBox(height: 18),
+        ProcurementMovementLedgerCard(
+          tokens: tokens,
+          movements: movements,
+          branches: _branches,
+          title: 'Stock & Price Movement Audit Trail',
+          subtitle:
+              'Read-only ledger of all stock receipts, transfers, disbursements, write-offs, and approved price updates',
+          showBranchFilter: true,
+        ),
+      ],
+    );
+  }
+
+  // ===========================================================================
+  // TRANSFER DIALOG & GRN / WRITE-OFF / CATALOG MODALS
+  // ===========================================================================
   Future<void> _openTransferDialog(
     IcareSurfaceTokens tokens, {
     Map<String, dynamic>? preselectedItem,
   }) async {
+    final authState = ref.read(authControllerProvider);
+    final user = authState is AuthStateAuthenticated ? authState.user : null;
+    if (!isProcurementOperatorRole(user)) return;
+
     final branches = _branches;
     if (branches.length < 2) return;
 
     Map<String, dynamic>? pickedItem = preselectedItem ??
         _matrixItems.cast<Map<String, dynamic>?>().firstWhere(
               (x) => ((x?['total_available'] as num?)?.toInt() ?? 0) > 0,
-              orElse: () => _matrixItems.isNotEmpty ? _matrixItems.first : null,
+              orElse: () =>
+                  _matrixItems.isNotEmpty ? _matrixItems.first : null,
             );
     if (pickedItem == null) {
       _setFlash(error: 'No catalog items available to transfer.');
@@ -1154,7 +1618,8 @@ class _AssetProcurementScreenState
               .where((x) => ((x['total_available'] as num?)?.toInt() ?? 0) > 0)
               .toList();
           if (stockedOptions.isNotEmpty &&
-              !stockedOptions.any((x) => x['item_id'] == pickedItem!['item_id'])) {
+              !stockedOptions
+                  .any((x) => x['item_id'] == pickedItem!['item_id'])) {
             stockedOptions.insert(0, pickedItem!);
           }
 
@@ -1216,8 +1681,9 @@ class _AssetProcurementScreenState
                           fromId = bestSourceBranch(match);
                           if (toId == fromId) {
                             toId = branches
-                                .firstWhere(
-                                    (b) => b['branch_id'].toString() != fromId)['branch_id']
+                                .firstWhere((b) =>
+                                    b['branch_id'].toString() !=
+                                    fromId)['branch_id']
                                 .toString();
                           }
                         });
@@ -1248,8 +1714,9 @@ class _AssetProcurementScreenState
                           fromId = v;
                           if (toId == fromId) {
                             toId = branches
-                                .firstWhere(
-                                    (b) => b['branch_id'].toString() != fromId)['branch_id']
+                                .firstWhere((b) =>
+                                    b['branch_id'].toString() !=
+                                    fromId)['branch_id']
                                 .toString();
                           }
                         });
@@ -1369,54 +1836,6 @@ class _AssetProcurementScreenState
     remCtrl.dispose();
   }
 
-  // ===========================================================================
-  // TAB 2: RECEIVE NEW STOCK (GRN) & DAMAGE WRITE-OFFS
-  // ===========================================================================
-  Widget _buildReceiveAndWriteOffTab(
-    IcareSurfaceTokens tokens, {
-    required bool canEdit,
-  }) {
-    if (!canEdit) {
-      return _buildBanner(
-        'Read-only access: only the Procurement Officer or Admin can post new stock receipts or write-offs.',
-        isError: false,
-        tokens: tokens,
-      );
-    }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            ChoiceChip(
-              selected: _stockOpMode == 0,
-              label: const Text('Receive New Stock (GRN)'),
-              onSelected: (_) => setState(() => _stockOpMode = 0),
-            ),
-            ChoiceChip(
-              selected: _stockOpMode == 1,
-              label: const Text('Record Damaged / Lost Write-Off'),
-              onSelected: (_) => setState(() => _stockOpMode = 1),
-            ),
-            OutlinedButton.icon(
-              onPressed: () => _openCatalogItemModal(tokens),
-              icon: const Icon(Icons.add_box_outlined, size: 17),
-              label: const Text('Create New Catalog SKU'),
-            ),
-          ],
-        ),
-        const SizedBox(height: 14),
-        if (_stockOpMode == 0)
-          _buildGrnForm(tokens)
-        else
-          _buildWriteOffForm(tokens),
-      ],
-    );
-  }
-
   Widget _buildGrnForm(IcareSurfaceTokens tokens) {
     final branches = _branches;
     final allSkus = _matrixItems;
@@ -1428,7 +1847,7 @@ class _AssetProcurementScreenState
       return s + (qty * cost);
     });
 
-    return _sectionCard(
+    return ProcurementSectionCard(
       tokens: tokens,
       title: 'Goods Received Note (New Stock Entry)',
       subtitle:
@@ -1690,7 +2109,9 @@ class _AssetProcurementScreenState
                 ),
               ),
               ElevatedButton.icon(
-                onPressed: (_isSubmitting || _grnLines.isEmpty || _grnBranchId == null)
+                onPressed: (_isSubmitting ||
+                        _grnLines.isEmpty ||
+                        _grnBranchId == null)
                     ? null
                     : () async {
                         final invalid = _grnLines.any((l) =>
@@ -1712,9 +2133,9 @@ class _AssetProcurementScreenState
                             'reference_code': _grnReferenceCtrl.text.trim(),
                             'remarks': _grnRemarksCtrl.text.trim(),
                             'items': _grnLines.map((l) {
-                              final c =
-                                  (l['unit_cost_price'] as num?)?.toDouble() ??
-                                      0.0;
+                              final c = (l['unit_cost_price'] as num?)
+                                      ?.toDouble() ??
+                                  0.0;
                               final p =
                                   (l['new_cash_price'] as num?)?.toDouble() ??
                                       0.0;
@@ -1774,7 +2195,7 @@ class _AssetProcurementScreenState
       _woItemId = null;
     }
 
-    return _sectionCard(
+    return ProcurementSectionCard(
       tokens: tokens,
       title: 'Record Damaged / Lost Asset Write-Off',
       subtitle:
@@ -1867,45 +2288,46 @@ class _AssetProcurementScreenState
           ),
           const SizedBox(height: 14),
           ElevatedButton.icon(
-            onPressed: (_isSubmitting || _woBranchId == null || _woItemId == null)
-                ? null
-                : () async {
-                    final qty = int.tryParse(_woQtyCtrl.text.trim()) ?? 0;
-                    final reason = _woReasonCtrl.text.trim();
-                    if (qty <= 0 || reason.length < 2) {
-                      _setFlash(
-                        error:
-                            'Enter a positive quantity and detailed reason for the write-off.',
-                      );
-                      return;
-                    }
-                    setState(() => _isSubmitting = true);
-                    try {
-                      final api = ref.read(procurementApiServiceProvider);
-                      final res = await api.recordWriteOff({
-                        'branch_id': _woBranchId,
-                        'item_id': _woItemId,
-                        'quantity': qty,
-                        'reason': reason,
-                        'reference_code': _woRefCtrl.text.trim(),
-                      });
-                      setState(() {
-                        _isSubmitting = false;
-                        _woItemId = null;
-                        _woQtyCtrl.text = '1';
-                        _woRefCtrl.clear();
-                        _woReasonCtrl.clear();
-                      });
-                      _setFlash(
-                        success:
-                            'Write-off recorded for ${res['quantity_written_off']}x ${res['item_name']} at ${res['branch_name']} (Ref: ${res['reference_code']}).',
-                      );
-                      await _loadData(silent: true);
-                    } catch (e) {
-                      setState(() => _isSubmitting = false);
-                      _setFlash(error: AppErrorDetails.from(e).message);
-                    }
-                  },
+            onPressed:
+                (_isSubmitting || _woBranchId == null || _woItemId == null)
+                    ? null
+                    : () async {
+                        final qty = int.tryParse(_woQtyCtrl.text.trim()) ?? 0;
+                        final reason = _woReasonCtrl.text.trim();
+                        if (qty <= 0 || reason.length < 2) {
+                          _setFlash(
+                            error:
+                                'Enter a positive quantity and detailed reason for the write-off.',
+                          );
+                          return;
+                        }
+                        setState(() => _isSubmitting = true);
+                        try {
+                          final api = ref.read(procurementApiServiceProvider);
+                          final res = await api.recordWriteOff({
+                            'branch_id': _woBranchId,
+                            'item_id': _woItemId,
+                            'quantity': qty,
+                            'reason': reason,
+                            'reference_code': _woRefCtrl.text.trim(),
+                          });
+                          setState(() {
+                            _isSubmitting = false;
+                            _woItemId = null;
+                            _woQtyCtrl.text = '1';
+                            _woRefCtrl.clear();
+                            _woReasonCtrl.clear();
+                          });
+                          _setFlash(
+                            success:
+                                'Write-off recorded for ${res['quantity_written_off']}x ${res['item_name']} at ${res['branch_name']} (Ref: ${res['reference_code']}).',
+                          );
+                          await _loadData(silent: true);
+                        } catch (e) {
+                          setState(() => _isSubmitting = false);
+                          _setFlash(error: AppErrorDetails.from(e).message);
+                        }
+                      },
             icon: const Icon(Icons.report_problem_outlined, size: 17),
             label: Text(_isSubmitting ? 'Recording...' : 'Record Write-Off'),
             style: ElevatedButton.styleFrom(
@@ -1919,240 +2341,14 @@ class _AssetProcurementScreenState
     );
   }
 
-  // ===========================================================================
-  // TAB 3: MASTER PRICE LIST & SUPPLIER COST MANAGER
-  // ===========================================================================
-  Widget _buildPriceCatalogTab(
-    IcareSurfaceTokens tokens, {
-    required bool canEdit,
-  }) {
-    final q = _priceSearchCtrl.text.trim().toLowerCase();
-    final filtered = _matrixItems.where((it) {
-      if (_priceCategory != 'ALL' &&
-          (it['category']?.toString().toUpperCase() ?? '') != _priceCategory) {
-        return false;
-      }
-      final hasCost = it['has_cost_price'] == true;
-      final totAvail = (it['total_available'] as num?)?.toInt() ?? 0;
-      if (_costStatusFilter == 'PENDING' && hasCost) return false;
-      if (_costStatusFilter == 'CONFIGURED' && !hasCost) return false;
-      if (_costStatusFilter == 'IN_STOCK' && totAvail <= 0) return false;
-      if (q.isNotEmpty) {
-        final hay =
-            '${it['item_name']} ${it['sku_code']} ${it['category']} ${it['supplier_name'] ?? ''}'
-                .toLowerCase();
-        if (!hay.contains(q)) return false;
-      }
-      return true;
-    }).toList();
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Container(
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: tokens.surface,
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: tokens.borderSubtle),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Wrap(
-                spacing: 10,
-                runSpacing: 10,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: [
-                  SizedBox(
-                    width: 260,
-                    child: TextField(
-                      controller: _priceSearchCtrl,
-                      onChanged: (_) => setState(() {}),
-                      decoration: const InputDecoration(
-                        isDense: true,
-                        prefixIcon: Icon(Icons.search, size: 18),
-                        hintText: 'Search SKU, item, supplier...',
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                  ),
-                  SizedBox(
-                    width: 230,
-                    child: DropdownButtonFormField<String>(
-                      value: _priceCategory,
-                      isExpanded: true,
-                      dropdownColor: tokens.surfaceElevated,
-                      decoration: const InputDecoration(
-                        isDense: true,
-                        labelText: 'Category',
-                        border: OutlineInputBorder(),
-                      ),
-                      items: [
-                        const DropdownMenuItem(
-                            value: 'ALL', child: Text('All Categories')),
-                        ..._categories.map(
-                          (c) => DropdownMenuItem(
-                            value: c,
-                            child: Text(c, overflow: TextOverflow.ellipsis),
-                          ),
-                        ),
-                      ],
-                      onChanged: (v) {
-                        if (v != null) setState(() => _priceCategory = v);
-                      },
-                    ),
-                  ),
-                  if (canEdit)
-                    ElevatedButton.icon(
-                      onPressed: () => _openCatalogItemModal(tokens),
-                      icon: const Icon(Icons.add, size: 17),
-                      label: const Text('Add New SKU'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: tokens.brandPrimary,
-                        foregroundColor: Colors.white,
-                      ),
-                    ),
-                ],
-              ),
-              const SizedBox(height: 10),
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                  children: [
-                    ('ALL', 'All SKUs (${_matrixItems.length})'),
-                    (
-                      'PENDING',
-                      'Cost Pending (${_matrixItems.where((x) => x['has_cost_price'] != true).length})'
-                    ),
-                    (
-                      'CONFIGURED',
-                      'Cost Configured (${_matrixItems.where((x) => x['has_cost_price'] == true).length})'
-                    ),
-                    (
-                      'IN_STOCK',
-                      'In Stock (${_matrixItems.where((x) => ((x['total_available'] as num?)?.toInt() ?? 0) > 0).length})'
-                    ),
-                  ].map((f) {
-                    final selected = _costStatusFilter == f.$1;
-                    return Padding(
-                      padding: const EdgeInsets.only(right: 6),
-                      child: ChoiceChip(
-                        selected: selected,
-                        label: Text(f.$2),
-                        onSelected: (_) =>
-                            setState(() => _costStatusFilter = f.$1),
-                      ),
-                    );
-                  }).toList(),
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 14),
-        _sectionCard(
-          tokens: tokens,
-          title: 'Master Price & Supplier Cost Catalog (${filtered.length} SKUs)',
-          subtitle:
-              'Prices are strictly locked to Procurement Officer and Admin roles',
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: DataTable(
-              headingRowColor: WidgetStateProperty.all(tokens.surfaceSubtle),
-              columns: [
-                const DataColumn(label: Text('SKU')),
-                const DataColumn(label: Text('Item Name')),
-                const DataColumn(label: Text('Unit Cost Price'), numeric: true),
-                const DataColumn(label: Text('Cash & Carry'), numeric: true),
-                const DataColumn(label: Text('Easy Buy 60D'), numeric: true),
-                const DataColumn(label: Text('Easy Buy 120D'), numeric: true),
-                const DataColumn(label: Text('Retail Margin'), numeric: true),
-                const DataColumn(label: Text('Total Stock'), numeric: true),
-                if (canEdit) const DataColumn(label: Text('Edit')),
-              ],
-              rows: filtered.take(150).map((it) {
-                final hasCost = it['has_cost_price'] == true;
-                final costP = (it['unit_cost_price'] as num?)?.toDouble() ?? 0.0;
-                final cashP =
-                    (it['cash_and_carry_price'] as num?)?.toDouble() ?? 0.0;
-                final p60 =
-                    (it['easy_buy_60d_price'] as num?)?.toDouble() ?? 0.0;
-                final p120 =
-                    (it['easy_buy_120d_price'] as num?)?.toDouble() ?? 0.0;
-                final marginAmt =
-                    (it['retail_margin_amount'] as num?)?.toDouble() ?? 0.0;
-                final marginPct =
-                    (it['retail_margin_pct'] as num?)?.toDouble() ?? 0.0;
-
-                return DataRow(
-                  cells: [
-                    DataCell(Text(it['sku_code']?.toString() ?? '')),
-                    DataCell(
-                      SizedBox(
-                        width: 220,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Text(
-                              it['item_name']?.toString() ?? '',
-                              overflow: TextOverflow.ellipsis,
-                              style:
-                                  const TextStyle(fontWeight: FontWeight.w700),
-                            ),
-                            Text(
-                              '${it['category']}${it['supplier_name'] != null ? ' • ${it['supplier_name']}' : ''}',
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                  fontSize: 10.5, color: tokens.textMuted),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    DataCell(
-                      hasCost
-                          ? Text(CurrencyFormatter.formatNaira(costP))
-                          : _statusPill(
-                              tokens,
-                              'Cost Pending',
-                              tokens.warningBg,
-                              tokens.warningText,
-                              tokens.warningBorder,
-                            ),
-                    ),
-                    DataCell(Text(CurrencyFormatter.formatNaira(cashP))),
-                    DataCell(Text(CurrencyFormatter.formatNaira(p60))),
-                    DataCell(Text(CurrencyFormatter.formatNaira(p120))),
-                    DataCell(Text(hasCost
-                        ? '${CurrencyFormatter.formatNaira(marginAmt)} (${marginPct.toStringAsFixed(1)}%)'
-                        : 'Pending')),
-                    DataCell(Text('${it['total_available'] ?? 0}')),
-                    if (canEdit)
-                      DataCell(
-                        IconButton(
-                          tooltip: 'Edit Cost & Selling Prices',
-                          icon: Icon(Icons.edit_outlined,
-                              size: 18, color: tokens.brandPrimary),
-                          onPressed: () =>
-                              _openCatalogItemModal(tokens, existingItem: it),
-                        ),
-                      ),
-                  ],
-                );
-              }).toList(),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
   Future<void> _openCatalogItemModal(
     IcareSurfaceTokens tokens, {
     Map<String, dynamic>? existingItem,
   }) async {
+    final authState = ref.read(authControllerProvider);
+    final user = authState is AuthStateAuthenticated ? authState.user : null;
+    if (!isProcurementOperatorRole(user)) return;
+
     final isEdit = existingItem != null;
     final skuCtrl =
         TextEditingController(text: existingItem?['sku_code']?.toString() ?? '');
@@ -2475,122 +2671,244 @@ class _AssetProcurementScreenState
     initQtyCtrl.dispose();
   }
 
-  // ===========================================================================
-  // UI BUILDING BLOCKS
-  // ===========================================================================
-  Widget _kpiCard({
-    required IcareSurfaceTokens tokens,
-    required double width,
-    required IconData icon,
-    required Color accentColor,
-    required String title,
-    required String value,
-    required String subtitle,
-  }) {
+  Widget _paginationSummaryPill(
+    IcareSurfaceTokens tokens,
+    int startIdx,
+    int endIdx,
+    int totalCount,
+  ) {
+    final text = totalCount == 0
+        ? '0 SKUs'
+        : 'Showing ${startIdx + 1}-$endIdx of $totalCount';
+    return ProcurementStatusPill(
+      label: text,
+      bg: tokens.surfaceSubtle,
+      fg: tokens.textSecondary,
+      border: tokens.borderSubtle,
+    );
+  }
+
+  Widget _emptyTableState(IcareSurfaceTokens tokens, String message) {
     return Container(
-      width: width,
-      padding: const EdgeInsets.all(15),
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 28),
+      decoration: BoxDecoration(
+        color: tokens.surfaceSubtle,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: tokens.borderSubtle),
+      ),
+      child: Center(
+        child: Text(
+          message,
+          style: TextStyle(fontSize: 13, color: tokens.textMuted),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPaginationBar({
+    required IcareSurfaceTokens tokens,
+    required int page,
+    required int totalPages,
+    required int pageSize,
+    required int totalCount,
+    required ValueChanged<int> onPageChanged,
+    required ValueChanged<int> onPageSizeChanged,
+  }) {
+    if (totalCount == 0) return const SizedBox.shrink();
+    return Wrap(
+      spacing: 12,
+      runSpacing: 8,
+      alignment: WrapAlignment.spaceBetween,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Rows per page:',
+              style: TextStyle(fontSize: 12, color: tokens.textMuted),
+            ),
+            const SizedBox(width: 8),
+            SizedBox(
+              width: 90,
+              child: DropdownButtonFormField<int>(
+                value: pageSize,
+                isDense: true,
+                dropdownColor: tokens.surfaceElevated,
+                decoration: const InputDecoration(
+                  isDense: true,
+                  border: OutlineInputBorder(),
+                  contentPadding:
+                      EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                ),
+                items: const [
+                  DropdownMenuItem(value: 50, child: Text('50')),
+                  DropdownMenuItem(value: 100, child: Text('100')),
+                  DropdownMenuItem(value: 200, child: Text('200')),
+                ],
+                onChanged: (v) {
+                  if (v != null) onPageSizeChanged(v);
+                },
+              ),
+            ),
+          ],
+        ),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Page ${page + 1} of $totalPages',
+              style: TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w600,
+                color: tokens.textSecondary,
+              ),
+            ),
+            const SizedBox(width: 10),
+            OutlinedButton.icon(
+              onPressed: page > 0 ? () => onPageChanged(page - 1) : null,
+              icon: const Icon(Icons.chevron_left, size: 17),
+              label: const Text('Prev'),
+            ),
+            const SizedBox(width: 6),
+            OutlinedButton.icon(
+              onPressed:
+                  page + 1 < totalPages ? () => onPageChanged(page + 1) : null,
+              icon: const Icon(Icons.chevron_right, size: 17),
+              label: const Text('Next'),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+// =============================================================================
+// SHARED ENTERPRISE PROCUREMENT UI PRIMITIVES (REUSED BY DASHBOARD & HUB)
+// =============================================================================
+
+/// Wraps a DataTable so it stretches cleanly to 100% of its card width on wide
+/// viewports and scrolls horizontally only when needed on narrower viewports.
+class ProcurementFullWidthTable extends StatelessWidget {
+  final IcareSurfaceTokens tokens;
+  final Widget child;
+
+  const ProcurementFullWidthTable({
+    super.key,
+    required this.tokens,
+    required this.child,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: tokens.borderSubtle),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          return SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minWidth: constraints.maxWidth),
+              child: child,
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class ProcurementSectionCard extends StatelessWidget {
+  final IcareSurfaceTokens tokens;
+  final String title;
+  final String subtitle;
+  final Widget child;
+  final Widget? trailing;
+
+  const ProcurementSectionCard({
+    super.key,
+    required this.tokens,
+    required this.title,
+    required this.subtitle,
+    required this.child,
+    this.trailing,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         color: tokens.surface,
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(12),
         border: Border.all(color: tokens.borderSubtle),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                padding: const EdgeInsets.all(7),
-                decoration: BoxDecoration(
-                  color: accentColor.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Icon(icon, size: 18, color: accentColor),
-              ),
-              const SizedBox(width: 8),
               Expanded(
-                child: Text(
-                  title,
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    color: tokens.textSecondary,
-                  ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: TextStyle(
+                        fontSize: 15.5,
+                        fontWeight: FontWeight.w800,
+                        color: tokens.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      subtitle,
+                      style: TextStyle(fontSize: 12, color: tokens.textMuted),
+                    ),
+                  ],
                 ),
               ),
+              if (trailing != null) ...[
+                const SizedBox(width: 12),
+                trailing!,
+              ],
             ],
           ),
-          const SizedBox(height: 10),
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: 19,
-              fontWeight: FontWeight.w800,
-              color: tokens.textPrimary,
-              fontFeatures: const [FontFeature.tabularFigures()],
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            subtitle,
-            style: TextStyle(
-              fontSize: 11.5,
-              color: tokens.textMuted,
-              height: 1.3,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _sectionCard({
-    required IcareSurfaceTokens tokens,
-    required String title,
-    required String subtitle,
-    required Widget child,
-  }) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: tokens.surface,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: tokens.borderSubtle),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            title,
-            style: TextStyle(
-              fontSize: 15,
-              fontWeight: FontWeight.w800,
-              color: tokens.textPrimary,
-            ),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            subtitle,
-            style: TextStyle(fontSize: 12, color: tokens.textMuted),
-          ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 14),
           child,
         ],
       ),
     );
   }
+}
 
-  Widget _statusPill(
-    IcareSurfaceTokens tokens,
-    String label,
-    Color bg,
-    Color fg,
-    Color border,
-  ) {
+class ProcurementStatusPill extends StatelessWidget {
+  final String label;
+  final Color bg;
+  final Color fg;
+  final Color border;
+
+  const ProcurementStatusPill({
+    super.key,
+    required this.label,
+    required this.bg,
+    required this.fg,
+    required this.border,
+  });
+
+  @override
+  Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3.5),
       decoration: BoxDecoration(
         color: bg,
         borderRadius: BorderRadius.circular(10),
@@ -2598,34 +2916,421 @@ class _AssetProcurementScreenState
       ),
       child: Text(
         label,
-        style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: fg),
+        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: fg),
       ),
     );
   }
+}
 
-  Widget _movementBadge(IcareSurfaceTokens tokens, String mType) {
+class ProcurementMovementBadge extends StatelessWidget {
+  final IcareSurfaceTokens tokens;
+  final String movementType;
+
+  const ProcurementMovementBadge({
+    super.key,
+    required this.tokens,
+    required this.movementType,
+  });
+
+  static String displayLabel(String mType) {
+    switch (mType) {
+      case 'RESTOCK':
+        return 'Stock Receipt';
+      case 'INITIAL_SEED':
+        return 'Opening Stock';
+      case 'TRANSFER_IN':
+        return 'Transfer In';
+      case 'TRANSFER_OUT':
+        return 'Transfer Out';
+      case 'DEDUCT_ON_DISBURSE':
+        return 'Disbursed';
+      case 'RESERVE_ON_APPLY':
+        return 'Reserved';
+      case 'RELEASE_ON_REJECT':
+        return 'Released';
+      case 'DAMAGE_WRITE_OFF':
+        return 'Write-Off';
+      case 'PRICE_UPDATE':
+        return 'Price Update';
+      case 'ADJUSTMENT':
+        return 'Adjustment';
+      default:
+        return mType.replaceAll('_', ' ');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     Color bg = tokens.surfaceSubtle;
     Color fg = tokens.textSecondary;
     Color bd = tokens.borderSubtle;
-    if (mType == 'RESTOCK' || mType == 'TRANSFER_IN') {
+    if (movementType == 'RESTOCK' ||
+        movementType == 'TRANSFER_IN' ||
+        movementType == 'INITIAL_SEED') {
       bg = tokens.successBg;
       fg = tokens.successText;
       bd = tokens.successBorder;
-    } else if (mType == 'DAMAGE_WRITE_OFF') {
+    } else if (movementType == 'DAMAGE_WRITE_OFF') {
       bg = tokens.dangerBg;
       fg = tokens.dangerText;
       bd = tokens.dangerBorder;
-    } else if (mType == 'DEDUCT_ON_DISBURSE' ||
-        mType == 'TRANSFER_OUT' ||
-        mType == 'PRICE_UPDATE') {
+    } else if (movementType == 'DEDUCT_ON_DISBURSE' ||
+        movementType == 'TRANSFER_OUT' ||
+        movementType == 'PRICE_UPDATE') {
       bg = tokens.infoBg;
       fg = tokens.infoText;
       bd = tokens.infoBorder;
-    } else if (mType == 'RESERVE_ON_APPLY') {
+    } else if (movementType == 'RESERVE_ON_APPLY' ||
+        movementType == 'ADJUSTMENT') {
       bg = tokens.warningBg;
       fg = tokens.warningText;
       bd = tokens.warningBorder;
     }
-    return _statusPill(tokens, mType, bg, fg, bd);
+    return ProcurementStatusPill(
+      label: displayLabel(movementType),
+      bg: bg,
+      fg: fg,
+      border: bd,
+    );
+  }
+}
+
+class ProcurementBranchValuationTable extends StatelessWidget {
+  final IcareSurfaceTokens tokens;
+  final List<Map<String, dynamic>> branchSummaries;
+
+  const ProcurementBranchValuationTable({
+    super.key,
+    required this.tokens,
+    required this.branchSummaries,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (branchSummaries.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.all(16),
+        child: Text(
+          'No active branches available.',
+          style: TextStyle(color: tokens.textMuted),
+        ),
+      );
+    }
+
+    return ProcurementFullWidthTable(
+      tokens: tokens,
+      child: DataTable(
+        headingRowColor: WidgetStateProperty.all(tokens.surfaceSubtle),
+        columnSpacing: 22,
+        horizontalMargin: 16,
+        dataRowMinHeight: 46,
+        dataRowMaxHeight: 54,
+        columns: const [
+          DataColumn(label: Text('Branch')),
+          DataColumn(label: Text('Stocked SKUs'), numeric: true),
+          DataColumn(label: Text('On Hand'), numeric: true),
+          DataColumn(label: Text('Reserved'), numeric: true),
+          DataColumn(label: Text('Available'), numeric: true),
+          DataColumn(label: Text('Cost Value'), numeric: true),
+          DataColumn(label: Text('Retail Cash Value'), numeric: true),
+          DataColumn(label: Text('Projected Margin'), numeric: true),
+        ],
+        rows: branchSummaries.map((b) {
+          final costV = (b['inventory_cost_value'] as num?)?.toDouble() ?? 0.0;
+          final cashV = (b['inventory_cash_value'] as num?)?.toDouble() ?? 0.0;
+          final projMargin =
+              (b['projected_retail_profit'] as num?)?.toDouble() ?? 0.0;
+          final avail = (b['units_available'] as num?)?.toInt() ?? 0;
+
+          return DataRow(
+            cells: [
+              DataCell(
+                Text(
+                  b['branch_name']?.toString() ?? 'Branch',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    color: tokens.textPrimary,
+                  ),
+                ),
+              ),
+              DataCell(Text('${b['stocked_skus'] ?? 0}')),
+              DataCell(Text('${b['units_on_hand'] ?? 0}')),
+              DataCell(Text('${b['units_reserved'] ?? 0}')),
+              DataCell(
+                ProcurementStatusPill(
+                  label: '$avail',
+                  bg: avail > 0 ? tokens.successBg : tokens.surfaceSubtle,
+                  fg: avail > 0 ? tokens.successText : tokens.textMuted,
+                  border:
+                      avail > 0 ? tokens.successBorder : tokens.borderSubtle,
+                ),
+              ),
+              DataCell(Text(
+                costV > 0 ? CurrencyFormatter.formatNaira(costV) : 'Pending',
+                style: TextStyle(
+                  color: costV > 0 ? tokens.textPrimary : tokens.textMuted,
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                ),
+              )),
+              DataCell(Text(
+                CurrencyFormatter.formatNaira(cashV),
+                style: const TextStyle(
+                  fontWeight: FontWeight.w700,
+                  fontFeatures: [FontFeature.tabularFigures()],
+                ),
+              )),
+              DataCell(Text(
+                costV > 0
+                    ? CurrencyFormatter.formatNaira(projMargin)
+                    : 'Pending',
+                style: TextStyle(
+                  color: costV > 0 ? tokens.successText : tokens.textMuted,
+                  fontWeight: costV > 0 ? FontWeight.w700 : FontWeight.w500,
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                ),
+              )),
+            ],
+          );
+        }).toList(),
+      ),
+    );
+  }
+}
+
+class ProcurementMovementLedgerCard extends StatefulWidget {
+  final IcareSurfaceTokens tokens;
+  final List<Map<String, dynamic>> movements;
+  final List<Map<String, dynamic>> branches;
+  final String title;
+  final String subtitle;
+  final bool showBranchFilter;
+
+  const ProcurementMovementLedgerCard({
+    super.key,
+    required this.tokens,
+    required this.movements,
+    this.branches = const [],
+    required this.title,
+    required this.subtitle,
+    this.showBranchFilter = false,
+  });
+
+  @override
+  State<ProcurementMovementLedgerCard> createState() =>
+      _ProcurementMovementLedgerCardState();
+}
+
+class _ProcurementMovementLedgerCardState
+    extends State<ProcurementMovementLedgerCard> {
+  String _typeFilter = 'ALL';
+  String _branchFilter = 'ALL';
+
+  bool _matchesType(String mType) {
+    switch (_typeFilter) {
+      case 'RECEIPTS':
+        return mType == 'RESTOCK' || mType == 'INITIAL_SEED';
+      case 'TRANSFERS':
+        return mType == 'TRANSFER_IN' || mType == 'TRANSFER_OUT';
+      case 'DISBURSEMENTS':
+        return mType == 'DEDUCT_ON_DISBURSE' ||
+            mType == 'RESERVE_ON_APPLY' ||
+            mType == 'RELEASE_ON_REJECT';
+      case 'WRITEOFFS':
+        return mType == 'DAMAGE_WRITE_OFF' || mType == 'ADJUSTMENT';
+      case 'PRICES':
+        return mType == 'PRICE_UPDATE';
+      default:
+        return true;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = widget.tokens;
+    final filtered = widget.movements.where((m) {
+      final mType = m['movement_type']?.toString() ?? '';
+      if (!_matchesType(mType)) return false;
+      if (_branchFilter != 'ALL' &&
+          (m['branch_id']?.toString() ?? '') != _branchFilter) {
+        return false;
+      }
+      return true;
+    }).toList();
+
+    return ProcurementSectionCard(
+      tokens: tokens,
+      title: '${widget.title} (${filtered.length})',
+      subtitle: widget.subtitle,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Wrap(
+            spacing: 10,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              if (widget.showBranchFilter && widget.branches.isNotEmpty)
+                SizedBox(
+                  width: 220,
+                  child: DropdownButtonFormField<String>(
+                    value: _branchFilter,
+                    isExpanded: true,
+                    dropdownColor: tokens.surfaceElevated,
+                    decoration: const InputDecoration(
+                      isDense: true,
+                      labelText: 'Branch',
+                      border: OutlineInputBorder(),
+                      contentPadding:
+                          EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                    ),
+                    items: [
+                      const DropdownMenuItem(
+                        value: 'ALL',
+                        child: Text('All Branches'),
+                      ),
+                      ...widget.branches.map(
+                        (b) => DropdownMenuItem(
+                          value: b['branch_id'].toString(),
+                          child: Text(b['name'].toString()),
+                        ),
+                      ),
+                    ],
+                    onChanged: (v) {
+                      if (v != null) setState(() => _branchFilter = v);
+                    },
+                  ),
+                ),
+              ...[
+                ('ALL', 'All Movements'),
+                ('RECEIPTS', 'Stock Receipts'),
+                ('TRANSFERS', 'Transfers'),
+                ('DISBURSEMENTS', 'Disbursements'),
+                ('WRITEOFFS', 'Write-Offs'),
+                ('PRICES', 'Price Updates'),
+              ].map((f) {
+                return ChoiceChip(
+                  selected: _typeFilter == f.$1,
+                  label: Text(f.$2),
+                  onSelected: (_) => setState(() => _typeFilter = f.$1),
+                );
+              }),
+            ],
+          ),
+          const SizedBox(height: 12),
+          if (filtered.isEmpty)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(18),
+              decoration: BoxDecoration(
+                color: tokens.surfaceSubtle,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: tokens.borderSubtle),
+              ),
+              child: Text(
+                'No stock or price movements match the selected filters.',
+                style: TextStyle(color: tokens.textMuted),
+              ),
+            )
+          else
+            ProcurementFullWidthTable(
+              tokens: tokens,
+              child: DataTable(
+                headingRowColor: WidgetStateProperty.all(tokens.surfaceSubtle),
+                columnSpacing: 18,
+                horizontalMargin: 14,
+                dataRowMinHeight: 46,
+                dataRowMaxHeight: 58,
+                columns: const [
+                  DataColumn(label: Text('Type')),
+                  DataColumn(label: Text('Branch')),
+                  DataColumn(label: Text('Item')),
+                  DataColumn(label: Text('Qty Delta'), numeric: true),
+                  DataColumn(label: Text('Balance'), numeric: true),
+                  DataColumn(label: Text('Unit Cost'), numeric: true),
+                  DataColumn(label: Text('Selling Price'), numeric: true),
+                  DataColumn(label: Text('Ref / By')),
+                  DataColumn(label: Text('Remarks')),
+                ],
+                rows: filtered.map((m) {
+                  final mType = m['movement_type']?.toString() ?? '';
+                  final qDelta = (m['quantity_delta'] as num?)?.toInt() ?? 0;
+                  final cp = m['counterparty_branch_name']?.toString();
+                  final bLabel = cp != null && cp.isNotEmpty
+                      ? '${m['branch_name']} (${mType == 'TRANSFER_OUT' ? 'to' : 'from'} $cp)'
+                      : (m['branch_name']?.toString() ?? '');
+                  final costVal =
+                      (m['unit_cost_price'] as num?)?.toDouble() ?? 0.0;
+
+                  return DataRow(
+                    cells: [
+                      DataCell(ProcurementMovementBadge(
+                        tokens: tokens,
+                        movementType: mType,
+                      )),
+                      DataCell(Text(bLabel)),
+                      DataCell(
+                        ConstrainedBox(
+                          constraints: const BoxConstraints(
+                              minWidth: 160, maxWidth: 230),
+                          child: Text(
+                            '${m['item_name']} (${m['sku_code']})',
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ),
+                      DataCell(Text(
+                        qDelta > 0 ? '+$qDelta' : '$qDelta',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          color: qDelta > 0
+                              ? tokens.successText
+                              : (qDelta < 0
+                                  ? tokens.dangerText
+                                  : tokens.textMuted),
+                          fontFeatures: const [FontFeature.tabularFigures()],
+                        ),
+                      )),
+                      DataCell(Text(
+                        '${m['balance_after'] ?? 0}',
+                        style: const TextStyle(
+                          fontFeatures: [FontFeature.tabularFigures()],
+                        ),
+                      )),
+                      DataCell(Text(
+                        costVal > 0
+                            ? CurrencyFormatter.formatNaira(costVal)
+                            : '-',
+                        style: const TextStyle(
+                          fontFeatures: [FontFeature.tabularFigures()],
+                        ),
+                      )),
+                      DataCell(Text(
+                        CurrencyFormatter.formatNaira(
+                          (m['unit_selling_price'] as num?)?.toDouble() ?? 0.0,
+                        ),
+                        style: const TextStyle(
+                          fontFeatures: [FontFeature.tabularFigures()],
+                        ),
+                      )),
+                      DataCell(Text(
+                          '${m['reference_code'] ?? '-'} • ${m['performed_by']}')),
+                      DataCell(
+                        ConstrainedBox(
+                          constraints: const BoxConstraints(
+                              minWidth: 150, maxWidth: 220),
+                          child: Text(
+                            m['remarks']?.toString() ?? '',
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ),
+                    ],
+                  );
+                }).toList(),
+              ),
+            ),
+        ],
+      ),
+    );
   }
 }

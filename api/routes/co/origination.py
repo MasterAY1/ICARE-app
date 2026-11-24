@@ -163,11 +163,11 @@ def get_branch_asset_catalog(
 @router.post("/branch-inventory/adjust", response_model=AdjustBranchInventoryResponse)
 def adjust_branch_asset_inventory(
     payload: AdjustBranchInventoryInput,
-    current_user: CurrentUser = Depends(require_role(["Procurement Officer", "Asset Manager", "Admin", "Super Admin"])),
+    current_user: CurrentUser = Depends(require_role(["Procurement Officer", "Asset Manager"])),
     uow: SupabaseUnitOfWork = Depends(get_uow)
 ):
     """
-    Strictly restricted to Procurement Officer / Asset Manager or Admin to restock physical units or update cost & selling prices.
+    Strictly restricted to Procurement Officer / Asset Manager to restock physical units or update cost & selling prices.
     """
     target_branch_id = payload.branch_id or current_user.branch_id
     if target_branch_id:

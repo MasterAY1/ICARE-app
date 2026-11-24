@@ -262,8 +262,8 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
         role == 'procurement_officer' ||
         role == 'asset manager' ||
         role == 'asset_manager' ||
-        role == 'admin' ||
-        role == 'super admin';
+        role == 'procurement' ||
+        role == 'po';
   }
 
   Future<void> _loadBranchAssetCatalog() async {

@@ -30,8 +30,6 @@ _READ_ROLES = [
 _WRITE_ROLES = [
     "Procurement Officer",
     "Asset Manager",
-    "Admin",
-    "Super Admin",
 ]
 
 
