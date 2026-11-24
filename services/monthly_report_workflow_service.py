@@ -14,6 +14,7 @@ from services.area_manager_service import AreaManagerService
 
 
 class MonthlyReportWorkflowService:
+    ADMIN_SIGNED_STATUSES = ("AM_VERIFIED", "AREA_SEALED", "ADMIN_LOCKED")
 
     @staticmethod
     def _card_val(cards: Any, key: str, default: Any = 0.0) -> Any:
@@ -413,6 +414,7 @@ class MonthlyReportWorkflowService:
     ) -> Dict[str, Any]:
         """
         Tier 3: Executive Admin locks and archives the monthly report into the permanent institutional archive.
+        Requires prior Area Manager review and signature (AM_VERIFIED or AREA_SEALED).
         """
         user = uow.users.find_by_id(admin_user_id)
         admin_name = user.full_name or user.username if user else "Administrator"
@@ -426,6 +428,10 @@ class MonthlyReportWorkflowService:
 
         if not existing.data:
             raise ValueError("Report record does not exist.")
+
+        curr_status = existing.data[0].get("status")
+        if curr_status not in MonthlyReportWorkflowService.ADMIN_SIGNED_STATUSES:
+            raise ValueError("Cannot lock: Report must be reviewed and signed by the Area Manager first.")
 
         now_str = datetime.now().isoformat()
         uow.client.table("monthly_report_submissions").update({
@@ -447,14 +453,83 @@ class MonthlyReportWorkflowService:
         }
 
     @staticmethod
+    def _build_submission_item(
+        bid: str,
+        bname: str,
+        year: int,
+        month: int,
+        sub: Optional[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        if sub:
+            return {
+                "branch_id": bid,
+                "branch_name": bname,
+                "area_name": sub.get("area_name"),
+                "year": year,
+                "month": month,
+                "status": sub.get("status", "DRAFT"),
+                "disbursed_principal": float(sub.get("disbursed_principal") or 0.0),
+                "upfront_fees": float(sub.get("upfront_fees") or 0.0),
+                "net_active_credit": float(sub.get("net_active_credit") or 0.0),
+                "collections": float(sub.get("collections") or 0.0),
+                "closing_credit": float(sub.get("closing_credit") or 0.0),
+                "closing_savings": float(sub.get("closing_savings") or 0.0),
+                "vault_cash": float(sub.get("vault_cash_acct_1000") or 0.0),
+                "bank_deposits": float(sub.get("bank_deposits_acct_1050") or 0.0),
+                "is_gl_balanced": bool(sub.get("is_gl_balanced", False)),
+                "gl_variance": float(sub.get("gl_variance") or 0.0),
+                "bm_name": sub.get("bm_name") or "Branch Manager",
+                "bm_notes": sub.get("bm_notes"),
+                "submitted_at": sub.get("bm_submitted_at"),
+                "am_name": sub.get("am_name"),
+                "am_notes": sub.get("am_notes"),
+                "am_endorsed_at": sub.get("am_endorsed_at"),
+                "am_query_notes": sub.get("am_query_notes"),
+                "admin_name": sub.get("admin_name"),
+                "admin_notes": sub.get("admin_notes"),
+                "admin_locked_at": sub.get("admin_locked_at"),
+            }
+        return {
+            "branch_id": bid,
+            "branch_name": bname,
+            "area_name": None,
+            "year": year,
+            "month": month,
+            "status": "DRAFT",
+            "disbursed_principal": 0.0,
+            "upfront_fees": 0.0,
+            "net_active_credit": 0.0,
+            "collections": 0.0,
+            "closing_credit": 0.0,
+            "closing_savings": 0.0,
+            "vault_cash": 0.0,
+            "bank_deposits": 0.0,
+            "is_gl_balanced": False,
+            "gl_variance": 0.0,
+            "bm_name": "Branch Manager",
+            "bm_notes": None,
+            "submitted_at": None,
+            "am_name": None,
+            "am_notes": None,
+            "am_endorsed_at": None,
+            "am_query_notes": None,
+            "admin_name": None,
+            "admin_notes": None,
+            "admin_locked_at": None,
+        }
+
+    @staticmethod
     def get_pending_am_submissions(
         uow: UnitOfWork,
         am_user_id: str,
         year: int,
-        month: int
+        month: int,
+        only_am_signed: bool = False,
     ) -> List[Dict[str, Any]]:
         """
-        Fetches all supervised branches and their monthly report submission status for the Approvals Hub.
+        Fetches supervised branches and their monthly report submission status.
+        When `only_am_signed=True` (enforced for Admin), returns exclusively reports
+        that were submitted by BM and signed/reviewed by the Area Manager.
         """
         assigned = MonthlyReportWorkflowService._get_supervised_branches_for_user(uow, am_user_id)
         assigned_map = {b["branch_id"]: b["name"] for b in assigned if b.get("branch_id")}
@@ -475,41 +550,66 @@ class MonthlyReportWorkflowService:
         results = []
         for bid, bname in assigned_map.items():
             sub = sub_map.get(bid)
-            if sub:
-                results.append({
-                    "branch_id": bid,
-                    "branch_name": bname,
-                    "year": year,
-                    "month": month,
-                    "status": sub.get("status", "DRAFT"),
-                    "disbursed_principal": float(sub.get("disbursed_principal") or 0.0),
-                    "collections": float(sub.get("collections") or 0.0),
-                    "closing_credit": float(sub.get("closing_credit") or 0.0),
-                    "closing_savings": float(sub.get("closing_savings") or 0.0),
-                    "vault_cash": float(sub.get("vault_cash_acct_1000") or 0.0),
-                    "is_gl_balanced": bool(sub.get("is_gl_balanced", False)),
-                    "bm_name": sub.get("bm_name") or "Branch Manager",
-                    "bm_notes": sub.get("bm_notes"),
-                    "submitted_at": sub.get("bm_submitted_at"),
-                    "am_query_notes": sub.get("am_query_notes"),
-                })
-            else:
-                results.append({
-                    "branch_id": bid,
-                    "branch_name": bname,
-                    "year": year,
-                    "month": month,
-                    "status": "DRAFT",
-                    "disbursed_principal": 0.0,
-                    "collections": 0.0,
-                    "closing_credit": 0.0,
-                    "closing_savings": 0.0,
-                    "vault_cash": 0.0,
-                    "is_gl_balanced": False,
-                    "bm_name": "Branch Manager",
-                    "bm_notes": None,
-                    "submitted_at": None,
-                    "am_query_notes": None,
-                })
+            if only_am_signed:
+                if not sub or sub.get("status") not in MonthlyReportWorkflowService.ADMIN_SIGNED_STATUSES:
+                    continue
+            results.append(MonthlyReportWorkflowService._build_submission_item(bid, bname, year, month, sub))
+
+        if only_am_signed:
+            priority = {"AM_VERIFIED": 0, "AREA_SEALED": 1, "ADMIN_LOCKED": 2}
+            results.sort(key=lambda r: (priority.get(r["status"], 9), r["branch_name"].lower()))
 
         return results
+
+    @staticmethod
+    def get_admin_signed_submissions(
+        uow: UnitOfWork,
+        admin_user_id: str,
+        year: int,
+        month: int,
+    ) -> List[Dict[str, Any]]:
+        """
+        Returns exclusively branch monthly reports formally reviewed and signed by an AM
+        (AM_VERIFIED, AREA_SEALED, or ADMIN_LOCKED) for Executive Admin oversight & export.
+        """
+        return MonthlyReportWorkflowService.get_pending_am_submissions(
+            uow=uow,
+            am_user_id=admin_user_id,
+            year=year,
+            month=month,
+            only_am_signed=True,
+        )
+
+    @staticmethod
+    def get_admin_signed_branch_ids(
+        uow: UnitOfWork,
+        year: int,
+        month: int,
+    ) -> List[str]:
+        """Returns branch_ids that have AM-signed/reviewed submissions for (year, month)."""
+        q = uow.client.table("monthly_report_submissions") \
+            .select("branch_id, status") \
+            .eq("year", year) \
+            .eq("month", month) \
+            .in_("status", list(MonthlyReportWorkflowService.ADMIN_SIGNED_STATUSES)) \
+            .execute()
+        return [r["branch_id"] for r in (q.data or []) if r.get("branch_id")]
+
+    @staticmethod
+    def is_branch_am_signed(
+        uow: UnitOfWork,
+        branch_id: str,
+        year: int,
+        month: int,
+    ) -> bool:
+        """Returns True iff (branch_id, year, month) has been signed/endorsed by an AM."""
+        q = uow.client.table("monthly_report_submissions") \
+            .select("status") \
+            .eq("branch_id", branch_id) \
+            .eq("year", year) \
+            .eq("month", month) \
+            .limit(1) \
+            .execute()
+        if not q.data:
+            return False
+        return q.data[0].get("status") in MonthlyReportWorkflowService.ADMIN_SIGNED_STATUSES

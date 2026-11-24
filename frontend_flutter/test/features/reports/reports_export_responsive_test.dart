@@ -1,3 +1,4 @@
+import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -8,6 +9,7 @@ import 'package:frontend_flutter/core/network/api_client.dart';
 import 'package:frontend_flutter/features/reports/data/datasources/reports_api_service.dart';
 import 'package:frontend_flutter/features/reports/data/models/report_models.dart';
 import 'package:frontend_flutter/features/reports/presentation/reports_export_screen.dart';
+import 'package:frontend_flutter/features/reports/presentation/widgets/report_export_actions.dart';
 
 class _FakeAuthController extends AuthController {
   _FakeAuthController(AuthUser user) : super(ApiClient()) {
@@ -23,8 +25,16 @@ class _FakeReportsApiService extends ReportsApiService {
   String? lastExcelBranchName;
   String? lastCsvBranchName;
   String workflowStatus;
+  final String? amQueryNotes;
+  final List<MonthlyWorkflowPendingBranchModel>? adminSignedOverride;
+  final List<MonthlyWorkflowPendingBranchModel>? amPendingOverride;
 
-  _FakeReportsApiService({this.workflowStatus = 'DRAFT'}) : super(ApiClient());
+  _FakeReportsApiService({
+    this.workflowStatus = 'DRAFT',
+    this.amQueryNotes,
+    this.adminSignedOverride,
+    this.amPendingOverride,
+  }) : super(ApiClient());
 
   @override
   Future<ReportsMeta> getReportsMeta() async {
@@ -253,7 +263,8 @@ class _FakeReportsApiService extends ReportsApiService {
           categoryName: 'Administrative Expenses',
           subtotal: 25000.0,
           items: [
-            Annex1LineItem(code: 'PB3', name: 'Office Stationery', amount: 25000.0),
+            Annex1LineItem(
+                code: 'PB3', name: 'Office Stationery', amount: 25000.0),
           ],
         ),
       ],
@@ -285,14 +296,19 @@ class _FakeReportsApiService extends ReportsApiService {
       isGlBalanced: true,
       glVariance: 0.0,
       bmName: 'Adebayo T.',
+      amQueryNotes: amQueryNotes,
     );
   }
 
   @override
-  Future<List<MonthlyWorkflowPendingBranchModel>> getPendingAmMonthlySubmissions({
+  Future<List<MonthlyWorkflowPendingBranchModel>>
+      getPendingAmMonthlySubmissions({
     int? year,
     int? month,
   }) async {
+    if (amPendingOverride != null) {
+      return amPendingOverride!;
+    }
     return const [
       MonthlyWorkflowPendingBranchModel(
         branchId: 'b-1',
@@ -307,6 +323,72 @@ class _FakeReportsApiService extends ReportsApiService {
         vaultCash: 450000.0,
         isGlBalanced: true,
         bmName: 'Adebayo T.',
+      ),
+    ];
+  }
+
+  @override
+  Future<List<MonthlyWorkflowPendingBranchModel>>
+      getAdminSignedMonthlySubmissions({
+    int? year,
+    int? month,
+  }) async {
+    if (adminSignedOverride != null) {
+      return adminSignedOverride!;
+    }
+    return const [
+      MonthlyWorkflowPendingBranchModel(
+        branchId: 'b-1',
+        branchName: 'Ikeja Branch',
+        areaName: 'Area 1',
+        year: 2026,
+        month: 9,
+        status: 'AM_VERIFIED',
+        disbursedPrincipal: 2500000.0,
+        upfrontFees: 125000.0,
+        netActiveCredit: 2875000.0,
+        collections: 1250000.0,
+        closingCredit: 6625000.0,
+        closingSavings: 1400000.0,
+        vaultCash: 450000.0,
+        isGlBalanced: true,
+        bmName: 'Adebayo T.',
+        amName: 'Ngozi K.',
+        amNotes: 'All Trial Balance & Vault Cash lines verified.',
+        amEndorsedAt: '2026-09-30T15:20:00',
+      ),
+      MonthlyWorkflowPendingBranchModel(
+        branchId: 'b-2',
+        branchName: 'Surulere Branch',
+        areaName: 'Area 1',
+        year: 2026,
+        month: 9,
+        status: 'ADMIN_LOCKED',
+        disbursedPrincipal: 1800000.0,
+        collections: 1050000.0,
+        closingCredit: 4200000.0,
+        closingSavings: 950000.0,
+        vaultCash: 300000.0,
+        isGlBalanced: true,
+        bmName: 'Yemi S.',
+        amName: 'Ngozi K.',
+        amNotes: 'Endorsed with zero variance.',
+        amEndorsedAt: '2026-09-29T16:10:00',
+        adminName: 'Head Admin',
+        adminLockedAt: '2026-10-01T09:00:00',
+      ),
+      MonthlyWorkflowPendingBranchModel(
+        branchId: 'b-draft',
+        branchName: 'Unsigned Draft Branch',
+        year: 2026,
+        month: 9,
+        status: 'BM_SUBMITTED',
+        disbursedPrincipal: 999999.0,
+        collections: 111111.0,
+        closingCredit: 500000.0,
+        closingSavings: 200000.0,
+        vaultCash: 50000.0,
+        isGlBalanced: true,
       ),
     ];
   }
@@ -402,6 +484,8 @@ class _FakeReportsApiService extends ReportsApiService {
     String? asOfDate,
     String? startDate,
     String? endDate,
+    int? year,
+    int? month,
   }) async {
     areaComparisonCalls++;
     return const AreaComparisonData(
@@ -434,6 +518,17 @@ class _FakeReportsApiService extends ReportsApiService {
   }
 
   @override
+  Future<List<int>> downloadMonthlyParityPdf({
+    String? branchName,
+    int? year,
+    int? month,
+    String? officerName,
+    String? productName,
+  }) async {
+    return [0x25, 0x50, 0x44, 0x46, 0x2D, 0x31, 0x2E, 0x34];
+  }
+
+  @override
   Future<List<int>> downloadExcel({
     String? branchName,
     String? productName,
@@ -441,6 +536,8 @@ class _FakeReportsApiService extends ReportsApiService {
     String? asOfDate,
     String? startDate,
     String? endDate,
+    int? year,
+    int? month,
   }) async {
     lastExcelBranchName = branchName;
     return [1, 2, 3, 4];
@@ -524,7 +621,8 @@ void main() {
         await tester.pumpAndSettle();
 
         expect(fakeApi.areaComparisonCalls, 0);
-        expect(find.textContaining('SUBMITTED FOR AM SIGN-OFF'), findsOneWidget);
+        expect(
+            find.textContaining('SUBMITTED FOR AM SIGN-OFF'), findsOneWidget);
 
         // Verify Sub-Tab 0 (A. Deposit Statement) and Sub-Tab 1 (B. Credit Statement) independent filter states
         await _tapLabel(tester, 'A. Deposit Statement');
@@ -535,7 +633,10 @@ void main() {
 
         // Verify Sub-Tab 6 is read-only when BM_SUBMITTED
         await _tapLabel(tester, 'Bank & Treasury Reconciliation');
-        expect(find.textContaining('Read-Only Mode: Statements and treasury reconciliations are locked'), findsOneWidget);
+        expect(
+            find.textContaining(
+                'Read-Only Mode: Statements and treasury reconciliations are locked'),
+            findsOneWidget);
       },
     );
   }
@@ -598,7 +699,8 @@ void main() {
         branch: 'Head Office',
       );
 
-      await tester.pumpWidget(_buildHarness(user: directorUser, fakeApi: fakeApi));
+      await tester
+          .pumpWidget(_buildHarness(user: directorUser, fakeApi: fakeApi));
       await tester.pumpAndSettle();
 
       // Director should never see mutating buttons ("Endorse", "Return", "Lock & Archive")
@@ -608,7 +710,395 @@ void main() {
 
       // Director can open Sub-Tab 6 in read-only mode
       await _tapLabel(tester, 'Bank & Treasury Reconciliation');
-      expect(find.textContaining('Read-Only Mode: Statements and treasury reconciliations are locked'), findsOneWidget);
+      expect(
+          find.textContaining(
+              'Read-Only Mode: Statements and treasury reconciliations are locked'),
+          findsOneWidget);
+    },
+  );
+
+  for (final size in const [Size(390, 844), Size(800, 1024), Size(1440, 900)]) {
+    testWidgets(
+      'Redesigned Admin Reports & Export only shows AM-signed reports at ${size.width.toInt()}x${size.height.toInt()}',
+      (tester) async {
+        await tester.binding.setSurfaceSize(size);
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+
+        final fakeApi = _FakeReportsApiService();
+        final adminUser = AuthUser(
+          id: 'u-admin',
+          username: 'admin',
+          fullName: 'Head Admin',
+          role: 'Admin',
+          branch: 'Head Office',
+        );
+
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [
+              authControllerProvider
+                  .overrideWith((ref) => _FakeAuthController(adminUser)),
+              reportsApiServiceProvider.overrideWithValue(fakeApi),
+            ],
+            child: MediaQuery(
+              data: MediaQueryData(
+                size: size,
+                textScaler: size.width < 600
+                    ? const TextScaler.linear(1.2)
+                    : TextScaler.noScaling,
+              ),
+              child: const MaterialApp(
+                home: Scaffold(
+                  body: SingleChildScrollView(
+                    padding: EdgeInsets.all(16),
+                    child: ReportsExportScreen(),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Governance header & AM-signed cards appear
+        expect(find.text('AM-SIGNED REPORTS ONLY'), findsOneWidget);
+        expect(find.text('Ikeja Branch'), findsWidgets);
+        expect(find.text('Surulere Branch'), findsWidgets);
+        expect(find.textContaining('Signed by Ngozi K.'), findsWidgets);
+
+        // Unreviewed BM_SUBMITTED report MUST NOT appear anywhere in Admin UI
+        expect(find.text('Unsigned Draft Branch'), findsNothing);
+        expect(find.text('Verify & Submit to Area Manager'), findsNothing);
+        expect(find.text('Endorse & Sign Off'), findsNothing);
+
+        // Zero emojis anywhere
+        final emojiRe =
+            RegExp(r'[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]', unicode: true);
+        for (final t in tester.widgetList<Text>(find.byType(Text))) {
+          expect(emojiRe.hasMatch(t.data ?? ''), isFalse);
+        }
+      },
+    );
+  }
+
+  testWidgets(
+    'Admin shows honest empty state and blocks unreviewed statement fetches when zero reports are AM-signed',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1280, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final fakeApi = _FakeReportsApiService(
+        adminSignedOverride: const [
+          MonthlyWorkflowPendingBranchModel(
+            branchId: 'b-bm',
+            branchName: 'Draft Only Branch',
+            year: 2026,
+            month: 11,
+            status: 'BM_SUBMITTED',
+            disbursedPrincipal: 500000.0,
+            collections: 250000.0,
+            closingCredit: 900000.0,
+            closingSavings: 300000.0,
+            vaultCash: 100000.0,
+            isGlBalanced: true,
+          ),
+        ],
+      );
+      final adminUser = AuthUser(
+        id: 'u-admin',
+        username: 'admin',
+        fullName: 'Head Admin',
+        role: 'Admin',
+        branch: 'Head Office',
+      );
+
+      await tester.pumpWidget(_buildHarness(user: adminUser, fakeApi: fakeApi));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('No Area Manager-Signed Reports Ready'),
+          findsOneWidget);
+      expect(find.text('Draft Only Branch'), findsNothing);
+      expect(fakeApi.parityCalls, 0);
+      expect(fakeApi.officialStatementsCalls, 0);
+    },
+  );
+
+  testWidgets(
+    'Admin navigates between AM-Signed Queue, Audited Statements, and Verified Export Vault cleanly',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1440, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final fakeApi = _FakeReportsApiService();
+      final adminUser = AuthUser(
+        id: 'u-admin',
+        username: 'admin',
+        fullName: 'Head Admin',
+        role: 'Admin',
+        branch: 'Head Office',
+      );
+
+      await tester.pumpWidget(_buildHarness(user: adminUser, fakeApi: fakeApi));
+      await tester.pumpAndSettle();
+
+      // Switch to Audited Statements
+      await _tapLabel(tester, 'Audited Statements');
+      expect(
+          find.textContaining('Signed & Reviewed by Ngozi K.'), findsOneWidget);
+      expect(find.text('A. Deposit Statement'), findsOneWidget);
+      expect(find.text('Preview & Print PDF'), findsOneWidget);
+
+      // Verify Rule 12 still strips Account 1000 in Trial Balance
+      await _tapLabel(tester, 'Official Trial Balance');
+      expect(find.textContaining('Account 1000'), findsNothing);
+      expect(find.text('Cash at Hand'), findsOneWidget);
+
+      // Switch to Verified Export Vault
+      await _tapLabel(tester, 'Verified Export Vault');
+      expect(find.text('AM-Signed Consolidated Enterprise Package'),
+          findsOneWidget);
+      expect(find.text('Download Master Workbook (.xlsx)'), findsOneWidget);
+      expect(find.text('Share PDF'), findsOneWidget);
+      expect(find.text('Preview & Print PDF'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'Redesigned BM Fluid UI renders charts, export sheet actions, and certification states at 390x844 with 1.2x text scale',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(390, 844));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final fakeApi = _FakeReportsApiService(
+        workflowStatus: 'RETURNED_FOR_CORRECTION',
+        amQueryNotes: 'Verify vault physical count against bank slip.',
+      );
+      final bmUser = AuthUser(
+        id: 'u-bm',
+        username: 'bm_ikeja',
+        fullName: 'Adebayo T.',
+        role: 'Branch Manager',
+        branch: 'Ikeja Branch',
+        branchId: 'b-1',
+      );
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            authControllerProvider
+                .overrideWith((ref) => _FakeAuthController(bmUser)),
+            reportsApiServiceProvider.overrideWithValue(fakeApi),
+          ],
+          child: const MediaQuery(
+            data: MediaQueryData(
+              size: Size(390, 844),
+              textScaler: TextScaler.linear(1.2),
+            ),
+            child: MaterialApp(
+              home: Scaffold(
+                body: SingleChildScrollView(
+                  padding: EdgeInsets.all(16),
+                  child: ReportsExportScreen(),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(fakeApi.areaComparisonCalls, 0);
+      expect(find.text('SINGLE BRANCH • TIER-1 CERTIFICATION'), findsOneWidget);
+      expect(find.text('RETURNED FOR CORRECTION'), findsOneWidget);
+      expect(
+          find.textContaining('Verify vault physical count'), findsOneWidget);
+      expect(find.text('Re-verify & Resubmit'), findsOneWidget);
+      expect(find.text('Preview & Print PDF'), findsOneWidget);
+      expect(find.text('Share Workbook'), findsOneWidget);
+      expect(find.byType(BarChart), findsOneWidget);
+      expect(find.byType(PieChart), findsOneWidget);
+
+      // Zero emojis & zero leaked internal account codes
+      final emojiRe =
+          RegExp(r'[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]', unicode: true);
+      for (final t in tester.widgetList<Text>(find.byType(Text))) {
+        final str = t.data ?? '';
+        expect(emojiRe.hasMatch(str), isFalse);
+        expect(str.contains('Acct 1000'), isFalse);
+      }
+
+      // Switch to Data Exports & Downloads tab and verify Share / PDF controls
+      await _tapLabel(tester, 'Data Exports & Downloads');
+      expect(find.text('Official Monthly Statements & Print Pack'),
+          findsOneWidget);
+      expect(find.text('Share PDF'), findsOneWidget);
+      expect(find.text('Preview & Print PDF'), findsOneWidget);
+    },
+  );
+
+  for (final size in const [Size(390, 844), Size(800, 1024), Size(1440, 900)]) {
+    testWidgets(
+      'Redesigned AM Fluid UI prioritizes BM-submitted queue over drafts and connects statements/exports at ${size.width.toInt()}x${size.height.toInt()}',
+      (tester) async {
+        await tester.binding.setSurfaceSize(size);
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+
+        final fakeApi = _FakeReportsApiService(
+          workflowStatus: 'BM_SUBMITTED',
+          amPendingOverride: const [
+            MonthlyWorkflowPendingBranchModel(
+              branchId: 'b-1',
+              branchName: 'Ikeja Branch',
+              areaName: 'Area 1',
+              year: 2026,
+              month: 9,
+              status: 'BM_SUBMITTED',
+              disbursedPrincipal: 2500000.0,
+              collections: 1250000.0,
+              closingCredit: 6625000.0,
+              closingSavings: 1400000.0,
+              vaultCash: 450000.0,
+              isGlBalanced: true,
+              bmName: 'Adebayo T.',
+              submittedAt: '2026-09-30T14:00:00',
+            ),
+            MonthlyWorkflowPendingBranchModel(
+              branchId: 'b-2',
+              branchName: 'Surulere Branch',
+              areaName: 'Area 1',
+              year: 2026,
+              month: 9,
+              status: 'AM_VERIFIED',
+              disbursedPrincipal: 1800000.0,
+              collections: 1050000.0,
+              closingCredit: 4200000.0,
+              closingSavings: 950000.0,
+              vaultCash: 300000.0,
+              isGlBalanced: true,
+              bmName: 'Yemi S.',
+              amName: 'Ngozi K.',
+              amEndorsedAt: '2026-09-30T16:15:00',
+            ),
+            MonthlyWorkflowPendingBranchModel(
+              branchId: 'b-draft',
+              branchName: 'Alimosho Draft Branch',
+              areaName: 'Area 1',
+              year: 2026,
+              month: 9,
+              status: 'DRAFT',
+              disbursedPrincipal: 400000.0,
+              collections: 200000.0,
+              closingCredit: 800000.0,
+              closingSavings: 250000.0,
+              vaultCash: 100000.0,
+              isGlBalanced: true,
+              bmName: 'Tunde K.',
+            ),
+          ],
+        );
+
+        final amUser = AuthUser(
+          id: 'u-am',
+          username: 'am_lagos',
+          fullName: 'Ngozi K.',
+          role: 'Area Manager',
+          branch: 'Ikeja Branch',
+          branchId: 'b-1',
+          assignedBranches: const ['Ikeja Branch', 'Surulere Branch'],
+          assignedBranchIds: const ['b-1', 'b-2'],
+        );
+
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [
+              authControllerProvider
+                  .overrideWith((ref) => _FakeAuthController(amUser)),
+              reportsApiServiceProvider.overrideWithValue(fakeApi),
+            ],
+            child: MediaQuery(
+              data: MediaQueryData(
+                size: size,
+                textScaler: size.width < 600
+                    ? const TextScaler.linear(1.2)
+                    : TextScaler.noScaling,
+              ),
+              child: const MaterialApp(
+                home: Scaffold(
+                  body: SingleChildScrollView(
+                    padding: EdgeInsets.all(16),
+                    child: ReportsExportScreen(),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Regional header & charts
+        expect(
+            find.text('BM-SUBMITTED REVIEW & DISTRICT SCOPE'), findsOneWidget);
+        expect(find.byType(BarChart), findsOneWidget);
+        expect(find.byType(PieChart), findsOneWidget);
+
+        // Submitted Queue shows BM_SUBMITTED + AM_VERIFIED, and hides DRAFT by default
+        expect(find.text('Submitted Queue (2)'), findsOneWidget);
+        expect(find.text('Surulere Branch'), findsWidgets);
+        expect(find.text('Alimosho Draft Branch'), findsNothing);
+        expect(
+          find.textContaining(
+              '1 supervised branch is still in Branch Manager preparation'),
+          findsOneWidget,
+        );
+
+        // Zero emojis
+        final emojiRe =
+            RegExp(r'[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]', unicode: true);
+        for (final t in tester.widgetList<Text>(find.byType(Text))) {
+          expect(emojiRe.hasMatch(t.data ?? ''), isFalse);
+        }
+
+        // Review & Endorse transitions to Tab 1 with Endorse / Return controls
+        await _tapLabel(tester, 'Review & Endorse');
+        expect(find.text('Endorse & Sign Off'), findsOneWidget);
+        expect(find.text('Query / Return'), findsOneWidget);
+
+        // Data Exports tab has Share & Preview controls
+        await _tapLabel(tester, 'Data Exports & Downloads');
+        expect(find.text('Regional Consolidated Supervisory Package'),
+            findsOneWidget);
+        expect(find.text('Share Regional Workbook'), findsOneWidget);
+        expect(find.text('Preview & Print PDF'), findsOneWidget);
+      },
+    );
+  }
+
+  testWidgets(
+    'BM DRAFT status displays Verify & Submit to Area Manager and opens ReportPdfPreviewSheet',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1280, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final fakeApi = _FakeReportsApiService(workflowStatus: 'DRAFT');
+      final bmUser = AuthUser(
+        id: 'u-bm',
+        username: 'bm_ikeja',
+        fullName: 'Adebayo T.',
+        role: 'Branch Manager',
+        branch: 'Ikeja Branch',
+        branchId: 'b-1',
+      );
+
+      await tester.pumpWidget(_buildHarness(user: bmUser, fakeApi: fakeApi));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Verify & Submit to Area Manager'), findsOneWidget);
+      final pdfBtn = find.text('Preview & Print PDF').first;
+      await Scrollable.ensureVisible(tester.element(pdfBtn));
+      await tester.pump();
+      await tester.tap(pdfBtn);
+      await tester.pump(const Duration(milliseconds: 350));
+      expect(find.byType(ReportPdfPreviewSheet), findsOneWidget);
     },
   );
 }

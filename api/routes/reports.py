@@ -92,6 +92,61 @@ def _check_reports_write_permission(current_user: CurrentUser):
         )
 
 
+def _is_executive_admin(current_user: CurrentUser) -> bool:
+    role = (current_user.role or "").strip().lower()
+    return role in ["admin", "super admin", "superadmin"]
+
+
+def _resolve_period_year_month(
+    year: Optional[int],
+    month: Optional[int],
+    as_of_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+) -> tuple[int, int]:
+    if year and month:
+        return year, month
+    ref_dt = as_of_date or end_date or datetime.now().date()
+    return (year or ref_dt.year), (month or ref_dt.month)
+
+
+def _resolve_admin_branch_for_period(
+    uow: SupabaseUnitOfWork,
+    current_user: CurrentUser,
+    requested_branch_name: Optional[str],
+    resolved_branch_id: Optional[Union[str, List[str]]],
+    year: int,
+    month: int,
+) -> str:
+    if not _is_executive_admin(current_user):
+        bid = _resolve_single_branch_id(resolved_branch_id, uow)
+        if not bid:
+            raise HTTPException(status_code=400, detail="Unable to resolve a valid Branch.")
+        return bid
+
+    signed_bids = MonthlyReportWorkflowService.get_admin_signed_branch_ids(uow, year, month)
+    is_consolidated = (
+        not requested_branch_name
+        or requested_branch_name in ["All Branches (Consolidated)", "All Assigned Branches (Consolidated Area View)", "All Branches", "All"]
+    )
+    if is_consolidated:
+        if not signed_bids:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="No Area Manager-signed monthly reports are available for this period."
+            )
+        return signed_bids[0]
+
+    bid = _resolve_single_branch_id(resolved_branch_id, uow)
+    if not bid:
+        raise HTTPException(status_code=400, detail="Unable to resolve a valid Branch.")
+    if bid not in signed_bids:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access Restricted: Only monthly reports reviewed and signed by the Area Manager are visible to Admin."
+        )
+    return bid
+
+
 def _resolve_validated_branch_id(
     scope_level: str,
     resolved_branch_id: Optional[Union[str, List[str]]],
@@ -657,6 +712,8 @@ def get_area_comparison(
     as_of_date: Optional[date] = Query(None),
     start_date: Optional[date] = Query(None),
     end_date: Optional[date] = Query(None),
+    year: Optional[int] = Query(None),
+    month: Optional[int] = Query(None),
     current_user: CurrentUser = Depends(get_current_user),
     uow: SupabaseUnitOfWork = Depends(get_uow)
 ):
@@ -678,6 +735,11 @@ def get_area_comparison(
         # Institutional scope: all active branch IDs
         res_b = uow.client.table("branches").select("branch_id").eq("is_active", True).execute()
         assigned_branch_ids = [b["branch_id"] for b in (res_b.data or [])]
+
+    if _is_executive_admin(current_user):
+        ref_year, ref_month = _resolve_period_year_month(year, month, as_of_date, end_date)
+        signed_set = set(MonthlyReportWorkflowService.get_admin_signed_branch_ids(uow, ref_year, ref_month))
+        assigned_branch_ids = [bid for bid in assigned_branch_ids if bid in signed_set]
 
     area_dict = ReportService.get_area_branch_comparison(
         uow=uow,
@@ -745,12 +807,33 @@ def export_excel(
     as_of_date: Optional[date] = Query(None),
     start_date: Optional[date] = Query(None),
     end_date: Optional[date] = Query(None),
+    year: Optional[int] = Query(None),
+    month: Optional[int] = Query(None),
     current_user: CurrentUser = Depends(get_current_user),
     uow: SupabaseUnitOfWork = Depends(get_uow)
 ):
     """Generates and streams multi-tab consolidated Excel workbook."""
     _check_reports_permission(current_user)
     scope_level, resolved_branch_id, branch_names, branch_name_to_id = _resolve_scope_and_branches(current_user, uow, branch_name)
+
+    if _is_executive_admin(current_user):
+        ref_year, ref_month = _resolve_period_year_month(year, month, as_of_date, end_date)
+        signed_bids = MonthlyReportWorkflowService.get_admin_signed_branch_ids(uow, ref_year, ref_month)
+        signed_set = set(signed_bids)
+        if isinstance(resolved_branch_id, str) and resolved_branch_id:
+            if resolved_branch_id not in signed_set:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Access Restricted: Only monthly reports reviewed and signed by the Area Manager can be exported by Admin."
+                )
+        else:
+            if not signed_bids:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="No Area Manager-signed branch reports are available to export for this period."
+                )
+            resolved_branch_id = signed_bids
+            branch_names = [name for name, bid in branch_name_to_id.items() if bid in signed_set]
 
     tb_dict = ReportService.get_trial_balance(uow, branch_id=resolved_branch_id, as_of_date=as_of_date, start_date=start_date, end_date=end_date)
     sav_dict = ReportService.get_savings_summary(uow, branch_id=resolved_branch_id, start_date=start_date, end_date=end_date, as_of_date=as_of_date, officer_name=officer_name if officer_name != "All Officers" else None, product_name=product_name if product_name != "All Products" else None)
@@ -771,6 +854,8 @@ def export_excel(
     else:
         if branch_name and branch_name not in ["All Branches (Consolidated)", "All Branches", "All"]:
             filtered_loans = filtered_loans[filtered_loans["Branch"] == branch_name] if "Branch" in filtered_loans.columns else filtered_loans
+        elif _is_executive_admin(current_user) and "Branch" in filtered_loans.columns:
+            filtered_loans = filtered_loans[filtered_loans["Branch"].isin(branch_names)]
 
     port_sum = generate_portfolio_summary(filtered_loans, all_reps)
 
@@ -826,12 +911,33 @@ def export_csv(
     as_of_date: Optional[date] = Query(None),
     start_date: Optional[date] = Query(None),
     end_date: Optional[date] = Query(None),
+    year: Optional[int] = Query(None),
+    month: Optional[int] = Query(None),
     current_user: CurrentUser = Depends(get_current_user),
     uow: SupabaseUnitOfWork = Depends(get_uow)
 ):
     """Generates and streams individual CSV reports."""
     _check_reports_permission(current_user)
     scope_level, resolved_branch_id, branch_names, branch_name_to_id = _resolve_scope_and_branches(current_user, uow, branch_name)
+
+    if _is_executive_admin(current_user):
+        ref_year, ref_month = _resolve_period_year_month(year, month, as_of_date, end_date)
+        signed_bids = MonthlyReportWorkflowService.get_admin_signed_branch_ids(uow, ref_year, ref_month)
+        signed_set = set(signed_bids)
+        if isinstance(resolved_branch_id, str) and resolved_branch_id:
+            if resolved_branch_id not in signed_set:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Access Restricted: Only monthly reports reviewed and signed by the Area Manager can be exported by Admin."
+                )
+        else:
+            if not signed_bids:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="No Area Manager-signed branch reports are available to export for this period."
+                )
+            resolved_branch_id = signed_bids
+            branch_names = [name for name, bid in branch_name_to_id.items() if bid in signed_set]
 
     if report_type == "trial_balance":
         tb_dict = ReportService.get_trial_balance(uow, branch_id=resolved_branch_id, as_of_date=as_of_date, start_date=start_date, end_date=end_date)
@@ -858,6 +964,8 @@ def export_csv(
         else:
             if branch_name and branch_name not in ["All Branches (Consolidated)", "All Branches", "All"]:
                 df = df[df["Branch"] == branch_name] if "Branch" in df.columns else df
+            elif _is_executive_admin(current_user) and "Branch" in df.columns:
+                df = df[df["Branch"].isin(branch_names)]
         filename = f"raw_loans_{datetime.now().strftime('%Y%m%d')}.csv"
     elif report_type == "area_comparison":
         if isinstance(resolved_branch_id, list):
@@ -905,9 +1013,7 @@ def get_monthly_parity(
     _check_reports_permission(current_user)
     scope_level, resolved_branch_id, branch_names, _ = _resolve_scope_and_branches(current_user, uow, branch_name)
 
-    bid = _resolve_single_branch_id(resolved_branch_id, uow)
-    if not bid:
-        raise HTTPException(status_code=400, detail="Unable to resolve a valid Branch for Monthly Parity report.")
+    bid = _resolve_admin_branch_for_period(uow, current_user, branch_name, resolved_branch_id, year, month)
 
     result = ReportService.get_monthly_parity_matrix(uow, branch_id=bid, year=year, month=month, officer_name=officer_name, product_name=product_name)
     return result
@@ -934,9 +1040,7 @@ def get_official_statements(
     _check_reports_permission(current_user)
     scope_level, resolved_branch_id, branch_names, _ = _resolve_scope_and_branches(current_user, uow, branch_name)
 
-    bid = _resolve_single_branch_id(resolved_branch_id, uow)
-    if not bid:
-        raise HTTPException(status_code=400, detail="Unable to resolve a valid Branch.")
+    bid = _resolve_admin_branch_for_period(uow, current_user, branch_name, resolved_branch_id, year, month)
 
     result = ReportService.get_official_trial_balance_and_receipts_payments(
         uow, branch_id=bid, year=year, month=month, officer_name=officer_name, product_name=product_name
@@ -965,9 +1069,7 @@ def get_deposit_statement(
     _check_reports_permission(current_user)
     scope_level, resolved_branch_id, branch_names, _ = _resolve_scope_and_branches(current_user, uow, branch_name)
 
-    bid = _resolve_single_branch_id(resolved_branch_id, uow)
-    if not bid:
-        raise HTTPException(status_code=400, detail="Unable to resolve a valid Branch.")
+    bid = _resolve_admin_branch_for_period(uow, current_user, branch_name, resolved_branch_id, year, month)
 
     return ReportService.get_monthly_deposit_statement(
         uow, branch_id=bid, year=year, month=month, officer_name=officer_name, product_name=product_name
@@ -995,9 +1097,7 @@ def get_credit_statement(
     _check_reports_permission(current_user)
     scope_level, resolved_branch_id, branch_names, _ = _resolve_scope_and_branches(current_user, uow, branch_name)
 
-    bid = _resolve_single_branch_id(resolved_branch_id, uow)
-    if not bid:
-        raise HTTPException(status_code=400, detail="Unable to resolve a valid Branch.")
+    bid = _resolve_admin_branch_for_period(uow, current_user, branch_name, resolved_branch_id, year, month)
 
     return ReportService.get_monthly_credit_statement(
         uow, branch_id=bid, year=year, month=month, officer_name=officer_name, product_name=product_name
@@ -1022,9 +1122,7 @@ def get_annex_1(
     _check_reports_permission(current_user)
     scope_level, resolved_branch_id, branch_names, _ = _resolve_scope_and_branches(current_user, uow, branch_name)
 
-    bid = _resolve_single_branch_id(resolved_branch_id, uow)
-    if not bid:
-        raise HTTPException(status_code=400, detail="Unable to resolve a valid Branch.")
+    bid = _resolve_admin_branch_for_period(uow, current_user, branch_name, resolved_branch_id, year, month)
 
     return ReportService.get_annex_1_details(uow, branch_id=bid, year=year, month=month)
 
@@ -1116,7 +1214,7 @@ def export_monthly_parity_excel(
     _check_reports_permission(current_user)
     scope_level, resolved_branch_id, branch_names, _ = _resolve_scope_and_branches(current_user, uow, branch_name)
 
-    bid = _resolve_single_branch_id(resolved_branch_id, uow)
+    bid = _resolve_admin_branch_for_period(uow, current_user, branch_name, resolved_branch_id, year, month)
     matrix_res = ReportService.get_monthly_parity_matrix(uow, branch_id=bid, year=year, month=month, officer_name=officer_name, product_name=product_name)
     stmts_res = ReportService.get_official_trial_balance_and_receipts_payments(uow, branch_id=bid, year=year, month=month, officer_name=officer_name, product_name=product_name)
 
@@ -1180,7 +1278,7 @@ def export_monthly_parity_csv(
     _check_reports_permission(current_user)
     scope_level, resolved_branch_id, branch_names, _ = _resolve_scope_and_branches(current_user, uow, branch_name)
 
-    bid = _resolve_single_branch_id(resolved_branch_id, uow)
+    bid = _resolve_admin_branch_for_period(uow, current_user, branch_name, resolved_branch_id, year, month)
     matrix_res = ReportService.get_monthly_parity_matrix(uow, branch_id=bid, year=year, month=month, officer_name=officer_name, product_name=product_name)
     df_parity = matrix_res.get("dataframe", pd.DataFrame())
 
@@ -1213,12 +1311,9 @@ def export_monthly_parity_pdf(
     _check_reports_permission(current_user)
     scope_level, resolved_branch_id, branch_names, _ = _resolve_scope_and_branches(current_user, uow, branch_name)
 
-    bid = _resolve_single_branch_id(resolved_branch_id, uow)
-    if not bid:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Branch not found.")
-
     y = year or datetime.now().year
     m = month or datetime.now().month
+    bid = _resolve_admin_branch_for_period(uow, current_user, branch_name, resolved_branch_id, y, m)
 
     pdf_bytes = ReportService.generate_monthly_executive_pdf(
         uow, branch_id=bid, year=y, month=m, officer_name=officer_name, product_name=product_name
@@ -1421,7 +1516,10 @@ def get_pending_am_monthly_submissions(
     current_user: CurrentUser = Depends(get_current_user),
     uow: SupabaseUnitOfWork = Depends(get_uow)
 ):
-    """Fetches all supervised branches and their monthly report submission status for the Area Manager Approvals Hub."""
+    """
+    Fetches branch monthly submission statuses.
+    For Executive Admin callers, filters strictly to reports reviewed and signed by an Area Manager.
+    """
     year = year or datetime.now().year
     month = month or datetime.now().month
 
@@ -1434,7 +1532,41 @@ def get_pending_am_monthly_submissions(
             uow=uow,
             am_user_id=current_user.id,
             year=year,
-            month=month
+            month=month,
+            only_am_signed=_is_executive_admin(current_user),
+        )
+        return [MonthlyWorkflowPendingBranchItem(**item) for item in items]
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+
+@router.get("/monthly-workflow/admin-signed", response_model=List[MonthlyWorkflowPendingBranchItem])
+def get_admin_signed_monthly_submissions(
+    year: Optional[int] = Query(None),
+    month: Optional[int] = Query(None),
+    current_user: CurrentUser = Depends(get_current_user),
+    uow: SupabaseUnitOfWork = Depends(get_uow)
+):
+    """
+    Executive Admin queue: returns ONLY branch monthly reports reviewed and signed by an Area Manager
+    (AM_VERIFIED, AREA_SEALED, or ADMIN_LOCKED).
+    """
+    year = year or datetime.now().year
+    month = month or datetime.now().month
+
+    role = (current_user.role or "").strip()
+    if role not in ["Admin", "Super Admin", "ADMIN", "Director"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access Denied: Executive role required to inspect AM-signed submissions.",
+        )
+
+    try:
+        items = MonthlyReportWorkflowService.get_admin_signed_submissions(
+            uow=uow,
+            admin_user_id=current_user.id,
+            year=year,
+            month=month,
         )
         return [MonthlyWorkflowPendingBranchItem(**item) for item in items]
     except Exception as e:

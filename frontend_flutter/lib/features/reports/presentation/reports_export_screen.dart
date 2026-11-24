@@ -12,7 +12,10 @@ import '../data/datasources/reports_api_service.dart';
 import '../data/models/report_models.dart';
 import '../../shared/utils/file_download_helper.dart';
 import '../../../core/widgets/icare_skeleton_loader.dart';
+import 'widgets/admin_reports_export_view.dart';
+import 'widgets/am_reports_export_view.dart';
 import 'widgets/bank_reconciliation_form_widget.dart';
+import 'widgets/bm_reports_export_view.dart';
 import 'package:frontend_flutter/core/theme/icare_motion.dart';
 
 /// Target branch filter passed from external navigation (AM Dashboard, AM Portfolio, etc.)
@@ -28,12 +31,14 @@ class ReportsExportScreen extends ConsumerStatefulWidget {
   const ReportsExportScreen({super.key});
 
   @override
-  ConsumerState<ReportsExportScreen> createState() => _ReportsExportScreenState();
+  ConsumerState<ReportsExportScreen> createState() =>
+      _ReportsExportScreenState();
 }
 
 class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
   // Navigation
   int _selectedTabIndex = 0;
+  int _adminTabIndex = 0;
 
   // Filter State
   String? _selectedBranchName;
@@ -44,17 +49,20 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
   DateTime _startDate = DateTime(DateTime.now().year, DateTime.now().month, 1);
   DateTime _endDate = DateTime.now();
 
-
   // Monthly Executive Parity State (defaults to current calendar month & year)
   int _selectedExecMonth = DateTime.now().month;
   int _selectedExecYear = DateTime.now().year;
-  int _selectedExecSubTab = 0; // 0: A. Deposit Statement, 1: B. Credit Statement, 2: Receipts & Payments, 3: Annex-1 Sundry, 4: Trial Balance, 5: CO Summary, 6: Bank Reconciliation
-  String _selectedDepositProgramFilter = 'All'; // 'All', 'Monthly', 'Weekly', 'Daily'
-  String _selectedCreditProgramFilter = 'Consolidated Total'; // 'Consolidated Total', 'Monthly', 'Weekly', 'Daily'
+  int _selectedExecSubTab =
+      0; // 0: A. Deposit Statement, 1: B. Credit Statement, 2: Receipts & Payments, 3: Annex-1 Sundry, 4: Trial Balance, 5: CO Summary, 6: Bank Reconciliation
+  String _selectedDepositProgramFilter =
+      'All'; // 'All', 'Monthly', 'Weekly', 'Daily'
+  String _selectedCreditProgramFilter =
+      'Consolidated Total'; // 'Consolidated Total', 'Monthly', 'Weekly', 'Daily'
   bool _showRawTableOnMobile = false;
   bool _showAllParityCards = false;
   String _selectedTbSectionFilter = 'All';
-  int _selectedRpSegmentIndex = 0; // 0: All Movements, 1: Receipts (Inflows), 2: Payments (Outflows)
+  int _selectedRpSegmentIndex =
+      0; // 0: All Movements, 1: Receipts (Inflows), 2: Payments (Outflows)
 
   // Futures & Cache
   ReportsMeta? _cachedMeta;
@@ -66,14 +74,32 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
   Future<MonthlyReconciliationData>? _reconciliationFuture;
   Future<MonthlyWorkflowStatusModel>? _workflowStatusFuture;
   Future<List<MonthlyWorkflowPendingBranchModel>>? _pendingSubmissionsFuture;
+  Future<List<MonthlyWorkflowPendingBranchModel>>? _adminSignedFuture;
   bool _isWorkflowSubmitting = false;
+
+  bool _isExecutiveAdminRole(String role) {
+    final normalized = role.trim().toLowerCase();
+    return normalized == 'admin' ||
+        normalized == 'super admin' ||
+        normalized == 'superadmin';
+  }
 
   final _currencyFormat = NumberFormat('#,##0.00');
   final _intFormat = NumberFormat('#,##0');
   final _dateFormat = DateFormat('yyyy-MM-dd');
   static const _monthNames = [
-    'January', 'February', 'March', 'April', 'May', 'June',
-    'July', 'August', 'September', 'October', 'November', 'December'
+    'January',
+    'February',
+    'March',
+    'April',
+    'May',
+    'June',
+    'July',
+    'August',
+    'September',
+    'October',
+    'November',
+    'December'
   ];
 
   @override
@@ -99,7 +125,9 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
       final auth = ref.read(authControllerProvider);
       final u = auth is AuthStateAuthenticated ? auth.user : null;
       final isAmUser = u?.role == 'Area Manager' || u?.role == 'AM';
-      if (isAmUser) {
+      if (_isExecutiveAdminRole(u?.role ?? '')) {
+        _adminTabIndex = targetTab.clamp(0, 2);
+      } else if (isAmUser) {
         if (targetTab == 0) {
           _selectedTabIndex = 1; // Branch Statements & Sign-Off
         } else if (targetTab == 1) {
@@ -132,18 +160,36 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
     final user = authState is AuthStateAuthenticated ? authState.user : null;
     if (user == null) return;
     final role = user.role.trim();
-    final isCoUser = role == 'Credit Officer' || role == 'CO' || role == 'Officer';
+    final isCoUser =
+        role == 'Credit Officer' || role == 'CO' || role == 'Officer';
     if (isCoUser) return;
 
     final isAmUser = role == 'Area Manager' || role == 'AM';
-    final isAdminUser = role == 'Admin' || role == 'Super Admin' || role == 'ADMIN' || role == 'Director' || role == 'DIRECTOR' || role == 'Executive Director';
+    final isExecutiveAdmin = _isExecutiveAdminRole(role);
+    final isDirectorUser = role == 'Director' ||
+        role == 'DIRECTOR' ||
+        role == 'Executive Director';
 
     final api = ref.read(reportsApiServiceProvider);
-    final asOfStr = _dateMode == 'As of Date' ? _dateFormat.format(_asOfDate) : null;
-    final startStr = _dateMode == 'Date Range' ? _dateFormat.format(_startDate) : null;
-    final endStr = _dateMode == 'Date Range' ? _dateFormat.format(_endDate) : null;
+    final asOfStr =
+        _dateMode == 'As of Date' ? _dateFormat.format(_asOfDate) : null;
+    final startStr =
+        _dateMode == 'Date Range' ? _dateFormat.format(_startDate) : null;
+    final endStr =
+        _dateMode == 'Date Range' ? _dateFormat.format(_endDate) : null;
 
-    // Initialize all business futures immediately so frames never crash or show grey boxes
+    if (isExecutiveAdmin) {
+      _metaFuture = api.getReportsMeta().then((meta) {
+        if (mounted) {
+          setState(() => _cachedMeta = meta);
+        }
+        return meta;
+      });
+      _loadAdminSignedWorkflowAndStatements(api);
+      return;
+    }
+
+    // Initialize all business futures immediately for BM / AM / Director views
     _parityFuture = api.getMonthlyParity(
       branchName: _selectedBranchName,
       year: _selectedExecYear,
@@ -173,7 +219,7 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
       year: _selectedExecYear,
       month: _selectedExecMonth,
     );
-    if (isAmUser || isAdminUser) {
+    if (isAmUser || isDirectorUser) {
       _pendingSubmissionsFuture = api.getPendingAmMonthlySubmissions(
         year: _selectedExecYear,
         month: _selectedExecMonth,
@@ -183,6 +229,8 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
         asOfDate: asOfStr,
         startDate: startStr,
         endDate: endStr,
+        year: _selectedExecYear,
+        month: _selectedExecMonth,
       );
     }
 
@@ -195,7 +243,8 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
             if (meta.scopeLevel == 'BRANCH' && meta.defaultBranch != null) {
               _selectedBranchName = meta.defaultBranch;
             } else {
-              _selectedBranchName = meta.defaultBranch ?? (meta.branches.isNotEmpty ? meta.branches.first.name : null);
+              _selectedBranchName = meta.defaultBranch ??
+                  (meta.branches.isNotEmpty ? meta.branches.first.name : null);
             }
             _refreshCurrentTabData();
           }
@@ -205,29 +254,119 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
     });
   }
 
+  void _loadAdminSignedWorkflowAndStatements(ReportsApiService api) {
+    _adminSignedFuture = api
+        .getAdminSignedMonthlySubmissions(
+      year: _selectedExecYear,
+      month: _selectedExecMonth,
+    )
+        .then((items) {
+      final signed = items
+          .where((item) => const {
+                'AM_VERIFIED',
+                'AREA_SEALED',
+                'ADMIN_LOCKED',
+              }.contains(item.status))
+          .toList();
+
+      if (mounted) {
+        if (signed.isEmpty) {
+          setState(() {
+            _selectedBranchName = null;
+            _parityFuture = null;
+            _statementsFuture = null;
+            _annex1Future = null;
+            _reconciliationFuture = null;
+            _workflowStatusFuture = null;
+          });
+        } else {
+          final stillSigned =
+              signed.any((s) => s.branchName == _selectedBranchName);
+          final resolvedBranch =
+              stillSigned ? _selectedBranchName! : signed.first.branchName;
+          _loadStatementsForVerifiedBranch(api, resolvedBranch);
+        }
+      }
+      return signed;
+    });
+  }
+
+  void _loadStatementsForVerifiedBranch(
+    ReportsApiService api,
+    String verifiedBranchName,
+  ) {
+    setState(() {
+      _selectedBranchName = verifiedBranchName;
+      _parityFuture = api.getMonthlyParity(
+        branchName: verifiedBranchName,
+        year: _selectedExecYear,
+        month: _selectedExecMonth,
+        officerName: _selectedOfficerName,
+        productName: _selectedProductName,
+      );
+      _statementsFuture = api.getOfficialStatements(
+        branchName: verifiedBranchName,
+        year: _selectedExecYear,
+        month: _selectedExecMonth,
+        officerName: _selectedOfficerName,
+        productName: _selectedProductName,
+      );
+      _annex1Future = api.getAnnex1Report(
+        branchName: verifiedBranchName,
+        year: _selectedExecYear,
+        month: _selectedExecMonth,
+      );
+      _reconciliationFuture = api.getMonthlyReconciliation(
+        branchName: verifiedBranchName,
+        year: _selectedExecYear,
+        month: _selectedExecMonth,
+      );
+      _workflowStatusFuture = api.getMonthlyWorkflowStatus(
+        branchName: verifiedBranchName,
+        year: _selectedExecYear,
+        month: _selectedExecMonth,
+      );
+    });
+  }
+
   void _refreshCurrentTabData() {
     final authState = ref.read(authControllerProvider);
     final user = authState is AuthStateAuthenticated ? authState.user : null;
     if (user == null) return;
     final role = user.role.trim();
-    final isCoUser = role == 'Credit Officer' || role == 'CO' || role == 'Officer';
+    final isCoUser =
+        role == 'Credit Officer' || role == 'CO' || role == 'Officer';
     if (isCoUser) return;
 
-    final isAmUser = role == 'Area Manager' || role == 'AM';
-    final isAdminUser = role == 'Admin' || role == 'Super Admin' || role == 'ADMIN' || role == 'Director' || role == 'DIRECTOR' || role == 'Executive Director';
-
     final api = ref.read(reportsApiServiceProvider);
-    final asOfStr = _dateMode == 'As of Date' ? _dateFormat.format(_asOfDate) : null;
-    final startStr = _dateMode == 'Date Range' ? _dateFormat.format(_startDate) : null;
-    final endStr = _dateMode == 'Date Range' ? _dateFormat.format(_endDate) : null;
+    if (_isExecutiveAdminRole(role)) {
+      setState(() {
+        _loadAdminSignedWorkflowAndStatements(api);
+      });
+      return;
+    }
+
+    final isAmUser = role == 'Area Manager' || role == 'AM';
+    final isDirectorUser = role == 'Director' ||
+        role == 'DIRECTOR' ||
+        role == 'Executive Director';
+
+    final asOfStr =
+        _dateMode == 'As of Date' ? _dateFormat.format(_asOfDate) : null;
+    final startStr =
+        _dateMode == 'Date Range' ? _dateFormat.format(_startDate) : null;
+    final endStr =
+        _dateMode == 'Date Range' ? _dateFormat.format(_endDate) : null;
 
     setState(() {
-      if (isAmUser || isAdminUser) {
+      if (isAmUser || isDirectorUser) {
         _areaFuture = api.getAreaComparison(
           productName: _selectedProductName,
           asOfDate: asOfStr,
           startDate: startStr,
           endDate: endStr,
+          year: _selectedExecYear,
+          month: _selectedExecMonth,
         );
         _pendingSubmissionsFuture = api.getPendingAmMonthlySubmissions(
           year: _selectedExecYear,
@@ -276,7 +415,8 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
         setState(() => _selectedBranchName = next);
         _refreshCurrentTabData();
         Future.microtask(() {
-          if (mounted) ref.read(reportsTargetBranchProvider.notifier).state = null;
+          if (mounted)
+            ref.read(reportsTargetBranchProvider.notifier).state = null;
         });
       }
     });
@@ -286,10 +426,13 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
         final auth = ref.read(authControllerProvider);
         final u = auth is AuthStateAuthenticated ? auth.user : null;
         final isAmUser = u?.role == 'Area Manager' || u?.role == 'AM';
-        final resolvedIndex = isAmUser
-            ? (next == 0 ? 1 : (next == 1 ? 0 : 2))
-            : next;
-        setState(() => _selectedTabIndex = resolvedIndex);
+        if (_isExecutiveAdminRole(u?.role ?? '')) {
+          setState(() => _adminTabIndex = next.clamp(0, 2));
+        } else {
+          final resolvedIndex =
+              isAmUser ? (next == 0 ? 1 : (next == 1 ? 0 : 2)) : next;
+          setState(() => _selectedTabIndex = resolvedIndex);
+        }
         _refreshCurrentTabData();
         Future.microtask(() {
           if (mounted) ref.read(reportsTargetTabProvider.notifier).state = null;
@@ -302,7 +445,8 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
         setState(() => _selectedExecSubTab = next);
         _refreshCurrentTabData();
         Future.microtask(() {
-          if (mounted) ref.read(reportsTargetSubTabProvider.notifier).state = null;
+          if (mounted)
+            ref.read(reportsTargetSubTabProvider.notifier).state = null;
         });
       }
     });
@@ -316,8 +460,11 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
 
     final role = user.role.trim();
     final isCo = role == 'Credit Officer' || role == 'CO' || role == 'Officer';
-    final isDirector = role == 'Director' || role == 'DIRECTOR' || role == 'Executive Director';
-    final isAdmin = role == 'Admin' || role == 'Super Admin' || role == 'ADMIN' || isDirector;
+    final isDirector = role == 'Director' ||
+        role == 'DIRECTOR' ||
+        role == 'Executive Director';
+    final isExecutiveAdmin = _isExecutiveAdminRole(role);
+    final isAdmin = isExecutiveAdmin || isDirector;
     final isBm = role == 'Branch Manager' || role == 'BM';
     final isAm = role == 'Area Manager' || role == 'AM';
     final tokens = IcareSurfaceTokens.of(context);
@@ -338,11 +485,184 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
             Expanded(
               child: Text(
                 'Access Denied: You do not have permission to access Reports & Export.',
-                style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: tokens.dangerText),
+                style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                    color: tokens.dangerText),
               ),
             ),
           ],
         ),
+      );
+    }
+
+    ref.listen<int>(globalRefreshSignalProvider, (prev, next) {
+      if (next != prev) {
+        _refreshCurrentTabData();
+      }
+    });
+
+    if (isExecutiveAdmin) {
+      final api = ref.read(reportsApiServiceProvider);
+      return AdminReportsExportView(
+        selectedYear: _selectedExecYear,
+        selectedMonth: _selectedExecMonth,
+        activeTabIndex: _adminTabIndex,
+        selectedBranchName: _selectedBranchName,
+        selectedProductName: _selectedProductName,
+        selectedOfficerName: _selectedOfficerName,
+        cachedMeta: _cachedMeta,
+        adminSignedFuture: _adminSignedFuture,
+        isWorkflowSubmitting: _isWorkflowSubmitting,
+        onTabChanged: (idx) => setState(() => _adminTabIndex = idx),
+        onPeriodChanged: (year, month) {
+          setState(() {
+            _selectedExecYear = year;
+            _selectedExecMonth = month;
+            _loadAdminSignedWorkflowAndStatements(api);
+          });
+        },
+        onSelectBranch: (branch) {
+          _loadStatementsForVerifiedBranch(api, branch.branchName);
+        },
+        onInspectBranch: (branch) {
+          setState(() => _adminTabIndex = 1);
+          _loadStatementsForVerifiedBranch(api, branch.branchName);
+        },
+        onLockReport: (branch) => _lockSignedBranchFromAdminQueue(branch),
+        onProductChanged: (product) {
+          setState(() => _selectedProductName = product);
+          if (_selectedBranchName != null) {
+            _loadStatementsForVerifiedBranch(api, _selectedBranchName!);
+          }
+        },
+        onOfficerChanged: (officer) {
+          setState(() => _selectedOfficerName = officer);
+          if (_selectedBranchName != null) {
+            _loadStatementsForVerifiedBranch(api, _selectedBranchName!);
+          }
+        },
+        onRefresh: () {
+          setState(() => _loadAdminSignedWorkflowAndStatements(api));
+        },
+        statementsInspectorBuilder: (_) =>
+            _buildAuditedStatementsSubTabsPanel(),
+      );
+    }
+
+    if (isAm) {
+      return AmReportsExportView(
+        selectedYear: _selectedExecYear,
+        selectedMonth: _selectedExecMonth,
+        activeTabIndex: _selectedTabIndex.clamp(0, 2),
+        selectedBranchName: _selectedBranchName,
+        selectedProductName: _selectedProductName,
+        selectedOfficerName: _selectedOfficerName,
+        dateMode: _dateMode,
+        asOfDate: _asOfDate,
+        startDate: _startDate,
+        endDate: _endDate,
+        cachedMeta: _cachedMeta,
+        areaFuture: _areaFuture,
+        pendingSubmissionsFuture: _pendingSubmissionsFuture,
+        parityFuture: _parityFuture,
+        workflowStatusFuture: _workflowStatusFuture,
+        isWorkflowSubmitting: _isWorkflowSubmitting,
+        onTabChanged: (idx) => setState(() => _selectedTabIndex = idx),
+        onPeriodChanged: (year, month) {
+          setState(() {
+            _selectedExecYear = year;
+            _selectedExecMonth = month;
+          });
+          _refreshCurrentTabData();
+        },
+        onSelectBranchName: (branchName) {
+          setState(() => _selectedBranchName = branchName);
+          _refreshCurrentTabData();
+        },
+        onInspectBranchName: (branchName) {
+          setState(() {
+            _selectedBranchName = branchName;
+            _selectedTabIndex = 1;
+          });
+          _refreshCurrentTabData();
+        },
+        onProductChanged: (product) {
+          setState(() => _selectedProductName = product);
+          _refreshCurrentTabData();
+        },
+        onOfficerChanged: (officer) {
+          setState(() => _selectedOfficerName = officer);
+          _refreshCurrentTabData();
+        },
+        onDateFilterChanged: ({mode, asOf, start, end}) {
+          setState(() {
+            if (mode != null) _dateMode = mode;
+            if (asOf != null) _asOfDate = asOf;
+            if (start != null) _startDate = start;
+            if (end != null) _endDate = end;
+          });
+          _refreshCurrentTabData();
+        },
+        onEndorseStatus: (st) => _showAmEndorseDialog(st),
+        onReturnStatus: (st) => _showAmReturnDialog(st),
+        onEndorseQueueItem: (branch) => _endorseBranchFromAmQueue(branch),
+        onReturnQueueItem: (branch) => _returnBranchFromAmQueue(branch),
+        onSealRegionalPackage: () => _sealAreaMonthlyPackage(),
+        onRefresh: _refreshCurrentTabData,
+        statementsInspectorBuilder: _buildAuditedStatementsSubTabsPanel,
+      );
+    }
+
+    if (isBm) {
+      final effectiveBmBranch = (_selectedBranchName != null &&
+              _selectedBranchName!.isNotEmpty &&
+              !_selectedBranchName!.startsWith('All'))
+          ? _selectedBranchName!
+          : user.branch;
+      return BmReportsExportView(
+        branchName: effectiveBmBranch,
+        selectedYear: _selectedExecYear,
+        selectedMonth: _selectedExecMonth,
+        activeTabIndex: _selectedTabIndex.clamp(0, 1),
+        selectedProductName: _selectedProductName,
+        selectedOfficerName: _selectedOfficerName,
+        dateMode: _dateMode,
+        asOfDate: _asOfDate,
+        startDate: _startDate,
+        endDate: _endDate,
+        cachedMeta: _cachedMeta,
+        parityFuture: _parityFuture,
+        workflowStatusFuture: _workflowStatusFuture,
+        isWorkflowSubmitting: _isWorkflowSubmitting,
+        onTabChanged: (idx) => setState(() => _selectedTabIndex = idx),
+        onPeriodChanged: (year, month) {
+          setState(() {
+            _selectedExecYear = year;
+            _selectedExecMonth = month;
+          });
+          _refreshCurrentTabData();
+        },
+        onProductChanged: (product) {
+          setState(() => _selectedProductName = product);
+          _refreshCurrentTabData();
+        },
+        onOfficerChanged: (officer) {
+          setState(() => _selectedOfficerName = officer);
+          _refreshCurrentTabData();
+        },
+        onDateFilterChanged: ({mode, asOf, start, end}) {
+          setState(() {
+            if (mode != null) _dateMode = mode;
+            if (asOf != null) _asOfDate = asOf;
+            if (start != null) _startDate = start;
+            if (end != null) _endDate = end;
+          });
+          _refreshCurrentTabData();
+        },
+        onSubmitReport: (st) => _showBmSubmitDialog(st),
+        onRefresh: _refreshCurrentTabData,
+        statementsInspectorBuilder: _buildAuditedStatementsSubTabsPanel,
       );
     }
 
@@ -370,17 +690,12 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
       _selectedTabIndex = 0;
     }
 
-    ref.listen<int>(globalRefreshSignalProvider, (prev, next) {
-      if (next != prev) {
-        _refreshCurrentTabData();
-      }
-    });
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         // 1. Role-Specific Header & Identity Banner
-        _buildIdentityBanner(isAdmin, isBm, isAm, user.branch, isDirector: isDirector),
+        _buildIdentityBanner(isAdmin, isBm, isAm, user.branch,
+            isDirector: isDirector),
         const SizedBox(height: 16),
 
         // 2. Pill Tabs Navigation
@@ -396,7 +711,9 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
   // ---------------------------------------------------------------------------
   // 1. Identity Banner
   // ---------------------------------------------------------------------------
-  Widget _buildIdentityBanner(bool isAdmin, bool isBm, bool isAm, String userBranch, {bool isDirector = false}) {
+  Widget _buildIdentityBanner(
+      bool isAdmin, bool isBm, bool isAm, String userBranch,
+      {bool isDirector = false}) {
     final tokens = IcareSurfaceTokens.of(context);
     String title;
     String subtitle;
@@ -408,7 +725,8 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
 
     if (isBm) {
       title = 'Branch Operational Reports — $userBranch Branch';
-      subtitle = 'Single-branch double-entry trial balance, officer supervision, savings portfolio, and collections.';
+      subtitle =
+          'Single-branch double-entry trial balance, officer supervision, savings portfolio, and collections.';
       badgeTitle = 'SCOPE LEVEL';
       badgeSubtitle = 'Single Branch ($userBranch)';
       badgeBg = tokens.infoBg;
@@ -416,7 +734,8 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
       badgeText = tokens.infoText;
     } else if (isAm) {
       title = 'Area Manager Regional Executive Reports';
-      subtitle = 'Multi-branch regional supervision, cross-branch comparative analysis, and operational performance.';
+      subtitle =
+          'Multi-branch regional supervision, cross-branch comparative analysis, and operational performance.';
       badgeTitle = 'SUPERVISED AREA';
       badgeSubtitle = 'Regional Supervised Branches';
       badgeBg = tokens.brandSoftBg;
@@ -426,12 +745,18 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
       title = isDirector
           ? 'Director Executive Oversight Reports'
           : 'Enterprise Financial & Operational Reports';
-      subtitle = 'Consolidated institutional double-entry trial balance, savings portfolios, collections, and multi-branch data exports.';
+      subtitle =
+          'Consolidated institutional double-entry trial balance, savings portfolios, collections, and multi-branch data exports.';
       badgeTitle = 'SCOPE LEVEL';
-      badgeSubtitle = isDirector ? 'Institutional Scope (Read-Only)' : 'Institutional Scope';
-      badgeBg = tokens.isDark ? const Color(0xFF2E1065) : const Color(0xFFFAF5FF);
-      badgeBorder = tokens.isDark ? const Color(0xFF7E22CE) : const Color(0xFFA855F7);
-      badgeText = tokens.isDark ? const Color(0xFFD8B4FE) : const Color(0xFF581C87);
+      badgeSubtitle = isDirector
+          ? 'Institutional Scope (Read-Only)'
+          : 'Institutional Scope';
+      badgeBg =
+          tokens.isDark ? const Color(0xFF2E1065) : const Color(0xFFFAF5FF);
+      badgeBorder =
+          tokens.isDark ? const Color(0xFF7E22CE) : const Color(0xFFA855F7);
+      badgeText =
+          tokens.isDark ? const Color(0xFFD8B4FE) : const Color(0xFF581C87);
     }
 
     return LayoutBuilder(
@@ -446,16 +771,23 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
             border: Border.all(color: badgeBorder),
           ),
           child: Column(
-            crossAxisAlignment: isMobile ? CrossAxisAlignment.start : CrossAxisAlignment.end,
+            crossAxisAlignment:
+                isMobile ? CrossAxisAlignment.start : CrossAxisAlignment.end,
             children: [
               Text(
                 badgeTitle,
-                style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: badgeText),
+                style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    color: badgeText),
               ),
               const SizedBox(height: 2),
               Text(
                 badgeSubtitle,
-                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: badgeText),
+                style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                    color: badgeText),
               ),
             ],
           ),
@@ -511,7 +843,8 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                           const SizedBox(height: 4),
                           Text(
                             subtitle,
-                            style: TextStyle(fontSize: 13, color: tokens.textMuted),
+                            style: TextStyle(
+                                fontSize: 13, color: tokens.textMuted),
                           ),
                         ],
                       ),
@@ -535,7 +868,9 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
       builder: (context, snapshot) {
         final meta = snapshot.data ?? _cachedMeta;
         final branches = meta?.branches ?? [];
-        final products = meta != null ? ['All Products', ...meta.products] : ['All Products'];
+        final products = meta != null
+            ? ['All Products', ...meta.products]
+            : ['All Products'];
         final officers = meta != null
             ? ['All Officers', ...meta.officers.map((o) => o.fullName)]
             : ['All Officers'];
@@ -556,7 +891,9 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
           ];
         }
 
-        if (_selectedBranchName != null && branches.isNotEmpty && !branchOptions.contains(_selectedBranchName)) {
+        if (_selectedBranchName != null &&
+            branches.isNotEmpty &&
+            !branchOptions.contains(_selectedBranchName)) {
           _selectedBranchName = branchOptions.first;
         }
 
@@ -571,10 +908,14 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
             data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
             child: ExpansionTile(
               initiallyExpanded: false,
-              tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              tilePadding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
               title: Text(
                 'Customize Export Parameters (Optional: Product, Officer, Date Range)',
-                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: tokens.textPrimary),
+                style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: tokens.textPrimary),
               ),
               subtitle: Text(
                 'Active: ${_selectedBranchName ?? 'All Branches'} • $_selectedProductName • $_selectedOfficerName • $_dateMode',
@@ -584,265 +925,333 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                   child: Builder(
-                builder: (context) {
-                  final isMobile = MediaQuery.of(context).size.width < 750;
+                    builder: (context) {
+                      final isMobile = MediaQuery.of(context).size.width < 750;
 
-                  final branchWidget = Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('Branch Scope', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tokens.textSecondary)),
-                      const SizedBox(height: 4),
-                      DropdownButtonFormField<String>(
-                        value: _selectedBranchName ?? (branchOptions.isNotEmpty ? branchOptions.first : null),
-                        isExpanded: true,
-                        decoration: _inputDecoration(),
-                        items: branchOptions.map((b) => DropdownMenuItem(value: b, child: Text(b, overflow: TextOverflow.ellipsis))).toList(),
-                        onChanged: isBm
-                            ? null
-                            : (val) {
-                                setState(() => _selectedBranchName = val);
-                                _refreshCurrentTabData();
-                              },
-                      ),
-                    ],
-                  );
-
-                  final productWidget = Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('Loan Product', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tokens.textSecondary)),
-                      const SizedBox(height: 4),
-                      DropdownButtonFormField<String>(
-                        value: _selectedProductName,
-                        isExpanded: true,
-                        decoration: _inputDecoration(),
-                        items: products.map((p) => DropdownMenuItem(value: p, child: Text(p, overflow: TextOverflow.ellipsis))).toList(),
-                        onChanged: (val) {
-                          if (val != null) {
-                            setState(() => _selectedProductName = val);
-                            _refreshCurrentTabData();
-                          }
-                        },
-                      ),
-                    ],
-                  );
-
-                  final officerWidget = Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('Credit Officer', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tokens.textSecondary)),
-                      const SizedBox(height: 4),
-                      DropdownButtonFormField<String>(
-                        value: _selectedOfficerName,
-                        isExpanded: true,
-                        decoration: _inputDecoration(),
-                        items: officers.map((o) => DropdownMenuItem(value: o, child: Text(o, overflow: TextOverflow.ellipsis))).toList(),
-                        onChanged: (val) {
-                          if (val != null) {
-                            setState(() => _selectedOfficerName = val);
-                            _refreshCurrentTabData();
-                          }
-                        },
-                      ),
-                    ],
-                  );
-
-                  final dateModeWidget = Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('Date Mode', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tokens.textSecondary)),
-                      const SizedBox(height: 4),
-                      DropdownButtonFormField<String>(
-                        value: _dateMode,
-                        isExpanded: true,
-                        decoration: _inputDecoration(),
-                        items: ['As of Date', 'Date Range', 'All Time'].map((m) => DropdownMenuItem(value: m, child: Text(m))).toList(),
-                        onChanged: (val) {
-                          if (val != null) {
-                            setState(() => _dateMode = val);
-                            _refreshCurrentTabData();
-                          }
-                        },
-                      ),
-                    ],
-                  );
-
-                  final asOfWidget = Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('As of Date', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tokens.textSecondary)),
-                      const SizedBox(height: 4),
-                      InkWell(
-                        onTap: () async {
-                          final picked = await showDatePicker(
-                            context: context,
-                            initialDate: _asOfDate,
-                            firstDate: DateTime(2020),
-                            lastDate: DateTime(2030),
-                          );
-                          if (picked != null) {
-                            setState(() => _asOfDate = picked);
-                            _refreshCurrentTabData();
-                          }
-                        },
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                          decoration: BoxDecoration(
-                            color: tokens.surfaceSubtle,
-                            borderRadius: BorderRadius.circular(6),
-                            border: Border.all(color: tokens.borderStrong),
+                      final branchWidget = Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Branch Scope',
+                              style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: tokens.textSecondary)),
+                          const SizedBox(height: 4),
+                          DropdownButtonFormField<String>(
+                            value: _selectedBranchName ??
+                                (branchOptions.isNotEmpty
+                                    ? branchOptions.first
+                                    : null),
+                            isExpanded: true,
+                            decoration: _inputDecoration(),
+                            items: branchOptions
+                                .map((b) => DropdownMenuItem(
+                                    value: b,
+                                    child: Text(b,
+                                        overflow: TextOverflow.ellipsis)))
+                                .toList(),
+                            onChanged: isBm
+                                ? null
+                                : (val) {
+                                    setState(() => _selectedBranchName = val);
+                                    _refreshCurrentTabData();
+                                  },
                           ),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text(_dateFormat.format(_asOfDate), style: TextStyle(fontSize: 13, color: tokens.textPrimary)),
-                              Icon(Icons.calendar_today, size: 16, color: tokens.textMuted),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ],
-                  );
-
-                  final startDateWidget = Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('Start Date', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tokens.textSecondary)),
-                      const SizedBox(height: 4),
-                      InkWell(
-                        onTap: () async {
-                          final picked = await showDatePicker(
-                            context: context,
-                            initialDate: _startDate,
-                            firstDate: DateTime(2020),
-                            lastDate: DateTime(2030),
-                          );
-                          if (picked != null) {
-                            setState(() => _startDate = picked);
-                            _refreshCurrentTabData();
-                          }
-                        },
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-                          decoration: BoxDecoration(
-                            color: tokens.surfaceSubtle,
-                            borderRadius: BorderRadius.circular(6),
-                            border: Border.all(color: tokens.borderStrong),
-                          ),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text(_dateFormat.format(_startDate), style: TextStyle(fontSize: 12, color: tokens.textPrimary)),
-                              Icon(Icons.calendar_today, size: 14, color: tokens.textMuted),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ],
-                  );
-
-                  final endDateWidget = Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('End Date', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tokens.textSecondary)),
-                      const SizedBox(height: 4),
-                      InkWell(
-                        onTap: () async {
-                          final picked = await showDatePicker(
-                            context: context,
-                            initialDate: _endDate,
-                            firstDate: DateTime(2020),
-                            lastDate: DateTime(2030),
-                          );
-                          if (picked != null) {
-                            setState(() => _endDate = picked);
-                            _refreshCurrentTabData();
-                          }
-                        },
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-                          decoration: BoxDecoration(
-                            color: tokens.surfaceSubtle,
-                            borderRadius: BorderRadius.circular(6),
-                            border: Border.all(color: tokens.borderStrong),
-                          ),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text(_dateFormat.format(_endDate), style: TextStyle(fontSize: 12, color: tokens.textPrimary)),
-                              Icon(Icons.calendar_today, size: 14, color: tokens.textMuted),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ],
-                  );
-
-                  if (isMobile) {
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        branchWidget,
-                        const SizedBox(height: 10),
-                        Row(
-                          children: [
-                            Expanded(child: productWidget),
-                            const SizedBox(width: 8),
-                            Expanded(child: officerWidget),
-                          ],
-                        ),
-                        const SizedBox(height: 10),
-                        if (_dateMode == 'As of Date')
-                          Row(
-                            children: [
-                              Expanded(child: dateModeWidget),
-                              const SizedBox(width: 8),
-                              Expanded(child: asOfWidget),
-                            ],
-                          )
-                        else if (_dateMode == 'Date Range') ...[
-                          dateModeWidget,
-                          const SizedBox(height: 10),
-                          Row(
-                            children: [
-                              Expanded(child: startDateWidget),
-                              const SizedBox(width: 8),
-                              Expanded(child: endDateWidget),
-                            ],
-                          ),
-                        ] else ...[
-                          dateModeWidget,
                         ],
-                      ],
-                    );
-                  }
+                      );
 
-                  return Wrap(
-                    spacing: 16,
-                    runSpacing: 12,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    children: [
-                      SizedBox(width: 240, child: branchWidget),
-                      SizedBox(width: 200, child: productWidget),
-                      SizedBox(width: 200, child: officerWidget),
-                      SizedBox(width: 160, child: dateModeWidget),
-                      if (_dateMode == 'As of Date') SizedBox(width: 160, child: asOfWidget),
-                      if (_dateMode == 'Date Range') ...[
-                        SizedBox(width: 140, child: startDateWidget),
-                        SizedBox(width: 140, child: endDateWidget),
-                      ],
-                    ],
-                  );
-                },
-              ),
+                      final productWidget = Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Loan Product',
+                              style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: tokens.textSecondary)),
+                          const SizedBox(height: 4),
+                          DropdownButtonFormField<String>(
+                            value: _selectedProductName,
+                            isExpanded: true,
+                            decoration: _inputDecoration(),
+                            items: products
+                                .map((p) => DropdownMenuItem(
+                                    value: p,
+                                    child: Text(p,
+                                        overflow: TextOverflow.ellipsis)))
+                                .toList(),
+                            onChanged: (val) {
+                              if (val != null) {
+                                setState(() => _selectedProductName = val);
+                                _refreshCurrentTabData();
+                              }
+                            },
+                          ),
+                        ],
+                      );
+
+                      final officerWidget = Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Credit Officer',
+                              style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: tokens.textSecondary)),
+                          const SizedBox(height: 4),
+                          DropdownButtonFormField<String>(
+                            value: _selectedOfficerName,
+                            isExpanded: true,
+                            decoration: _inputDecoration(),
+                            items: officers
+                                .map((o) => DropdownMenuItem(
+                                    value: o,
+                                    child: Text(o,
+                                        overflow: TextOverflow.ellipsis)))
+                                .toList(),
+                            onChanged: (val) {
+                              if (val != null) {
+                                setState(() => _selectedOfficerName = val);
+                                _refreshCurrentTabData();
+                              }
+                            },
+                          ),
+                        ],
+                      );
+
+                      final dateModeWidget = Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Date Mode',
+                              style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: tokens.textSecondary)),
+                          const SizedBox(height: 4),
+                          DropdownButtonFormField<String>(
+                            value: _dateMode,
+                            isExpanded: true,
+                            decoration: _inputDecoration(),
+                            items: ['As of Date', 'Date Range', 'All Time']
+                                .map((m) =>
+                                    DropdownMenuItem(value: m, child: Text(m)))
+                                .toList(),
+                            onChanged: (val) {
+                              if (val != null) {
+                                setState(() => _dateMode = val);
+                                _refreshCurrentTabData();
+                              }
+                            },
+                          ),
+                        ],
+                      );
+
+                      final asOfWidget = Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('As of Date',
+                              style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: tokens.textSecondary)),
+                          const SizedBox(height: 4),
+                          InkWell(
+                            onTap: () async {
+                              final picked = await showDatePicker(
+                                context: context,
+                                initialDate: _asOfDate,
+                                firstDate: DateTime(2020),
+                                lastDate: DateTime(2030),
+                              );
+                              if (picked != null) {
+                                setState(() => _asOfDate = picked);
+                                _refreshCurrentTabData();
+                              }
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 12, vertical: 10),
+                              decoration: BoxDecoration(
+                                color: tokens.surfaceSubtle,
+                                borderRadius: BorderRadius.circular(6),
+                                border: Border.all(color: tokens.borderStrong),
+                              ),
+                              child: Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text(_dateFormat.format(_asOfDate),
+                                      style: TextStyle(
+                                          fontSize: 13,
+                                          color: tokens.textPrimary)),
+                                  Icon(Icons.calendar_today,
+                                      size: 16, color: tokens.textMuted),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                      );
+
+                      final startDateWidget = Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Start Date',
+                              style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: tokens.textSecondary)),
+                          const SizedBox(height: 4),
+                          InkWell(
+                            onTap: () async {
+                              final picked = await showDatePicker(
+                                context: context,
+                                initialDate: _startDate,
+                                firstDate: DateTime(2020),
+                                lastDate: DateTime(2030),
+                              );
+                              if (picked != null) {
+                                setState(() => _startDate = picked);
+                                _refreshCurrentTabData();
+                              }
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 10, vertical: 10),
+                              decoration: BoxDecoration(
+                                color: tokens.surfaceSubtle,
+                                borderRadius: BorderRadius.circular(6),
+                                border: Border.all(color: tokens.borderStrong),
+                              ),
+                              child: Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text(_dateFormat.format(_startDate),
+                                      style: TextStyle(
+                                          fontSize: 12,
+                                          color: tokens.textPrimary)),
+                                  Icon(Icons.calendar_today,
+                                      size: 14, color: tokens.textMuted),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                      );
+
+                      final endDateWidget = Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('End Date',
+                              style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: tokens.textSecondary)),
+                          const SizedBox(height: 4),
+                          InkWell(
+                            onTap: () async {
+                              final picked = await showDatePicker(
+                                context: context,
+                                initialDate: _endDate,
+                                firstDate: DateTime(2020),
+                                lastDate: DateTime(2030),
+                              );
+                              if (picked != null) {
+                                setState(() => _endDate = picked);
+                                _refreshCurrentTabData();
+                              }
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 10, vertical: 10),
+                              decoration: BoxDecoration(
+                                color: tokens.surfaceSubtle,
+                                borderRadius: BorderRadius.circular(6),
+                                border: Border.all(color: tokens.borderStrong),
+                              ),
+                              child: Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text(_dateFormat.format(_endDate),
+                                      style: TextStyle(
+                                          fontSize: 12,
+                                          color: tokens.textPrimary)),
+                                  Icon(Icons.calendar_today,
+                                      size: 14, color: tokens.textMuted),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                      );
+
+                      if (isMobile) {
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            branchWidget,
+                            const SizedBox(height: 10),
+                            Row(
+                              children: [
+                                Expanded(child: productWidget),
+                                const SizedBox(width: 8),
+                                Expanded(child: officerWidget),
+                              ],
+                            ),
+                            const SizedBox(height: 10),
+                            if (_dateMode == 'As of Date')
+                              Row(
+                                children: [
+                                  Expanded(child: dateModeWidget),
+                                  const SizedBox(width: 8),
+                                  Expanded(child: asOfWidget),
+                                ],
+                              )
+                            else if (_dateMode == 'Date Range') ...[
+                              dateModeWidget,
+                              const SizedBox(height: 10),
+                              Row(
+                                children: [
+                                  Expanded(child: startDateWidget),
+                                  const SizedBox(width: 8),
+                                  Expanded(child: endDateWidget),
+                                ],
+                              ),
+                            ] else ...[
+                              dateModeWidget,
+                            ],
+                          ],
+                        );
+                      }
+
+                      return Wrap(
+                        spacing: 16,
+                        runSpacing: 12,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          SizedBox(width: 240, child: branchWidget),
+                          SizedBox(width: 200, child: productWidget),
+                          SizedBox(width: 200, child: officerWidget),
+                          SizedBox(width: 160, child: dateModeWidget),
+                          if (_dateMode == 'As of Date')
+                            SizedBox(width: 160, child: asOfWidget),
+                          if (_dateMode == 'Date Range') ...[
+                            SizedBox(width: 140, child: startDateWidget),
+                            SizedBox(width: 140, child: endDateWidget),
+                          ],
+                        ],
+                      );
+                    },
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
-  },
-);
-}
+  }
 
   // ---------------------------------------------------------------------------
   // 3. Horizontal Pill Tabs Navigation
@@ -875,7 +1284,8 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
               },
               borderRadius: BorderRadius.circular(20),
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 decoration: BoxDecoration(
                   color: isSelected ? activeThemeColor : tokens.surface,
                   borderRadius: BorderRadius.circular(20),
@@ -911,7 +1321,8 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
   // ---------------------------------------------------------------------------
   // 4. Tab Content Router
   // ---------------------------------------------------------------------------
-  Widget _buildActiveTabContent(String tabName, bool isAdmin, bool isBm, bool isAm) {
+  Widget _buildActiveTabContent(
+      String tabName, bool isAdmin, bool isBm, bool isAm) {
     switch (tabName) {
       case 'Regional Comparison':
       case 'Area Branches Comparison':
@@ -983,24 +1394,33 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                       avatar: Icon(
                         Icons.storefront,
                         size: 14,
-                        color: _selectedBranchName == b.name ? Colors.white : tokens.brandPrimary,
+                        color: _selectedBranchName == b.name
+                            ? Colors.white
+                            : tokens.brandPrimary,
                       ),
                       label: Text(
                         b.name,
                         style: TextStyle(
                           fontSize: 12,
-                          fontWeight: _selectedBranchName == b.name ? FontWeight.w800 : FontWeight.w600,
-                          color: _selectedBranchName == b.name ? Colors.white : tokens.textPrimary,
+                          fontWeight: _selectedBranchName == b.name
+                              ? FontWeight.w800
+                              : FontWeight.w600,
+                          color: _selectedBranchName == b.name
+                              ? Colors.white
+                              : tokens.textPrimary,
                         ),
                       ),
                       selected: _selectedBranchName == b.name,
                       selectedColor: tokens.brandPrimaryDark,
                       backgroundColor: tokens.surfaceSubtle,
                       visualDensity: VisualDensity.compact,
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 2),
                       materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       side: BorderSide(
-                        color: _selectedBranchName == b.name ? tokens.brandPrimaryDark : tokens.borderStrong,
+                        color: _selectedBranchName == b.name
+                            ? tokens.brandPrimaryDark
+                            : tokens.borderStrong,
                       ),
                       onSelected: (selected) {
                         if (selected && _selectedBranchName != b.name) {
@@ -1027,8 +1447,18 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
     final tokens = IcareSurfaceTokens.of(context);
     final api = ref.read(reportsApiServiceProvider);
     final monthNames = [
-      'January', 'February', 'March', 'April', 'May', 'June',
-      'July', 'August', 'September', 'October', 'November', 'December'
+      'January',
+      'February',
+      'March',
+      'April',
+      'May',
+      'June',
+      'July',
+      'August',
+      'September',
+      'October',
+      'November',
+      'December'
     ];
 
     final currentCalendarMonth = DateTime.now().month;
@@ -1070,7 +1500,8 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     IconButton(
-                      icon: Icon(Icons.chevron_left, size: 18, color: tokens.brandPrimary),
+                      icon: Icon(Icons.chevron_left,
+                          size: 18, color: tokens.brandPrimary),
                       visualDensity: VisualDensity.compact,
                       tooltip: 'Previous Month',
                       onPressed: () {
@@ -1097,7 +1528,8 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                       ),
                     ),
                     IconButton(
-                      icon: Icon(Icons.chevron_right, size: 18, color: tokens.brandPrimary),
+                      icon: Icon(Icons.chevron_right,
+                          size: 18, color: tokens.brandPrimary),
                       visualDensity: VisualDensity.compact,
                       tooltip: 'Next Month',
                       onPressed: () {
@@ -1128,8 +1560,10 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                         builder: (context) {
                           final m = dt.month;
                           final y = dt.year;
-                          final isSelected = _selectedExecMonth == m && _selectedExecYear == y;
-                          final isCurrent = m == currentCalendarMonth && y == currentCalendarYear;
+                          final isSelected =
+                              _selectedExecMonth == m && _selectedExecYear == y;
+                          final isCurrent = m == currentCalendarMonth &&
+                              y == currentCalendarYear;
                           return Padding(
                             padding: const EdgeInsets.only(right: 4),
                             child: ChoiceChip(
@@ -1141,18 +1575,26 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                                         : monthNames[m - 1].substring(0, 3)),
                                 style: TextStyle(
                                   fontSize: 11,
-                                  fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                                  color: isSelected ? Colors.white : tokens.textSecondary,
+                                  fontWeight: isSelected
+                                      ? FontWeight.w700
+                                      : FontWeight.w500,
+                                  color: isSelected
+                                      ? Colors.white
+                                      : tokens.textSecondary,
                                 ),
                               ),
                               selected: isSelected,
                               selectedColor: tokens.brandPrimaryDark,
                               backgroundColor: tokens.surfaceHover,
                               visualDensity: VisualDensity.compact,
-                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 0),
-                              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 6, vertical: 0),
+                              materialTapTargetSize:
+                                  MaterialTapTargetSize.shrinkWrap,
                               side: BorderSide(
-                                color: isSelected ? tokens.brandPrimaryDark : tokens.borderSubtle,
+                                color: isSelected
+                                    ? tokens.brandPrimaryDark
+                                    : tokens.borderSubtle,
                               ),
                               onSelected: (selected) {
                                 if (selected && !isSelected) {
@@ -1174,11 +1616,17 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
 
               // 3 Export Buttons: PDF, Excel, CSV
               final pdfBtn = OutlinedButton.icon(
-                icon: Icon(Icons.picture_as_pdf_outlined, size: 13, color: tokens.dangerText),
-                label: Text('PDF Statement (Print)', style: TextStyle(fontSize: 11, color: tokens.dangerText, fontWeight: FontWeight.w700)),
+                icon: Icon(Icons.picture_as_pdf_outlined,
+                    size: 13, color: tokens.dangerText),
+                label: Text('PDF Statement (Print)',
+                    style: TextStyle(
+                        fontSize: 11,
+                        color: tokens.dangerText,
+                        fontWeight: FontWeight.w700)),
                 style: OutlinedButton.styleFrom(
                   side: BorderSide(color: tokens.dangerBorder),
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                   visualDensity: VisualDensity.compact,
                 ),
                 onPressed: () async {
@@ -1197,13 +1645,17 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                     );
                     if (mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Executive PDF Statement downloaded${saved != null ? ' ($saved)' : ''}.')),
+                        SnackBar(
+                            content: Text(
+                                'Executive PDF Statement downloaded${saved != null ? ' ($saved)' : ''}.')),
                       );
                     }
                   } catch (e) {
                     if (mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('PDF Download failed: ${AppErrorDetails.from(e).message}')),
+                        SnackBar(
+                            content: Text(
+                                'PDF Download failed: ${AppErrorDetails.from(e).message}')),
                       );
                     }
                   }
@@ -1211,11 +1663,17 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
               );
 
               final excelBtn = OutlinedButton.icon(
-                icon: Icon(Icons.table_view_outlined, size: 13, color: tokens.brandPrimary),
-                label: Text('Excel Statement (All Sheets)', style: TextStyle(fontSize: 11, color: tokens.brandPrimary, fontWeight: FontWeight.w700)),
+                icon: Icon(Icons.table_view_outlined,
+                    size: 13, color: tokens.brandPrimary),
+                label: Text('Excel Statement (All Sheets)',
+                    style: TextStyle(
+                        fontSize: 11,
+                        color: tokens.brandPrimary,
+                        fontWeight: FontWeight.w700)),
                 style: OutlinedButton.styleFrom(
                   side: BorderSide(color: tokens.brandPrimary),
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                   visualDensity: VisualDensity.compact,
                 ),
                 onPressed: () async {
@@ -1234,13 +1692,17 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                     );
                     if (mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Executive Workbook downloaded${saved != null ? ' ($saved)' : ''}.')),
+                        SnackBar(
+                            content: Text(
+                                'Executive Workbook downloaded${saved != null ? ' ($saved)' : ''}.')),
                       );
                     }
                   } catch (e) {
                     if (mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Download failed: ${AppErrorDetails.from(e).message}')),
+                        SnackBar(
+                            content: Text(
+                                'Download failed: ${AppErrorDetails.from(e).message}')),
                       );
                     }
                   }
@@ -1248,11 +1710,17 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
               );
 
               final csvBtn = OutlinedButton.icon(
-                icon: Icon(Icons.grid_on_outlined, size: 13, color: tokens.textSecondary),
-                label: Text('CO Summary CSV', style: TextStyle(fontSize: 11, color: tokens.textSecondary, fontWeight: FontWeight.w700)),
+                icon: Icon(Icons.grid_on_outlined,
+                    size: 13, color: tokens.textSecondary),
+                label: Text('CO Summary CSV',
+                    style: TextStyle(
+                        fontSize: 11,
+                        color: tokens.textSecondary,
+                        fontWeight: FontWeight.w700)),
                 style: OutlinedButton.styleFrom(
                   side: BorderSide(color: tokens.borderStrong),
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                   visualDensity: VisualDensity.compact,
                 ),
                 onPressed: () async {
@@ -1271,13 +1739,17 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                     );
                     if (mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('CO Summary CSV downloaded${saved != null ? ' ($saved)' : ''}.')),
+                        SnackBar(
+                            content: Text(
+                                'CO Summary CSV downloaded${saved != null ? ' ($saved)' : ''}.')),
                       );
                     }
                   } catch (e) {
                     if (mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Download failed: ${AppErrorDetails.from(e).message}')),
+                        SnackBar(
+                            content: Text(
+                                'Download failed: ${AppErrorDetails.from(e).message}')),
                       );
                     }
                   }
@@ -1289,11 +1761,19 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
               if (isAdmin || isAm) {
                 final branches = _cachedMeta?.branches ?? [];
                 final options = isAm
-                    ? ['All Assigned Branches (Consolidated Area View)', ...branches.map((b) => b.name)]
-                    : ['All Branches (Consolidated)', ...branches.map((b) => b.name)];
-                final currBranch = _selectedBranchName ?? (options.isNotEmpty ? options.first : null);
+                    ? [
+                        'All Assigned Branches (Consolidated Area View)',
+                        ...branches.map((b) => b.name)
+                      ]
+                    : [
+                        'All Branches (Consolidated)',
+                        ...branches.map((b) => b.name)
+                      ];
+                final currBranch = _selectedBranchName ??
+                    (options.isNotEmpty ? options.first : null);
                 branchControl = Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                   decoration: BoxDecoration(
                     color: tokens.surfaceSubtle,
                     borderRadius: BorderRadius.circular(6),
@@ -1301,13 +1781,22 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                   ),
                   child: DropdownButtonHideUnderline(
                     child: DropdownButton<String>(
-                      value: options.contains(currBranch) ? currBranch : (options.isNotEmpty ? options.first : null),
+                      value: options.contains(currBranch)
+                          ? currBranch
+                          : (options.isNotEmpty ? options.first : null),
                       isDense: true,
                       dropdownColor: tokens.surfaceElevated,
-                      items: options.map((b) => DropdownMenuItem(
-                        value: b,
-                        child: Text(b, style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: tokens.textPrimary), overflow: TextOverflow.ellipsis),
-                      )).toList(),
+                      items: options
+                          .map((b) => DropdownMenuItem(
+                                value: b,
+                                child: Text(b,
+                                    style: TextStyle(
+                                        fontSize: 11.5,
+                                        fontWeight: FontWeight.w600,
+                                        color: tokens.textPrimary),
+                                    overflow: TextOverflow.ellipsis),
+                              ))
+                          .toList(),
                       onChanged: (val) {
                         if (val != null) {
                           setState(() {
@@ -1321,9 +1810,14 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                 );
               }
 
-              final products = _cachedMeta != null ? ['All Products', ..._cachedMeta!.products] : ['All Products'];
+              final products = _cachedMeta != null
+                  ? ['All Products', ..._cachedMeta!.products]
+                  : ['All Products'];
               final officers = _cachedMeta != null
-                  ? ['All Officers', ..._cachedMeta!.officers.map((o) => o.fullName)]
+                  ? [
+                      'All Officers',
+                      ..._cachedMeta!.officers.map((o) => o.fullName)
+                    ]
                   : ['All Officers'];
 
               final officerControl = Container(
@@ -1335,13 +1829,22 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                 ),
                 child: DropdownButtonHideUnderline(
                   child: DropdownButton<String>(
-                    value: officers.contains(_selectedOfficerName) ? _selectedOfficerName : officers.first,
+                    value: officers.contains(_selectedOfficerName)
+                        ? _selectedOfficerName
+                        : officers.first,
                     isDense: true,
                     dropdownColor: tokens.surfaceElevated,
-                    items: officers.map((o) => DropdownMenuItem(
-                      value: o,
-                      child: Text(o, style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: tokens.textPrimary), overflow: TextOverflow.ellipsis),
-                    )).toList(),
+                    items: officers
+                        .map((o) => DropdownMenuItem(
+                              value: o,
+                              child: Text(o,
+                                  style: TextStyle(
+                                      fontSize: 11.5,
+                                      fontWeight: FontWeight.w600,
+                                      color: tokens.textPrimary),
+                                  overflow: TextOverflow.ellipsis),
+                            ))
+                        .toList(),
                     onChanged: (val) {
                       if (val != null) {
                         setState(() {
@@ -1363,13 +1866,22 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                 ),
                 child: DropdownButtonHideUnderline(
                   child: DropdownButton<String>(
-                    value: products.contains(_selectedProductName) ? _selectedProductName : products.first,
+                    value: products.contains(_selectedProductName)
+                        ? _selectedProductName
+                        : products.first,
                     isDense: true,
                     dropdownColor: tokens.surfaceElevated,
-                    items: products.map((p) => DropdownMenuItem(
-                      value: p,
-                      child: Text(p, style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: tokens.textPrimary), overflow: TextOverflow.ellipsis),
-                    )).toList(),
+                    items: products
+                        .map((p) => DropdownMenuItem(
+                              value: p,
+                              child: Text(p,
+                                  style: TextStyle(
+                                      fontSize: 11.5,
+                                      fontWeight: FontWeight.w600,
+                                      color: tokens.textPrimary),
+                                  overflow: TextOverflow.ellipsis),
+                            ))
+                        .toList(),
                     onChanged: (val) {
                       if (val != null) {
                         setState(() {
@@ -1469,9 +1981,12 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
         FutureBuilder<MonthlyParityData>(
           future: _parityFuture,
           builder: (context, snapshot) {
-            if (_parityFuture == null || snapshot.connectionState == ConnectionState.waiting || !snapshot.hasData) {
+            if (_parityFuture == null ||
+                snapshot.connectionState == ConnectionState.waiting ||
+                !snapshot.hasData) {
               if (snapshot.hasError) {
-                return _buildErrorCard(snapshot.error!, onRetry: _refreshCurrentTabData);
+                return _buildErrorCard(snapshot.error!,
+                    onRetry: _refreshCurrentTabData);
               }
               return const IcareTableSkeleton(rowCount: 2, hasFilterBar: false);
             }
@@ -1495,19 +2010,29 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                         Expanded(
                           child: Text(
                             'Executive Monthly Summary — ${data.branchName} (${data.monthLabel})',
-                            style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w800, color: tokens.textPrimary),
+                            style: TextStyle(
+                                fontSize: 14.5,
+                                fontWeight: FontWeight.w800,
+                                color: tokens.textPrimary),
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
                         TextButton.icon(
                           icon: Icon(
-                            _showAllParityCards ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
+                            _showAllParityCards
+                                ? Icons.keyboard_arrow_up
+                                : Icons.keyboard_arrow_down,
                             size: 16,
                             color: tokens.brandPrimary,
                           ),
                           label: Text(
-                            _showAllParityCards ? 'Less Metrics' : 'More Metrics (4)',
-                            style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: tokens.brandPrimary),
+                            _showAllParityCards
+                                ? 'Less Metrics'
+                                : 'More Metrics (4)',
+                            style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                color: tokens.brandPrimary),
                           ),
                           onPressed: () {
                             setState(() {
@@ -1524,21 +2049,37 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                       spacing: isMobile ? 8 : 12,
                       runSpacing: isMobile ? 8 : 12,
                       children: [
-                        _buildMetricCard('Principal Disbursed', _formatNgn(cards.disbursedPrincipal), width: cardW),
-                        _buildMetricCard('Period Collections', _formatNgn(cards.collections), width: cardW),
-                        _buildMetricCard('Net Active Credit', _formatNgn(cards.netActiveCredit), width: cardW),
+                        _buildMetricCard('Principal Disbursed',
+                            _formatNgn(cards.disbursedPrincipal),
+                            width: cardW),
+                        _buildMetricCard(
+                            'Period Collections', _formatNgn(cards.collections),
+                            width: cardW),
+                        _buildMetricCard('Net Active Credit',
+                            _formatNgn(cards.netActiveCredit),
+                            width: cardW),
                         _buildMetricCard(
                           'GL Balance Integrity',
-                          cards.isGlBalanced ? '[BALANCED]' : '[OUT OF BALANCE]',
+                          cards.isGlBalanced
+                              ? '[BALANCED]'
+                              : '[OUT OF BALANCE]',
                           width: cardW,
                           isAccent: cards.isGlBalanced,
                           subtitle: 'Debits == Credits',
                         ),
                         if (_showAllParityCards) ...[
-                          _buildMetricCard('Upfront Fees (5%)', _formatNgn(cards.upfrontFees), width: cardW),
-                          _buildMetricCard('Closing Credit Portfolio', _formatNgn(cards.closingCredit), width: cardW),
-                          _buildMetricCard('Closing Savings Balance', _formatNgn(cards.closingSavings), width: cardW),
-                          _buildMetricCard('Transit Bank Deposits', _formatNgn(cards.bankDeposits), width: cardW),
+                          _buildMetricCard('Upfront Fees (5%)',
+                              _formatNgn(cards.upfrontFees),
+                              width: cardW),
+                          _buildMetricCard('Closing Credit Portfolio',
+                              _formatNgn(cards.closingCredit),
+                              width: cardW),
+                          _buildMetricCard('Closing Savings Balance',
+                              _formatNgn(cards.closingSavings),
+                              width: cardW),
+                          _buildMetricCard('Transit Bank Deposits',
+                              _formatNgn(cards.bankDeposits),
+                              width: cardW),
                         ],
                       ],
                     ),
@@ -1550,7 +2091,19 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
         ),
         const SizedBox(height: 16),
 
-        // Sub-Tab Switcher (Single-line horizontal scroll — decoupled from _parityFuture)
+        // Sub-Tab Switcher & Statements Content
+        _buildAuditedStatementsSubTabsPanel(),
+      ],
+    );
+  }
+
+  /// Reusable 7-Tab Audited Financial Statements Inspector Panel
+  /// Shared between Branch/AM Statements and Admin's AM-Signed Statements Tab.
+  Widget _buildAuditedStatementsSubTabsPanel() {
+    final tokens = IcareSurfaceTokens.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
         Container(
           width: double.infinity,
           decoration: BoxDecoration(
@@ -1564,26 +2117,31 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
             physics: const BouncingScrollPhysics(),
             child: Row(
               children: [
-                _buildSubTabButton('A. Deposit Statement', 0, icon: Icons.savings_outlined),
+                _buildSubTabButton('A. Deposit Statement', 0,
+                    icon: Icons.savings_outlined),
                 const SizedBox(width: 4),
-                _buildSubTabButton('B. Credit Statement', 1, icon: Icons.credit_card_outlined),
+                _buildSubTabButton('B. Credit Statement', 1,
+                    icon: Icons.credit_card_outlined),
                 const SizedBox(width: 4),
-                _buildSubTabButton('Receipts & Payments Account', 2, icon: Icons.receipt_long_outlined),
+                _buildSubTabButton('Receipts & Payments Account', 2,
+                    icon: Icons.receipt_long_outlined),
                 const SizedBox(width: 4),
-                _buildSubTabButton('Annex-1 Sundry', 3, icon: Icons.pie_chart_outline),
+                _buildSubTabButton('Annex-1 Sundry', 3,
+                    icon: Icons.pie_chart_outline),
                 const SizedBox(width: 4),
-                _buildSubTabButton('Official Trial Balance', 4, icon: Icons.balance_outlined),
+                _buildSubTabButton('Official Trial Balance', 4,
+                    icon: Icons.balance_outlined),
                 const SizedBox(width: 4),
-                _buildSubTabButton('Credit Officers Summary', 5, icon: Icons.people_alt_outlined),
+                _buildSubTabButton('Credit Officers Summary', 5,
+                    icon: Icons.people_alt_outlined),
                 const SizedBox(width: 4),
-                _buildSubTabButton('Bank & Treasury Reconciliation', 6, icon: Icons.account_balance_outlined),
+                _buildSubTabButton('Bank & Treasury Reconciliation', 6,
+                    icon: Icons.account_balance_outlined),
               ],
             ),
           ),
         ),
         const SizedBox(height: 14),
-
-        // Sub-tab content view (each sub-tab manages its own FutureBuilder)
         if (_selectedExecSubTab == 0)
           _buildDepositStatementView()
         else if (_selectedExecSubTab == 1)
@@ -1598,11 +2156,15 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
           FutureBuilder<MonthlyParityData>(
             future: _parityFuture,
             builder: (context, snapshot) {
-              if (_parityFuture == null || snapshot.connectionState == ConnectionState.waiting || !snapshot.hasData) {
+              if (_parityFuture == null ||
+                  snapshot.connectionState == ConnectionState.waiting ||
+                  !snapshot.hasData) {
                 if (snapshot.hasError) {
-                  return _buildErrorCard(snapshot.error!, onRetry: _refreshCurrentTabData);
+                  return _buildErrorCard(snapshot.error!,
+                      onRetry: _refreshCurrentTabData);
                 }
-                return const IcareTableSkeleton(rowCount: 6, hasFilterBar: false);
+                return const IcareTableSkeleton(
+                    rowCount: 6, hasFilterBar: false);
               }
               return _buildCoMonthlySummaryTable(snapshot.data!);
             },
@@ -1629,7 +2191,13 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
           color: isSelected ? tokens.surface : Colors.transparent,
           borderRadius: BorderRadius.circular(6),
           boxShadow: isSelected
-              ? [BoxShadow(color: Colors.black.withValues(alpha: tokens.isDark ? 0.2 : 0.06), blurRadius: 4, offset: const Offset(0, 1))]
+              ? [
+                  BoxShadow(
+                      color: Colors.black
+                          .withValues(alpha: tokens.isDark ? 0.2 : 0.06),
+                      blurRadius: 4,
+                      offset: const Offset(0, 1))
+                ]
               : null,
         ),
         child: Row(
@@ -1657,26 +2225,34 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
     );
   }
 
-  Widget _buildProgramFilterChips(List<String> options, String selectedValue, ValueChanged<String> onSelected) {
+  Widget _buildProgramFilterChips(List<String> options, String selectedValue,
+      ValueChanged<String> onSelected) {
     final tokens = IcareSurfaceTokens.of(context);
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       physics: const BouncingScrollPhysics(),
       child: Row(
         children: options.map((opt) {
-          final isSelected = selectedValue == opt || (selectedValue == 'All' && opt == 'All Programmes');
+          final isSelected = selectedValue == opt ||
+              (selectedValue == 'All' && opt == 'All Programmes');
           return Padding(
             padding: const EdgeInsets.only(right: 8.0),
             child: ChoiceChip(
-              label: Text(opt, style: TextStyle(
-                fontSize: 11,
-                fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                color: isSelected ? Colors.white : tokens.textSecondary,
-              )),
+              label: Text(opt,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                    color: isSelected ? Colors.white : tokens.textSecondary,
+                  )),
               selected: isSelected,
               selectedColor: tokens.brandPrimaryDark,
               backgroundColor: tokens.surfaceHover,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20), side: BorderSide(color: isSelected ? tokens.brandPrimaryDark : tokens.borderSubtle)),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
+                  side: BorderSide(
+                      color: isSelected
+                          ? tokens.brandPrimaryDark
+                          : tokens.borderSubtle)),
               onSelected: (val) {
                 if (val) {
                   onSelected(opt);
@@ -1689,7 +2265,8 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
     );
   }
 
-  Widget _buildMobileDetailRow(String label, String value, {bool isPrimary = false}) {
+  Widget _buildMobileDetailRow(String label, String value,
+      {bool isPrimary = false}) {
     final tokens = IcareSurfaceTokens.of(context);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 2.0),
@@ -1749,10 +2326,20 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text('Credit Officers Summary', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: tokens.textPrimary)),
+                    Text('Credit Officers Summary',
+                        style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                            color: tokens.textPrimary)),
                     IconButton(
-                      tooltip: _showRawTableOnMobile ? 'Switch to Cards' : 'Switch to Table',
-                      icon: Icon(_showRawTableOnMobile ? Icons.view_agenda_outlined : Icons.table_chart_outlined, color: tokens.brandPrimary),
+                      tooltip: _showRawTableOnMobile
+                          ? 'Switch to Cards'
+                          : 'Switch to Table',
+                      icon: Icon(
+                          _showRawTableOnMobile
+                              ? Icons.view_agenda_outlined
+                              : Icons.table_chart_outlined,
+                          color: tokens.brandPrimary),
                       onPressed: () {
                         setState(() {
                           _showRawTableOnMobile = !_showRawTableOnMobile;
@@ -1767,12 +2354,22 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
               ...officers.map((o) {
                 double getMetric(String m, [String? fallback]) {
                   final row = data.rows.firstWhere(
-                    (r) => r.metric == m || (fallback != null && r.metric == fallback) || r.metric.toLowerCase().contains(m.toLowerCase()),
+                    (r) =>
+                        r.metric == m ||
+                        (fallback != null && r.metric == fallback) ||
+                        r.metric.toLowerCase().contains(m.toLowerCase()),
                     orElse: () => MonthlyParityMetricRow(metric: m, values: {}),
                   );
                   return (row.values[o.name] as num? ?? 0.0).toDouble();
                 }
-                int getCount(String m) => (data.rows.firstWhere((r) => r.metric == m, orElse: () => MonthlyParityMetricRow(metric: m, values: {})).values[o.name] as num? ?? 0).toInt();
+
+                int getCount(String m) => (data.rows
+                            .firstWhere((r) => r.metric == m,
+                                orElse: () => MonthlyParityMetricRow(
+                                    metric: m, values: {}))
+                            .values[o.name] as num? ??
+                        0)
+                    .toInt();
 
                 final disb = getMetric('Sales (Credit) / Principal Disbursed');
                 final col = getMetric('Installment Collection (Repayments)');
@@ -1780,13 +2377,19 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                 final sDep = getMetric('Savings Deposit (Month)');
                 final sWth = getMetric('Savings Withdrawal (Month)');
                 final sClose = getMetric('Savings Closing Balance');
-                final bd = getMetric('Transit Bank Deposits Remitted', 'Bank Deposits Remitted (Acct 1050)');
+                final bd = getMetric('Transit Bank Deposits Remitted',
+                    'Bank Deposits Remitted (Acct 1050)');
 
-                final trans = getMetric('Field Transport & Travel', 'Field Transport (PC1)');
-                final stat = getMetric('Printing & Stationery', 'Stationery (PB3)');
-                final ent = getMetric('Entertainment & Refreshment', 'Entertainment (PB4)');
-                final util = getMetric('Utilities & Communication', 'Utilities & Phone (PB2/PB6)');
-                final totOpEx = getMetric('Total Operating Expenses (OpEx)', 'Office Expenses (Acct 4000)');
+                final trans = getMetric(
+                    'Field Transport & Travel', 'Field Transport (PC1)');
+                final stat =
+                    getMetric('Printing & Stationery', 'Stationery (PB3)');
+                final ent = getMetric(
+                    'Entertainment & Refreshment', 'Entertainment (PB4)');
+                final util = getMetric(
+                    'Utilities & Communication', 'Utilities & Phone (PB2/PB6)');
+                final totOpEx = getMetric('Total Operating Expenses (OpEx)',
+                    'Office Expenses (Acct 4000)');
 
                 final actLoans = getCount('Active Loans Count');
                 final actSavers = getCount('Active Savers Count');
@@ -1798,7 +2401,13 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                     color: tokens.surface,
                     borderRadius: BorderRadius.circular(10),
                     border: Border.all(color: tokens.borderSubtle),
-                    boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: tokens.isDark ? 0.16 : 0.025), blurRadius: 4, offset: const Offset(0, 1))],
+                    boxShadow: [
+                      BoxShadow(
+                          color: Colors.black
+                              .withValues(alpha: tokens.isDark ? 0.16 : 0.025),
+                          blurRadius: 4,
+                          offset: const Offset(0, 1))
+                    ],
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -1809,33 +2418,60 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                           Expanded(
                             child: Text(
                               o.name,
-                              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: tokens.brandPrimary),
+                              style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w800,
+                                  color: tokens.brandPrimary),
                             ),
                           ),
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                            decoration: BoxDecoration(color: tokens.surfaceHover, borderRadius: BorderRadius.circular(12)),
-                            child: Text(o.username ?? 'Credit Officer', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: tokens.textSecondary)),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(
+                                color: tokens.surfaceHover,
+                                borderRadius: BorderRadius.circular(12)),
+                            child: Text(o.username ?? 'Credit Officer',
+                                style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                    color: tokens.textSecondary)),
                           ),
                         ],
                       ),
                       const Divider(height: 16),
-                      _buildMobileDetailRow('Transit Bank Deposits Remitted', _formatNgn(bd), isPrimary: true),
+                      _buildMobileDetailRow(
+                          'Transit Bank Deposits Remitted', _formatNgn(bd),
+                          isPrimary: true),
                       const SizedBox(height: 6),
-                      _buildMobileDetailRow('Active Portfolio', '$actLoans loans | ${_formatNgn(closeCredit)}'),
-                      _buildMobileDetailRow('Month Collections', _formatNgn(col)),
-                      _buildMobileDetailRow('Month Disbursements', _formatNgn(disb)),
+                      _buildMobileDetailRow('Active Portfolio',
+                          '$actLoans loans | ${_formatNgn(closeCredit)}'),
+                      _buildMobileDetailRow(
+                          'Month Collections', _formatNgn(col)),
+                      _buildMobileDetailRow(
+                          'Month Disbursements', _formatNgn(disb)),
                       const Divider(height: 16),
-                      _buildMobileDetailRow('Active Savers', '$actSavers savers | ${_formatNgn(sClose)}'),
-                      _buildMobileDetailRow('Month Savings (In / Out)', '${_formatNgn(sDep)} / ${_formatNgn(sWth)}'),
+                      _buildMobileDetailRow('Active Savers',
+                          '$actSavers savers | ${_formatNgn(sClose)}'),
+                      _buildMobileDetailRow('Month Savings (In / Out)',
+                          '${_formatNgn(sDep)} / ${_formatNgn(sWth)}'),
                       const Divider(height: 16),
-                      Text('Analysed Operational Expenses (OpEx):', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: tokens.textMuted)),
+                      Text('Analysed Operational Expenses (OpEx):',
+                          style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                              color: tokens.textMuted)),
                       const SizedBox(height: 4),
-                      _buildMobileDetailRow('Field Transport & Travel', _formatNgn(trans)),
-                      _buildMobileDetailRow('Printing & Stationery', _formatNgn(stat)),
-                      _buildMobileDetailRow('Entertainment & Refreshment', _formatNgn(ent)),
-                      _buildMobileDetailRow('Utilities & Communication', _formatNgn(util)),
-                      _buildMobileDetailRow('Total Analysed OpEx Disbursed', _formatNgn(totOpEx), isPrimary: true),
+                      _buildMobileDetailRow(
+                          'Field Transport & Travel', _formatNgn(trans)),
+                      _buildMobileDetailRow(
+                          'Printing & Stationery', _formatNgn(stat)),
+                      _buildMobileDetailRow(
+                          'Entertainment & Refreshment', _formatNgn(ent)),
+                      _buildMobileDetailRow(
+                          'Utilities & Communication', _formatNgn(util)),
+                      _buildMobileDetailRow(
+                          'Total Analysed OpEx Disbursed', _formatNgn(totOpEx),
+                          isPrimary: true),
                     ],
                   ),
                 );
@@ -1844,21 +2480,41 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
               _buildContainedTable(
                 hint: 'Swipe horizontally to view all credit officers',
                 child: DataTable(
-                  headingRowColor: MaterialStateProperty.all(tokens.surfaceSubtle),
-                  headingTextStyle: TextStyle(fontWeight: FontWeight.w700, color: tokens.textPrimary, fontSize: 12),
-                  dataTextStyle: TextStyle(fontSize: 12, color: tokens.textSecondary),
+                  headingRowColor:
+                      MaterialStateProperty.all(tokens.surfaceSubtle),
+                  headingTextStyle: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      color: tokens.textPrimary,
+                      fontSize: 12),
+                  dataTextStyle:
+                      TextStyle(fontSize: 12, color: tokens.textSecondary),
                   columnSpacing: 20,
                   columns: [
                     const DataColumn(label: Text('Financial Metric')),
-                    ...officers.map((o) => DataColumn(numeric: true, label: Text(o.name))),
-                    DataColumn(numeric: true, label: Text(data.totalColName, style: TextStyle(fontWeight: FontWeight.w800, color: tokens.textPrimary))),
+                    ...officers.map(
+                        (o) => DataColumn(numeric: true, label: Text(o.name))),
+                    DataColumn(
+                        numeric: true,
+                        label: Text(data.totalColName,
+                            style: TextStyle(
+                                fontWeight: FontWeight.w800,
+                                color: tokens.textPrimary))),
                   ],
                   rows: data.rows.map((r) {
                     final isCount = r.metric.contains('Count');
-                    final isHighlight = r.metric.contains('Total') || r.metric.contains('Expenses') || r.metric.contains('Bank');
+                    final isHighlight = r.metric.contains('Total') ||
+                        r.metric.contains('Expenses') ||
+                        r.metric.contains('Bank');
                     return DataRow(
                       cells: [
-                        DataCell(Text(_cleanCoMetricLabel(r.metric), style: TextStyle(fontWeight: isHighlight ? FontWeight.w700 : FontWeight.w600, color: isHighlight ? tokens.brandPrimary : tokens.textSecondary))),
+                        DataCell(Text(_cleanCoMetricLabel(r.metric),
+                            style: TextStyle(
+                                fontWeight: isHighlight
+                                    ? FontWeight.w700
+                                    : FontWeight.w600,
+                                color: isHighlight
+                                    ? tokens.brandPrimary
+                                    : tokens.textSecondary))),
                         ...officers.map((o) {
                           final val = r.values[o.name];
                           String disp;
@@ -1882,7 +2538,10 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                             } else {
                               disp = _formatNgn((val as num).toDouble());
                             }
-                            return Text(disp, style: TextStyle(fontWeight: FontWeight.w800, color: tokens.textPrimary));
+                            return Text(disp,
+                                style: TextStyle(
+                                    fontWeight: FontWeight.w800,
+                                    color: tokens.textPrimary));
                           }),
                         ),
                       ],
@@ -1902,38 +2561,55 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
     return FutureBuilder<MonthlyExecutiveStatementsData>(
       future: _statementsFuture,
       builder: (context, snapshot) {
-        if (_statementsFuture == null || snapshot.connectionState == ConnectionState.waiting || !snapshot.hasData) {
+        if (_statementsFuture == null ||
+            snapshot.connectionState == ConnectionState.waiting ||
+            !snapshot.hasData) {
           if (snapshot.hasError) {
-            return _buildErrorCard(snapshot.error!, onRetry: _refreshCurrentTabData);
+            return _buildErrorCard(snapshot.error!,
+                onRetry: _refreshCurrentTabData);
           }
           return const IcareTableSkeleton(rowCount: 6, hasFilterBar: false);
         }
         final data = snapshot.data!;
         final ds = data.depositStatement;
         if (ds == null || ds.rows.isEmpty) {
-          return Center(child: Padding(
+          return Center(
+              child: Padding(
             padding: const EdgeInsets.all(32.0),
-            child: Text('No Deposit Statement records available for this period.', style: TextStyle(color: tokens.textMuted)),
+            child: Text(
+                'No Deposit Statement records available for this period.',
+                style: TextStyle(color: tokens.textMuted)),
           ));
         }
 
-        final totRow = ds.rows.firstWhere((r) => r.programme == 'Total', orElse: () => ds.rows.last);
-        final isAllPrograms = _selectedDepositProgramFilter == 'All' || _selectedDepositProgramFilter == 'All Programmes';
+        final totRow = ds.rows.firstWhere((r) => r.programme == 'Total',
+            orElse: () => ds.rows.last);
+        final isAllPrograms = _selectedDepositProgramFilter == 'All' ||
+            _selectedDepositProgramFilter == 'All Programmes';
         final activeKpiRow = isAllPrograms
             ? totRow
             : ds.rows.firstWhere(
-                (r) => r.programme.toLowerCase() == _selectedDepositProgramFilter.toLowerCase(),
+                (r) =>
+                    r.programme.toLowerCase() ==
+                    _selectedDepositProgramFilter.toLowerCase(),
                 orElse: () => totRow,
               );
 
         return LayoutBuilder(
           builder: (context, constraints) {
             final isMobile = constraints.maxWidth < 600;
-            final cardW = isMobile ? (constraints.maxWidth - 8) / 2 : (constraints.maxWidth - 24) / 4;
+            final cardW = isMobile
+                ? (constraints.maxWidth - 8) / 2
+                : (constraints.maxWidth - 24) / 4;
 
             final filteredRows = isAllPrograms
                 ? ds.rows
-                : ds.rows.where((r) => r.programme.toLowerCase() == _selectedDepositProgramFilter.toLowerCase() || r.programme == 'Total').toList();
+                : ds.rows
+                    .where((r) =>
+                        r.programme.toLowerCase() ==
+                            _selectedDepositProgramFilter.toLowerCase() ||
+                        r.programme == 'Total')
+                    .toList();
 
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -1943,10 +2619,31 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                   spacing: 8,
                   runSpacing: 8,
                   children: [
-                    _buildMetricCard(isAllPrograms ? 'Active Savers' : '$_selectedDepositProgramFilter Savers', '${activeKpiRow.balanceNo} Savers', width: cardW),
-                    _buildMetricCard(isAllPrograms ? 'Deposit Balance' : '$_selectedDepositProgramFilter Balance', _formatNgn(activeKpiRow.balanceAmount), width: cardW),
-                    _buildMetricCard(isAllPrograms ? 'Month Deposits' : '$_selectedDepositProgramFilter Deposits', _formatNgn(activeKpiRow.depositCurr), width: cardW),
-                    _buildMetricCard(isAllPrograms ? 'Month Payouts' : '$_selectedDepositProgramFilter Payouts', _formatNgn(activeKpiRow.withdrawalCurrAmount + activeKpiRow.returnCurrAmount), width: cardW),
+                    _buildMetricCard(
+                        isAllPrograms
+                            ? 'Active Savers'
+                            : '$_selectedDepositProgramFilter Savers',
+                        '${activeKpiRow.balanceNo} Savers',
+                        width: cardW),
+                    _buildMetricCard(
+                        isAllPrograms
+                            ? 'Deposit Balance'
+                            : '$_selectedDepositProgramFilter Balance',
+                        _formatNgn(activeKpiRow.balanceAmount),
+                        width: cardW),
+                    _buildMetricCard(
+                        isAllPrograms
+                            ? 'Month Deposits'
+                            : '$_selectedDepositProgramFilter Deposits',
+                        _formatNgn(activeKpiRow.depositCurr),
+                        width: cardW),
+                    _buildMetricCard(
+                        isAllPrograms
+                            ? 'Month Payouts'
+                            : '$_selectedDepositProgramFilter Payouts',
+                        _formatNgn(activeKpiRow.withdrawalCurrAmount +
+                            activeKpiRow.returnCurrAmount),
+                        width: cardW),
                   ],
                 ),
                 const SizedBox(height: 16),
@@ -1960,15 +2657,22 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                         _selectedDepositProgramFilter,
                         (val) {
                           setState(() {
-                            _selectedDepositProgramFilter = val == 'All Programmes' ? 'All' : val;
+                            _selectedDepositProgramFilter =
+                                val == 'All Programmes' ? 'All' : val;
                           });
                         },
                       ),
                     ),
                     if (isMobile)
                       IconButton(
-                        tooltip: _showRawTableOnMobile ? 'Switch to Cards' : 'Switch to Table',
-                        icon: Icon(_showRawTableOnMobile ? Icons.view_agenda_outlined : Icons.table_chart_outlined, color: tokens.brandPrimary),
+                        tooltip: _showRawTableOnMobile
+                            ? 'Switch to Cards'
+                            : 'Switch to Table',
+                        icon: Icon(
+                            _showRawTableOnMobile
+                                ? Icons.view_agenda_outlined
+                                : Icons.table_chart_outlined,
+                            color: tokens.brandPrimary),
                         onPressed: () {
                           setState(() {
                             _showRawTableOnMobile = !_showRawTableOnMobile;
@@ -1987,28 +2691,42 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                       decoration: BoxDecoration(
                         color: isTot ? tokens.successBg : tokens.surface,
                         borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: isTot ? tokens.successBorder : tokens.borderSubtle),
+                        border: Border.all(
+                            color: isTot
+                                ? tokens.successBorder
+                                : tokens.borderSubtle),
                       ),
                       child: Material(
                         color: Colors.transparent,
                         child: Theme(
-                          data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+                          data: Theme.of(context)
+                              .copyWith(dividerColor: Colors.transparent),
                           child: ExpansionTile(
-                            initiallyExpanded: isTot || filteredRows.length == 1,
-                            tilePadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
-                            childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                            initiallyExpanded:
+                                isTot || filteredRows.length == 1,
+                            tilePadding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 0),
+                            childrenPadding:
+                                const EdgeInsets.fromLTRB(12, 0, 12, 12),
                             title: Text(
-                              isTot ? 'Consolidated Total' : '${r.programme} Programme',
+                              isTot
+                                  ? 'Consolidated Total'
+                                  : '${r.programme} Programme',
                               style: TextStyle(
                                 fontSize: 13,
                                 fontWeight: FontWeight.w800,
-                                color: isTot ? tokens.successText : tokens.brandPrimary,
+                                color: isTot
+                                    ? tokens.successText
+                                    : tokens.brandPrimary,
                               ),
                             ),
                             trailing: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 8, vertical: 2),
                               decoration: BoxDecoration(
-                                color: isTot ? tokens.successBg : tokens.surfaceHover,
+                                color: isTot
+                                    ? tokens.successBg
+                                    : tokens.surfaceHover,
                                 borderRadius: BorderRadius.circular(10),
                               ),
                               child: Text(
@@ -2016,22 +2734,38 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                                 style: TextStyle(
                                   fontSize: 10.5,
                                   fontWeight: FontWeight.bold,
-                                  color: isTot ? tokens.successText : tokens.textSecondary,
+                                  color: isTot
+                                      ? tokens.successText
+                                      : tokens.textSecondary,
                                 ),
                               ),
                             ),
                             children: [
                               const Divider(height: 10),
-                              _buildMobileDetailRow('Net Savings Balance', _formatNgn(r.balanceAmount), isPrimary: true),
+                              _buildMobileDetailRow('Net Savings Balance',
+                                  _formatNgn(r.balanceAmount),
+                                  isPrimary: true),
                               const SizedBox(height: 4),
-                              _buildMobileDetailRow('Month Deposits Received', _formatNgn(r.depositCurr)),
-                              _buildMobileDetailRow('Cumulative Deposits (B/F + Month)', _formatNgn(r.depositTotal)),
+                              _buildMobileDetailRow('Month Deposits Received',
+                                  _formatNgn(r.depositCurr)),
+                              _buildMobileDetailRow(
+                                  'Cumulative Deposits (B/F + Month)',
+                                  _formatNgn(r.depositTotal)),
                               const Divider(height: 10),
-                              _buildMobileDetailRow('Normal Withdrawals (Partial)', '${r.withdrawalCurrNo} savers (${_formatNgn(r.withdrawalCurrAmount)})'),
-                              _buildMobileDetailRow('Deposit Returns (Zero-Balance)', '${r.returnCurrNo} savers (${_formatNgn(r.returnCurrAmount)})'),
-                              _buildMobileDetailRow('Cumulative Payouts', _formatNgn(r.withdrawalTotalAmount + r.returnTotalAmount)),
+                              _buildMobileDetailRow(
+                                  'Normal Withdrawals (Partial)',
+                                  '${r.withdrawalCurrNo} savers (${_formatNgn(r.withdrawalCurrAmount)})'),
+                              _buildMobileDetailRow(
+                                  'Deposit Returns (Zero-Balance)',
+                                  '${r.returnCurrNo} savers (${_formatNgn(r.returnCurrAmount)})'),
+                              _buildMobileDetailRow(
+                                  'Cumulative Payouts',
+                                  _formatNgn(r.withdrawalTotalAmount +
+                                      r.returnTotalAmount)),
                               const Divider(height: 10),
-                              _buildMobileDetailRow('Members Registered (B/F + Added)', '${r.memberPrev} + ${r.memberCurr} = ${r.memberTotal} members'),
+                              _buildMobileDetailRow(
+                                  'Members Registered (B/F + Added)',
+                                  '${r.memberPrev} + ${r.memberCurr} = ${r.memberTotal} members'),
                             ],
                           ),
                         ),
@@ -2040,52 +2774,120 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                   }),
                 ] else ...[
                   _buildContainedTable(
-                    hint: 'Swipe horizontally to view all deposit columns across programmes',
+                    hint:
+                        'Swipe horizontally to view all deposit columns across programmes',
                     child: DataTable(
-                      headingRowColor: MaterialStateProperty.all(tokens.surfaceSubtle),
-                      headingTextStyle: TextStyle(fontWeight: FontWeight.w700, color: tokens.textPrimary, fontSize: 11),
-                      dataTextStyle: TextStyle(fontSize: 11, color: tokens.textSecondary),
+                      headingRowColor:
+                          MaterialStateProperty.all(tokens.surfaceSubtle),
+                      headingTextStyle: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          color: tokens.textPrimary,
+                          fontSize: 11),
+                      dataTextStyle:
+                          TextStyle(fontSize: 11, color: tokens.textSecondary),
                       columnSpacing: 14,
                       columns: const [
                         DataColumn(label: Text('Programme')),
                         DataColumn(numeric: true, label: Text('Members\nB/F')),
                         DataColumn(numeric: true, label: Text('New\nMembers')),
-                        DataColumn(numeric: true, label: Text('Total\nMembers')),
-                        DataColumn(numeric: true, label: Text('Deposit\nB/F (₦)')),
-                        DataColumn(numeric: true, label: Text('Current\nDeposit (₦)')),
-                        DataColumn(numeric: true, label: Text('Total\nDeposit (₦)')),
-                        DataColumn(numeric: true, label: Text('Withdrawals\nB/F (No, ₦)')),
-                        DataColumn(numeric: true, label: Text('Current\nWithdrawals (No, ₦)')),
-                        DataColumn(numeric: true, label: Text('Total\nWithdrawals (No, ₦)')),
-                        DataColumn(numeric: true, label: Text('Cancellations\nB/F (No, ₦)')),
-                        DataColumn(numeric: true, label: Text('Current\nCancellations (No, ₦)')),
-                        DataColumn(numeric: true, label: Text('Total\nCancellations (No, ₦)')),
-                        DataColumn(numeric: true, label: Text('Active\nSavers')),
-                        DataColumn(numeric: true, label: Text('Net Deposit\nBalance (₦)')),
+                        DataColumn(
+                            numeric: true, label: Text('Total\nMembers')),
+                        DataColumn(
+                            numeric: true, label: Text('Deposit\nB/F (₦)')),
+                        DataColumn(
+                            numeric: true, label: Text('Current\nDeposit (₦)')),
+                        DataColumn(
+                            numeric: true, label: Text('Total\nDeposit (₦)')),
+                        DataColumn(
+                            numeric: true,
+                            label: Text('Withdrawals\nB/F (No, ₦)')),
+                        DataColumn(
+                            numeric: true,
+                            label: Text('Current\nWithdrawals (No, ₦)')),
+                        DataColumn(
+                            numeric: true,
+                            label: Text('Total\nWithdrawals (No, ₦)')),
+                        DataColumn(
+                            numeric: true,
+                            label: Text('Cancellations\nB/F (No, ₦)')),
+                        DataColumn(
+                            numeric: true,
+                            label: Text('Current\nCancellations (No, ₦)')),
+                        DataColumn(
+                            numeric: true,
+                            label: Text('Total\nCancellations (No, ₦)')),
+                        DataColumn(
+                            numeric: true, label: Text('Active\nSavers')),
+                        DataColumn(
+                            numeric: true,
+                            label: Text('Net Deposit\nBalance (₦)')),
                       ],
                       rows: filteredRows.map((r) {
                         final isTot = r.programme == 'Total';
                         final boldStyle = isTot
-                            ? TextStyle(fontWeight: FontWeight.w800, color: tokens.textPrimary, fontSize: 11)
-                            : TextStyle(fontSize: 11, color: tokens.textSecondary);
+                            ? TextStyle(
+                                fontWeight: FontWeight.w800,
+                                color: tokens.textPrimary,
+                                fontSize: 11)
+                            : TextStyle(
+                                fontSize: 11, color: tokens.textSecondary);
                         return DataRow(
-                          color: isTot ? MaterialStateProperty.all(tokens.surfaceHover) : null,
+                          color: isTot
+                              ? MaterialStateProperty.all(tokens.surfaceHover)
+                              : null,
                           cells: [
-                            DataCell(Text(r.programme, style: isTot ? TextStyle(fontWeight: FontWeight.w800, color: tokens.brandPrimary) : TextStyle(fontWeight: FontWeight.w600, color: tokens.textPrimary))),
+                            DataCell(Text(r.programme,
+                                style: isTot
+                                    ? TextStyle(
+                                        fontWeight: FontWeight.w800,
+                                        color: tokens.brandPrimary)
+                                    : TextStyle(
+                                        fontWeight: FontWeight.w600,
+                                        color: tokens.textPrimary))),
                             DataCell(Text('${r.memberPrev}', style: boldStyle)),
                             DataCell(Text('${r.memberCurr}', style: boldStyle)),
-                            DataCell(Text('${r.memberTotal}', style: boldStyle)),
-                            DataCell(Text(_formatNgn(r.depositPrev), style: boldStyle)),
-                            DataCell(Text(_formatNgn(r.depositCurr), style: boldStyle)),
-                            DataCell(Text(_formatNgn(r.depositTotal), style: boldStyle)),
-                            DataCell(Text('${r.withdrawalPrevNo} (${_formatNgn(r.withdrawalPrevAmount)})', style: boldStyle)),
-                            DataCell(Text('${r.withdrawalCurrNo} (${_formatNgn(r.withdrawalCurrAmount)})', style: boldStyle)),
-                            DataCell(Text('${r.withdrawalTotalNo} (${_formatNgn(r.withdrawalTotalAmount)})', style: boldStyle)),
-                            DataCell(Text('${r.returnPrevNo} (${_formatNgn(r.returnPrevAmount)})', style: boldStyle)),
-                            DataCell(Text('${r.returnCurrNo} (${_formatNgn(r.returnCurrAmount)})', style: boldStyle)),
-                            DataCell(Text('${r.returnTotalNo} (${_formatNgn(r.returnTotalAmount)})', style: boldStyle)),
-                            DataCell(Text('${r.balanceNo}', style: isTot ? TextStyle(fontWeight: FontWeight.w800, color: tokens.brandPrimary) : TextStyle(fontWeight: FontWeight.w700, color: tokens.textPrimary))),
-                            DataCell(Text(_formatNgn(r.balanceAmount), style: isTot ? TextStyle(fontWeight: FontWeight.w800, color: tokens.brandPrimary) : TextStyle(fontWeight: FontWeight.w700, color: tokens.textPrimary))),
+                            DataCell(
+                                Text('${r.memberTotal}', style: boldStyle)),
+                            DataCell(Text(_formatNgn(r.depositPrev),
+                                style: boldStyle)),
+                            DataCell(Text(_formatNgn(r.depositCurr),
+                                style: boldStyle)),
+                            DataCell(Text(_formatNgn(r.depositTotal),
+                                style: boldStyle)),
+                            DataCell(Text(
+                                '${r.withdrawalPrevNo} (${_formatNgn(r.withdrawalPrevAmount)})',
+                                style: boldStyle)),
+                            DataCell(Text(
+                                '${r.withdrawalCurrNo} (${_formatNgn(r.withdrawalCurrAmount)})',
+                                style: boldStyle)),
+                            DataCell(Text(
+                                '${r.withdrawalTotalNo} (${_formatNgn(r.withdrawalTotalAmount)})',
+                                style: boldStyle)),
+                            DataCell(Text(
+                                '${r.returnPrevNo} (${_formatNgn(r.returnPrevAmount)})',
+                                style: boldStyle)),
+                            DataCell(Text(
+                                '${r.returnCurrNo} (${_formatNgn(r.returnCurrAmount)})',
+                                style: boldStyle)),
+                            DataCell(Text(
+                                '${r.returnTotalNo} (${_formatNgn(r.returnTotalAmount)})',
+                                style: boldStyle)),
+                            DataCell(Text('${r.balanceNo}',
+                                style: isTot
+                                    ? TextStyle(
+                                        fontWeight: FontWeight.w800,
+                                        color: tokens.brandPrimary)
+                                    : TextStyle(
+                                        fontWeight: FontWeight.w700,
+                                        color: tokens.textPrimary))),
+                            DataCell(Text(_formatNgn(r.balanceAmount),
+                                style: isTot
+                                    ? TextStyle(
+                                        fontWeight: FontWeight.w800,
+                                        color: tokens.brandPrimary)
+                                    : TextStyle(
+                                        fontWeight: FontWeight.w700,
+                                        color: tokens.textPrimary))),
                           ],
                         );
                       }).toList(),
@@ -2102,12 +2904,15 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
 
   String _cleanCreditItemLabel(String rawItem) {
     var s = rawItem.replaceAll('•', '').trim();
-    s = s.replaceAll(RegExp(r'\s*\((₦\s*)?Col[^)]+\)', caseSensitive: false), '');
+    s = s.replaceAll(
+        RegExp(r'\s*\((₦\s*)?Col[^)]+\)', caseSensitive: false), '');
     s = s.replaceAll(RegExp(r'\s+'), ' ').trim();
     return s;
   }
 
-  Widget _buildCreditSectionCard(List<CreditStatementRow> rows, String sectionTitle, IconData icon, {bool isHighlight = false}) {
+  Widget _buildCreditSectionCard(
+      List<CreditStatementRow> rows, String sectionTitle, IconData icon,
+      {bool isHighlight = false}) {
     final tokens = IcareSurfaceTokens.of(context);
     final sectionRows = rows.where((r) {
       final s = r.section.toLowerCase();
@@ -2115,7 +2920,9 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
       if (target.contains('disbursed')) return s.contains('disbursed');
       if (target.contains('excess')) return s.contains('excess');
       if (target.contains('installment') || target.contains('repayment')) {
-        return (s.contains('installment') || s.contains('collection')) && !s.contains('full') && !s.contains('excess');
+        return (s.contains('installment') || s.contains('collection')) &&
+            !s.contains('full') &&
+            !s.contains('excess');
       }
       if (target.contains('balance')) return s.contains('balance');
       if (target.contains('full')) return s.contains('full');
@@ -2125,7 +2932,8 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
     if (sectionRows.isEmpty) return const SizedBox.shrink();
 
     double getRowVal(CreditStatementRow r) {
-      if (_selectedCreditProgramFilter == 'Monthly') return r.monthly.toDouble();
+      if (_selectedCreditProgramFilter == 'Monthly')
+        return r.monthly.toDouble();
       if (_selectedCreditProgramFilter == 'Weekly') return r.weekly.toDouble();
       if (_selectedCreditProgramFilter == 'Daily') return r.daily.toDouble();
       return r.total.toDouble();
@@ -2136,17 +2944,23 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
       decoration: BoxDecoration(
         color: isHighlight ? tokens.successBg : tokens.surface,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: isHighlight ? tokens.successBorder : tokens.borderSubtle),
+        border: Border.all(
+            color: isHighlight ? tokens.successBorder : tokens.borderSubtle),
       ),
       child: Material(
         color: Colors.transparent,
         child: Theme(
           data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
           child: ExpansionTile(
-            initiallyExpanded: isHighlight || sectionTitle.contains('Disbursed') || sectionTitle.contains('Closing'),
-            tilePadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
+            initiallyExpanded: isHighlight ||
+                sectionTitle.contains('Disbursed') ||
+                sectionTitle.contains('Closing'),
+            tilePadding:
+                const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
             childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-            leading: Icon(icon, size: 16, color: isHighlight ? tokens.successText : tokens.brandPrimary),
+            leading: Icon(icon,
+                size: 16,
+                color: isHighlight ? tokens.successText : tokens.brandPrimary),
             title: Text(
               sectionTitle,
               style: TextStyle(
@@ -2157,8 +2971,14 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
             ),
             trailing: Container(
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-              decoration: BoxDecoration(color: tokens.surfaceHover, borderRadius: BorderRadius.circular(10)),
-              child: Text(_selectedCreditProgramFilter, style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: tokens.textSecondary)),
+              decoration: BoxDecoration(
+                  color: tokens.surfaceHover,
+                  borderRadius: BorderRadius.circular(10)),
+              child: Text(_selectedCreditProgramFilter,
+                  style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                      color: tokens.textSecondary)),
             ),
             children: [
               const Divider(height: 10),
@@ -2167,7 +2987,9 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                 final isCount = cleanItem.contains('Count');
                 final val = getRowVal(r);
                 final disp = isCount ? '${val.toInt()}' : _formatNgn(val);
-                final isTot = cleanItem.contains('Total') || cleanItem.contains('Balance') || cleanItem.contains('Current');
+                final isTot = cleanItem.contains('Total') ||
+                    cleanItem.contains('Balance') ||
+                    cleanItem.contains('Current');
                 return _buildMobileDetailRow(cleanItem, disp, isPrimary: isTot);
               }),
             ],
@@ -2182,37 +3004,52 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
     return FutureBuilder<MonthlyExecutiveStatementsData>(
       future: _statementsFuture,
       builder: (context, snapshot) {
-        if (_statementsFuture == null || snapshot.connectionState == ConnectionState.waiting || !snapshot.hasData) {
+        if (_statementsFuture == null ||
+            snapshot.connectionState == ConnectionState.waiting ||
+            !snapshot.hasData) {
           if (snapshot.hasError) {
-            return _buildErrorCard(snapshot.error!, onRetry: _refreshCurrentTabData);
+            return _buildErrorCard(snapshot.error!,
+                onRetry: _refreshCurrentTabData);
           }
           return const IcareTableSkeleton(rowCount: 6, hasFilterBar: false);
         }
         final data = snapshot.data!;
         final cs = data.creditStatement;
         if (cs == null || cs.rows.isEmpty) {
-          return Center(child: Padding(
+          return Center(
+              child: Padding(
             padding: const EdgeInsets.all(32.0),
-            child: Text('No Credit Statement records available for this period.', style: TextStyle(color: tokens.textMuted)),
+            child: Text(
+                'No Credit Statement records available for this period.',
+                style: TextStyle(color: tokens.textMuted)),
           ));
         }
 
-        const emptyRow = CreditStatementRow(section: '', item: '', monthly: 0, weekly: 0, daily: 0, total: 0);
+        const emptyRow = CreditStatementRow(
+            section: '', item: '', monthly: 0, weekly: 0, daily: 0, total: 0);
 
         final balCountRow = cs.rows.firstWhere(
           (r) => r.item.contains('Active Loans'),
           orElse: () => emptyRow,
         );
         final balAmtRow = cs.rows.firstWhere(
-          (r) => r.item.contains('Outstanding Credit') || r.item.contains('Credit Balance'),
+          (r) =>
+              r.item.contains('Outstanding Credit') ||
+              r.item.contains('Credit Balance'),
           orElse: () => emptyRow,
         );
         final instCurrRow = cs.rows.firstWhere(
-          (r) => r.item.contains('Current Month Installment') || (r.item.contains('Current') && r.item.contains('Installment')),
+          (r) =>
+              r.item.contains('Current Month Installment') ||
+              (r.item.contains('Current') && r.item.contains('Installment')),
           orElse: () => emptyRow,
         );
         final payoffRow = cs.rows.firstWhere(
-          (r) => r.item.contains('Current Full Repayment Count') || (r.item.contains('Current') && r.item.contains('Full') && r.item.contains('Count')),
+          (r) =>
+              r.item.contains('Current Full Repayment Count') ||
+              (r.item.contains('Current') &&
+                  r.item.contains('Full') &&
+                  r.item.contains('Count')),
           orElse: () => emptyRow,
         );
 
@@ -2226,7 +3063,9 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
         return LayoutBuilder(
           builder: (context, constraints) {
             final isMobile = constraints.maxWidth < 600;
-            final cardW = isMobile ? (constraints.maxWidth - 8) / 2 : (constraints.maxWidth - 24) / 4;
+            final cardW = isMobile
+                ? (constraints.maxWidth - 8) / 2
+                : (constraints.maxWidth - 24) / 4;
 
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -2236,10 +3075,18 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                   spacing: 8,
                   runSpacing: 8,
                   children: [
-                    _buildMetricCard('Active Loans', '${getCardVal(balCountRow).toInt()} Loans', width: cardW),
-                    _buildMetricCard('Active Credit', _formatNgn(getCardVal(balAmtRow)), width: cardW),
-                    _buildMetricCard('Month Collections', _formatNgn(getCardVal(instCurrRow)), width: cardW),
-                    _buildMetricCard('Month Full Payoffs', '${getCardVal(payoffRow).toInt()} Settled', width: cardW),
+                    _buildMetricCard('Active Loans',
+                        '${getCardVal(balCountRow).toInt()} Loans',
+                        width: cardW),
+                    _buildMetricCard(
+                        'Active Credit', _formatNgn(getCardVal(balAmtRow)),
+                        width: cardW),
+                    _buildMetricCard('Month Collections',
+                        _formatNgn(getCardVal(instCurrRow)),
+                        width: cardW),
+                    _buildMetricCard('Month Full Payoffs',
+                        '${getCardVal(payoffRow).toInt()} Settled',
+                        width: cardW),
                   ],
                 ),
                 const SizedBox(height: 16),
@@ -2260,8 +3107,14 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                     ),
                     if (isMobile)
                       IconButton(
-                        tooltip: _showRawTableOnMobile ? 'Switch to Cards' : 'Switch to Table',
-                        icon: Icon(_showRawTableOnMobile ? Icons.view_agenda_outlined : Icons.table_chart_outlined, color: tokens.brandPrimary),
+                        tooltip: _showRawTableOnMobile
+                            ? 'Switch to Cards'
+                            : 'Switch to Table',
+                        icon: Icon(
+                            _showRawTableOnMobile
+                                ? Icons.view_agenda_outlined
+                                : Icons.table_chart_outlined,
+                            color: tokens.brandPrimary),
                         onPressed: () {
                           setState(() {
                             _showRawTableOnMobile = !_showRawTableOnMobile;
@@ -2274,19 +3127,33 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
 
                 if (isMobile && !_showRawTableOnMobile) ...[
                   // Mobile Cards grouped by Section
-                  _buildCreditSectionCard(cs.rows, '1. Disbursed Principal', Icons.payments_outlined),
-                  _buildCreditSectionCard(cs.rows, '2. Excess Collections', Icons.trending_up_outlined),
-                  _buildCreditSectionCard(cs.rows, '3. Installment Repayments', Icons.event_repeat_outlined),
-                  _buildCreditSectionCard(cs.rows, '4. Balance (Portfolio)', Icons.account_balance_wallet_outlined, isHighlight: true),
-                  _buildCreditSectionCard(cs.rows, '5. Full Repayment (Settled Loans)', Icons.task_alt_outlined),
+                  _buildCreditSectionCard(cs.rows, '1. Disbursed Principal',
+                      Icons.payments_outlined),
+                  _buildCreditSectionCard(cs.rows, '2. Excess Collections',
+                      Icons.trending_up_outlined),
+                  _buildCreditSectionCard(cs.rows, '3. Installment Repayments',
+                      Icons.event_repeat_outlined),
+                  _buildCreditSectionCard(cs.rows, '4. Balance (Portfolio)',
+                      Icons.account_balance_wallet_outlined,
+                      isHighlight: true),
+                  _buildCreditSectionCard(
+                      cs.rows,
+                      '5. Full Repayment (Settled Loans)',
+                      Icons.task_alt_outlined),
                 ] else ...[
                   // Desktop / Table View
                   _buildContainedTable(
-                    hint: 'Swipe horizontally to view credit metrics across Monthly, Weekly, Daily programmes',
+                    hint:
+                        'Swipe horizontally to view credit metrics across Monthly, Weekly, Daily programmes',
                     child: DataTable(
-                      headingRowColor: MaterialStateProperty.all(tokens.surfaceSubtle),
-                      headingTextStyle: TextStyle(fontWeight: FontWeight.w700, color: tokens.textPrimary, fontSize: 11),
-                      dataTextStyle: TextStyle(fontSize: 11, color: tokens.textSecondary),
+                      headingRowColor:
+                          MaterialStateProperty.all(tokens.surfaceSubtle),
+                      headingTextStyle: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          color: tokens.textPrimary,
+                          fontSize: 11),
+                      dataTextStyle:
+                          TextStyle(fontSize: 11, color: tokens.textSecondary),
                       columnSpacing: 16,
                       columns: [
                         const DataColumn(label: Text('Category')),
@@ -2296,8 +3163,13 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                           label: Text(
                             'Monthly',
                             style: TextStyle(
-                              color: _selectedCreditProgramFilter == 'Monthly' ? tokens.brandPrimary : null,
-                              fontWeight: _selectedCreditProgramFilter == 'Monthly' ? FontWeight.w800 : null,
+                              color: _selectedCreditProgramFilter == 'Monthly'
+                                  ? tokens.brandPrimary
+                                  : null,
+                              fontWeight:
+                                  _selectedCreditProgramFilter == 'Monthly'
+                                      ? FontWeight.w800
+                                      : null,
                             ),
                           ),
                         ),
@@ -2306,8 +3178,13 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                           label: Text(
                             'Weekly',
                             style: TextStyle(
-                              color: _selectedCreditProgramFilter == 'Weekly' ? tokens.brandPrimary : null,
-                              fontWeight: _selectedCreditProgramFilter == 'Weekly' ? FontWeight.w800 : null,
+                              color: _selectedCreditProgramFilter == 'Weekly'
+                                  ? tokens.brandPrimary
+                                  : null,
+                              fontWeight:
+                                  _selectedCreditProgramFilter == 'Weekly'
+                                      ? FontWeight.w800
+                                      : null,
                             ),
                           ),
                         ),
@@ -2316,8 +3193,13 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                           label: Text(
                             'Daily',
                             style: TextStyle(
-                              color: _selectedCreditProgramFilter == 'Daily' ? tokens.brandPrimary : null,
-                              fontWeight: _selectedCreditProgramFilter == 'Daily' ? FontWeight.w800 : null,
+                              color: _selectedCreditProgramFilter == 'Daily'
+                                  ? tokens.brandPrimary
+                                  : null,
+                              fontWeight:
+                                  _selectedCreditProgramFilter == 'Daily'
+                                      ? FontWeight.w800
+                                      : null,
                             ),
                           ),
                         ),
@@ -2326,30 +3208,56 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                           label: Text(
                             'Consolidated\nTotal',
                             style: TextStyle(
-                              color: _selectedCreditProgramFilter == 'Consolidated Total' ? tokens.brandPrimary : null,
-                              fontWeight: _selectedCreditProgramFilter == 'Consolidated Total' ? FontWeight.w800 : null,
+                              color: _selectedCreditProgramFilter ==
+                                      'Consolidated Total'
+                                  ? tokens.brandPrimary
+                                  : null,
+                              fontWeight: _selectedCreditProgramFilter ==
+                                      'Consolidated Total'
+                                  ? FontWeight.w800
+                                  : null,
                             ),
                           ),
                         ),
                       ],
                       rows: cs.rows
-                          .where((r) => !r.section.toLowerCase().contains('overdue') && (!r.item.toLowerCase().contains('overdue') || r.item.toLowerCase().contains('recovered')))
+                          .where((r) =>
+                              !r.section.toLowerCase().contains('overdue') &&
+                              (!r.item.toLowerCase().contains('overdue') ||
+                                  r.item.toLowerCase().contains('recovered')))
                           .map((r) {
                         final cleanItem = _cleanCreditItemLabel(r.item);
                         final isCount = cleanItem.contains('Count');
-                        final isHighlight = cleanItem.contains('Total') || cleanItem.contains('Balance') || cleanItem.contains('Active');
-                        final rowColor = isHighlight ? tokens.surfaceSubtle : null;
+                        final isHighlight = cleanItem.contains('Total') ||
+                            cleanItem.contains('Balance') ||
+                            cleanItem.contains('Active');
+                        final rowColor =
+                            isHighlight ? tokens.surfaceSubtle : null;
                         final textStyle = isHighlight
-                            ? TextStyle(fontWeight: FontWeight.w700, fontSize: 11, color: tokens.textPrimary)
-                            : TextStyle(fontSize: 11, color: tokens.textSecondary);
+                            ? TextStyle(
+                                fontWeight: FontWeight.w700,
+                                fontSize: 11,
+                                color: tokens.textPrimary)
+                            : TextStyle(
+                                fontSize: 11, color: tokens.textSecondary);
                         final totStyle = isHighlight
-                            ? TextStyle(fontWeight: FontWeight.w800, color: tokens.brandPrimary, fontSize: 11)
-                            : TextStyle(fontWeight: FontWeight.w600, fontSize: 11, color: tokens.textPrimary);
+                            ? TextStyle(
+                                fontWeight: FontWeight.w800,
+                                color: tokens.brandPrimary,
+                                fontSize: 11)
+                            : TextStyle(
+                                fontWeight: FontWeight.w600,
+                                fontSize: 11,
+                                color: tokens.textPrimary);
 
-                        final isMonthlySel = _selectedCreditProgramFilter == 'Monthly';
-                        final isWeeklySel = _selectedCreditProgramFilter == 'Weekly';
-                        final isDailySel = _selectedCreditProgramFilter == 'Daily';
-                        final isTotalSel = _selectedCreditProgramFilter == 'Consolidated Total';
+                        final isMonthlySel =
+                            _selectedCreditProgramFilter == 'Monthly';
+                        final isWeeklySel =
+                            _selectedCreditProgramFilter == 'Weekly';
+                        final isDailySel =
+                            _selectedCreditProgramFilter == 'Daily';
+                        final isTotalSel = _selectedCreditProgramFilter ==
+                            'Consolidated Total';
 
                         TextStyle colStyle(bool isSelected, TextStyle base) {
                           if (isSelected) {
@@ -2361,21 +3269,35 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                           return base;
                         }
 
-                        String formatVal(double v) => isCount ? '${v.toInt()}' : (v > 0 ? _formatNgn(v) : '-');
+                        String formatVal(double v) => isCount
+                            ? '${v.toInt()}'
+                            : (v > 0 ? _formatNgn(v) : '-');
 
                         var sectionName = r.section;
-                        if (sectionName.startsWith('5. Balance')) sectionName = '4. Balance (Portfolio)';
-                        if (sectionName.startsWith('6. Full Repayment')) sectionName = '5. Full Repayment (Settled Loans)';
+                        if (sectionName.startsWith('5. Balance'))
+                          sectionName = '4. Balance (Portfolio)';
+                        if (sectionName.startsWith('6. Full Repayment'))
+                          sectionName = '5. Full Repayment (Settled Loans)';
 
                         return DataRow(
-                          color: rowColor != null ? MaterialStateProperty.all(rowColor) : null,
+                          color: rowColor != null
+                              ? MaterialStateProperty.all(rowColor)
+                              : null,
                           cells: [
-                            DataCell(Text(sectionName, style: TextStyle(fontWeight: FontWeight.w600, color: tokens.brandPrimary, fontSize: 11))),
+                            DataCell(Text(sectionName,
+                                style: TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                    color: tokens.brandPrimary,
+                                    fontSize: 11))),
                             DataCell(Text(cleanItem, style: textStyle)),
-                            DataCell(Text(formatVal(r.monthly), style: colStyle(isMonthlySel, textStyle))),
-                            DataCell(Text(formatVal(r.weekly), style: colStyle(isWeeklySel, textStyle))),
-                            DataCell(Text(formatVal(r.daily), style: colStyle(isDailySel, textStyle))),
-                            DataCell(Text(formatVal(r.total), style: colStyle(isTotalSel, totStyle))),
+                            DataCell(Text(formatVal(r.monthly),
+                                style: colStyle(isMonthlySel, textStyle))),
+                            DataCell(Text(formatVal(r.weekly),
+                                style: colStyle(isWeeklySel, textStyle))),
+                            DataCell(Text(formatVal(r.daily),
+                                style: colStyle(isDailySel, textStyle))),
+                            DataCell(Text(formatVal(r.total),
+                                style: colStyle(isTotalSel, totStyle))),
                           ],
                         );
                       }).toList(),
@@ -2395,9 +3317,12 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
     return FutureBuilder<Annex1ReportData>(
       future: _annex1Future,
       builder: (context, snapshot) {
-        if (_annex1Future == null || snapshot.connectionState == ConnectionState.waiting || !snapshot.hasData) {
+        if (_annex1Future == null ||
+            snapshot.connectionState == ConnectionState.waiting ||
+            !snapshot.hasData) {
           if (snapshot.hasError) {
-            return _buildErrorCard(snapshot.error!, onRetry: _refreshCurrentTabData);
+            return _buildErrorCard(snapshot.error!,
+                onRetry: _refreshCurrentTabData);
           }
           return const IcareTableSkeleton(rowCount: 6, hasFilterBar: false);
         }
@@ -2406,7 +3331,9 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
         return LayoutBuilder(
           builder: (context, constraints) {
             final isMobile = constraints.maxWidth < 600;
-            final cardW = isMobile ? (constraints.maxWidth - 8) / 2 : (constraints.maxWidth - 16) / 3;
+            final cardW = isMobile
+                ? (constraints.maxWidth - 8) / 2
+                : (constraints.maxWidth - 16) / 3;
 
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -2416,9 +3343,15 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                   spacing: 8,
                   runSpacing: 8,
                   children: [
-                    _buildMetricCard('Sundry Receipts', _formatNgn(data.totalSundryReceipts), width: cardW),
-                    _buildMetricCard('OpEx Paid (Annex-1)', _formatNgn(data.totalSundryPayments), width: cardW),
-                    _buildMetricCard('Branch & Period', '${data.branchName} (${data.monthLabel})', width: isMobile ? constraints.maxWidth : cardW),
+                    _buildMetricCard(
+                        'Sundry Receipts', _formatNgn(data.totalSundryReceipts),
+                        width: cardW),
+                    _buildMetricCard('OpEx Paid (Annex-1)',
+                        _formatNgn(data.totalSundryPayments),
+                        width: cardW),
+                    _buildMetricCard('Branch & Period',
+                        '${data.branchName} (${data.monthLabel})',
+                        width: isMobile ? constraints.maxWidth : cardW),
                   ],
                 ),
                 const SizedBox(height: 16),
@@ -2431,7 +3364,13 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                     color: tokens.surface,
                     borderRadius: BorderRadius.circular(10),
                     border: Border.all(color: tokens.borderSubtle),
-                    boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: tokens.isDark ? 0.16 : 0.025), blurRadius: 4, offset: const Offset(0, 1))],
+                    boxShadow: [
+                      BoxShadow(
+                          color: Colors.black
+                              .withValues(alpha: tokens.isDark ? 0.16 : 0.025),
+                          blurRadius: 4,
+                          offset: const Offset(0, 1))
+                    ],
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -2442,12 +3381,16 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                           Expanded(
                             child: Row(
                               children: [
-                                Icon(Icons.arrow_downward, color: tokens.successText, size: 18),
+                                Icon(Icons.arrow_downward,
+                                    color: tokens.successText, size: 18),
                                 const SizedBox(width: 8),
                                 Expanded(
                                   child: Text(
                                     'Section A: Sundry Inflows / Auxiliary Receipts',
-                                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: tokens.textPrimary),
+                                    style: TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w700,
+                                        color: tokens.textPrimary),
                                     overflow: TextOverflow.ellipsis,
                                   ),
                                 ),
@@ -2457,22 +3400,41 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                           const SizedBox(width: 8),
                           Text(
                             _formatNgn(data.totalSundryReceipts),
-                            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: tokens.successText, fontFeatures: const [FontFeature.tabularFigures()]),
+                            style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w800,
+                                color: tokens.successText,
+                                fontFeatures: const [
+                                  FontFeature.tabularFigures()
+                                ]),
                           ),
                         ],
                       ),
                       const Divider(height: 20),
                       ...data.sundryReceipts.map((r) => Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 4.0),
-                        child: Row(
-                          children: [
-                            Icon(Icons.subdirectory_arrow_right, size: 14, color: tokens.textMuted),
-                            const SizedBox(width: 8),
-                            Expanded(child: Text(r.name, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: tokens.textSecondary))),
-                            Text(_formatNgn(r.amount), style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: tokens.textPrimary, fontFeatures: const [FontFeature.tabularFigures()])),
-                          ],
-                        ),
-                      )),
+                            padding: const EdgeInsets.symmetric(vertical: 4.0),
+                            child: Row(
+                              children: [
+                                Icon(Icons.subdirectory_arrow_right,
+                                    size: 14, color: tokens.textMuted),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                    child: Text(r.name,
+                                        style: TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w500,
+                                            color: tokens.textSecondary))),
+                                Text(_formatNgn(r.amount),
+                                    style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w700,
+                                        color: tokens.textPrimary,
+                                        fontFeatures: const [
+                                          FontFeature.tabularFigures()
+                                        ])),
+                              ],
+                            ),
+                          )),
                     ],
                   ),
                 ),
@@ -2486,7 +3448,13 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                       color: tokens.surface,
                       borderRadius: BorderRadius.circular(10),
                       border: Border.all(color: tokens.borderSubtle),
-                      boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: tokens.isDark ? 0.16 : 0.025), blurRadius: 4, offset: const Offset(0, 1))],
+                      boxShadow: [
+                        BoxShadow(
+                            color: Colors.black.withValues(
+                                alpha: tokens.isDark ? 0.16 : 0.025),
+                            blurRadius: 4,
+                            offset: const Offset(0, 1))
+                      ],
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -2497,12 +3465,16 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                             Expanded(
                               child: Row(
                                 children: [
-                                  Icon(Icons.folder_open_outlined, size: 16, color: tokens.infoText),
+                                  Icon(Icons.folder_open_outlined,
+                                      size: 16, color: tokens.infoText),
                                   const SizedBox(width: 8),
                                   Expanded(
                                     child: Text(
                                       g.categoryName,
-                                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: tokens.textPrimary),
+                                      style: TextStyle(
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w700,
+                                          color: tokens.textPrimary),
                                       overflow: TextOverflow.ellipsis,
                                     ),
                                   ),
@@ -2512,22 +3484,41 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                             const SizedBox(width: 8),
                             Text(
                               _formatNgn(g.subtotal),
-                              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: tokens.infoText, fontFeatures: const [FontFeature.tabularFigures()]),
+                              style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w800,
+                                  color: tokens.infoText,
+                                  fontFeatures: const [
+                                    FontFeature.tabularFigures()
+                                  ]),
                             ),
                           ],
                         ),
                         const Divider(height: 16),
                         ...g.items.map((item) => Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 3.0),
-                          child: Row(
-                            children: [
-                              Icon(Icons.remove, size: 12, color: tokens.textLight),
-                              const SizedBox(width: 8),
-                              Expanded(child: Text(item.name, style: TextStyle(fontSize: 12, color: tokens.textSecondary))),
-                              Text(_formatNgn(item.amount), style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tokens.textPrimary, fontFeatures: const [FontFeature.tabularFigures()])),
-                            ],
-                          ),
-                        )),
+                              padding:
+                                  const EdgeInsets.symmetric(vertical: 3.0),
+                              child: Row(
+                                children: [
+                                  Icon(Icons.remove,
+                                      size: 12, color: tokens.textLight),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                      child: Text(item.name,
+                                          style: TextStyle(
+                                              fontSize: 12,
+                                              color: tokens.textSecondary))),
+                                  Text(_formatNgn(item.amount),
+                                      style: TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w600,
+                                          color: tokens.textPrimary,
+                                          fontFeatures: const [
+                                            FontFeature.tabularFigures()
+                                          ])),
+                                ],
+                              ),
+                            )),
                       ],
                     ),
                   );
@@ -2542,10 +3533,14 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
 
   String _cleanTbItemName(String item) {
     final cleaned = item
-        .replaceAll(RegExp(r'\s*\((?:Account|Acct)\s*\d+\)', caseSensitive: false), '')
+        .replaceAll(
+            RegExp(r'\s*\((?:Account|Acct)\s*\d+\)', caseSensitive: false), '')
         .replaceAll(RegExp(r'\s*Account\s*\d+', caseSensitive: false), '')
         .replaceAll(RegExp(r'\s*\(\d{4}\)'), '')
-        .replaceAll(RegExp(r'\s*\((?:PC|PB|RA)\d+(?:/(?:PC|PB|RA)\d+)?\)', caseSensitive: false), '')
+        .replaceAll(
+            RegExp(r'\s*\((?:PC|PB|RA)\d+(?:/(?:PC|PB|RA)\d+)?\)',
+                caseSensitive: false),
+            '')
         .trim();
     if (cleaned.toLowerCase() == 'cash in hand') {
       return 'Vault Cash';
@@ -2557,7 +3552,8 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
     final s = section.toUpperCase();
     if (s.contains('ASSET')) return Icons.account_balance;
     if (s.contains('LIABILIT')) return Icons.receipt_long;
-    if (s.contains('CAPITAL') || s.contains('RESERVE')) return Icons.corporate_fare;
+    if (s.contains('CAPITAL') || s.contains('RESERVE'))
+      return Icons.corporate_fare;
     if (s.contains('INCOME')) return Icons.arrow_downward;
     if (s.contains('EXPENSE')) return Icons.arrow_upward;
     return Icons.folder_outlined;
@@ -2568,9 +3564,12 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
     return FutureBuilder<MonthlyExecutiveStatementsData>(
       future: _statementsFuture,
       builder: (context, snapshot) {
-        if (_statementsFuture == null || snapshot.connectionState == ConnectionState.waiting || !snapshot.hasData) {
+        if (_statementsFuture == null ||
+            snapshot.connectionState == ConnectionState.waiting ||
+            !snapshot.hasData) {
           if (snapshot.hasError) {
-            return _buildErrorCard(snapshot.error!, onRetry: _refreshCurrentTabData);
+            return _buildErrorCard(snapshot.error!,
+                onRetry: _refreshCurrentTabData);
           }
           return const IcareTableSkeleton(rowCount: 8, hasFilterBar: false);
         }
@@ -2584,18 +3583,22 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
         }
 
         final sectionNames = ['All Sections', ...groupedRows.keys];
-        final activeSections = (_selectedTbSectionFilter == 'All' || _selectedTbSectionFilter == 'All Sections')
+        final activeSections = (_selectedTbSectionFilter == 'All' ||
+                _selectedTbSectionFilter == 'All Sections')
             ? groupedRows
             : {
                 if (groupedRows.containsKey(_selectedTbSectionFilter))
-                  _selectedTbSectionFilter: groupedRows[_selectedTbSectionFilter]!
+                  _selectedTbSectionFilter:
+                      groupedRows[_selectedTbSectionFilter]!
               };
 
         return LayoutBuilder(
           builder: (context, constraints) {
             final isMobile = constraints.maxWidth < 600;
             final isExpanded = constraints.maxWidth >= 1024;
-            final cardW = isMobile ? (constraints.maxWidth - 8) / 2 : (constraints.maxWidth - 24) / 4;
+            final cardW = isMobile
+                ? (constraints.maxWidth - 8) / 2
+                : (constraints.maxWidth - 24) / 4;
 
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -2620,7 +3623,9 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                     _buildMetricCard(
                       'Equality Status',
                       tb.isBalanced ? 'Balanced' : 'Unbalanced',
-                      subtitle: tb.isBalanced ? 'Zero Variance (₦0.00)' : 'Diff: ${_formatNgn(tb.variance)}',
+                      subtitle: tb.isBalanced
+                          ? 'Zero Variance (₦0.00)'
+                          : 'Diff: ${_formatNgn(tb.variance)}',
                       isAccent: tb.isBalanced,
                       width: cardW,
                     ),
@@ -2651,20 +3656,26 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                                 selected: isSel,
                                 onSelected: (val) {
                                   if (val) {
-                                    setState(() => _selectedTbSectionFilter = sec);
+                                    setState(
+                                        () => _selectedTbSectionFilter = sec);
                                   }
                                 },
                                 selectedColor: tokens.brandPrimaryDark,
                                 labelStyle: TextStyle(
                                   fontSize: 12,
-                                  fontWeight: isSel ? FontWeight.w700 : FontWeight.w500,
-                                  color: isSel ? Colors.white : tokens.textSecondary,
+                                  fontWeight:
+                                      isSel ? FontWeight.w700 : FontWeight.w500,
+                                  color: isSel
+                                      ? Colors.white
+                                      : tokens.textSecondary,
                                 ),
                                 backgroundColor: tokens.surfaceHover,
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(16),
                                   side: BorderSide(
-                                    color: isSel ? tokens.brandPrimaryDark : tokens.borderSubtle,
+                                    color: isSel
+                                        ? tokens.brandPrimaryDark
+                                        : tokens.borderSubtle,
                                   ),
                                 ),
                               ),
@@ -2675,9 +3686,13 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                     ),
                     if (isMobile)
                       IconButton(
-                        tooltip: _showRawTableOnMobile ? 'Switch to Cards' : 'Switch to Table',
+                        tooltip: _showRawTableOnMobile
+                            ? 'Switch to Cards'
+                            : 'Switch to Table',
                         icon: Icon(
-                          _showRawTableOnMobile ? Icons.view_agenda_outlined : Icons.table_chart_outlined,
+                          _showRawTableOnMobile
+                              ? Icons.view_agenda_outlined
+                              : Icons.table_chart_outlined,
                           color: tokens.brandPrimary,
                         ),
                         onPressed: () {
@@ -2695,8 +3710,10 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                   ...activeSections.entries.map((entry) {
                     final secName = entry.key;
                     final rows = entry.value;
-                    final secDebits = rows.fold<double>(0.0, (sum, r) => sum + r.debit);
-                    final secCredits = rows.fold<double>(0.0, (sum, r) => sum + r.credit);
+                    final secDebits =
+                        rows.fold<double>(0.0, (sum, r) => sum + r.debit);
+                    final secCredits =
+                        rows.fold<double>(0.0, (sum, r) => sum + r.credit);
 
                     return Container(
                       margin: const EdgeInsets.only(bottom: 12),
@@ -2704,38 +3721,56 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                         color: tokens.surface,
                         borderRadius: BorderRadius.circular(10),
                         border: Border.all(color: tokens.borderSubtle),
-                        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: tokens.isDark ? 0.16 : 0.025), blurRadius: 4, offset: const Offset(0, 1))],
+                        boxShadow: [
+                          BoxShadow(
+                              color: Colors.black.withValues(
+                                  alpha: tokens.isDark ? 0.16 : 0.025),
+                              blurRadius: 4,
+                              offset: const Offset(0, 1))
+                        ],
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           // Section Header
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 14, vertical: 10),
                             decoration: BoxDecoration(
                               color: tokens.surfaceSubtle,
-                              borderRadius: const BorderRadius.vertical(top: Radius.circular(10)),
-                              border: Border(bottom: BorderSide(color: tokens.borderSubtle)),
+                              borderRadius: const BorderRadius.vertical(
+                                  top: Radius.circular(10)),
+                              border: Border(
+                                  bottom:
+                                      BorderSide(color: tokens.borderSubtle)),
                             ),
                             child: Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
                                 Row(
                                   children: [
-                                    Icon(_getSectionIcon(secName), size: 16, color: tokens.brandPrimary),
+                                    Icon(_getSectionIcon(secName),
+                                        size: 16, color: tokens.brandPrimary),
                                     const SizedBox(width: 8),
                                     Text(
                                       secName,
-                                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: tokens.textPrimary),
+                                      style: TextStyle(
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w800,
+                                          color: tokens.textPrimary),
                                     ),
                                   ],
                                 ),
                                 Text(
-                                  secDebits > 0 ? _formatNgn(secDebits) : _formatNgn(secCredits),
+                                  secDebits > 0
+                                      ? _formatNgn(secDebits)
+                                      : _formatNgn(secCredits),
                                   style: TextStyle(
                                     fontSize: 12,
                                     fontWeight: FontWeight.w800,
-                                    fontFeatures: const [FontFeature.tabularFigures()],
+                                    fontFeatures: const [
+                                      FontFeature.tabularFigures()
+                                    ],
                                     color: tokens.brandPrimary,
                                   ),
                                 ),
@@ -2749,24 +3784,30 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                             final hasCredit = r.credit > 0;
 
                             return Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 14, vertical: 9),
                               child: Row(
                                 crossAxisAlignment: CrossAxisAlignment.center,
                                 children: [
                                   Expanded(
                                     child: Text(
                                       cleanTitle,
-                                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tokens.textPrimary),
+                                      style: TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w600,
+                                          color: tokens.textPrimary),
                                     ),
                                   ),
                                   const SizedBox(width: 8),
                                   if (hasDebit)
                                     Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 8, vertical: 3),
                                       decoration: BoxDecoration(
                                         color: tokens.successBg,
                                         borderRadius: BorderRadius.circular(4),
-                                        border: Border.all(color: tokens.successBorder),
+                                        border: Border.all(
+                                            color: tokens.successBorder),
                                       ),
                                       child: Text(
                                         'Dr ${_formatNgn(r.debit)}',
@@ -2774,17 +3815,21 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                                           fontSize: 11,
                                           fontWeight: FontWeight.w700,
                                           color: tokens.successText,
-                                          fontFeatures: const [FontFeature.tabularFigures()],
+                                          fontFeatures: const [
+                                            FontFeature.tabularFigures()
+                                          ],
                                         ),
                                       ),
                                     ),
                                   if (hasCredit)
                                     Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 8, vertical: 3),
                                       decoration: BoxDecoration(
                                         color: tokens.infoBg,
                                         borderRadius: BorderRadius.circular(4),
-                                        border: Border.all(color: tokens.infoBorder),
+                                        border: Border.all(
+                                            color: tokens.infoBorder),
                                       ),
                                       child: Text(
                                         'Cr ${_formatNgn(r.credit)}',
@@ -2792,12 +3837,17 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                                           fontSize: 11,
                                           fontWeight: FontWeight.w700,
                                           color: tokens.infoText,
-                                          fontFeatures: const [FontFeature.tabularFigures()],
+                                          fontFeatures: const [
+                                            FontFeature.tabularFigures()
+                                          ],
                                         ),
                                       ),
                                     ),
                                   if (!hasDebit && !hasCredit)
-                                    Text('-', style: TextStyle(fontSize: 12, color: tokens.textLight)),
+                                    Text('-',
+                                        style: TextStyle(
+                                            fontSize: 12,
+                                            color: tokens.textLight)),
                                 ],
                               ),
                             );
@@ -2809,11 +3859,17 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                 ] else ...[
                   // Desktop / Tablet Structured Material 3 Table
                   _buildContainedTable(
-                    hint: 'Swipe horizontally to view full trial balance ledger accounts',
+                    hint:
+                        'Swipe horizontally to view full trial balance ledger accounts',
                     child: DataTable(
-                      headingRowColor: MaterialStateProperty.all(tokens.surfaceSubtle),
-                      headingTextStyle: TextStyle(fontWeight: FontWeight.w700, color: tokens.textPrimary, fontSize: 12),
-                      dataTextStyle: TextStyle(fontSize: 12, color: tokens.textSecondary),
+                      headingRowColor:
+                          MaterialStateProperty.all(tokens.surfaceSubtle),
+                      headingTextStyle: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          color: tokens.textPrimary,
+                          fontSize: 12),
+                      dataTextStyle:
+                          TextStyle(fontSize: 12, color: tokens.textSecondary),
                       columnSpacing: isExpanded ? 32 : 18,
                       columns: const [
                         DataColumn(label: Text('Section')),
@@ -2828,30 +3884,42 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                               cells: [
                                 DataCell(
                                   Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 7, vertical: 2),
                                     decoration: BoxDecoration(
                                       color: tokens.surfaceHover,
                                       borderRadius: BorderRadius.circular(4),
                                     ),
                                     child: Text(
                                       r.section,
-                                      style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: tokens.brandPrimary),
+                                      style: TextStyle(
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.w700,
+                                          color: tokens.brandPrimary),
                                     ),
                                   ),
                                 ),
                                 DataCell(
                                   Text(
                                     _cleanTbItemName(r.item),
-                                    style: TextStyle(fontWeight: FontWeight.w600, color: tokens.textPrimary),
+                                    style: TextStyle(
+                                        fontWeight: FontWeight.w600,
+                                        color: tokens.textPrimary),
                                   ),
                                 ),
                                 DataCell(
                                   Text(
                                     r.debit > 0 ? _formatNgn(r.debit) : '-',
                                     style: TextStyle(
-                                      fontWeight: r.debit > 0 ? FontWeight.w700 : FontWeight.normal,
-                                      color: r.debit > 0 ? tokens.successText : tokens.textLight,
-                                      fontFeatures: const [FontFeature.tabularFigures()],
+                                      fontWeight: r.debit > 0
+                                          ? FontWeight.w700
+                                          : FontWeight.normal,
+                                      color: r.debit > 0
+                                          ? tokens.successText
+                                          : tokens.textLight,
+                                      fontFeatures: const [
+                                        FontFeature.tabularFigures()
+                                      ],
                                     ),
                                   ),
                                 ),
@@ -2859,9 +3927,15 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                                   Text(
                                     r.credit > 0 ? _formatNgn(r.credit) : '-',
                                     style: TextStyle(
-                                      fontWeight: r.credit > 0 ? FontWeight.w700 : FontWeight.normal,
-                                      color: r.credit > 0 ? tokens.infoText : tokens.textLight,
-                                      fontFeatures: const [FontFeature.tabularFigures()],
+                                      fontWeight: r.credit > 0
+                                          ? FontWeight.w700
+                                          : FontWeight.normal,
+                                      color: r.credit > 0
+                                          ? tokens.infoText
+                                          : tokens.textLight,
+                                      fontFeatures: const [
+                                        FontFeature.tabularFigures()
+                                      ],
                                     ),
                                   ),
                                 ),
@@ -2876,17 +3950,26 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                             DataCell(
                               Text(
                                 'TOTALS',
-                                style: TextStyle(fontWeight: FontWeight.w900, color: tokens.successText, fontSize: 12),
+                                style: TextStyle(
+                                    fontWeight: FontWeight.w900,
+                                    color: tokens.successText,
+                                    fontSize: 12),
                               ),
                             ),
                             DataCell(
                               Row(
                                 children: [
-                                  Icon(Icons.verified, size: 14, color: tokens.successText),
+                                  Icon(Icons.verified,
+                                      size: 14, color: tokens.successText),
                                   const SizedBox(width: 6),
                                   Text(
-                                    tb.isBalanced ? 'Trial Balance Balanced' : 'Unbalanced Variance',
-                                    style: TextStyle(fontWeight: FontWeight.w800, color: tokens.successText, fontSize: 12),
+                                    tb.isBalanced
+                                        ? 'Trial Balance Balanced'
+                                        : 'Unbalanced Variance',
+                                    style: TextStyle(
+                                        fontWeight: FontWeight.w800,
+                                        color: tokens.successText,
+                                        fontSize: 12),
                                   ),
                                 ],
                               ),
@@ -2898,7 +3981,9 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                                   fontWeight: FontWeight.w900,
                                   color: tokens.successText,
                                   fontSize: 12,
-                                  fontFeatures: const [FontFeature.tabularFigures()],
+                                  fontFeatures: const [
+                                    FontFeature.tabularFigures()
+                                  ],
                                 ),
                               ),
                             ),
@@ -2909,7 +3994,9 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                                   fontWeight: FontWeight.w900,
                                   color: tokens.successText,
                                   fontSize: 12,
-                                  fontFeatures: const [FontFeature.tabularFigures()],
+                                  fontFeatures: const [
+                                    FontFeature.tabularFigures()
+                                  ],
                                 ),
                               ),
                             ),
@@ -2932,9 +4019,12 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
     return FutureBuilder<MonthlyExecutiveStatementsData>(
       future: _statementsFuture,
       builder: (context, snapshot) {
-        if (_statementsFuture == null || snapshot.connectionState == ConnectionState.waiting || !snapshot.hasData) {
+        if (_statementsFuture == null ||
+            snapshot.connectionState == ConnectionState.waiting ||
+            !snapshot.hasData) {
           if (snapshot.hasError) {
-            return _buildErrorCard(snapshot.error!, onRetry: _refreshCurrentTabData);
+            return _buildErrorCard(snapshot.error!,
+                onRetry: _refreshCurrentTabData);
           }
           return const IcareTableSkeleton(rowCount: 8, hasFilterBar: false);
         }
@@ -2973,7 +4063,9 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                     _buildMetricCard(
                       'Net Cash Float',
                       _formatNgn(rp.variance),
-                      subtitle: rp.variance == 0.0 ? 'Balanced Reconciled Float' : 'Float Variance',
+                      subtitle: rp.variance == 0.0
+                          ? 'Balanced Reconciled Float'
+                          : 'Float Variance',
                       isAccent: rp.variance == 0.0,
                       width: isMobile ? constraints.maxWidth : cardW,
                     ),
@@ -3029,9 +4121,11 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                       children: [
                         _buildRpSegmentBtn('All Movements', 0, Icons.swap_vert),
                         const SizedBox(width: 4),
-                        _buildRpSegmentBtn('Inflows (Receipts)', 1, Icons.arrow_downward),
+                        _buildRpSegmentBtn(
+                            'Inflows (Receipts)', 1, Icons.arrow_downward),
                         const SizedBox(width: 4),
-                        _buildRpSegmentBtn('Outflows (Payments)', 2, Icons.arrow_upward),
+                        _buildRpSegmentBtn(
+                            'Outflows (Payments)', 2, Icons.arrow_upward),
                       ],
                     ),
                   ),
@@ -3092,13 +4186,21 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
             color: isSelected ? tokens.surface : Colors.transparent,
             borderRadius: BorderRadius.circular(6),
             boxShadow: isSelected
-                ? [BoxShadow(color: Colors.black.withValues(alpha: tokens.isDark ? 0.2 : 0.06), blurRadius: 4, offset: const Offset(0, 1))]
+                ? [
+                    BoxShadow(
+                        color: Colors.black
+                            .withValues(alpha: tokens.isDark ? 0.2 : 0.06),
+                        blurRadius: 4,
+                        offset: const Offset(0, 1))
+                  ]
                 : null,
           ),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(icon, size: 13, color: isSelected ? tokens.brandPrimary : tokens.textMuted),
+              Icon(icon,
+                  size: 13,
+                  color: isSelected ? tokens.brandPrimary : tokens.textMuted),
               const SizedBox(width: 4),
               Flexible(
                 child: Text(
@@ -3134,7 +4236,13 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
         color: tokens.surface,
         borderRadius: BorderRadius.circular(10),
         border: Border.all(color: tokens.borderSubtle),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: tokens.isDark ? 0.16 : 0.025), blurRadius: 4, offset: const Offset(0, 1))],
+        boxShadow: [
+          BoxShadow(
+              color:
+                  Colors.black.withValues(alpha: tokens.isDark ? 0.16 : 0.025),
+              blurRadius: 4,
+              offset: const Offset(0, 1))
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -3144,7 +4252,8 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             decoration: BoxDecoration(
               color: headerBg,
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(10)),
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(10)),
               border: Border(bottom: BorderSide(color: borderColor)),
             ),
             child: Row(
@@ -3156,7 +4265,10 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                     const SizedBox(width: 8),
                     Text(
                       title,
-                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: accentColor),
+                      style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w800,
+                          color: accentColor),
                     ),
                   ],
                 ),
@@ -3188,11 +4300,13 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
               itemCount: items.length,
-              separatorBuilder: (_, __) => Divider(height: 1, color: tokens.borderSubtle),
+              separatorBuilder: (_, __) =>
+                  Divider(height: 1, color: tokens.borderSubtle),
               itemBuilder: (context, index) {
                 final it = items[index];
                 return Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
@@ -3202,13 +4316,18 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                           children: [
                             Text(
                               it.item,
-                              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tokens.textPrimary),
+                              style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: tokens.textPrimary),
                             ),
-                            if (it.subDetail != null && it.subDetail!.isNotEmpty) ...[
+                            if (it.subDetail != null &&
+                                it.subDetail!.isNotEmpty) ...[
                               const SizedBox(height: 2),
                               Text(
                                 it.subDetail!,
-                                style: TextStyle(fontSize: 11, color: tokens.textMuted),
+                                style: TextStyle(
+                                    fontSize: 11, color: tokens.textMuted),
                               ),
                             ],
                           ],
@@ -3220,7 +4339,8 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w800,
-                          color: isReceipt ? tokens.successText : tokens.infoText,
+                          color:
+                              isReceipt ? tokens.successText : tokens.infoText,
                           fontFeatures: const [FontFeature.tabularFigures()],
                         ),
                       ),
@@ -3234,7 +4354,8 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             decoration: BoxDecoration(
               color: tokens.surfaceSubtle,
-              borderRadius: const BorderRadius.vertical(bottom: Radius.circular(10)),
+              borderRadius:
+                  const BorderRadius.vertical(bottom: Radius.circular(10)),
               border: Border(top: BorderSide(color: tokens.borderSubtle)),
             ),
             child: Row(
@@ -3242,7 +4363,10 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
               children: [
                 Text(
                   'Subtotal',
-                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: tokens.textSecondary),
+                  style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: tokens.textSecondary),
                 ),
                 Text(
                   _formatNgn(totalAmount),
@@ -3302,29 +4426,46 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
     final role = user?.role.trim() ?? '';
     final isAm = role == 'Area Manager' || role == 'AM';
     final isBm = role == 'Branch Manager' || role == 'BM';
-    final isDirector = role == 'Director' || role == 'DIRECTOR' || role == 'Executive Director';
+    final isDirector = role == 'Director' ||
+        role == 'DIRECTOR' ||
+        role == 'Executive Director';
 
     return FutureBuilder<MonthlyReconciliationData>(
       future: _reconciliationFuture,
       builder: (context, snapshot) {
-        if (_reconciliationFuture == null || snapshot.connectionState == ConnectionState.waiting || !snapshot.hasData) {
+        if (_reconciliationFuture == null ||
+            snapshot.connectionState == ConnectionState.waiting ||
+            !snapshot.hasData) {
           if (snapshot.hasError) {
-            return _buildErrorCard(snapshot.error!, onRetry: _refreshCurrentTabData);
+            return _buildErrorCard(snapshot.error!,
+                onRetry: _refreshCurrentTabData);
           }
           return const IcareTableSkeleton(rowCount: 6, hasFilterBar: false);
         }
         final data = snapshot.data!;
 
-        final effectiveBranchName = (_selectedBranchName != null && !_selectedBranchName!.startsWith('All'))
+        final effectiveBranchName = (_selectedBranchName != null &&
+                !_selectedBranchName!.startsWith('All'))
             ? _selectedBranchName
-            : (_cachedMeta?.branches.isNotEmpty == true ? _cachedMeta!.branches.first.name : _selectedBranchName);
+            : (_cachedMeta?.branches.isNotEmpty == true
+                ? _cachedMeta!.branches.first.name
+                : _selectedBranchName);
 
         return FutureBuilder<MonthlyWorkflowStatusModel>(
           future: _workflowStatusFuture,
           builder: (context, wfSnapshot) {
             final wfStatus = wfSnapshot.data?.status ?? 'DRAFT';
-            final isWorkflowLockedForBm = ['BM_SUBMITTED', 'AM_VERIFIED', 'AREA_SEALED', 'ADMIN_LOCKED'].contains(wfStatus);
-            final isReadOnly = isAm || isDirector || wfStatus == 'ADMIN_LOCKED' || (isBm && isWorkflowLockedForBm);
+            final isWorkflowLockedForBm = [
+              'BM_SUBMITTED',
+              'AM_VERIFIED',
+              'AREA_SEALED',
+              'ADMIN_LOCKED'
+            ].contains(wfStatus);
+            final isReadOnly = _isExecutiveAdminRole(role) ||
+                isAm ||
+                isDirector ||
+                wfStatus == 'ADMIN_LOCKED' ||
+                (isBm && isWorkflowLockedForBm);
 
             return BankReconciliationFormWidget(
               initialData: data,
@@ -3347,7 +4488,9 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
   // ---------------------------------------------------------------------------
   Widget _buildAreaComparisonTab({bool isAdmin = false, bool isAm = false}) {
     final tokens = IcareSurfaceTokens.of(context);
-    final products = _cachedMeta != null ? ['All Products', ..._cachedMeta!.products] : ['All Products'];
+    final products = _cachedMeta != null
+        ? ['All Products', ..._cachedMeta!.products]
+        : ['All Products'];
 
     final filterBar = Container(
       width: double.infinity,
@@ -3368,7 +4511,11 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
             children: [
               Icon(Icons.filter_list, size: 15, color: tokens.brandPrimary),
               const SizedBox(width: 6),
-              Text('Matrix Filters:', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: tokens.textSecondary)),
+              Text('Matrix Filters:',
+                  style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: tokens.textSecondary)),
             ],
           ),
           Container(
@@ -3380,13 +4527,21 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
             ),
             child: DropdownButtonHideUnderline(
               child: DropdownButton<String>(
-                value: products.contains(_selectedProductName) ? _selectedProductName : products.first,
+                value: products.contains(_selectedProductName)
+                    ? _selectedProductName
+                    : products.first,
                 isDense: true,
                 dropdownColor: tokens.surfaceElevated,
-                items: products.map((p) => DropdownMenuItem(
-                  value: p,
-                  child: Text(p, style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: tokens.textPrimary)),
-                )).toList(),
+                items: products
+                    .map((p) => DropdownMenuItem(
+                          value: p,
+                          child: Text(p,
+                              style: TextStyle(
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.w600,
+                                  color: tokens.textPrimary)),
+                        ))
+                    .toList(),
                 onChanged: (val) {
                   if (val != null) {
                     setState(() => _selectedProductName = val);
@@ -3408,10 +4563,16 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                 value: _dateMode,
                 isDense: true,
                 dropdownColor: tokens.surfaceElevated,
-                items: ['As of Date', 'Date Range', 'All Time'].map((m) => DropdownMenuItem(
-                  value: m,
-                  child: Text(m, style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: tokens.textPrimary)),
-                )).toList(),
+                items: ['As of Date', 'Date Range', 'All Time']
+                    .map((m) => DropdownMenuItem(
+                          value: m,
+                          child: Text(m,
+                              style: TextStyle(
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.w600,
+                                  color: tokens.textPrimary)),
+                        ))
+                    .toList(),
                 onChanged: (val) {
                   if (val != null) {
                     setState(() => _dateMode = val);
@@ -3436,7 +4597,8 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                 }
               },
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                 decoration: BoxDecoration(
                   color: tokens.surfaceSubtle,
                   borderRadius: BorderRadius.circular(6),
@@ -3445,9 +4607,14 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.calendar_today, size: 13, color: tokens.textMuted),
+                    Icon(Icons.calendar_today,
+                        size: 13, color: tokens.textMuted),
                     const SizedBox(width: 6),
-                    Text('As of: ${_dateFormat.format(_asOfDate)}', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: tokens.textPrimary)),
+                    Text('As of: ${_dateFormat.format(_asOfDate)}',
+                        style: TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w600,
+                            color: tokens.textPrimary)),
                   ],
                 ),
               ),
@@ -3467,7 +4634,8 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                 }
               },
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                 decoration: BoxDecoration(
                   color: tokens.surfaceSubtle,
                   borderRadius: BorderRadius.circular(6),
@@ -3476,9 +4644,14 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.calendar_today, size: 13, color: tokens.textMuted),
+                    Icon(Icons.calendar_today,
+                        size: 13, color: tokens.textMuted),
                     const SizedBox(width: 6),
-                    Text('From: ${_dateFormat.format(_startDate)}', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: tokens.textPrimary)),
+                    Text('From: ${_dateFormat.format(_startDate)}',
+                        style: TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w600,
+                            color: tokens.textPrimary)),
                   ],
                 ),
               ),
@@ -3497,7 +4670,8 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                 }
               },
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                 decoration: BoxDecoration(
                   color: tokens.surfaceSubtle,
                   borderRadius: BorderRadius.circular(6),
@@ -3506,9 +4680,14 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.calendar_today, size: 13, color: tokens.textMuted),
+                    Icon(Icons.calendar_today,
+                        size: 13, color: tokens.textMuted),
                     const SizedBox(width: 6),
-                    Text('To: ${_dateFormat.format(_endDate)}', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: tokens.textPrimary)),
+                    Text('To: ${_dateFormat.format(_endDate)}',
+                        style: TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w600,
+                            color: tokens.textPrimary)),
                   ],
                 ),
               ),
@@ -3525,15 +4704,19 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
         FutureBuilder<AreaComparisonData>(
           future: _areaFuture,
           builder: (context, snapshot) {
-            if (_areaFuture == null || snapshot.connectionState == ConnectionState.waiting || !snapshot.hasData) {
+            if (_areaFuture == null ||
+                snapshot.connectionState == ConnectionState.waiting ||
+                !snapshot.hasData) {
               if (snapshot.hasError) {
-                return _buildErrorCard(snapshot.error!, onRetry: _refreshCurrentTabData);
+                return _buildErrorCard(snapshot.error!,
+                    onRetry: _refreshCurrentTabData);
               }
               return const IcareTableSkeleton(rowCount: 8, hasFilterBar: false);
             }
             final data = snapshot.data!;
             if (data.rows.isEmpty) {
-              return _buildEmptyCard('No branch comparison data available for assigned area.');
+              return _buildEmptyCard(
+                  'No branch comparison data available for assigned area.');
             }
 
             return Container(
@@ -3556,13 +4739,21 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('Regional Supervisory Area Performance Matrix', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: tokens.textPrimary)),
+                          Text('Regional Supervisory Area Performance Matrix',
+                              style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w800,
+                                  color: tokens.textPrimary)),
                           const SizedBox(height: 4),
-                          Text('Side-by-side comparative analysis of all branches under your regional supervision.', style: TextStyle(fontSize: 12, color: tokens.textMuted)),
+                          Text(
+                              'Side-by-side comparative analysis of all branches under your regional supervision.',
+                              style: TextStyle(
+                                  fontSize: 12, color: tokens.textMuted)),
                         ],
                       ),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 5),
                         decoration: BoxDecoration(
                           color: tokens.successBg,
                           borderRadius: BorderRadius.circular(6),
@@ -3571,11 +4762,15 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(Icons.domain, size: 14, color: tokens.successText),
+                            Icon(Icons.domain,
+                                size: 14, color: tokens.successText),
                             const SizedBox(width: 6),
                             Text(
                               '${data.totalBranches} Branches Supervised',
-                              style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: tokens.successText),
+                              style: TextStyle(
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.w800,
+                                  color: tokens.successText),
                             ),
                           ],
                         ),
@@ -3595,14 +4790,30 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                         spacing: isMobile ? 10 : 12,
                         runSpacing: isMobile ? 10 : 12,
                         children: [
-                          _buildMetricCard('Supervised Branches', '${data.totalBranches}', width: cardW),
-                          _buildMetricCard('People on Loan', '${_intFormat.format(data.totalPeopleOnLoan)} Clients', width: cardW),
-                          _buildMetricCard('Active Savers', '${_intFormat.format(data.totalActiveSavers)} Savers', width: cardW),
-                          _buildMetricCard('Active Loans Count', '${_intFormat.format(data.totalActiveLoans)} Loans', width: cardW),
-                          _buildMetricCard('Regional Collections', _formatNgn(data.totalAreaCollections), width: cardW),
-                          _buildMetricCard('Expected Collections', _formatNgn(data.totalAreaExpected), width: cardW),
-                          _buildMetricCard('Area Efficiency', '${data.overallEfficiency.toStringAsFixed(1)}%', width: cardW),
-                          _buildMetricCard('Area Savings Portfolio', _formatNgn(data.totalAreaSavings), width: cardW),
+                          _buildMetricCard(
+                              'Supervised Branches', '${data.totalBranches}',
+                              width: cardW),
+                          _buildMetricCard('People on Loan',
+                              '${_intFormat.format(data.totalPeopleOnLoan)} Clients',
+                              width: cardW),
+                          _buildMetricCard('Active Savers',
+                              '${_intFormat.format(data.totalActiveSavers)} Savers',
+                              width: cardW),
+                          _buildMetricCard('Active Loans Count',
+                              '${_intFormat.format(data.totalActiveLoans)} Loans',
+                              width: cardW),
+                          _buildMetricCard('Regional Collections',
+                              _formatNgn(data.totalAreaCollections),
+                              width: cardW),
+                          _buildMetricCard('Expected Collections',
+                              _formatNgn(data.totalAreaExpected),
+                              width: cardW),
+                          _buildMetricCard('Area Efficiency',
+                              '${data.overallEfficiency.toStringAsFixed(1)}%',
+                              width: cardW),
+                          _buildMetricCard('Area Savings Portfolio',
+                              _formatNgn(data.totalAreaSavings),
+                              width: cardW),
                         ],
                       );
                     },
@@ -3632,74 +4843,151 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                               Expanded(
                                 child: Text(
                                   'Branch-by-Branch Comparative Matrix',
-                                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: tokens.textPrimary),
+                                  style: TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w700,
+                                      color: tokens.textPrimary),
                                   overflow: TextOverflow.ellipsis,
                                 ),
                               ),
                               if (isMobile)
                                 TextButton.icon(
-                                  icon: Icon(_showRawTableOnMobile ? Icons.view_agenda_outlined : Icons.table_chart_outlined, size: 14, color: tokens.brandPrimary),
+                                  icon: Icon(
+                                      _showRawTableOnMobile
+                                          ? Icons.view_agenda_outlined
+                                          : Icons.table_chart_outlined,
+                                      size: 14,
+                                      color: tokens.brandPrimary),
                                   label: Text(
-                                    _showRawTableOnMobile ? 'Show Cards' : 'Show 11-Col Table',
-                                    style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: tokens.brandPrimary),
+                                    _showRawTableOnMobile
+                                        ? 'Show Cards'
+                                        : 'Show 11-Col Table',
+                                    style: TextStyle(
+                                        fontSize: 11.5,
+                                        fontWeight: FontWeight.w700,
+                                        color: tokens.brandPrimary),
                                   ),
-                                  onPressed: () => setState(() => _showRawTableOnMobile = !_showRawTableOnMobile),
+                                  onPressed: () => setState(() =>
+                                      _showRawTableOnMobile =
+                                          !_showRawTableOnMobile),
                                 ),
                             ],
                           ),
                           const SizedBox(height: 12),
-
                           if (isMobile && !_showRawTableOnMobile)
                             Column(
-                              children: data.rows.map((r) => _buildMobileBranchHealthCard(r, isAm)).toList(),
+                              children: data.rows
+                                  .map((r) =>
+                                      _buildMobileBranchHealthCard(r, isAm))
+                                  .toList(),
                             )
                           else
                             _buildContainedTable(
-                              hint: 'Swipe horizontally to view all branch metrics',
+                              hint:
+                                  'Swipe horizontally to view all branch metrics',
                               child: DataTable(
-                                headingRowColor: MaterialStateProperty.all(tokens.surfaceSubtle),
-                                headingTextStyle: TextStyle(fontWeight: FontWeight.bold, color: tokens.textPrimary),
-                                dataTextStyle: TextStyle(color: tokens.textSecondary),
+                                headingRowColor: MaterialStateProperty.all(
+                                    tokens.surfaceSubtle),
+                                headingTextStyle: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    color: tokens.textPrimary),
+                                dataTextStyle:
+                                    TextStyle(color: tokens.textSecondary),
                                 columns: const [
-                                  DataColumn(label: Text('Branch', style: TextStyle(fontWeight: FontWeight.bold))),
-                                  DataColumn(label: Text('People on Loan', style: TextStyle(fontWeight: FontWeight.bold))),
-                                  DataColumn(label: Text('Active Loans', style: TextStyle(fontWeight: FontWeight.bold))),
-                                  DataColumn(label: Text('Active Savers', style: TextStyle(fontWeight: FontWeight.bold))),
-                                  DataColumn(label: Text('Total Savings', style: TextStyle(fontWeight: FontWeight.bold))),
-                                  DataColumn(label: Text('Collections', style: TextStyle(fontWeight: FontWeight.bold))),
-                                  DataColumn(label: Text('Expected', style: TextStyle(fontWeight: FontWeight.bold))),
-                                  DataColumn(label: Text('Efficiency', style: TextStyle(fontWeight: FontWeight.bold))),
-                                  DataColumn(label: Text('Outstanding', style: TextStyle(fontWeight: FontWeight.bold))),
-                                  DataColumn(label: Text('PAR %', style: TextStyle(fontWeight: FontWeight.bold))),
-                                  DataColumn(label: Text('Status', style: TextStyle(fontWeight: FontWeight.bold))),
-                                  DataColumn(label: Text('Action', style: TextStyle(fontWeight: FontWeight.bold))),
+                                  DataColumn(
+                                      label: Text('Branch',
+                                          style: TextStyle(
+                                              fontWeight: FontWeight.bold))),
+                                  DataColumn(
+                                      label: Text('People on Loan',
+                                          style: TextStyle(
+                                              fontWeight: FontWeight.bold))),
+                                  DataColumn(
+                                      label: Text('Active Loans',
+                                          style: TextStyle(
+                                              fontWeight: FontWeight.bold))),
+                                  DataColumn(
+                                      label: Text('Active Savers',
+                                          style: TextStyle(
+                                              fontWeight: FontWeight.bold))),
+                                  DataColumn(
+                                      label: Text('Total Savings',
+                                          style: TextStyle(
+                                              fontWeight: FontWeight.bold))),
+                                  DataColumn(
+                                      label: Text('Collections',
+                                          style: TextStyle(
+                                              fontWeight: FontWeight.bold))),
+                                  DataColumn(
+                                      label: Text('Expected',
+                                          style: TextStyle(
+                                              fontWeight: FontWeight.bold))),
+                                  DataColumn(
+                                      label: Text('Efficiency',
+                                          style: TextStyle(
+                                              fontWeight: FontWeight.bold))),
+                                  DataColumn(
+                                      label: Text('Outstanding',
+                                          style: TextStyle(
+                                              fontWeight: FontWeight.bold))),
+                                  DataColumn(
+                                      label: Text('PAR %',
+                                          style: TextStyle(
+                                              fontWeight: FontWeight.bold))),
+                                  DataColumn(
+                                      label: Text('Status',
+                                          style: TextStyle(
+                                              fontWeight: FontWeight.bold))),
+                                  DataColumn(
+                                      label: Text('Action',
+                                          style: TextStyle(
+                                              fontWeight: FontWeight.bold))),
                                 ],
                                 rows: data.rows.map((r) {
                                   final isHealthy = r.status == 'HEALTHY';
                                   return DataRow(cells: [
-                                    DataCell(Text(r.branch, style: TextStyle(fontWeight: FontWeight.w600, color: tokens.textPrimary))),
-                                    DataCell(Text(_intFormat.format(r.peopleOnLoan))),
-                                    DataCell(Text(_intFormat.format(r.activeLoans))),
-                                    DataCell(Text(_intFormat.format(r.activeSavers))),
+                                    DataCell(Text(r.branch,
+                                        style: TextStyle(
+                                            fontWeight: FontWeight.w600,
+                                            color: tokens.textPrimary))),
+                                    DataCell(Text(
+                                        _intFormat.format(r.peopleOnLoan))),
+                                    DataCell(
+                                        Text(_intFormat.format(r.activeLoans))),
+                                    DataCell(Text(
+                                        _intFormat.format(r.activeSavers))),
                                     DataCell(Text(_formatNgn(r.totalSavings))),
-                                    DataCell(Text(_formatNgn(r.collectionsReceived))),
-                                    DataCell(Text(_formatNgn(r.expectedCollections))),
-                                    DataCell(Text('${r.collectionEfficiency.toStringAsFixed(1)}%')),
-                                    DataCell(Text(_formatNgn(r.outstandingPortfolio))),
-                                    DataCell(Text('${r.parPercentage.toStringAsFixed(1)}%')),
+                                    DataCell(Text(
+                                        _formatNgn(r.collectionsReceived))),
+                                    DataCell(Text(
+                                        _formatNgn(r.expectedCollections))),
+                                    DataCell(Text(
+                                        '${r.collectionEfficiency.toStringAsFixed(1)}%')),
+                                    DataCell(Text(
+                                        _formatNgn(r.outstandingPortfolio))),
+                                    DataCell(Text(
+                                        '${r.parPercentage.toStringAsFixed(1)}%')),
                                     DataCell(Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 8, vertical: 3),
                                       decoration: BoxDecoration(
-                                        color: isHealthy ? tokens.successBg : tokens.dangerBg,
+                                        color: isHealthy
+                                            ? tokens.successBg
+                                            : tokens.dangerBg,
                                         borderRadius: BorderRadius.circular(4),
-                                        border: Border.all(color: isHealthy ? tokens.successBorder : tokens.dangerBorder),
+                                        border: Border.all(
+                                            color: isHealthy
+                                                ? tokens.successBorder
+                                                : tokens.dangerBorder),
                                       ),
                                       child: Text(
                                         r.status,
                                         style: TextStyle(
                                           fontSize: 11,
                                           fontWeight: FontWeight.bold,
-                                          color: isHealthy ? tokens.successText : tokens.dangerText,
+                                          color: isHealthy
+                                              ? tokens.successText
+                                              : tokens.dangerText,
                                         ),
                                       ),
                                     )),
@@ -3707,10 +4995,13 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                                       OutlinedButton(
                                         style: OutlinedButton.styleFrom(
                                           foregroundColor: tokens.brandPrimary,
-                                          side: BorderSide(color: tokens.brandPrimary),
-                                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                          side: BorderSide(
+                                              color: tokens.brandPrimary),
+                                          padding: const EdgeInsets.symmetric(
+                                              horizontal: 10, vertical: 4),
                                           minimumSize: Size.zero,
-                                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                          tapTargetSize:
+                                              MaterialTapTargetSize.shrinkWrap,
                                         ),
                                         onPressed: () {
                                           setState(() {
@@ -3719,7 +5010,10 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                                           });
                                           _refreshCurrentTabData();
                                         },
-                                        child: const Text('Review', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                                        child: const Text('Review',
+                                            style: TextStyle(
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.bold)),
                                       ),
                                     ),
                                   ]);
@@ -3745,11 +5039,17 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                           SizedBox(
                             width: isMobile ? double.infinity : null,
                             child: ElevatedButton.icon(
-                              onPressed: () => _triggerCsvDownload('area_comparison', 'area_branch_comparison.csv', forceConsolidated: true),
+                              onPressed: () => _triggerCsvDownload(
+                                  'area_comparison',
+                                  'area_branch_comparison.csv',
+                                  forceConsolidated: true),
                               icon: const Icon(Icons.file_download, size: 16),
-                              label: const Text('Download Area Comparison (CSV)'),
+                              label:
+                                  const Text('Download Area Comparison (CSV)'),
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: tokens.isDark ? const Color(0xFF1E293B) : const Color(0xFF0F172A),
+                                backgroundColor: tokens.isDark
+                                    ? const Color(0xFF1E293B)
+                                    : const Color(0xFF0F172A),
                                 foregroundColor: Colors.white,
                               ),
                             ),
@@ -3757,10 +5057,14 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                           SizedBox(
                             width: isMobile ? double.infinity : null,
                             child: ElevatedButton.icon(
-                              onPressed: () => _triggerExcelDownload(forceConsolidated: true),
+                              onPressed: () => _triggerExcelDownload(
+                                  forceConsolidated: true),
                               icon: const Icon(Icons.table_chart, size: 16),
-                              label: const Text('Download Regional Operational Report (Excel)'),
-                              style: ElevatedButton.styleFrom(backgroundColor: tokens.brandPrimaryDark, foregroundColor: Colors.white),
+                              label: const Text(
+                                  'Download Regional Operational Report (Excel)'),
+                              style: ElevatedButton.styleFrom(
+                                  backgroundColor: tokens.brandPrimaryDark,
+                                  foregroundColor: Colors.white),
                             ),
                           ),
                         ],
@@ -3797,14 +5101,20 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
             children: [
               Text(
                 r.branch,
-                style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w800, color: tokens.textPrimary),
+                style: TextStyle(
+                    fontSize: 14.5,
+                    fontWeight: FontWeight.w800,
+                    color: tokens.textPrimary),
               ),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
                   color: isHealthy ? tokens.successBg : tokens.dangerBg,
                   borderRadius: BorderRadius.circular(4),
-                  border: Border.all(color: isHealthy ? tokens.successBorder : tokens.dangerBorder),
+                  border: Border.all(
+                      color: isHealthy
+                          ? tokens.successBorder
+                          : tokens.dangerBorder),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
@@ -3823,7 +5133,8 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                       style: TextStyle(
                         fontSize: 10.5,
                         fontWeight: FontWeight.w800,
-                        color: isHealthy ? tokens.successText : tokens.dangerText,
+                        color:
+                            isHealthy ? tokens.successText : tokens.dangerText,
                       ),
                     ),
                   ],
@@ -3840,13 +5151,15 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text('Collection Efficiency', style: TextStyle(fontSize: 11, color: tokens.textMuted)),
+                  Text('Collection Efficiency',
+                      style: TextStyle(fontSize: 11, color: tokens.textMuted)),
                   Text(
                     '${r.collectionEfficiency.toStringAsFixed(1)}%',
                     style: TextStyle(
                       fontSize: 11.5,
                       fontWeight: FontWeight.w800,
-                      color: isHealthy ? tokens.successText : tokens.warningText,
+                      color:
+                          isHealthy ? tokens.successText : tokens.warningText,
                       fontFeatures: const [FontFeature.tabularFigures()],
                     ),
                   ),
@@ -3881,24 +5194,58 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text('Collections: ${_formatNgn(r.collectionsReceived)}', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: tokens.textPrimary, fontFeatures: const [FontFeature.tabularFigures()])),
-                    Text('Expected: ${_formatNgn(r.expectedCollections)}', style: TextStyle(fontSize: 11.5, color: tokens.textMuted, fontFeatures: const [FontFeature.tabularFigures()])),
+                    Text('Collections: ${_formatNgn(r.collectionsReceived)}',
+                        style: TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w600,
+                            color: tokens.textPrimary,
+                            fontFeatures: const [
+                              FontFeature.tabularFigures()
+                            ])),
+                    Text('Expected: ${_formatNgn(r.expectedCollections)}',
+                        style: TextStyle(
+                            fontSize: 11.5,
+                            color: tokens.textMuted,
+                            fontFeatures: const [
+                              FontFeature.tabularFigures()
+                            ])),
                   ],
                 ),
                 const SizedBox(height: 6),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text('Outstanding: ${_formatNgn(r.outstandingPortfolio)}', style: TextStyle(fontSize: 11.5, color: tokens.textSecondary, fontFeatures: const [FontFeature.tabularFigures()])),
-                    Text('PAR %: ${r.parPercentage.toStringAsFixed(1)}%', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: r.parPercentage > 5.0 ? tokens.dangerText : tokens.successText)),
+                    Text('Outstanding: ${_formatNgn(r.outstandingPortfolio)}',
+                        style: TextStyle(
+                            fontSize: 11.5,
+                            color: tokens.textSecondary,
+                            fontFeatures: const [
+                              FontFeature.tabularFigures()
+                            ])),
+                    Text('PAR %: ${r.parPercentage.toStringAsFixed(1)}%',
+                        style: TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w700,
+                            color: r.parPercentage > 5.0
+                                ? tokens.dangerText
+                                : tokens.successText)),
                   ],
                 ),
                 const SizedBox(height: 6),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text('Active Loans: ${_intFormat.format(r.activeLoans)}', style: TextStyle(fontSize: 11.5, color: tokens.textMuted)),
-                    Text('Total Savings: ${_formatNgn(r.totalSavings)}', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: tokens.brandPrimary, fontFeatures: const [FontFeature.tabularFigures()])),
+                    Text('Active Loans: ${_intFormat.format(r.activeLoans)}',
+                        style:
+                            TextStyle(fontSize: 11.5, color: tokens.textMuted)),
+                    Text('Total Savings: ${_formatNgn(r.totalSavings)}',
+                        style: TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w600,
+                            color: tokens.brandPrimary,
+                            fontFeatures: const [
+                              FontFeature.tabularFigures()
+                            ])),
                   ],
                 ),
               ],
@@ -3909,8 +5256,13 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
           SizedBox(
             width: double.infinity,
             child: OutlinedButton.icon(
-              icon: Icon(Icons.description_outlined, size: 14, color: tokens.brandPrimary),
-              label: Text('Inspect Branch Statements', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: tokens.brandPrimary)),
+              icon: Icon(Icons.description_outlined,
+                  size: 14, color: tokens.brandPrimary),
+              label: Text('Inspect Branch Statements',
+                  style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: tokens.brandPrimary)),
               style: OutlinedButton.styleFrom(
                 side: BorderSide(color: tokens.brandPrimary),
                 padding: const EdgeInsets.symmetric(vertical: 8),
@@ -3944,10 +5296,15 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
             ),
             child: Row(
               children: [
-                const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+                const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2)),
                 const SizedBox(width: 12),
                 Expanded(
-                  child: Text('Checking branch monthly submission & certification status...', style: TextStyle(fontSize: 12, color: tokens.textMuted)),
+                  child: Text(
+                      'Checking branch monthly submission & certification status...',
+                      style: TextStyle(fontSize: 12, color: tokens.textMuted)),
                 ),
               ],
             ),
@@ -3955,7 +5312,8 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
         }
 
         if (snapshot.hasError) {
-          return _buildErrorCard(snapshot.error!, onRetry: _refreshCurrentTabData);
+          return _buildErrorCard(snapshot.error!,
+              onRetry: _refreshCurrentTabData);
         }
 
         final list = snapshot.data ?? [];
@@ -3972,7 +5330,12 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                 Icon(Icons.verified, size: 18, color: tokens.successText),
                 const SizedBox(width: 10),
                 Expanded(
-                  child: Text('All supervised branches have completed submissions for this period.', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: tokens.successText)),
+                  child: Text(
+                      'All supervised branches have completed submissions for this period.',
+                      style: TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w600,
+                          color: tokens.successText)),
                 ),
               ],
             ),
@@ -3988,12 +5351,19 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                 Expanded(
                   child: Text(
                     'Branch Certification & Month-End Sign-Off',
-                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: tokens.textPrimary),
+                    style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: tokens.textPrimary),
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
                 const SizedBox(width: 8),
-                Text('${list.length} Branches Tracked', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tokens.brandPrimary)),
+                Text('${list.length} Branches Tracked',
+                    style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: tokens.brandPrimary)),
               ],
             ),
             const SizedBox(height: 10),
@@ -4008,16 +5378,60 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                     final isEndorsed = b.status == 'AM_VERIFIED';
                     final isReturned = b.status == 'RETURNED_FOR_CORRECTION';
 
-                    final cardBg = isSubmitted ? tokens.warningBg : (isEndorsed ? tokens.successBg : (isReturned ? tokens.dangerBg : tokens.surfaceSubtle));
-                    final cardBorder = isSubmitted ? tokens.warningBorder : (isEndorsed ? tokens.successBorder : (isReturned ? tokens.dangerBorder : tokens.borderSubtle));
-                    final pillBg = isSubmitted ? tokens.warningBg : (isEndorsed ? tokens.successBg : (isReturned ? tokens.dangerBg : tokens.surfaceHover));
-                    final pillColor = isSubmitted ? tokens.warningText : (isEndorsed ? tokens.successText : (isReturned ? tokens.dangerText : tokens.textSecondary));
-                    final pillText = isSubmitted ? 'AWAITING AM SIGN-OFF' : (isEndorsed ? 'AM ENDORSED' : (isReturned ? 'RETURNED TO BM' : 'PENDING BM SUBMISSION'));
-                    final statusIcon = isSubmitted ? Icons.pending_actions : (isEndorsed ? Icons.verified : (isReturned ? Icons.assignment_return_outlined : Icons.edit_note));
-                    final iconColor = isSubmitted ? tokens.warningDot : (isEndorsed ? tokens.successDot : (isReturned ? tokens.dangerDot : tokens.textMuted));
+                    final cardBg = isSubmitted
+                        ? tokens.warningBg
+                        : (isEndorsed
+                            ? tokens.successBg
+                            : (isReturned
+                                ? tokens.dangerBg
+                                : tokens.surfaceSubtle));
+                    final cardBorder = isSubmitted
+                        ? tokens.warningBorder
+                        : (isEndorsed
+                            ? tokens.successBorder
+                            : (isReturned
+                                ? tokens.dangerBorder
+                                : tokens.borderSubtle));
+                    final pillBg = isSubmitted
+                        ? tokens.warningBg
+                        : (isEndorsed
+                            ? tokens.successBg
+                            : (isReturned
+                                ? tokens.dangerBg
+                                : tokens.surfaceHover));
+                    final pillColor = isSubmitted
+                        ? tokens.warningText
+                        : (isEndorsed
+                            ? tokens.successText
+                            : (isReturned
+                                ? tokens.dangerText
+                                : tokens.textSecondary));
+                    final pillText = isSubmitted
+                        ? 'AWAITING AM SIGN-OFF'
+                        : (isEndorsed
+                            ? 'AM ENDORSED'
+                            : (isReturned
+                                ? 'RETURNED TO BM'
+                                : 'PENDING BM SUBMISSION'));
+                    final statusIcon = isSubmitted
+                        ? Icons.pending_actions
+                        : (isEndorsed
+                            ? Icons.verified
+                            : (isReturned
+                                ? Icons.assignment_return_outlined
+                                : Icons.edit_note));
+                    final iconColor = isSubmitted
+                        ? tokens.warningDot
+                        : (isEndorsed
+                            ? tokens.successDot
+                            : (isReturned
+                                ? tokens.dangerDot
+                                : tokens.textMuted));
 
                     return Container(
-                      width: isNarrow ? double.infinity : (constraints.maxWidth - 12) / 2,
+                      width: isNarrow
+                          ? double.infinity
+                          : (constraints.maxWidth - 12) / 2,
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
                         color: cardBg,
@@ -4033,12 +5447,16 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                               Expanded(
                                 child: Row(
                                   children: [
-                                    Icon(statusIcon, size: 16, color: iconColor),
+                                    Icon(statusIcon,
+                                        size: 16, color: iconColor),
                                     const SizedBox(width: 6),
                                     Expanded(
                                       child: Text(
                                         b.branchName,
-                                        style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13.5, color: tokens.textPrimary),
+                                        style: TextStyle(
+                                            fontWeight: FontWeight.w800,
+                                            fontSize: 13.5,
+                                            color: tokens.textPrimary),
                                         overflow: TextOverflow.ellipsis,
                                       ),
                                     ),
@@ -4047,9 +5465,17 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                               ),
                               const SizedBox(width: 8),
                               Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                decoration: BoxDecoration(color: pillBg, borderRadius: BorderRadius.circular(4), border: Border.all(color: cardBorder)),
-                                child: Text(pillText, style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: pillColor)),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                    color: pillBg,
+                                    borderRadius: BorderRadius.circular(4),
+                                    border: Border.all(color: cardBorder)),
+                                child: Text(pillText,
+                                    style: TextStyle(
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w800,
+                                        color: pillColor)),
                               ),
                             ],
                           ),
@@ -4062,7 +5488,8 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                                     : (isReturned
                                         ? 'Queried: ${b.amQueryNotes ?? "Corrections requested"}'
                                         : 'BM reconciling vault • Books open for ${_monthNames[_selectedExecMonth - 1]} $_selectedExecYear')),
-                            style: TextStyle(fontSize: 11.5, color: tokens.textSecondary),
+                            style: TextStyle(
+                                fontSize: 11.5, color: tokens.textSecondary),
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                           ),
@@ -4077,15 +5504,27 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                                 });
                                 _refreshCurrentTabData();
                               },
-                              icon: Icon(isSubmitted ? Icons.rate_review_outlined : Icons.visibility_outlined, size: 13),
+                              icon: Icon(
+                                  isSubmitted
+                                      ? Icons.rate_review_outlined
+                                      : Icons.visibility_outlined,
+                                  size: 13),
                               label: Text(
-                                isSubmitted ? 'Review & Endorse' : (isEndorsed ? 'View Certified Return' : 'Inspect Statements'),
-                                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                                isSubmitted
+                                    ? 'Review & Endorse'
+                                    : (isEndorsed
+                                        ? 'View Certified Return'
+                                        : 'Inspect Statements'),
+                                style: const TextStyle(
+                                    fontSize: 11, fontWeight: FontWeight.bold),
                               ),
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: isSubmitted ? const Color(0xFFB45309) : tokens.brandPrimaryDark,
+                                backgroundColor: isSubmitted
+                                    ? const Color(0xFFB45309)
+                                    : tokens.brandPrimaryDark,
                                 foregroundColor: Colors.white,
-                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 12, vertical: 6),
                                 visualDensity: VisualDensity.compact,
                               ),
                             ),
@@ -4109,9 +5548,12 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
   Widget _buildDataExportsTab(bool isAdmin, bool isBm, bool isAm) {
     final tokens = IcareSurfaceTokens.of(context);
     final isMobile = MediaQuery.of(context).size.width < 750;
-    final effectiveSingleBranch = (_selectedBranchName != null && !_selectedBranchName!.startsWith('All'))
-        ? _selectedBranchName
-        : (_cachedMeta?.branches.isNotEmpty == true ? _cachedMeta!.branches.first.name : _selectedBranchName);
+    final effectiveSingleBranch =
+        (_selectedBranchName != null && !_selectedBranchName!.startsWith('All'))
+            ? _selectedBranchName
+            : (_cachedMeta?.branches.isNotEmpty == true
+                ? _cachedMeta!.branches.first.name
+                : _selectedBranchName);
 
     return Container(
       width: double.infinity,
@@ -4124,9 +5566,15 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Comprehensive Operational Data Exports', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: tokens.textPrimary)),
+          Text('Comprehensive Operational Data Exports',
+              style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                  color: tokens.textPrimary)),
           const SizedBox(height: 4),
-          Text('Direct in-memory generation of full operational datasets. All files download directly to your browser without external cloud dependencies.', style: TextStyle(fontSize: 13, color: tokens.textMuted)),
+          Text(
+              'Direct in-memory generation of full operational datasets. All files download directly to your browser without external cloud dependencies.',
+              style: TextStyle(fontSize: 13, color: tokens.textMuted)),
           const SizedBox(height: 20),
 
           // Optional Custom Export Filters
@@ -4154,7 +5602,8 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                           borderRadius: BorderRadius.circular(6),
                           border: Border.all(color: tokens.successBorder),
                         ),
-                        child: Icon(Icons.hub_outlined, color: tokens.successText, size: 20),
+                        child: Icon(Icons.hub_outlined,
+                            color: tokens.successText, size: 20),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
@@ -4163,12 +5612,16 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                           children: [
                             Text(
                               'Card 1: Regional Consolidated Datasets (Supervisory Area Scope)',
-                              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: tokens.textPrimary),
+                              style: TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w800,
+                                  color: tokens.textPrimary),
                             ),
                             const SizedBox(height: 2),
                             Text(
                               'Multi-branch consolidated operational workbooks and raw ledgers across all assigned district branches.',
-                              style: TextStyle(fontSize: 12, color: tokens.textMuted),
+                              style: TextStyle(
+                                  fontSize: 12, color: tokens.textMuted),
                             ),
                           ],
                         ),
@@ -4186,43 +5639,61 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                     runSpacing: 10,
                     children: [
                       ElevatedButton.icon(
-                        onPressed: () => _triggerExcelDownload(forceConsolidated: true),
+                        onPressed: () =>
+                            _triggerExcelDownload(forceConsolidated: true),
                         icon: const Icon(Icons.table_chart, size: 16),
-                        label: const Text('Download Master Regional Report (Excel)'),
+                        label: const Text(
+                            'Download Master Regional Report (Excel)'),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: tokens.brandPrimaryDark,
                           foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 10),
                         ),
                       ),
                       ElevatedButton.icon(
-                        onPressed: () => _triggerCsvDownload('area_comparison', 'area_branch_comparison.csv', forceConsolidated: true),
+                        onPressed: () => _triggerCsvDownload(
+                            'area_comparison', 'area_branch_comparison.csv',
+                            forceConsolidated: true),
                         icon: const Icon(Icons.file_download, size: 16),
                         label: const Text('Area Comparison (CSV)'),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: tokens.isDark ? const Color(0xFF1E293B) : const Color(0xFF0F172A),
+                          backgroundColor: tokens.isDark
+                              ? const Color(0xFF1E293B)
+                              : const Color(0xFF0F172A),
                           foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 14, vertical: 10),
                         ),
                       ),
                       ElevatedButton.icon(
-                        onPressed: () => _triggerCsvDownload('loans', 'regional_raw_loans.csv', forceConsolidated: true),
+                        onPressed: () => _triggerCsvDownload(
+                            'loans', 'regional_raw_loans.csv',
+                            forceConsolidated: true),
                         icon: const Icon(Icons.file_download, size: 16),
                         label: const Text('Regional Raw Loans (CSV)'),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: tokens.isDark ? const Color(0xFF334155) : const Color(0xFF1E293B),
+                          backgroundColor: tokens.isDark
+                              ? const Color(0xFF334155)
+                              : const Color(0xFF1E293B),
                           foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 14, vertical: 10),
                         ),
                       ),
                       ElevatedButton.icon(
-                        onPressed: () => _triggerCsvDownload('repayments', 'regional_raw_repayments.csv', forceConsolidated: true),
+                        onPressed: () => _triggerCsvDownload(
+                            'repayments', 'regional_raw_repayments.csv',
+                            forceConsolidated: true),
                         icon: const Icon(Icons.file_download, size: 16),
                         label: const Text('Regional Raw Repayments (CSV)'),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: tokens.isDark ? const Color(0xFF334155) : const Color(0xFF1E293B),
+                          backgroundColor: tokens.isDark
+                              ? const Color(0xFF334155)
+                              : const Color(0xFF1E293B),
                           foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 14, vertical: 10),
                         ),
                       ),
                     ],
@@ -4253,7 +5724,8 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                         borderRadius: BorderRadius.circular(6),
                         border: Border.all(color: tokens.infoBorder),
                       ),
-                      child: Icon(Icons.account_balance, color: tokens.infoText, size: 20),
+                      child: Icon(Icons.account_balance,
+                          color: tokens.infoText, size: 20),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
@@ -4264,12 +5736,16 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                             isAm || isAdmin
                                 ? 'Card 2: Single-Branch Audited Package (Individual Extraction)'
                                 : 'Branch Operational Statements & Audited Extraction',
-                            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: tokens.textPrimary),
+                            style: TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w800,
+                                color: tokens.textPrimary),
                           ),
                           const SizedBox(height: 2),
                           Text(
                             'Extract official regulatory statements and raw registers for an individual branch (Currently: ${effectiveSingleBranch ?? "Selected Branch"}).',
-                            style: TextStyle(fontSize: 12, color: tokens.textMuted),
+                            style: TextStyle(
+                                fontSize: 12, color: tokens.textMuted),
                           ),
                         ],
                       ),
@@ -4282,21 +5758,29 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                   runSpacing: 10,
                   children: [
                     OutlinedButton.icon(
-                      icon: Icon(Icons.picture_as_pdf_outlined, size: 14, color: tokens.dangerText),
-                      label: Text('Official Statement (PDF Print)', style: TextStyle(fontSize: 12, color: tokens.dangerText, fontWeight: FontWeight.w700)),
+                      icon: Icon(Icons.picture_as_pdf_outlined,
+                          size: 14, color: tokens.dangerText),
+                      label: Text('Official Statement (PDF Print)',
+                          style: TextStyle(
+                              fontSize: 12,
+                              color: tokens.dangerText,
+                              fontWeight: FontWeight.w700)),
                       style: OutlinedButton.styleFrom(
                         side: BorderSide(color: tokens.dangerBorder),
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 10),
                       ),
                       onPressed: () async {
                         try {
-                          final bytes = await ref.read(reportsApiServiceProvider).downloadMonthlyParityPdf(
-                            branchName: effectiveSingleBranch,
-                            year: _selectedExecYear,
-                            month: _selectedExecMonth,
-                            officerName: _selectedOfficerName,
-                            productName: _selectedProductName,
-                          );
+                          final bytes = await ref
+                              .read(reportsApiServiceProvider)
+                              .downloadMonthlyParityPdf(
+                                branchName: effectiveSingleBranch,
+                                year: _selectedExecYear,
+                                month: _selectedExecMonth,
+                                officerName: _selectedOfficerName,
+                                productName: _selectedProductName,
+                              );
                           final saved = await downloadBlobFile(
                             bytes,
                             'Official_Executive_Statement_${effectiveSingleBranch ?? "Branch"}_${_selectedExecYear}_${_selectedExecMonth.toString().padLeft(2, '0')}.pdf',
@@ -4304,34 +5788,46 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                           );
                           if (mounted) {
                             ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('Executive PDF Statement downloaded${saved != null ? ' ($saved)' : ''}.')),
+                              SnackBar(
+                                  content: Text(
+                                      'Executive PDF Statement downloaded${saved != null ? ' ($saved)' : ''}.')),
                             );
                           }
                         } catch (e) {
                           if (mounted) {
                             ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('PDF Download failed: ${AppErrorDetails.from(e).message}')),
+                              SnackBar(
+                                  content: Text(
+                                      'PDF Download failed: ${AppErrorDetails.from(e).message}')),
                             );
                           }
                         }
                       },
                     ),
                     OutlinedButton.icon(
-                      icon: Icon(Icons.table_view_outlined, size: 14, color: tokens.brandPrimary),
-                      label: Text('Branch Excel Workbook', style: TextStyle(fontSize: 12, color: tokens.brandPrimary, fontWeight: FontWeight.w700)),
+                      icon: Icon(Icons.table_view_outlined,
+                          size: 14, color: tokens.brandPrimary),
+                      label: Text('Branch Excel Workbook',
+                          style: TextStyle(
+                              fontSize: 12,
+                              color: tokens.brandPrimary,
+                              fontWeight: FontWeight.w700)),
                       style: OutlinedButton.styleFrom(
                         side: BorderSide(color: tokens.brandPrimary),
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 10),
                       ),
                       onPressed: () async {
                         try {
-                          final bytes = await ref.read(reportsApiServiceProvider).downloadMonthlyParityExcel(
-                            branchName: effectiveSingleBranch,
-                            year: _selectedExecYear,
-                            month: _selectedExecMonth,
-                            officerName: _selectedOfficerName,
-                            productName: _selectedProductName,
-                          );
+                          final bytes = await ref
+                              .read(reportsApiServiceProvider)
+                              .downloadMonthlyParityExcel(
+                                branchName: effectiveSingleBranch,
+                                year: _selectedExecYear,
+                                month: _selectedExecMonth,
+                                officerName: _selectedOfficerName,
+                                productName: _selectedProductName,
+                              );
                           final saved = await downloadBlobFile(
                             bytes,
                             'Branch_Monthly_Workbook_${effectiveSingleBranch ?? "Branch"}_${_selectedExecYear}_${_selectedExecMonth.toString().padLeft(2, '0')}.xlsx',
@@ -4339,34 +5835,46 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                           );
                           if (mounted) {
                             ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('Branch Workbook downloaded${saved != null ? ' ($saved)' : ''}.')),
+                              SnackBar(
+                                  content: Text(
+                                      'Branch Workbook downloaded${saved != null ? ' ($saved)' : ''}.')),
                             );
                           }
                         } catch (e) {
                           if (mounted) {
                             ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('Download failed: ${AppErrorDetails.from(e).message}')),
+                              SnackBar(
+                                  content: Text(
+                                      'Download failed: ${AppErrorDetails.from(e).message}')),
                             );
                           }
                         }
                       },
                     ),
                     OutlinedButton.icon(
-                      icon: Icon(Icons.people_alt_outlined, size: 14, color: tokens.textSecondary),
-                      label: Text('Credit Officer Summary (CSV)', style: TextStyle(fontSize: 12, color: tokens.textSecondary, fontWeight: FontWeight.w700)),
+                      icon: Icon(Icons.people_alt_outlined,
+                          size: 14, color: tokens.textSecondary),
+                      label: Text('Credit Officer Summary (CSV)',
+                          style: TextStyle(
+                              fontSize: 12,
+                              color: tokens.textSecondary,
+                              fontWeight: FontWeight.w700)),
                       style: OutlinedButton.styleFrom(
                         side: BorderSide(color: tokens.borderStrong),
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 10),
                       ),
                       onPressed: () async {
                         try {
-                          final bytes = await ref.read(reportsApiServiceProvider).downloadMonthlyParityCsv(
-                            branchName: effectiveSingleBranch,
-                            year: _selectedExecYear,
-                            month: _selectedExecMonth,
-                            officerName: _selectedOfficerName,
-                            productName: _selectedProductName,
-                          );
+                          final bytes = await ref
+                              .read(reportsApiServiceProvider)
+                              .downloadMonthlyParityCsv(
+                                branchName: effectiveSingleBranch,
+                                year: _selectedExecYear,
+                                month: _selectedExecMonth,
+                                officerName: _selectedOfficerName,
+                                productName: _selectedProductName,
+                              );
                           final saved = await downloadBlobFile(
                             bytes,
                             'CO_Summary_${effectiveSingleBranch ?? "Branch"}_${_selectedExecYear}_${_selectedExecMonth.toString().padLeft(2, '0')}.csv',
@@ -4374,36 +5882,52 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                           );
                           if (mounted) {
                             ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('CO Summary CSV downloaded${saved != null ? ' ($saved)' : ''}.')),
+                              SnackBar(
+                                  content: Text(
+                                      'CO Summary CSV downloaded${saved != null ? ' ($saved)' : ''}.')),
                             );
                           }
                         } catch (e) {
                           if (mounted) {
                             ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('Download failed: ${AppErrorDetails.from(e).message}')),
+                              SnackBar(
+                                  content: Text(
+                                      'Download failed: ${AppErrorDetails.from(e).message}')),
                             );
                           }
                         }
                       },
                     ),
                     ElevatedButton.icon(
-                      onPressed: () => _triggerCsvDownload('loans', '${effectiveSingleBranch ?? "branch"}_loans.csv', branchOverride: effectiveSingleBranch),
+                      onPressed: () => _triggerCsvDownload('loans',
+                          '${effectiveSingleBranch ?? "branch"}_loans.csv',
+                          branchOverride: effectiveSingleBranch),
                       icon: const Icon(Icons.file_download, size: 14),
-                      label: const Text('Branch Loans (CSV)', style: TextStyle(fontSize: 12)),
+                      label: const Text('Branch Loans (CSV)',
+                          style: TextStyle(fontSize: 12)),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: tokens.isDark ? const Color(0xFF1E293B) : const Color(0xFF334155),
+                        backgroundColor: tokens.isDark
+                            ? const Color(0xFF1E293B)
+                            : const Color(0xFF334155),
                         foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 10),
                       ),
                     ),
                     ElevatedButton.icon(
-                      onPressed: () => _triggerCsvDownload('repayments', '${effectiveSingleBranch ?? "branch"}_repayments.csv', branchOverride: effectiveSingleBranch),
+                      onPressed: () => _triggerCsvDownload('repayments',
+                          '${effectiveSingleBranch ?? "branch"}_repayments.csv',
+                          branchOverride: effectiveSingleBranch),
                       icon: const Icon(Icons.file_download, size: 14),
-                      label: const Text('Branch Repayments (CSV)', style: TextStyle(fontSize: 12)),
+                      label: const Text('Branch Repayments (CSV)',
+                          style: TextStyle(fontSize: 12)),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: tokens.isDark ? const Color(0xFF1E293B) : const Color(0xFF334155),
+                        backgroundColor: tokens.isDark
+                            ? const Color(0xFF1E293B)
+                            : const Color(0xFF334155),
                         foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 10),
                       ),
                     ),
                   ],
@@ -4419,12 +5943,17 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
   // ---------------------------------------------------------------------------
   // Download Triggers
   // ---------------------------------------------------------------------------
-  Future<void> _triggerExcelDownload({String? branchOverride, bool forceConsolidated = false}) async {
+  Future<void> _triggerExcelDownload(
+      {String? branchOverride, bool forceConsolidated = false}) async {
     final api = ref.read(reportsApiServiceProvider);
-    final asOfStr = _dateMode == 'As of Date' ? _dateFormat.format(_asOfDate) : null;
-    final startStr = _dateMode == 'Date Range' ? _dateFormat.format(_startDate) : null;
-    final endStr = _dateMode == 'Date Range' ? _dateFormat.format(_endDate) : null;
-    final targetBranch = forceConsolidated ? null : (branchOverride ?? _selectedBranchName);
+    final asOfStr =
+        _dateMode == 'As of Date' ? _dateFormat.format(_asOfDate) : null;
+    final startStr =
+        _dateMode == 'Date Range' ? _dateFormat.format(_startDate) : null;
+    final endStr =
+        _dateMode == 'Date Range' ? _dateFormat.format(_endDate) : null;
+    final targetBranch =
+        forceConsolidated ? null : (branchOverride ?? _selectedBranchName);
 
     try {
       final bytes = await api.downloadExcel(
@@ -4435,28 +5964,39 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
         startDate: startStr,
         endDate: endStr,
       );
-      final fileName = 'icare_master_report_${DateFormat('yyyyMMdd_HHmmss').format(DateTime.now())}.xlsx';
-      final saved = await downloadBlobFile(bytes, fileName, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      final fileName =
+          'icare_master_report_${DateFormat('yyyyMMdd_HHmmss').format(DateTime.now())}.xlsx';
+      final saved = await downloadBlobFile(bytes, fileName,
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Excel report downloaded${saved != null ? ' ($saved)' : ''}.')),
+          SnackBar(
+              content: Text(
+                  'Excel report downloaded${saved != null ? ' ($saved)' : ''}.')),
         );
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to download Excel report: ${AppErrorDetails.from(e).message}')),
+          SnackBar(
+              content: Text(
+                  'Failed to download Excel report: ${AppErrorDetails.from(e).message}')),
         );
       }
     }
   }
 
-  Future<void> _triggerCsvDownload(String reportType, String defaultFileName, {String? branchOverride, bool forceConsolidated = false}) async {
+  Future<void> _triggerCsvDownload(String reportType, String defaultFileName,
+      {String? branchOverride, bool forceConsolidated = false}) async {
     final api = ref.read(reportsApiServiceProvider);
-    final asOfStr = _dateMode == 'As of Date' ? _dateFormat.format(_asOfDate) : null;
-    final startStr = _dateMode == 'Date Range' ? _dateFormat.format(_startDate) : null;
-    final endStr = _dateMode == 'Date Range' ? _dateFormat.format(_endDate) : null;
-    final targetBranch = forceConsolidated ? null : (branchOverride ?? _selectedBranchName);
+    final asOfStr =
+        _dateMode == 'As of Date' ? _dateFormat.format(_asOfDate) : null;
+    final startStr =
+        _dateMode == 'Date Range' ? _dateFormat.format(_startDate) : null;
+    final endStr =
+        _dateMode == 'Date Range' ? _dateFormat.format(_endDate) : null;
+    final targetBranch =
+        forceConsolidated ? null : (branchOverride ?? _selectedBranchName);
 
     try {
       final bytes = await api.downloadCsv(
@@ -4468,17 +6008,22 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
         startDate: startStr,
         endDate: endStr,
       );
-      final fileName = defaultFileName.replaceAll('.csv', '_${DateFormat('yyyyMMdd').format(DateTime.now())}.csv');
+      final fileName = defaultFileName.replaceAll(
+          '.csv', '_${DateFormat('yyyyMMdd').format(DateTime.now())}.csv');
       final saved = await downloadBlobFile(bytes, fileName, 'text/csv');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('CSV exported${saved != null ? ' ($saved)' : ''}.')),
+          SnackBar(
+              content:
+                  Text('CSV exported${saved != null ? ' ($saved)' : ''}.')),
         );
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to download CSV: ${AppErrorDetails.from(e).message}')),
+          SnackBar(
+              content: Text(
+                  'Failed to download CSV: ${AppErrorDetails.from(e).message}')),
         );
       }
     }
@@ -4498,14 +6043,16 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
     }
   }
 
-  Widget _buildSnapshotRow(String label, String value, {bool isAccent = false, bool isDanger = false}) {
+  Widget _buildSnapshotRow(String label, String value,
+      {bool isAccent = false, bool isDanger = false}) {
     final tokens = IcareSurfaceTokens.of(context);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label, style: TextStyle(fontSize: 12.5, color: tokens.textSecondary)),
+          Text(label,
+              style: TextStyle(fontSize: 12.5, color: tokens.textSecondary)),
           Text(
             value,
             style: TextStyle(
@@ -4543,7 +6090,10 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                 children: [
                   Text(
                     'Monthly Statement Verification & Sign-Off Workflow',
-                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: tokens.textPrimary),
+                    style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: tokens.textPrimary),
                   ),
                   const SizedBox(height: 2),
                   Text(
@@ -4572,10 +6122,15 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
             ),
             child: Row(
               children: [
-                const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+                const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2)),
                 const SizedBox(width: 12),
                 Expanded(
-                  child: Text('Checking monthly verification & sign-off status...', style: TextStyle(fontSize: 12, color: tokens.textMuted)),
+                  child: Text(
+                      'Checking monthly verification & sign-off status...',
+                      style: TextStyle(fontSize: 12, color: tokens.textMuted)),
                 ),
               ],
             ),
@@ -4597,7 +6152,8 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                 Icon(Icons.info_outline, size: 18, color: tokens.dangerDot),
                 const SizedBox(width: 10),
                 Expanded(
-                  child: Text('Workflow status unavailable: ${errInfo.message}', style: TextStyle(fontSize: 12, color: tokens.dangerText)),
+                  child: Text('Workflow status unavailable: ${errInfo.message}',
+                      style: TextStyle(fontSize: 12, color: tokens.dangerText)),
                 ),
               ],
             ),
@@ -4612,15 +6168,19 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
     );
   }
 
-  Widget _renderWorkflowBanner(MonthlyWorkflowStatusModel st, bool isAdmin, bool isBm, bool isAm) {
+  Widget _renderWorkflowBanner(
+      MonthlyWorkflowStatusModel st, bool isAdmin, bool isBm, bool isAm) {
     final tokens = IcareSurfaceTokens.of(context);
     final status = st.status;
     final authState = ref.read(authControllerProvider);
     final user = authState is AuthStateAuthenticated ? authState.user : null;
     final role = user?.role.trim() ?? '';
-    final isDirector = role == 'Director' || role == 'DIRECTOR' || role == 'Executive Director';
+    final isDirector = role == 'Director' ||
+        role == 'DIRECTOR' ||
+        role == 'Executive Director';
     final canMutateAdmin = isAdmin && !isDirector;
-    final darkLockBg = tokens.isDark ? const Color(0xFF1E293B) : const Color(0xFF0F172A);
+    final darkLockBg =
+        tokens.isDark ? const Color(0xFF1E293B) : const Color(0xFF0F172A);
 
     Color bg;
     Color border;
@@ -4643,30 +6203,45 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
         icon = Icons.pending_actions;
         iconColor = tokens.warningDot;
         title = 'Submitted for Area Manager Endorsement';
-        description = 'Certified by ${st.bmName ?? "Branch Manager"} on ${_formatDateTime(st.bmSubmittedAt)}. Books are locked pending Area Manager review.';
+        description =
+            'Certified by ${st.bmName ?? "Branch Manager"} on ${_formatDateTime(st.bmSubmittedAt)}. Books are locked pending Area Manager review.';
 
         if (isAm || canMutateAdmin) {
           actions.add(
             OutlinedButton.icon(
-              onPressed: _isWorkflowSubmitting ? null : () => _showAmReturnDialog(st),
-              icon: Icon(Icons.assignment_return_outlined, size: 14, color: tokens.dangerText),
-              label: Text('Query / Return', style: TextStyle(color: tokens.dangerText, fontSize: 12, fontWeight: FontWeight.bold)),
+              onPressed:
+                  _isWorkflowSubmitting ? null : () => _showAmReturnDialog(st),
+              icon: Icon(Icons.assignment_return_outlined,
+                  size: 14, color: tokens.dangerText),
+              label: Text('Query / Return',
+                  style: TextStyle(
+                      color: tokens.dangerText,
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold)),
               style: OutlinedButton.styleFrom(
                 side: BorderSide(color: tokens.dangerBorder),
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               ),
             ),
           );
           actions.add(const SizedBox(width: 8));
           actions.add(
             ElevatedButton.icon(
-              onPressed: _isWorkflowSubmitting ? null : () => _showAmEndorseDialog(st),
-              icon: const Icon(Icons.check_circle_outline, size: 14, color: Colors.white),
-              label: const Text('Endorse & Sign Off', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+              onPressed:
+                  _isWorkflowSubmitting ? null : () => _showAmEndorseDialog(st),
+              icon: const Icon(Icons.check_circle_outline,
+                  size: 14, color: Colors.white),
+              label: const Text('Endorse & Sign Off',
+                  style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold)),
               style: ElevatedButton.styleFrom(
                 backgroundColor: tokens.brandPrimaryDark,
                 foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               ),
             ),
           );
@@ -4674,8 +6249,15 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
           actions.add(
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              decoration: BoxDecoration(color: tokens.warningBg, borderRadius: BorderRadius.circular(6), border: Border.all(color: tokens.warningBorder)),
-              child: Text('Awaiting Supervisory Endorsement', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: tokens.warningText)),
+              decoration: BoxDecoration(
+                  color: tokens.warningBg,
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: tokens.warningBorder)),
+              child: Text('Awaiting Supervisory Endorsement',
+                  style: TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.bold,
+                      color: tokens.warningText)),
             ),
           );
         }
@@ -4690,18 +6272,25 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
         icon = Icons.assignment_return_outlined;
         iconColor = tokens.dangerDot;
         title = 'Returned with Supervisory Queries';
-        description = 'Area Manager ${st.amName != null ? "(${st.amName}) " : ""}has requested adjustments before sign-off.';
+        description =
+            'Area Manager ${st.amName != null ? "(${st.amName}) " : ""}has requested adjustments before sign-off.';
 
         if (isBm || canMutateAdmin) {
           actions.add(
             ElevatedButton.icon(
-              onPressed: _isWorkflowSubmitting ? null : () => _showBmSubmitDialog(st),
+              onPressed:
+                  _isWorkflowSubmitting ? null : () => _showBmSubmitDialog(st),
               icon: const Icon(Icons.refresh, size: 14, color: Colors.white),
-              label: const Text('Re-verify & Resubmit', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+              label: const Text('Re-verify & Resubmit',
+                  style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold)),
               style: ElevatedButton.styleFrom(
                 backgroundColor: tokens.brandPrimaryDark,
                 foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               ),
             ),
           );
@@ -4717,17 +6306,26 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
         icon = Icons.verified;
         iconColor = tokens.successDot;
         title = 'Supervisory Sign-Off Granted';
-        description = 'Endorsed by Area Manager ${st.amName ?? ""} on ${_formatDateTime(st.amEndorsedAt)}. Ready for regional package seal or archival lock.';
+        description =
+            'Endorsed by Area Manager ${st.amName ?? ""} on ${_formatDateTime(st.amEndorsedAt)}. Ready for regional package seal or archival lock.';
 
         if (isAm || canMutateAdmin) {
           actions.add(
             OutlinedButton.icon(
-              onPressed: _isWorkflowSubmitting ? null : () => _sealAreaMonthlyPackage(),
-              icon: Icon(Icons.folder_special_outlined, size: 14, color: tokens.infoText),
-              label: Text('Seal Regional Package', style: TextStyle(color: tokens.infoText, fontSize: 12, fontWeight: FontWeight.bold)),
+              onPressed: _isWorkflowSubmitting
+                  ? null
+                  : () => _sealAreaMonthlyPackage(),
+              icon: Icon(Icons.folder_special_outlined,
+                  size: 14, color: tokens.infoText),
+              label: Text('Seal Regional Package',
+                  style: TextStyle(
+                      color: tokens.infoText,
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold)),
               style: OutlinedButton.styleFrom(
                 side: BorderSide(color: tokens.infoBorder),
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               ),
             ),
           );
@@ -4736,13 +6334,20 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
           if (actions.isNotEmpty) actions.add(const SizedBox(width: 8));
           actions.add(
             ElevatedButton.icon(
-              onPressed: _isWorkflowSubmitting ? null : () => _showAdminLockDialog(st),
-              icon: const Icon(Icons.lock_outline, size: 14, color: Colors.white),
-              label: const Text('Lock & Archive', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+              onPressed:
+                  _isWorkflowSubmitting ? null : () => _showAdminLockDialog(st),
+              icon:
+                  const Icon(Icons.lock_outline, size: 14, color: Colors.white),
+              label: const Text('Lock & Archive',
+                  style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold)),
               style: ElevatedButton.styleFrom(
                 backgroundColor: darkLockBg,
                 foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               ),
             ),
           );
@@ -4751,8 +6356,15 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
           actions.add(
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              decoration: BoxDecoration(color: tokens.successBg, borderRadius: BorderRadius.circular(6), border: Border.all(color: tokens.successBorder)),
-              child: Text('Endorsed • Awaiting Regional Seal', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: tokens.successText)),
+              decoration: BoxDecoration(
+                  color: tokens.successBg,
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: tokens.successBorder)),
+              child: Text('Endorsed • Awaiting Regional Seal',
+                  style: TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.bold,
+                      color: tokens.successText)),
             ),
           );
         }
@@ -4767,18 +6379,26 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
         icon = Icons.folder_special;
         iconColor = tokens.infoDot;
         title = 'Regional Month-End Package Sealed';
-        description = 'Sealed by Area Manager. Awaiting Executive Admin permanent archival lock.';
+        description =
+            'Sealed by Area Manager. Awaiting Executive Admin permanent archival lock.';
 
         if (canMutateAdmin) {
           actions.add(
             ElevatedButton.icon(
-              onPressed: _isWorkflowSubmitting ? null : () => _showAdminLockDialog(st),
-              icon: const Icon(Icons.lock_outline, size: 14, color: Colors.white),
-              label: const Text('Execute Institutional Lock', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+              onPressed:
+                  _isWorkflowSubmitting ? null : () => _showAdminLockDialog(st),
+              icon:
+                  const Icon(Icons.lock_outline, size: 14, color: Colors.white),
+              label: const Text('Execute Institutional Lock',
+                  style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold)),
               style: ElevatedButton.styleFrom(
                 backgroundColor: darkLockBg,
                 foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               ),
             ),
           );
@@ -4786,8 +6406,15 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
           actions.add(
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              decoration: BoxDecoration(color: tokens.infoBg, borderRadius: BorderRadius.circular(6), border: Border.all(color: tokens.infoBorder)),
-              child: Text('Sealed • Awaiting Admin Archival', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: tokens.infoText)),
+              decoration: BoxDecoration(
+                  color: tokens.infoBg,
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: tokens.infoBorder)),
+              child: Text('Sealed • Awaiting Admin Archival',
+                  style: TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.bold,
+                      color: tokens.infoText)),
             ),
           );
         }
@@ -4802,17 +6429,24 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
         icon = Icons.lock;
         iconColor = tokens.textPrimary;
         title = 'Permanent Institutional Record';
-        description = 'Permanently archived by ${st.adminName ?? "Administrator"} on ${_formatDateTime(st.adminLockedAt)}. Books are permanently closed.';
+        description =
+            'Permanently archived by ${st.adminName ?? "Administrator"} on ${_formatDateTime(st.adminLockedAt)}. Books are permanently closed.';
         actions.add(
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            decoration: BoxDecoration(color: tokens.surfaceHover, borderRadius: BorderRadius.circular(6)),
+            decoration: BoxDecoration(
+                color: tokens.surfaceHover,
+                borderRadius: BorderRadius.circular(6)),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Icon(Icons.lock, size: 13, color: tokens.textPrimary),
                 const SizedBox(width: 4),
-                Text('Permanent Audit Record', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: tokens.textPrimary)),
+                Text('Permanent Audit Record',
+                    style: TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.bold,
+                        color: tokens.textPrimary)),
               ],
             ),
           ),
@@ -4828,18 +6462,26 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
         icon = Icons.edit_note;
         iconColor = tokens.textMuted;
         title = 'Month-End Statements in Preparation';
-        description = 'Operational books are open for reconciliation. Ready to certify and submit to Area Manager?';
+        description =
+            'Operational books are open for reconciliation. Ready to certify and submit to Area Manager?';
 
         if (isBm || canMutateAdmin) {
           actions.add(
             ElevatedButton.icon(
-              onPressed: _isWorkflowSubmitting ? null : () => _showBmSubmitDialog(st),
-              icon: const Icon(Icons.assignment_turned_in_outlined, size: 14, color: Colors.white),
-              label: const Text('Verify & Submit to Area Manager', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+              onPressed:
+                  _isWorkflowSubmitting ? null : () => _showBmSubmitDialog(st),
+              icon: const Icon(Icons.assignment_turned_in_outlined,
+                  size: 14, color: Colors.white),
+              label: const Text('Verify & Submit to Area Manager',
+                  style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold)),
               style: ElevatedButton.styleFrom(
                 backgroundColor: tokens.brandPrimaryDark,
                 foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               ),
             ),
           );
@@ -4847,8 +6489,14 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
           actions.add(
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              decoration: BoxDecoration(color: tokens.surfaceHover, borderRadius: BorderRadius.circular(6)),
-              child: Text('Awaiting Branch Submission', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: tokens.textMuted)),
+              decoration: BoxDecoration(
+                  color: tokens.surfaceHover,
+                  borderRadius: BorderRadius.circular(6)),
+              child: Text('Awaiting Branch Submission',
+                  style: TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w600,
+                      color: tokens.textMuted)),
             ),
           );
         }
@@ -4890,16 +6538,26 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                       children: [
                         Text(
                           title,
-                          style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: tokens.textPrimary),
+                          style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w800,
+                              color: tokens.textPrimary),
                           softWrap: true,
                         ),
                         const SizedBox(height: 4),
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(color: pillBg, borderRadius: BorderRadius.circular(4), border: Border.all(color: border)),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                              color: pillBg,
+                              borderRadius: BorderRadius.circular(4),
+                              border: Border.all(color: border)),
                           child: Text(
                             pillLabel,
-                            style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: pillText),
+                            style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                                color: pillText),
                           ),
                         ),
                       ],
@@ -4908,8 +6566,11 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                 ],
               ),
               const SizedBox(height: 6),
-              Text(description, style: TextStyle(fontSize: 12, color: tokens.textSecondary)),
-              if (st.amQueryNotes != null && st.amQueryNotes!.isNotEmpty && status == 'RETURNED_FOR_CORRECTION') ...[
+              Text(description,
+                  style: TextStyle(fontSize: 12, color: tokens.textSecondary)),
+              if (st.amQueryNotes != null &&
+                  st.amQueryNotes!.isNotEmpty &&
+                  status == 'RETURNED_FOR_CORRECTION') ...[
                 const SizedBox(height: 8),
                 Container(
                   padding: const EdgeInsets.all(10),
@@ -4921,12 +6582,16 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Icon(Icons.help_outline, size: 15, color: tokens.dangerDot),
+                      Icon(Icons.help_outline,
+                          size: 15, color: tokens.dangerDot),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
                           'Query: ${st.amQueryNotes}',
-                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tokens.dangerText),
+                          style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: tokens.dangerText),
                         ),
                       ),
                     ],
@@ -4976,7 +6641,8 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(res['message'] ?? 'Regional monthly package sealed for all supervised branches.'),
+            content: Text(res['message'] ??
+                'Regional monthly package sealed for all supervised branches.'),
             backgroundColor: const Color(0xFF1D4ED8),
           ),
         );
@@ -4986,7 +6652,8 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Regional seal failed: ${AppErrorDetails.from(e).message}'),
+            content: Text(
+                'Regional seal failed: ${AppErrorDetails.from(e).message}'),
             backgroundColor: const Color(0xFFDC2626),
           ),
         );
@@ -5004,19 +6671,26 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
         final dTokens = IcareSurfaceTokens.of(ctx);
         return AlertDialog(
           backgroundColor: dTokens.surfaceElevated,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           title: Row(
             children: [
               Container(
                 padding: const EdgeInsets.all(6),
-                decoration: BoxDecoration(color: dTokens.successBg, borderRadius: BorderRadius.circular(6)),
-                child: Icon(Icons.assignment_turned_in_outlined, color: dTokens.successText, size: 20),
+                decoration: BoxDecoration(
+                    color: dTokens.successBg,
+                    borderRadius: BorderRadius.circular(6)),
+                child: Icon(Icons.assignment_turned_in_outlined,
+                    color: dTokens.successText, size: 20),
               ),
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
                   'Verify & Submit Monthly Report',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: dTokens.textPrimary),
+                  style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                      color: dTokens.textPrimary),
                 ),
               ),
             ],
@@ -5030,7 +6704,10 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                 children: [
                   Text(
                     'Branch: ${_selectedBranchName ?? "Current"} • Period: $_selectedExecYear-${_selectedExecMonth.toString().padLeft(2, '0')}',
-                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: dTokens.brandPrimary),
+                    style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: dTokens.brandPrimary),
                   ),
                   const SizedBox(height: 12),
                   Container(
@@ -5042,16 +6719,25 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                     ),
                     child: Column(
                       children: [
-                        _buildSnapshotRow('Disbursed Principal', _formatNgn(st.disbursedPrincipal)),
-                        _buildSnapshotRow('Upfront Fees Deducted', _formatNgn(st.upfrontFees)),
-                        _buildSnapshotRow('Period Loan Collections', _formatNgn(st.collections)),
-                        _buildSnapshotRow('Closing Active Credit', _formatNgn(st.closingCredit), isAccent: true),
-                        _buildSnapshotRow('Closing Savings Balance', _formatNgn(st.closingSavings)),
-                        _buildSnapshotRow('Physical Vault Cash', _formatNgn(st.vaultCashAcct1000)),
+                        _buildSnapshotRow('Disbursed Principal',
+                            _formatNgn(st.disbursedPrincipal)),
+                        _buildSnapshotRow('Upfront Fees Deducted',
+                            _formatNgn(st.upfrontFees)),
+                        _buildSnapshotRow('Period Loan Collections',
+                            _formatNgn(st.collections)),
+                        _buildSnapshotRow('Closing Active Credit',
+                            _formatNgn(st.closingCredit),
+                            isAccent: true),
+                        _buildSnapshotRow('Closing Savings Balance',
+                            _formatNgn(st.closingSavings)),
+                        _buildSnapshotRow('Physical Vault Cash',
+                            _formatNgn(st.vaultCashAcct1000)),
                         const Divider(height: 12),
                         _buildSnapshotRow(
                           'General Ledger Status',
-                          st.isGlBalanced ? 'Balanced (₦0.00)' : 'Variance: ${_formatNgn(st.glVariance)}',
+                          st.isGlBalanced
+                              ? 'Balanced (₦0.00)'
+                              : 'Variance: ${_formatNgn(st.glVariance)}',
                           isDanger: !st.isGlBalanced,
                           isAccent: st.isGlBalanced,
                         ),
@@ -5069,12 +6755,14 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Icon(Icons.info_outline, size: 16, color: dTokens.infoText),
+                        Icon(Icons.info_outline,
+                            size: 16, color: dTokens.infoText),
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
                             'Submitting certifies the branch books and locks the statement for Area Manager review.',
-                            style: TextStyle(fontSize: 11.5, color: dTokens.infoText),
+                            style: TextStyle(
+                                fontSize: 11.5, color: dTokens.infoText),
                           ),
                         ),
                       ],
@@ -5096,12 +6784,18 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
             ),
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancel')),
             ElevatedButton.icon(
               onPressed: () => Navigator.pop(ctx, true),
               icon: const Icon(Icons.send, size: 14, color: Colors.white),
-              label: const Text('Certify & Submit', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-              style: ElevatedButton.styleFrom(backgroundColor: dTokens.brandPrimaryDark, foregroundColor: Colors.white),
+              label: const Text('Certify & Submit',
+                  style: TextStyle(
+                      color: Colors.white, fontWeight: FontWeight.bold)),
+              style: ElevatedButton.styleFrom(
+                  backgroundColor: dTokens.brandPrimaryDark,
+                  foregroundColor: Colors.white),
             ),
           ],
         );
@@ -5117,12 +6811,15 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
         branchName: _selectedBranchName,
         year: _selectedExecYear,
         month: _selectedExecMonth,
-        notes: notesController.text.trim().isNotEmpty ? notesController.text.trim() : null,
+        notes: notesController.text.trim().isNotEmpty
+            ? notesController.text.trim()
+            : null,
       );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(res['message'] ?? 'Monthly report certified and submitted to Area Manager.'),
+            content: Text(res['message'] ??
+                'Monthly report certified and submitted to Area Manager.'),
             backgroundColor: const Color(0xFF065F46),
           ),
         );
@@ -5131,7 +6828,10 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Submission failed: ${AppErrorDetails.from(e).message}'), backgroundColor: const Color(0xFFDC2626)),
+          SnackBar(
+              content:
+                  Text('Submission failed: ${AppErrorDetails.from(e).message}'),
+              backgroundColor: const Color(0xFFDC2626)),
         );
       }
     } finally {
@@ -5147,19 +6847,26 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
         final dTokens = IcareSurfaceTokens.of(ctx);
         return AlertDialog(
           backgroundColor: dTokens.surfaceElevated,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           title: Row(
             children: [
               Container(
                 padding: const EdgeInsets.all(6),
-                decoration: BoxDecoration(color: dTokens.successBg, borderRadius: BorderRadius.circular(6)),
-                child: Icon(Icons.check_circle_outline, color: dTokens.successDot, size: 20),
+                decoration: BoxDecoration(
+                    color: dTokens.successBg,
+                    borderRadius: BorderRadius.circular(6)),
+                child: Icon(Icons.check_circle_outline,
+                    color: dTokens.successDot, size: 20),
               ),
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
                   'Endorse & Sign Off Monthly Report',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: dTokens.textPrimary),
+                  style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                      color: dTokens.textPrimary),
                 ),
               ),
             ],
@@ -5173,7 +6880,10 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                 children: [
                   Text(
                     'Branch: ${_selectedBranchName ?? "Current"} • Certified by: ${st.bmName ?? "Branch Manager"}',
-                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: dTokens.brandPrimary),
+                    style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: dTokens.brandPrimary),
                   ),
                   const SizedBox(height: 12),
                   Container(
@@ -5185,14 +6895,22 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                     ),
                     child: Column(
                       children: [
-                        _buildSnapshotRow('Disbursed Principal', _formatNgn(st.disbursedPrincipal)),
-                        _buildSnapshotRow('Period Loan Collections', _formatNgn(st.collections)),
-                        _buildSnapshotRow('Closing Active Credit', _formatNgn(st.closingCredit), isAccent: true),
-                        _buildSnapshotRow('Closing Savings Balance', _formatNgn(st.closingSavings)),
-                        _buildSnapshotRow('Physical Vault Cash', _formatNgn(st.vaultCashAcct1000)),
+                        _buildSnapshotRow('Disbursed Principal',
+                            _formatNgn(st.disbursedPrincipal)),
+                        _buildSnapshotRow('Period Loan Collections',
+                            _formatNgn(st.collections)),
+                        _buildSnapshotRow('Closing Active Credit',
+                            _formatNgn(st.closingCredit),
+                            isAccent: true),
+                        _buildSnapshotRow('Closing Savings Balance',
+                            _formatNgn(st.closingSavings)),
+                        _buildSnapshotRow('Physical Vault Cash',
+                            _formatNgn(st.vaultCashAcct1000)),
                         _buildSnapshotRow(
                           'General Ledger Status',
-                          st.isGlBalanced ? 'Balanced (₦0.00)' : 'Variance: ${_formatNgn(st.glVariance)}',
+                          st.isGlBalanced
+                              ? 'Balanced (₦0.00)'
+                              : 'Variance: ${_formatNgn(st.glVariance)}',
                           isDanger: !st.isGlBalanced,
                           isAccent: st.isGlBalanced,
                         ),
@@ -5215,12 +6933,18 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
             ),
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancel')),
             ElevatedButton.icon(
               onPressed: () => Navigator.pop(ctx, true),
               icon: const Icon(Icons.check, size: 14, color: Colors.white),
-              label: const Text('Confirm Endorsement', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-              style: ElevatedButton.styleFrom(backgroundColor: dTokens.brandPrimaryDark, foregroundColor: Colors.white),
+              label: const Text('Confirm Endorsement',
+                  style: TextStyle(
+                      color: Colors.white, fontWeight: FontWeight.bold)),
+              style: ElevatedButton.styleFrom(
+                  backgroundColor: dTokens.brandPrimaryDark,
+                  foregroundColor: Colors.white),
             ),
           ],
         );
@@ -5236,12 +6960,15 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
         branchName: _selectedBranchName,
         year: _selectedExecYear,
         month: _selectedExecMonth,
-        notes: notesController.text.trim().isNotEmpty ? notesController.text.trim() : null,
+        notes: notesController.text.trim().isNotEmpty
+            ? notesController.text.trim()
+            : null,
       );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(res['message'] ?? 'Branch monthly report successfully endorsed.'),
+            content: Text(res['message'] ??
+                'Branch monthly report successfully endorsed.'),
             backgroundColor: const Color(0xFF065F46),
           ),
         );
@@ -5250,7 +6977,10 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Endorsement failed: ${AppErrorDetails.from(e).message}'), backgroundColor: const Color(0xFFDC2626)),
+          SnackBar(
+              content: Text(
+                  'Endorsement failed: ${AppErrorDetails.from(e).message}'),
+              backgroundColor: const Color(0xFFDC2626)),
         );
       }
     } finally {
@@ -5266,19 +6996,26 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
         final dTokens = IcareSurfaceTokens.of(ctx);
         return AlertDialog(
           backgroundColor: dTokens.surfaceElevated,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           title: Row(
             children: [
               Container(
                 padding: const EdgeInsets.all(6),
-                decoration: BoxDecoration(color: dTokens.dangerBg, borderRadius: BorderRadius.circular(6)),
-                child: Icon(Icons.assignment_return_outlined, color: dTokens.dangerDot, size: 20),
+                decoration: BoxDecoration(
+                    color: dTokens.dangerBg,
+                    borderRadius: BorderRadius.circular(6)),
+                child: Icon(Icons.assignment_return_outlined,
+                    color: dTokens.dangerDot, size: 20),
               ),
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
                   'Return Report with Queries',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: dTokens.textPrimary),
+                  style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                      color: dTokens.textPrimary),
                 ),
               ),
             ],
@@ -5291,7 +7028,8 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
               children: [
                 Text(
                   'Specify corrections or discrepancies required from ${st.bmName ?? "Branch Manager"} before endorsement.',
-                  style: TextStyle(fontSize: 12.5, color: dTokens.textSecondary),
+                  style:
+                      TextStyle(fontSize: 12.5, color: dTokens.textSecondary),
                 ),
                 const SizedBox(height: 14),
                 TextField(
@@ -5308,15 +7046,21 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
             ),
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancel')),
             ElevatedButton.icon(
               onPressed: () {
                 if (queryController.text.trim().isEmpty) return;
                 Navigator.pop(ctx, true);
               },
               icon: const Icon(Icons.send, size: 14, color: Colors.white),
-              label: const Text('Return to Branch', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFDC2626), foregroundColor: Colors.white),
+              label: const Text('Return to Branch',
+                  style: TextStyle(
+                      color: Colors.white, fontWeight: FontWeight.bold)),
+              style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFFDC2626),
+                  foregroundColor: Colors.white),
             ),
           ],
         );
@@ -5337,7 +7081,8 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(res['message'] ?? 'Report returned to Branch Manager with queries.'),
+            content: Text(res['message'] ??
+                'Report returned to Branch Manager with queries.'),
             backgroundColor: const Color(0xFFB45309),
           ),
         );
@@ -5346,12 +7091,68 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Action failed: ${AppErrorDetails.from(e).message}'), backgroundColor: const Color(0xFFDC2626)),
+          SnackBar(
+              content:
+                  Text('Action failed: ${AppErrorDetails.from(e).message}'),
+              backgroundColor: const Color(0xFFDC2626)),
         );
       }
     } finally {
       if (mounted) setState(() => _isWorkflowSubmitting = false);
     }
+  }
+
+  MonthlyWorkflowStatusModel _workflowStatusFromPendingBranch(
+    MonthlyWorkflowPendingBranchModel branch,
+  ) {
+    return MonthlyWorkflowStatusModel(
+      branchId: branch.branchId,
+      areaName: branch.areaName ?? '',
+      year: branch.year,
+      month: branch.month,
+      status: branch.status,
+      disbursedPrincipal: branch.disbursedPrincipal,
+      upfrontFees: branch.upfrontFees,
+      netActiveCredit: branch.netActiveCredit,
+      collections: branch.collections,
+      closingCredit: branch.closingCredit,
+      closingSavings: branch.closingSavings,
+      vaultCashAcct1000: branch.vaultCash,
+      bankDepositsAcct1050: branch.bankDeposits,
+      isGlBalanced: branch.isGlBalanced,
+      glVariance: branch.glVariance,
+      bmName: branch.bmName,
+      bmNotes: branch.bmNotes,
+      bmSubmittedAt: branch.submittedAt,
+      amName: branch.amName,
+      amNotes: branch.amNotes,
+      amEndorsedAt: branch.amEndorsedAt,
+      amQueryNotes: branch.amQueryNotes,
+      adminName: branch.adminName,
+      adminNotes: branch.adminNotes,
+      adminLockedAt: branch.adminLockedAt,
+    );
+  }
+
+  Future<void> _endorseBranchFromAmQueue(
+    MonthlyWorkflowPendingBranchModel branch,
+  ) async {
+    _selectedBranchName = branch.branchName;
+    await _showAmEndorseDialog(_workflowStatusFromPendingBranch(branch));
+  }
+
+  Future<void> _returnBranchFromAmQueue(
+    MonthlyWorkflowPendingBranchModel branch,
+  ) async {
+    _selectedBranchName = branch.branchName;
+    await _showAmReturnDialog(_workflowStatusFromPendingBranch(branch));
+  }
+
+  Future<void> _lockSignedBranchFromAdminQueue(
+    MonthlyWorkflowPendingBranchModel branch,
+  ) async {
+    _selectedBranchName = branch.branchName;
+    await _showAdminLockDialog(_workflowStatusFromPendingBranch(branch));
   }
 
   Future<void> _showAdminLockDialog(MonthlyWorkflowStatusModel st) async {
@@ -5362,19 +7163,25 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
         final dTokens = IcareSurfaceTokens.of(ctx);
         return AlertDialog(
           backgroundColor: dTokens.surfaceElevated,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           title: Row(
             children: [
               Container(
                 padding: const EdgeInsets.all(6),
-                decoration: BoxDecoration(color: dTokens.surfaceHover, borderRadius: BorderRadius.circular(6)),
+                decoration: BoxDecoration(
+                    color: dTokens.surfaceHover,
+                    borderRadius: BorderRadius.circular(6)),
                 child: Icon(Icons.lock, color: dTokens.textPrimary, size: 20),
               ),
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
                   'Institutional Lock & Permanent Archival',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: dTokens.textPrimary),
+                  style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                      color: dTokens.textPrimary),
                 ),
               ),
             ],
@@ -5387,7 +7194,8 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
               children: [
                 Text(
                   'This executive action permanently locks the monthly statements into institutional archive records. Once locked, no further adjustments or operational entries can be posted.',
-                  style: TextStyle(fontSize: 12.5, color: dTokens.textSecondary),
+                  style:
+                      TextStyle(fontSize: 12.5, color: dTokens.textSecondary),
                 ),
                 const SizedBox(height: 14),
                 TextField(
@@ -5404,13 +7212,19 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
             ),
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancel')),
             ElevatedButton.icon(
               onPressed: () => Navigator.pop(ctx, true),
               icon: const Icon(Icons.lock, size: 14, color: Colors.white),
-              label: const Text('Execute Lock', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+              label: const Text('Execute Lock',
+                  style: TextStyle(
+                      color: Colors.white, fontWeight: FontWeight.bold)),
               style: ElevatedButton.styleFrom(
-                backgroundColor: dTokens.isDark ? const Color(0xFF1E293B) : const Color(0xFF0F172A),
+                backgroundColor: dTokens.isDark
+                    ? const Color(0xFF1E293B)
+                    : const Color(0xFF0F172A),
                 foregroundColor: Colors.white,
               ),
             ),
@@ -5428,12 +7242,15 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
         branchName: _selectedBranchName,
         year: _selectedExecYear,
         month: _selectedExecMonth,
-        notes: notesController.text.trim().isNotEmpty ? notesController.text.trim() : null,
+        notes: notesController.text.trim().isNotEmpty
+            ? notesController.text.trim()
+            : null,
       );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(res['message'] ?? 'Monthly report permanently locked and archived.'),
+            content: Text(res['message'] ??
+                'Monthly report permanently locked and archived.'),
             backgroundColor: const Color(0xFF0F172A),
           ),
         );
@@ -5442,7 +7259,9 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Lock failed: ${AppErrorDetails.from(e).message}'), backgroundColor: const Color(0xFFDC2626)),
+          SnackBar(
+              content: Text('Lock failed: ${AppErrorDetails.from(e).message}'),
+              backgroundColor: const Color(0xFFDC2626)),
         );
       }
     } finally {
@@ -5453,7 +7272,8 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
   // ---------------------------------------------------------------------------
   // Reusable Component Helpers
   // ---------------------------------------------------------------------------
-  Widget _buildMetricCard(String label, String value, {String? subtitle, bool isAccent = false, double? width}) {
+  Widget _buildMetricCard(String label, String value,
+      {String? subtitle, bool isAccent = false, double? width}) {
     final tokens = IcareSurfaceTokens.of(context);
     return Container(
       width: width ?? 170,
@@ -5462,7 +7282,8 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
       decoration: BoxDecoration(
         color: isAccent ? tokens.brandPrimaryDark : tokens.surfaceSubtle,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: isAccent ? tokens.brandPrimaryDark : tokens.borderSubtle),
+        border: Border.all(
+            color: isAccent ? tokens.brandPrimaryDark : tokens.borderSubtle),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -5542,7 +7363,10 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                   Expanded(
                     child: Text(
                       hint ?? 'Swipe horizontally to view all columns',
-                      style: TextStyle(fontSize: 11, color: tokens.textMuted, fontWeight: FontWeight.w500),
+                      style: TextStyle(
+                          fontSize: 11,
+                          color: tokens.textMuted,
+                          fontWeight: FontWeight.w500),
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
@@ -5570,7 +7394,8 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
         border: Border.all(color: tokens.borderSubtle),
       ),
       child: Center(
-        child: Text(message, style: TextStyle(fontSize: 13, color: tokens.textMuted)),
+        child: Text(message,
+            style: TextStyle(fontSize: 13, color: tokens.textMuted)),
       ),
     );
   }
@@ -5603,7 +7428,10 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
                   children: [
                     Text(
                       details.title,
-                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: tokens.dangerText),
+                      style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: tokens.dangerText),
                     ),
                     const SizedBox(height: 2),
                     Text(
@@ -5618,7 +7446,11 @@ class _ReportsExportScreenState extends ConsumerState<ReportsExportScreen> {
           OutlinedButton.icon(
             onPressed: onRetry ?? _refreshCurrentTabData,
             icon: Icon(Icons.refresh, size: 14, color: tokens.dangerText),
-            label: Text('Retry', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: tokens.dangerText)),
+            label: Text('Retry',
+                style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: tokens.dangerText)),
             style: OutlinedButton.styleFrom(
               side: BorderSide(color: tokens.dangerBorder),
               visualDensity: VisualDensity.compact,

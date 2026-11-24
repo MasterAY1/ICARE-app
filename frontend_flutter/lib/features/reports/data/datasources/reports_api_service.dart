@@ -34,11 +34,15 @@ class ReportsApiService {
     String? endDate,
   }) async {
     final params = <String, dynamic>{};
-    if (branchName != null && branchName.isNotEmpty && !branchName.startsWith('All')) {
+    if (branchName != null &&
+        branchName.isNotEmpty &&
+        !branchName.startsWith('All')) {
       params['branch_name'] = branchName;
     }
-    if (asOfDate != null && asOfDate.isNotEmpty) params['as_of_date'] = asOfDate;
-    if (startDate != null && startDate.isNotEmpty) params['start_date'] = startDate;
+    if (asOfDate != null && asOfDate.isNotEmpty)
+      params['as_of_date'] = asOfDate;
+    if (startDate != null && startDate.isNotEmpty)
+      params['start_date'] = startDate;
     if (endDate != null && endDate.isNotEmpty) params['end_date'] = endDate;
 
     final response = await _apiClient.get(
@@ -58,17 +62,25 @@ class ReportsApiService {
     String? endDate,
   }) async {
     final params = <String, dynamic>{};
-    if (branchName != null && branchName.isNotEmpty && !branchName.startsWith('All')) {
+    if (branchName != null &&
+        branchName.isNotEmpty &&
+        !branchName.startsWith('All')) {
       params['branch_name'] = branchName;
     }
-    if (productName != null && productName.isNotEmpty && !productName.startsWith('All')) {
+    if (productName != null &&
+        productName.isNotEmpty &&
+        !productName.startsWith('All')) {
       params['product_name'] = productName;
     }
-    if (officerName != null && officerName.isNotEmpty && !officerName.startsWith('All')) {
+    if (officerName != null &&
+        officerName.isNotEmpty &&
+        !officerName.startsWith('All')) {
       params['officer_name'] = officerName;
     }
-    if (asOfDate != null && asOfDate.isNotEmpty) params['as_of_date'] = asOfDate;
-    if (startDate != null && startDate.isNotEmpty) params['start_date'] = startDate;
+    if (asOfDate != null && asOfDate.isNotEmpty)
+      params['as_of_date'] = asOfDate;
+    if (startDate != null && startDate.isNotEmpty)
+      params['start_date'] = startDate;
     if (endDate != null && endDate.isNotEmpty) params['end_date'] = endDate;
 
     final response = await _apiClient.get(
@@ -87,16 +99,23 @@ class ReportsApiService {
     String? endDate,
   }) async {
     final params = <String, dynamic>{};
-    if (branchName != null && branchName.isNotEmpty && !branchName.startsWith('All')) {
+    if (branchName != null &&
+        branchName.isNotEmpty &&
+        !branchName.startsWith('All')) {
       params['branch_name'] = branchName;
     }
-    if (productName != null && productName.isNotEmpty && !productName.startsWith('All')) {
+    if (productName != null &&
+        productName.isNotEmpty &&
+        !productName.startsWith('All')) {
       params['product_name'] = productName;
     }
-    if (officerName != null && officerName.isNotEmpty && !officerName.startsWith('All')) {
+    if (officerName != null &&
+        officerName.isNotEmpty &&
+        !officerName.startsWith('All')) {
       params['officer_name'] = officerName;
     }
-    if (startDate != null && startDate.isNotEmpty) params['start_date'] = startDate;
+    if (startDate != null && startDate.isNotEmpty)
+      params['start_date'] = startDate;
     if (endDate != null && endDate.isNotEmpty) params['end_date'] = endDate;
 
     final response = await _apiClient.get(
@@ -114,16 +133,24 @@ class ReportsApiService {
     String? inspectOfficer,
   }) async {
     final params = <String, dynamic>{};
-    if (branchName != null && branchName.isNotEmpty && !branchName.startsWith('All')) {
+    if (branchName != null &&
+        branchName.isNotEmpty &&
+        !branchName.startsWith('All')) {
       params['branch_name'] = branchName;
     }
-    if (productName != null && productName.isNotEmpty && !productName.startsWith('All')) {
+    if (productName != null &&
+        productName.isNotEmpty &&
+        !productName.startsWith('All')) {
       params['product_name'] = productName;
     }
-    if (officerName != null && officerName.isNotEmpty && !officerName.startsWith('All')) {
+    if (officerName != null &&
+        officerName.isNotEmpty &&
+        !officerName.startsWith('All')) {
       params['officer_name'] = officerName;
     }
-    if (inspectOfficer != null && inspectOfficer.isNotEmpty && !inspectOfficer.startsWith('All')) {
+    if (inspectOfficer != null &&
+        inspectOfficer.isNotEmpty &&
+        !inspectOfficer.startsWith('All')) {
       params['inspect_officer'] = inspectOfficer;
     }
 
@@ -131,22 +158,32 @@ class ReportsApiService {
       '/api/v1/reports/portfolio-performance',
       queryParameters: params.isNotEmpty ? params : null,
     );
-    return PortfolioPerformanceData.fromJson(response.data as Map<String, dynamic>);
+    return PortfolioPerformanceData.fromJson(
+        response.data as Map<String, dynamic>);
   }
 
-  /// 6. Area Manager Branch Comparison (AM Exclusive)
+  /// 6. Area Manager Branch Comparison (AM Exclusive / Admin Signed Scope)
   Future<AreaComparisonData> getAreaComparison({
     String? productName,
     String? asOfDate,
     String? startDate,
     String? endDate,
+    int? year,
+    int? month,
   }) async {
-    final params = <String, dynamic>{};
-    if (productName != null && productName.isNotEmpty && !productName.startsWith('All')) {
+    final params = <String, dynamic>{
+      if (year != null) 'year': year,
+      if (month != null) 'month': month,
+    };
+    if (productName != null &&
+        productName.isNotEmpty &&
+        !productName.startsWith('All')) {
       params['product_name'] = productName;
     }
-    if (asOfDate != null && asOfDate.isNotEmpty) params['as_of_date'] = asOfDate;
-    if (startDate != null && startDate.isNotEmpty) params['start_date'] = startDate;
+    if (asOfDate != null && asOfDate.isNotEmpty)
+      params['as_of_date'] = asOfDate;
+    if (startDate != null && startDate.isNotEmpty)
+      params['start_date'] = startDate;
     if (endDate != null && endDate.isNotEmpty) params['end_date'] = endDate;
 
     final response = await _apiClient.get(
@@ -164,19 +201,32 @@ class ReportsApiService {
     String? asOfDate,
     String? startDate,
     String? endDate,
+    int? year,
+    int? month,
   }) async {
-    final params = <String, dynamic>{};
-    if (branchName != null && branchName.isNotEmpty && !branchName.startsWith('All')) {
+    final params = <String, dynamic>{
+      if (year != null) 'year': year,
+      if (month != null) 'month': month,
+    };
+    if (branchName != null &&
+        branchName.isNotEmpty &&
+        !branchName.startsWith('All')) {
       params['branch_name'] = branchName;
     }
-    if (productName != null && productName.isNotEmpty && !productName.startsWith('All')) {
+    if (productName != null &&
+        productName.isNotEmpty &&
+        !productName.startsWith('All')) {
       params['product_name'] = productName;
     }
-    if (officerName != null && officerName.isNotEmpty && !officerName.startsWith('All')) {
+    if (officerName != null &&
+        officerName.isNotEmpty &&
+        !officerName.startsWith('All')) {
       params['officer_name'] = officerName;
     }
-    if (asOfDate != null && asOfDate.isNotEmpty) params['as_of_date'] = asOfDate;
-    if (startDate != null && startDate.isNotEmpty) params['start_date'] = startDate;
+    if (asOfDate != null && asOfDate.isNotEmpty)
+      params['as_of_date'] = asOfDate;
+    if (startDate != null && startDate.isNotEmpty)
+      params['start_date'] = startDate;
     if (endDate != null && endDate.isNotEmpty) params['end_date'] = endDate;
 
     final response = await _apiClient.get(
@@ -196,19 +246,33 @@ class ReportsApiService {
     String? asOfDate,
     String? startDate,
     String? endDate,
+    int? year,
+    int? month,
   }) async {
-    final params = <String, dynamic>{'report_type': reportType};
-    if (branchName != null && branchName.isNotEmpty && !branchName.startsWith('All')) {
+    final params = <String, dynamic>{
+      'report_type': reportType,
+      if (year != null) 'year': year,
+      if (month != null) 'month': month,
+    };
+    if (branchName != null &&
+        branchName.isNotEmpty &&
+        !branchName.startsWith('All')) {
       params['branch_name'] = branchName;
     }
-    if (productName != null && productName.isNotEmpty && !productName.startsWith('All')) {
+    if (productName != null &&
+        productName.isNotEmpty &&
+        !productName.startsWith('All')) {
       params['product_name'] = productName;
     }
-    if (officerName != null && officerName.isNotEmpty && !officerName.startsWith('All')) {
+    if (officerName != null &&
+        officerName.isNotEmpty &&
+        !officerName.startsWith('All')) {
       params['officer_name'] = officerName;
     }
-    if (asOfDate != null && asOfDate.isNotEmpty) params['as_of_date'] = asOfDate;
-    if (startDate != null && startDate.isNotEmpty) params['start_date'] = startDate;
+    if (asOfDate != null && asOfDate.isNotEmpty)
+      params['as_of_date'] = asOfDate;
+    if (startDate != null && startDate.isNotEmpty)
+      params['start_date'] = startDate;
     if (endDate != null && endDate.isNotEmpty) params['end_date'] = endDate;
 
     final response = await _apiClient.get(
@@ -231,13 +295,19 @@ class ReportsApiService {
       if (year != null) 'year': year,
       if (month != null) 'month': month,
     };
-    if (branchName != null && branchName.isNotEmpty && !branchName.startsWith('All')) {
+    if (branchName != null &&
+        branchName.isNotEmpty &&
+        !branchName.startsWith('All')) {
       params['branch_name'] = branchName;
     }
-    if (officerName != null && officerName.isNotEmpty && !officerName.startsWith('All')) {
+    if (officerName != null &&
+        officerName.isNotEmpty &&
+        !officerName.startsWith('All')) {
       params['officer_name'] = officerName;
     }
-    if (productName != null && productName.isNotEmpty && !productName.startsWith('All')) {
+    if (productName != null &&
+        productName.isNotEmpty &&
+        !productName.startsWith('All')) {
       params['product_name'] = productName;
     }
 
@@ -260,13 +330,19 @@ class ReportsApiService {
       if (year != null) 'year': year,
       if (month != null) 'month': month,
     };
-    if (branchName != null && branchName.isNotEmpty && !branchName.startsWith('All')) {
+    if (branchName != null &&
+        branchName.isNotEmpty &&
+        !branchName.startsWith('All')) {
       params['branch_name'] = branchName;
     }
-    if (officerName != null && officerName.isNotEmpty && !officerName.startsWith('All')) {
+    if (officerName != null &&
+        officerName.isNotEmpty &&
+        !officerName.startsWith('All')) {
       params['officer_name'] = officerName;
     }
-    if (productName != null && productName.isNotEmpty && !productName.startsWith('All')) {
+    if (productName != null &&
+        productName.isNotEmpty &&
+        !productName.startsWith('All')) {
       params['product_name'] = productName;
     }
 
@@ -274,7 +350,8 @@ class ReportsApiService {
       '/api/v1/reports/official-statements',
       queryParameters: params.isNotEmpty ? params : null,
     );
-    return MonthlyExecutiveStatementsData.fromJson(response.data as Map<String, dynamic>);
+    return MonthlyExecutiveStatementsData.fromJson(
+        response.data as Map<String, dynamic>);
   }
 
   /// 11. Download Executive Monthly Excel Workbook
@@ -289,13 +366,19 @@ class ReportsApiService {
       if (year != null) 'year': year,
       if (month != null) 'month': month,
     };
-    if (branchName != null && branchName.isNotEmpty && !branchName.startsWith('All')) {
+    if (branchName != null &&
+        branchName.isNotEmpty &&
+        !branchName.startsWith('All')) {
       params['branch_name'] = branchName;
     }
-    if (officerName != null && officerName.isNotEmpty && !officerName.startsWith('All')) {
+    if (officerName != null &&
+        officerName.isNotEmpty &&
+        !officerName.startsWith('All')) {
       params['officer_name'] = officerName;
     }
-    if (productName != null && productName.isNotEmpty && !productName.startsWith('All')) {
+    if (productName != null &&
+        productName.isNotEmpty &&
+        !productName.startsWith('All')) {
       params['product_name'] = productName;
     }
 
@@ -319,13 +402,19 @@ class ReportsApiService {
       if (year != null) 'year': year,
       if (month != null) 'month': month,
     };
-    if (branchName != null && branchName.isNotEmpty && !branchName.startsWith('All')) {
+    if (branchName != null &&
+        branchName.isNotEmpty &&
+        !branchName.startsWith('All')) {
       params['branch_name'] = branchName;
     }
-    if (officerName != null && officerName.isNotEmpty && !officerName.startsWith('All')) {
+    if (officerName != null &&
+        officerName.isNotEmpty &&
+        !officerName.startsWith('All')) {
       params['officer_name'] = officerName;
     }
-    if (productName != null && productName.isNotEmpty && !productName.startsWith('All')) {
+    if (productName != null &&
+        productName.isNotEmpty &&
+        !productName.startsWith('All')) {
       params['product_name'] = productName;
     }
 
@@ -349,13 +438,19 @@ class ReportsApiService {
       if (year != null) 'year': year,
       if (month != null) 'month': month,
     };
-    if (branchName != null && branchName.isNotEmpty && !branchName.startsWith('All')) {
+    if (branchName != null &&
+        branchName.isNotEmpty &&
+        !branchName.startsWith('All')) {
       params['branch_name'] = branchName;
     }
-    if (officerName != null && officerName.isNotEmpty && !officerName.startsWith('All')) {
+    if (officerName != null &&
+        officerName.isNotEmpty &&
+        !officerName.startsWith('All')) {
       params['officer_name'] = officerName;
     }
-    if (productName != null && productName.isNotEmpty && !productName.startsWith('All')) {
+    if (productName != null &&
+        productName.isNotEmpty &&
+        !productName.startsWith('All')) {
       params['product_name'] = productName;
     }
 
@@ -377,7 +472,9 @@ class ReportsApiService {
       if (year != null) 'year': year,
       if (month != null) 'month': month,
     };
-    if (branchName != null && branchName.isNotEmpty && !branchName.startsWith('All')) {
+    if (branchName != null &&
+        branchName.isNotEmpty &&
+        !branchName.startsWith('All')) {
       params['branch_name'] = branchName;
     }
 
@@ -406,7 +503,9 @@ class ReportsApiService {
     if (branchId != null && branchId.isNotEmpty) {
       payload['branch_id'] = branchId;
     }
-    if (branchName != null && branchName.isNotEmpty && !branchName.startsWith('All')) {
+    if (branchName != null &&
+        branchName.isNotEmpty &&
+        !branchName.startsWith('All')) {
       payload['branch_name'] = branchName;
     }
 
@@ -427,7 +526,9 @@ class ReportsApiService {
       if (year != null) 'year': year,
       if (month != null) 'month': month,
     };
-    if (branchName != null && branchName.isNotEmpty && !branchName.startsWith('All')) {
+    if (branchName != null &&
+        branchName.isNotEmpty &&
+        !branchName.startsWith('All')) {
       params['branch_name'] = branchName;
     }
 
@@ -452,7 +553,9 @@ class ReportsApiService {
       if (year != null) 'year': year,
       if (month != null) 'month': month,
     };
-    if (branchName != null && branchName.isNotEmpty && !branchName.startsWith('All')) {
+    if (branchName != null &&
+        branchName.isNotEmpty &&
+        !branchName.startsWith('All')) {
       params['branch_name'] = branchName;
     }
 
@@ -460,7 +563,8 @@ class ReportsApiService {
       '/api/v1/reports/monthly-workflow/status',
       queryParameters: params.isNotEmpty ? params : null,
     );
-    return MonthlyWorkflowStatusModel.fromJson(response.data as Map<String, dynamic>);
+    return MonthlyWorkflowStatusModel.fromJson(
+        response.data as Map<String, dynamic>);
   }
 
   /// 17. Tier 1: Branch Manager verifies and submits monthly report to Area Manager
@@ -475,7 +579,9 @@ class ReportsApiService {
       'month': month,
       if (notes != null) 'notes': notes,
     };
-    if (branchName != null && branchName.isNotEmpty && !branchName.startsWith('All')) {
+    if (branchName != null &&
+        branchName.isNotEmpty &&
+        !branchName.startsWith('All')) {
       payload['branch_name'] = branchName;
     }
 
@@ -498,7 +604,9 @@ class ReportsApiService {
       'month': month,
       if (notes != null) 'notes': notes,
     };
-    if (branchName != null && branchName.isNotEmpty && !branchName.startsWith('All')) {
+    if (branchName != null &&
+        branchName.isNotEmpty &&
+        !branchName.startsWith('All')) {
       payload['branch_name'] = branchName;
     }
 
@@ -521,7 +629,9 @@ class ReportsApiService {
       'month': month,
       'query_notes': queryNotes,
     };
-    if (branchName != null && branchName.isNotEmpty && !branchName.startsWith('All')) {
+    if (branchName != null &&
+        branchName.isNotEmpty &&
+        !branchName.startsWith('All')) {
       payload['branch_name'] = branchName;
     }
 
@@ -565,7 +675,9 @@ class ReportsApiService {
       'month': month,
       if (notes != null) 'notes': notes,
     };
-    if (branchName != null && branchName.isNotEmpty && !branchName.startsWith('All')) {
+    if (branchName != null &&
+        branchName.isNotEmpty &&
+        !branchName.startsWith('All')) {
       payload['branch_name'] = branchName;
     }
 
@@ -577,7 +689,8 @@ class ReportsApiService {
   }
 
   /// 22. Area Manager Approvals Hub: List supervised branches monthly submission statuses
-  Future<List<MonthlyWorkflowPendingBranchModel>> getPendingAmMonthlySubmissions({
+  Future<List<MonthlyWorkflowPendingBranchModel>>
+      getPendingAmMonthlySubmissions({
     int? year,
     int? month,
   }) async {
@@ -592,10 +705,30 @@ class ReportsApiService {
     );
     final list = response.data as List<dynamic>? ?? [];
     return list
-        .map((e) => MonthlyWorkflowPendingBranchModel.fromJson(e as Map<String, dynamic>))
+        .map((e) => MonthlyWorkflowPendingBranchModel.fromJson(
+            e as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// 23. Executive Admin Reports Queue: List ONLY AM-signed & reviewed branch reports
+  Future<List<MonthlyWorkflowPendingBranchModel>>
+      getAdminSignedMonthlySubmissions({
+    int? year,
+    int? month,
+  }) async {
+    final params = <String, dynamic>{
+      if (year != null) 'year': year,
+      if (month != null) 'month': month,
+    };
+
+    final response = await _apiClient.get(
+      '/api/v1/reports/monthly-workflow/admin-signed',
+      queryParameters: params.isNotEmpty ? params : null,
+    );
+    final list = response.data as List<dynamic>? ?? [];
+    return list
+        .map((e) => MonthlyWorkflowPendingBranchModel.fromJson(
+            e as Map<String, dynamic>))
         .toList();
   }
 }
-
-
-

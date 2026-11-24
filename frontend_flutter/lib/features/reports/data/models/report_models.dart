@@ -193,7 +193,8 @@ class SaverRow {
       officer: (json['officer'] ?? '') as String,
       totalDeposited: (json['total_deposited'] as num? ?? 0.0).toDouble(),
       totalWithdrawn: (json['total_withdrawn'] as num? ?? 0.0).toDouble(),
-      netSavingsBalance: (json['net_savings_balance'] as num? ?? 0.0).toDouble(),
+      netSavingsBalance:
+          (json['net_savings_balance'] as num? ?? 0.0).toDouble(),
       lastTransactionDate: json['last_transaction_date'] as String?,
     );
   }
@@ -228,14 +229,20 @@ class SavingsSummaryData {
 
   factory SavingsSummaryData.fromJson(Map<String, dynamic> json) {
     return SavingsSummaryData(
-      totalIndividualDeposits: (json['total_individual_deposits'] as num? ?? 0.0).toDouble(),
-      totalIndividualWithdrawals: (json['total_individual_withdrawals'] as num? ?? 0.0).toDouble(),
-      netIndividualSavings: (json['net_individual_savings'] as num? ?? 0.0).toDouble(),
-      totalGroupDeposits: (json['total_group_deposits'] as num? ?? 0.0).toDouble(),
-      totalGroupWithdrawals: (json['total_group_withdrawals'] as num? ?? 0.0).toDouble(),
+      totalIndividualDeposits:
+          (json['total_individual_deposits'] as num? ?? 0.0).toDouble(),
+      totalIndividualWithdrawals:
+          (json['total_individual_withdrawals'] as num? ?? 0.0).toDouble(),
+      netIndividualSavings:
+          (json['net_individual_savings'] as num? ?? 0.0).toDouble(),
+      totalGroupDeposits:
+          (json['total_group_deposits'] as num? ?? 0.0).toDouble(),
+      totalGroupWithdrawals:
+          (json['total_group_withdrawals'] as num? ?? 0.0).toDouble(),
       netGroupSavings: (json['net_group_savings'] as num? ?? 0.0).toDouble(),
       lapsReserve: (json['laps_reserve'] as num? ?? 0.0).toDouble(),
-      totalConsolidatedSavings: (json['total_consolidated_savings'] as num? ?? 0.0).toDouble(),
+      totalConsolidatedSavings:
+          (json['total_consolidated_savings'] as num? ?? 0.0).toDouble(),
       activeSaversCount: json['active_savers_count'] as int? ?? 0,
       totalSaversRecorded: json['total_savers_recorded'] as int? ?? 0,
       savers: (json['savers'] as List<dynamic>? ?? [])
@@ -350,11 +357,14 @@ class RepaymentSummaryData {
       totalCollected: (json['total_collected'] as num? ?? 0.0).toDouble(),
       totalExpected: (json['total_expected'] as num? ?? 0.0).toDouble(),
       baseCollections: (json['base_collections'] as num? ?? 0.0).toDouble(),
-      collectionEfficiency: (json['collection_efficiency'] as num? ?? 0.0).toDouble(),
-      totalOverdueCollected: (json['total_overdue_collected'] as num? ?? 0.0).toDouble(),
+      collectionEfficiency:
+          (json['collection_efficiency'] as num? ?? 0.0).toDouble(),
+      totalOverdueCollected:
+          (json['total_overdue_collected'] as num? ?? 0.0).toDouble(),
       fullPayoffAmount: (json['full_payoff_amount'] as num? ?? 0.0).toDouble(),
       fullPayoffCount: json['full_payoff_count'] as int? ?? 0,
-      excessPaymentAmount: (json['excess_payment_amount'] as num? ?? 0.0).toDouble(),
+      excessPaymentAmount:
+          (json['excess_payment_amount'] as num? ?? 0.0).toDouble(),
       excessPaymentCount: json['excess_payment_count'] as int? ?? 0,
       statusCounts: counts,
       totalTransactions: json['total_transactions'] as int? ?? 0,
@@ -442,7 +452,9 @@ class PortfolioPerformanceData {
       activeLoans: json['active_loans'] as int? ?? 0,
       totalPortfolio: (json['total_portfolio'] as num? ?? 0.0).toDouble(),
       parPercentage: (json['par_percentage'] as num? ?? 0.0).toDouble(),
-      officersList: (json['officers_list'] as List<dynamic>? ?? []).map((e) => e.toString()).toList(),
+      officersList: (json['officers_list'] as List<dynamic>? ?? [])
+          .map((e) => e.toString())
+          .toList(),
       officerRecords: (json['officer_records'] as List<dynamic>? ?? [])
           .map((e) => OfficerPerformanceRow.fromJson(e as Map<String, dynamic>))
           .toList(),
@@ -487,10 +499,14 @@ class AreaBranchRow {
       activeLoans: json['active_loans'] as int? ?? 0,
       activeSavers: json['active_savers'] as int? ?? 0,
       totalSavings: (json['total_savings'] as num? ?? 0.0).toDouble(),
-      collectionsReceived: (json['collections_received'] as num? ?? 0.0).toDouble(),
-      expectedCollections: (json['expected_collections'] as num? ?? 0.0).toDouble(),
-      collectionEfficiency: (json['collection_efficiency'] as num? ?? 100.0).toDouble(),
-      outstandingPortfolio: (json['outstanding_portfolio'] as num? ?? 0.0).toDouble(),
+      collectionsReceived:
+          (json['collections_received'] as num? ?? 0.0).toDouble(),
+      expectedCollections:
+          (json['expected_collections'] as num? ?? 0.0).toDouble(),
+      collectionEfficiency:
+          (json['collection_efficiency'] as num? ?? 100.0).toDouble(),
+      outstandingPortfolio:
+          (json['outstanding_portfolio'] as num? ?? 0.0).toDouble(),
       parPercentage: (json['par_percentage'] as num? ?? 0.0).toDouble(),
       status: (json['status'] ?? 'HEALTHY') as String,
     );
@@ -530,11 +546,15 @@ class AreaComparisonData {
       totalPeopleOnLoan: json['total_people_on_loan'] as int? ?? 0,
       totalActiveLoans: json['total_active_loans'] as int? ?? 0,
       totalActiveSavers: json['total_active_savers'] as int? ?? 0,
-      totalAreaCollections: (json['total_area_collections'] as num? ?? 0.0).toDouble(),
-      totalAreaExpected: (json['total_area_expected'] as num? ?? 0.0).toDouble(),
-      overallEfficiency: (json['overall_efficiency'] as num? ?? 100.0).toDouble(),
+      totalAreaCollections:
+          (json['total_area_collections'] as num? ?? 0.0).toDouble(),
+      totalAreaExpected:
+          (json['total_area_expected'] as num? ?? 0.0).toDouble(),
+      overallEfficiency:
+          (json['overall_efficiency'] as num? ?? 100.0).toDouble(),
       totalAreaSavings: (json['total_area_savings'] as num? ?? 0.0).toDouble(),
-      totalAreaPortfolio: (json['total_area_portfolio'] as num? ?? 0.0).toDouble(),
+      totalAreaPortfolio:
+          (json['total_area_portfolio'] as num? ?? 0.0).toDouble(),
       overallPar: (json['overall_par'] as num? ?? 0.0).toDouble(),
       rows: (json['rows'] as List<dynamic>? ?? [])
           .map((e) => AreaBranchRow.fromJson(e as Map<String, dynamic>))
@@ -636,7 +656,8 @@ class MonthlyParitySummaryCards {
 
   factory MonthlyParitySummaryCards.fromJson(Map<String, dynamic> json) {
     return MonthlyParitySummaryCards(
-      disbursedPrincipal: (json['disbursed_principal'] as num? ?? 0.0).toDouble(),
+      disbursedPrincipal:
+          (json['disbursed_principal'] as num? ?? 0.0).toDouble(),
       upfrontFees: (json['upfront_fees'] as num? ?? 0.0).toDouble(),
       netActiveCredit: (json['net_active_credit'] as num? ?? 0.0).toDouble(),
       openingCredit: (json['opening_credit'] as num? ?? 0.0).toDouble(),
@@ -644,12 +665,15 @@ class MonthlyParitySummaryCards {
       closingCredit: (json['closing_credit'] as num? ?? 0.0).toDouble(),
       openingSavings: (json['opening_savings'] as num? ?? 0.0).toDouble(),
       savingsDeposits: (json['savings_deposits'] as num? ?? 0.0).toDouble(),
-      savingsWithdrawals: (json['savings_withdrawals'] as num? ?? 0.0).toDouble(),
+      savingsWithdrawals:
+          (json['savings_withdrawals'] as num? ?? 0.0).toDouble(),
       closingSavings: (json['closing_savings'] as num? ?? 0.0).toDouble(),
       bankDeposits: (json['bank_deposits'] as num? ?? 0.0).toDouble(),
       transportExpenses: (json['transport_expenses'] as num? ?? 0.0).toDouble(),
-      stationeryExpenses: (json['stationery_expenses'] as num? ?? 0.0).toDouble(),
-      entertainmentExpenses: (json['entertainment_expenses'] as num? ?? 0.0).toDouble(),
+      stationeryExpenses:
+          (json['stationery_expenses'] as num? ?? 0.0).toDouble(),
+      entertainmentExpenses:
+          (json['entertainment_expenses'] as num? ?? 0.0).toDouble(),
       utilitiesExpenses: (json['utilities_expenses'] as num? ?? 0.0).toDouble(),
       officeExpenses: (json['office_expenses'] as num? ?? 0.0).toDouble(),
       activeLoans: json['active_loans'] as int? ?? 0,
@@ -697,9 +721,11 @@ class MonthlyParityData {
           .map((e) => MonthlyParityOfficer.fromJson(e as Map<String, dynamic>))
           .toList(),
       rows: (json['rows'] as List<dynamic>? ?? [])
-          .map((e) => MonthlyParityMetricRow.fromJson(e as Map<String, dynamic>))
+          .map(
+              (e) => MonthlyParityMetricRow.fromJson(e as Map<String, dynamic>))
           .toList(),
-      summaryCards: MonthlyParitySummaryCards.fromJson(json['summary_cards'] as Map<String, dynamic>? ?? {}),
+      summaryCards: MonthlyParitySummaryCards.fromJson(
+          json['summary_cards'] as Map<String, dynamic>? ?? {}),
     );
   }
 }
@@ -745,7 +771,8 @@ class OfficialTrialBalanceData {
   factory OfficialTrialBalanceData.fromJson(Map<String, dynamic> json) {
     return OfficialTrialBalanceData(
       rows: (json['rows'] as List<dynamic>? ?? [])
-          .map((e) => OfficialTrialBalanceRow.fromJson(e as Map<String, dynamic>))
+          .map((e) =>
+              OfficialTrialBalanceRow.fromJson(e as Map<String, dynamic>))
           .toList(),
       totalDebits: (json['total_debits'] as num? ?? 0.0).toDouble(),
       totalCredits: (json['total_credits'] as num? ?? 0.0).toDouble(),
@@ -863,17 +890,21 @@ class DepositStatementRow {
       depositCurr: (json['deposit_curr'] as num? ?? 0.0).toDouble(),
       depositTotal: (json['deposit_total'] as num? ?? 0.0).toDouble(),
       withdrawalPrevNo: (json['withdrawal_prev_no'] as num?)?.toInt() ?? 0,
-      withdrawalPrevAmount: (json['withdrawal_prev_amount'] as num? ?? 0.0).toDouble(),
+      withdrawalPrevAmount:
+          (json['withdrawal_prev_amount'] as num? ?? 0.0).toDouble(),
       withdrawalCurrNo: (json['withdrawal_curr_no'] as num?)?.toInt() ?? 0,
-      withdrawalCurrAmount: (json['withdrawal_curr_amount'] as num? ?? 0.0).toDouble(),
+      withdrawalCurrAmount:
+          (json['withdrawal_curr_amount'] as num? ?? 0.0).toDouble(),
       withdrawalTotalNo: (json['withdrawal_total_no'] as num?)?.toInt() ?? 0,
-      withdrawalTotalAmount: (json['withdrawal_total_amount'] as num? ?? 0.0).toDouble(),
+      withdrawalTotalAmount:
+          (json['withdrawal_total_amount'] as num? ?? 0.0).toDouble(),
       returnPrevNo: (json['return_prev_no'] as num?)?.toInt() ?? 0,
       returnPrevAmount: (json['return_prev_amount'] as num? ?? 0.0).toDouble(),
       returnCurrNo: (json['return_curr_no'] as num?)?.toInt() ?? 0,
       returnCurrAmount: (json['return_curr_amount'] as num? ?? 0.0).toDouble(),
       returnTotalNo: (json['return_total_no'] as num?)?.toInt() ?? 0,
-      returnTotalAmount: (json['return_total_amount'] as num? ?? 0.0).toDouble(),
+      returnTotalAmount:
+          (json['return_total_amount'] as num? ?? 0.0).toDouble(),
       balanceNo: (json['balance_no'] as num?)?.toInt() ?? 0,
       balanceAmount: (json['balance_amount'] as num? ?? 0.0).toDouble(),
     );
@@ -962,21 +993,27 @@ class MonthlyExecutiveStatementsData {
   });
 
   factory MonthlyExecutiveStatementsData.fromJson(Map<String, dynamic> json) {
-    final tb = OfficialTrialBalanceData.fromJson(json['trial_balance'] as Map<String, dynamic>? ?? {});
-    final rp = ReceiptsPaymentsData.fromJson(json['receipts_and_payments'] as Map<String, dynamic>? ?? {});
+    final tb = OfficialTrialBalanceData.fromJson(
+        json['trial_balance'] as Map<String, dynamic>? ?? {});
+    final rp = ReceiptsPaymentsData.fromJson(
+        json['receipts_and_payments'] as Map<String, dynamic>? ?? {});
     final yr = (json['year'] as num?)?.toInt() ?? 2026;
     final mo = (json['month'] as num?)?.toInt() ?? 9;
 
     DepositStatementData? ds;
-    if (json['deposit_statement'] != null && json['deposit_statement'] is Map<String, dynamic>) {
-      ds = DepositStatementData.fromJson(json['deposit_statement'] as Map<String, dynamic>);
+    if (json['deposit_statement'] != null &&
+        json['deposit_statement'] is Map<String, dynamic>) {
+      ds = DepositStatementData.fromJson(
+          json['deposit_statement'] as Map<String, dynamic>);
     } else {
       ds = const DepositStatementData(rows: []);
     }
 
     CreditStatementData? cs;
-    if (json['credit_statement'] != null && json['credit_statement'] is Map<String, dynamic>) {
-      cs = CreditStatementData.fromJson(json['credit_statement'] as Map<String, dynamic>);
+    if (json['credit_statement'] != null &&
+        json['credit_statement'] is Map<String, dynamic>) {
+      cs = CreditStatementData.fromJson(
+          json['credit_statement'] as Map<String, dynamic>);
     } else {
       cs = const CreditStatementData(rows: []);
     }
@@ -1137,31 +1174,49 @@ class MonthlyReconciliationData {
   factory MonthlyReconciliationData.fromJson(Map<String, dynamic> json) {
     final rawBanks = json['banks'] as List<dynamic>? ?? [];
     return MonthlyReconciliationData(
-      banks: rawBanks.map((b) => BankStatementItem.fromJson(b as Map<String, dynamic>)).toList(),
+      banks: rawBanks
+          .map((b) => BankStatementItem.fromJson(b as Map<String, dynamic>))
+          .toList(),
       cashInHandBf: (json['cash_in_hand_bf'] as num? ?? 0.0).toDouble(),
       overdueBf: (json['overdue_bf'] as num? ?? 0.0).toDouble(),
-      overdueCf: (json['overdue_cf'] as num? ?? json['tb_overdue'] as num? ?? 0.0).toDouble(),
-      salesProfitMarkup: (json['sales_profit_markup'] as num? ?? 0.0).toDouble(),
-      salesCashAndCarry: (json['sales_cash_and_carry'] as num? ?? 0.0).toDouble(),
-      fundCashHoAssetReceipt: (json['fund_cash_ho_asset_receipt'] as num? ?? 0.0).toDouble(),
-      fundCashHoMainReceipt: (json['fund_cash_ho_main_receipt'] as num? ?? 0.0).toDouble(),
-      fundCashOtherAreaReceipt: (json['fund_cash_other_area_receipt'] as num? ?? 0.0).toDouble(),
-      fundCashBranchReceipt: (json['fund_cash_branch_receipt'] as num? ?? 0.0).toDouble(),
-      fundCashHoAssetPayment: (json['fund_cash_ho_asset_payment'] as num? ?? 0.0).toDouble(),
-      fundCashHoMainPayment: (json['fund_cash_ho_main_payment'] as num? ?? 0.0).toDouble(),
-      fundCashBranchPayment: (json['fund_cash_branch_payment'] as num? ?? 0.0).toDouble(),
+      overdueCf:
+          (json['overdue_cf'] as num? ?? json['tb_overdue'] as num? ?? 0.0)
+              .toDouble(),
+      salesProfitMarkup:
+          (json['sales_profit_markup'] as num? ?? 0.0).toDouble(),
+      salesCashAndCarry:
+          (json['sales_cash_and_carry'] as num? ?? 0.0).toDouble(),
+      fundCashHoAssetReceipt:
+          (json['fund_cash_ho_asset_receipt'] as num? ?? 0.0).toDouble(),
+      fundCashHoMainReceipt:
+          (json['fund_cash_ho_main_receipt'] as num? ?? 0.0).toDouble(),
+      fundCashOtherAreaReceipt:
+          (json['fund_cash_other_area_receipt'] as num? ?? 0.0).toDouble(),
+      fundCashBranchReceipt:
+          (json['fund_cash_branch_receipt'] as num? ?? 0.0).toDouble(),
+      fundCashHoAssetPayment:
+          (json['fund_cash_ho_asset_payment'] as num? ?? 0.0).toDouble(),
+      fundCashHoMainPayment:
+          (json['fund_cash_ho_main_payment'] as num? ?? 0.0).toDouble(),
+      fundCashBranchPayment:
+          (json['fund_cash_branch_payment'] as num? ?? 0.0).toDouble(),
       depositWithdrawal: (json['deposit_withdrawal'] as num? ?? 0.0).toDouble(),
-      lapseDepositReturn: (json['lapse_deposit_return'] as num? ?? 0.0).toDouble(),
-      paidToOtherSources: (json['paid_to_other_sources'] as num? ?? 0.0).toDouble(),
-      receivedFromOtherSources: (json['received_from_other_sources'] as num? ?? 0.0).toDouble(),
+      lapseDepositReturn:
+          (json['lapse_deposit_return'] as num? ?? 0.0).toDouble(),
+      paidToOtherSources:
+          (json['paid_to_other_sources'] as num? ?? 0.0).toDouble(),
+      receivedFromOtherSources:
+          (json['received_from_other_sources'] as num? ?? 0.0).toDouble(),
       retainedEarnings: (json['retained_earnings'] as num? ?? 0.0).toDouble(),
-      headOfficeAssetAllocation: (json['head_office_asset_allocation'] as num? ?? 0.0).toDouble(),
-      lapseDepositReserve: (json['lapse_deposit_reserve'] as num? ?? 0.0).toDouble(),
-      disbursedPrincipal: (json['disbursed_principal'] as num? ?? 0.0).toDouble(),
+      headOfficeAssetAllocation:
+          (json['head_office_asset_allocation'] as num? ?? 0.0).toDouble(),
+      lapseDepositReserve:
+          (json['lapse_deposit_reserve'] as num? ?? 0.0).toDouble(),
+      disbursedPrincipal:
+          (json['disbursed_principal'] as num? ?? 0.0).toDouble(),
       upfrontFees: (json['upfront_fees'] as num? ?? 0.0).toDouble(),
       savingsDeposits: (json['savings_deposits'] as num? ?? 0.0).toDouble(),
       collections: (json['collections'] as num? ?? 0.0).toDouble(),
-
       tbSalary: (json['tb_salary'] as num? ?? 0.0).toDouble(),
       tbRent: (json['tb_rent'] as num? ?? 0.0).toDouble(),
       tbElectricity: (json['tb_electricity'] as num? ?? 0.0).toDouble(),
@@ -1172,13 +1227,11 @@ class MonthlyReconciliationData {
       tbTransport: (json['tb_transport'] as num? ?? 0.0).toDouble(),
       tbTraining: (json['tb_training'] as num? ?? 0.0).toDouble(),
       tbOtherExpenses: (json['tb_other_expenses'] as num? ?? 0.0).toDouble(),
-
       tbSalesProfit: (json['tb_sales_profit'] as num? ?? 0.0).toDouble(),
       tbDamagesFine: (json['tb_damages_fine'] as num? ?? 0.0).toDouble(),
       tbPassbook: (json['tb_passbook'] as num? ?? 0.0).toDouble(),
       tbScrapsSales: (json['tb_scraps_sales'] as num? ?? 0.0).toDouble(),
       tbApplicationFee: (json['tb_application_fee'] as num? ?? 0.0).toDouble(),
-
       tbFundHoMain: (json['tb_fund_ho_main'] as num? ?? 0.0).toDouble(),
       tbFundBranch: (json['tb_fund_branch'] as num? ?? 0.0).toDouble(),
       tbFundOtherArea: (json['tb_fund_other_area'] as num? ?? 0.0).toDouble(),
@@ -1216,7 +1269,6 @@ class MonthlyReconciliationData {
       'upfront_fees': upfrontFees,
       'savings_deposits': savingsDeposits,
       'collections': collections,
-
       'tb_salary': tbSalary,
       'tb_rent': tbRent,
       'tb_electricity': tbElectricity,
@@ -1227,13 +1279,11 @@ class MonthlyReconciliationData {
       'tb_transport': tbTransport,
       'tb_training': tbTraining,
       'tb_other_expenses': tbOtherExpenses,
-
       'tb_sales_profit': tbSalesProfit,
       'tb_damages_fine': tbDamagesFine,
       'tb_passbook': tbPassbook,
       'tb_scraps_sales': tbScrapsSales,
       'tb_application_fee': tbApplicationFee,
-
       'tb_fund_ho_main': tbFundHoMain,
       'tb_fund_branch': tbFundBranch,
       'tb_fund_other_area': tbFundOtherArea,
@@ -1320,11 +1370,14 @@ class Annex1ReportData {
       sundryReceipts: (json['sundry_receipts'] as List<dynamic>? ?? [])
           .map((e) => Annex1LineItem.fromJson(e as Map<String, dynamic>))
           .toList(),
-      totalSundryReceipts: (json['total_sundry_receipts'] as num? ?? 0.0).toDouble(),
-      sundryPaymentsGroups: (json['sundry_payments_groups'] as List<dynamic>? ?? [])
+      totalSundryReceipts:
+          (json['total_sundry_receipts'] as num? ?? 0.0).toDouble(),
+      sundryPaymentsGroups: (json['sundry_payments_groups'] as List<dynamic>? ??
+              [])
           .map((e) => Annex1CategoryGroup.fromJson(e as Map<String, dynamic>))
           .toList(),
-      totalSundryPayments: (json['total_sundry_payments'] as num? ?? 0.0).toDouble(),
+      totalSundryPayments:
+          (json['total_sundry_payments'] as num? ?? 0.0).toDouble(),
     );
   }
 }
@@ -1398,14 +1451,17 @@ class MonthlyWorkflowStatusModel {
       year: json['year'] as int? ?? 2026,
       month: json['month'] as int? ?? 9,
       status: (json['status'] ?? 'DRAFT') as String,
-      disbursedPrincipal: (json['disbursed_principal'] as num? ?? 0.0).toDouble(),
+      disbursedPrincipal:
+          (json['disbursed_principal'] as num? ?? 0.0).toDouble(),
       upfrontFees: (json['upfront_fees'] as num? ?? 0.0).toDouble(),
       netActiveCredit: (json['net_active_credit'] as num? ?? 0.0).toDouble(),
       collections: (json['collections'] as num? ?? 0.0).toDouble(),
       closingCredit: (json['closing_credit'] as num? ?? 0.0).toDouble(),
       closingSavings: (json['closing_savings'] as num? ?? 0.0).toDouble(),
-      vaultCashAcct1000: (json['vault_cash_acct_1000'] as num? ?? 0.0).toDouble(),
-      bankDepositsAcct1050: (json['bank_deposits_acct_1050'] as num? ?? 0.0).toDouble(),
+      vaultCashAcct1000:
+          (json['vault_cash_acct_1000'] as num? ?? 0.0).toDouble(),
+      bankDepositsAcct1050:
+          (json['bank_deposits_acct_1050'] as num? ?? 0.0).toDouble(),
       isGlBalanced: json['is_gl_balanced'] as bool? ?? false,
       glVariance: (json['gl_variance'] as num? ?? 0.0).toDouble(),
       bmName: json['bm_name'] as String?,
@@ -1425,58 +1481,90 @@ class MonthlyWorkflowStatusModel {
 class MonthlyWorkflowPendingBranchModel {
   final String branchId;
   final String branchName;
+  final String? areaName;
   final int year;
   final int month;
   final String status;
   final double disbursedPrincipal;
+  final double upfrontFees;
+  final double netActiveCredit;
   final double collections;
   final double closingCredit;
   final double closingSavings;
   final double vaultCash;
+  final double bankDeposits;
   final bool isGlBalanced;
+  final double glVariance;
   final String? bmName;
   final String? bmNotes;
   final String? submittedAt;
+  final String? amName;
+  final String? amNotes;
+  final String? amEndorsedAt;
   final String? amQueryNotes;
+  final String? adminName;
+  final String? adminNotes;
+  final String? adminLockedAt;
 
   const MonthlyWorkflowPendingBranchModel({
     required this.branchId,
     required this.branchName,
+    this.areaName,
     required this.year,
     required this.month,
     required this.status,
     required this.disbursedPrincipal,
+    this.upfrontFees = 0.0,
+    this.netActiveCredit = 0.0,
     required this.collections,
     required this.closingCredit,
     required this.closingSavings,
     required this.vaultCash,
+    this.bankDeposits = 0.0,
     required this.isGlBalanced,
+    this.glVariance = 0.0,
     this.bmName,
     this.bmNotes,
     this.submittedAt,
+    this.amName,
+    this.amNotes,
+    this.amEndorsedAt,
     this.amQueryNotes,
+    this.adminName,
+    this.adminNotes,
+    this.adminLockedAt,
   });
 
-  factory MonthlyWorkflowPendingBranchModel.fromJson(Map<String, dynamic> json) {
+  factory MonthlyWorkflowPendingBranchModel.fromJson(
+      Map<String, dynamic> json) {
     return MonthlyWorkflowPendingBranchModel(
       branchId: (json['branch_id'] ?? '') as String,
       branchName: (json['branch_name'] ?? '') as String,
+      areaName: json['area_name'] as String?,
       year: json['year'] as int? ?? 2026,
       month: json['month'] as int? ?? 9,
       status: (json['status'] ?? 'DRAFT') as String,
-      disbursedPrincipal: (json['disbursed_principal'] as num? ?? 0.0).toDouble(),
+      disbursedPrincipal:
+          (json['disbursed_principal'] as num? ?? 0.0).toDouble(),
+      upfrontFees: (json['upfront_fees'] as num? ?? 0.0).toDouble(),
+      netActiveCredit: (json['net_active_credit'] as num? ?? 0.0).toDouble(),
       collections: (json['collections'] as num? ?? 0.0).toDouble(),
       closingCredit: (json['closing_credit'] as num? ?? 0.0).toDouble(),
       closingSavings: (json['closing_savings'] as num? ?? 0.0).toDouble(),
       vaultCash: (json['vault_cash'] as num? ?? 0.0).toDouble(),
+      bankDeposits: (json['bank_deposits'] as num? ?? 0.0).toDouble(),
       isGlBalanced: json['is_gl_balanced'] as bool? ?? false,
+      glVariance: (json['gl_variance'] as num? ?? 0.0).toDouble(),
       bmName: json['bm_name'] as String?,
       bmNotes: json['bm_notes'] as String?,
       submittedAt: json['submitted_at'] as String?,
+      amName: json['am_name'] as String?,
+      amNotes: json['am_notes'] as String?,
+      amEndorsedAt: json['am_endorsed_at'] as String?,
       amQueryNotes: json['am_query_notes'] as String?,
+      adminName: json['admin_name'] as String?,
+      adminNotes: json['admin_notes'] as String?,
+      adminLockedAt: json['admin_locked_at'] as String?,
     );
   }
 }
-
-
-

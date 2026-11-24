@@ -425,19 +425,30 @@ class MonthlyWorkflowLockRequest(BaseModel):
 class MonthlyWorkflowPendingBranchItem(BaseModel):
     branch_id: str
     branch_name: str
+    area_name: Optional[str] = None
     year: int
     month: int
     status: str
     disbursed_principal: float
+    upfront_fees: float = 0.0
+    net_active_credit: float = 0.0
     collections: float
     closing_credit: float
     closing_savings: float
     vault_cash: float
+    bank_deposits: float = 0.0
     is_gl_balanced: bool
+    gl_variance: float = 0.0
     bm_name: Optional[str] = None
     bm_notes: Optional[str] = None
     submitted_at: Optional[str] = None
+    am_name: Optional[str] = None
+    am_notes: Optional[str] = None
+    am_endorsed_at: Optional[str] = None
     am_query_notes: Optional[str] = None
+    admin_name: Optional[str] = None
+    admin_notes: Optional[str] = None
+    admin_locked_at: Optional[str] = None
 
 
 
