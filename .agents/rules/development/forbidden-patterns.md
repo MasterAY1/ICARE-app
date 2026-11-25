@@ -79,12 +79,18 @@ reports_total = master_cashbook_total
 ```
 MUST query each source independently.
 
-### FP-006: Hardcoded Dashboard Metrics
+### FP-006: Hardcoded Dashboard Metrics, Simulated Health Telemetry, & Demo Charts
 ```python
-# FORBIDDEN
-return {"today_collections": 3500000.0, "par": "0.0%"}
+# FORBIDDEN (Backend & Frontend)
+return {
+    "today_collections": 3500000.0,
+    "collection_compliance_pct": 98.4,
+    "engine_health": {"projection_engine_status": "Synchronized / Up to Date", "pending_event_backlog": 0},
+}
+# FORBIDDEN in Scorecards:
+score_disb = (disb / max_disb * 20.0) if max_disb > 0 else 10.0  # fabricates 10 pts on 0 activity
 ```
-MUST calculate from actual data.
+MUST calculate 100% of dashboard KPIs, percentages, compliance rates, cash variances, chart series, flow-diagram metrics, and platform health indicators from live database queries and runtime instrumentation. When denominators or datasets are zero, return/display `0.0` or an explicit empty/unscheduled state — never static percentages, fake baseline points, or sample chart data.
 
 ### FP-007: Silent Exception Swallowing in Financial Pipelines
 ```python

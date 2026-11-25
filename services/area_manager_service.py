@@ -74,7 +74,7 @@ class AreaManagerService:
                 "total_savings": 0.0,
                 "today_expected": 0.0,
                 "today_collected": 0.0,
-                "compliance_pct": 100.0,
+                "compliance_pct": 0.0,
                 "vault_cash_acct_1000": 0.0,
                 "par": "0.0%",
                 "defaulters_count": 0,
@@ -189,7 +189,7 @@ class AreaManagerService:
         except Exception:
             regional_par = "0.0%"
 
-        compliance_pct = round((total_collected_today / total_expected_today * 100), 1) if total_expected_today > 0 else 100.0
+        compliance_pct = round((total_collected_today / total_expected_today * 100), 1) if total_expected_today > 0 else 0.0
 
         return {
             "area_name": "Area 1",
@@ -412,15 +412,15 @@ class AreaManagerService:
             # 3. Collections & Compliance
             exp = 0.0
             coll = 0.0
-            comp = 100.0
+            comp = 0.0
             if not is_b_closed:
                 try:
                     summary = CollectionPerformanceService.get_branch_meeting_summary(uow, bid, target_date)
                     coll = float(summary.get("total_collected", 0.0))
                     exp = float(summary.get("total_expected", 0.0))
-                    comp = float(summary.get("compliance_pct", 100.0))
+                    comp = round((coll / exp) * 100.0, 1) if exp > 0 else 0.0
                 except Exception:
-                    pass
+                    comp = 0.0
 
             # 4. Vault Cash (Account 1000)
             vault_cash = max(0.0, vault_cash_by_branch.get(bid_s, 0.0))
@@ -487,6 +487,8 @@ class AreaManagerService:
 
             full_payments_count = len(settled_lids)
             net_loan_book_growth = round(active_credit_disbursed_amount - full_payments_active_credit, 2)
+            outstanding_today = round(max(0.0, exp - coll), 2)
+            net_loan_count = loans_disbursed_count - full_payments_count
 
             matrix.append({
                 "branch_id": bid,
@@ -495,21 +497,23 @@ class AreaManagerService:
                 "operational_status": op_status,
                 "is_closed": is_b_closed,
                 "closure_reason": closure_reason,
-                "expected_collections": exp,
-                "actual_collections": coll,
+                "expected_collection": exp,
+                "collected": coll,
+                "outstanding_today": outstanding_today,
                 "compliance_pct": comp,
                 "vault_cash_acct_1000": vault_cash,
                 "par": b_par,
                 "defaulters_count": b_defaulters,
                 "reversals_count": b_rev_cnt,
                 "eod_status": eod_status,
-                "cash_difference": cash_diff,
+                "cash_variance": cash_diff,
                 "loans_disbursed_count": loans_disbursed_count,
                 "principal_disbursed_amount": principal_disbursed_amount,
                 "active_credit_disbursed_amount": active_credit_disbursed_amount,
                 "full_payments_count": full_payments_count,
                 "full_payments_active_credit": full_payments_active_credit,
-                "net_loan_book_growth": net_loan_book_growth
+                "net_loan_book_growth": net_loan_book_growth,
+                "net_loan_count": net_loan_count,
             })
 
         return matrix
@@ -660,15 +664,42 @@ class AreaManagerService:
             except Exception:
                 pass
 
-            # 4. Compliance & PAR
-            compliance = 100.0
+            # 4. Compliance & PAR (Live schedule computation — zero hardcoded rates)
+            compliance = 0.0
             try:
-                q_r = uow.client.table("repayments").select("amount_paid").eq("officer_id", co_id).gte("date", s_str).lte("date", e_str).execute()
-                co_collected = sum(float(r.get("amount_paid") or 0.0) for r in (q_r.data or []))
-                if co_collected > 0:
-                    compliance = 96.5
+                from services.institution_performance_service import InstitutionPerformanceService
+                q_l = (
+                    uow.client.table("loans")
+                    .select("loan_id")
+                    .eq("officer_id", co_id)
+                    .in_(
+                        "status",
+                        [
+                            "ACTIVE", "Active", "ON_LOAN", "On Loan",
+                            "DEFAULTED", "DEFAULTER", "Defaulter",
+                            "COMPLETED", "Completed",
+                        ],
+                    )
+                    .execute()
+                )
+                co_loan_ids = [
+                    str(r.get("loan_id"))
+                    for r in (q_l.data or [])
+                    if isinstance(r, dict) and r.get("loan_id")
+                ]
+                if co_loan_ids:
+                    sched_map = InstitutionPerformanceService.compute_schedule_compliance_by_loan(
+                        uow,
+                        co_loan_ids,
+                        start_date=str(s_str)[:10],
+                        end_date=str(e_str)[:10],
+                    )
+                    total_sched_due = sum(v[0] for v in sched_map.values())
+                    total_sched_paid = sum(v[1] for v in sched_map.values())
+                    if total_sched_due > 0:
+                        compliance = round((total_sched_paid / total_sched_due) * 100.0, 1)
             except Exception:
-                pass
+                compliance = 0.0
 
             par_str = "0.0%"
             try:

@@ -30,6 +30,60 @@ class InstitutionPerformanceService:
     """
 
     @classmethod
+    def compute_schedule_compliance_by_loan(
+        cls,
+        uow: UnitOfWork,
+        loan_ids: List[str],
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+    ) -> Dict[str, tuple[float, float]]:
+        """
+        Aggregates (total_due, paid_capped) per loan_id from `loan_schedule` over the requested window.
+        Ensures zero hardcoded compliance percentages across Admin and Performance routes.
+        """
+        if not loan_ids:
+            return {}
+        valid_set = {str(lid).strip() for lid in loan_ids if str(lid).strip()}
+        if not valid_set:
+            return {}
+
+        due_by_loan = defaultdict(float)
+        paid_by_loan = defaultdict(float)
+        ordered_ids = list(valid_set)
+        try:
+            for i in range(0, len(ordered_ids), 50):
+                chunk = ordered_ids[i:i + 50]
+                q = (
+                    uow.client.table("loan_schedule")
+                    .select("loan_id, total_due, paid_amount, due_date")
+                    .in_("loan_id", chunk)
+                )
+                if start_date:
+                    q = q.gte("due_date", start_date)
+                if end_date:
+                    q = q.lte("due_date", end_date)
+                res_sch = q.execute()
+                for row in (res_sch.data or []):
+                    if not isinstance(row, dict):
+                        continue
+                    lid = str(row.get("loan_id") or "").strip()
+                    if lid not in valid_set:
+                        continue
+                    due_v = float(row.get("total_due") or 0.0)
+                    if due_v <= 0:
+                        continue
+                    paid_v = min(due_v, max(0.0, float(row.get("paid_amount") or 0.0)))
+                    due_by_loan[lid] += due_v
+                    paid_by_loan[lid] += paid_v
+        except Exception:
+            return {}
+
+        return {
+            lid: (due_by_loan[lid], paid_by_loan.get(lid, 0.0))
+            for lid in due_by_loan
+        }
+
+    @classmethod
     def compute_institution_performance(
         cls,
         uow: UnitOfWork,
@@ -161,13 +215,60 @@ class InstitutionPerformanceService:
         all_ledger = []
         try:
             res_leg = uow.client.table("financial_ledger_entries") \
-                .select("branch_id, amount, side") \
+                .select("branch_id, amount, side, created_at") \
                 .eq("account_code", "1000") \
                 .lte("created_at", f"{e_date}T23:59:59") \
                 .execute()
             all_ledger = res_leg.data or []
         except Exception:
             all_ledger = []
+
+        # Bulk fetch loan schedules for live branch repayment compliance (BR-DASH-003)
+        loan_branch_map: Dict[str, str] = {}
+        for l in all_loans:
+            if not isinstance(l, dict):
+                continue
+            ef = l.get("extra_fields")
+            if isinstance(ef, dict) and ef.get("is_legacy") is True:
+                continue
+            st_u = str(l.get("status") or "").upper()
+            if st_u in ["ACTIVE", "APPROVED", "COMPLETED", "CLOSED", "DEFAULTER"]:
+                lid = str(l.get("loan_id") or "").strip()
+                lbid = str(l.get("branch_id") or "").strip()
+                if lid and lbid:
+                    loan_branch_map[lid] = lbid
+
+        sched_due_by_branch = defaultdict(float)
+        sched_paid_by_branch = defaultdict(float)
+        if loan_branch_map:
+            sched_totals = cls.compute_schedule_compliance_by_loan(
+                uow,
+                list(loan_branch_map.keys()),
+                start_date=s_date,
+                end_date=e_date,
+            )
+            for lid, (due_v, paid_v) in sched_totals.items():
+                lbid = loan_branch_map.get(lid)
+                if lbid:
+                    sched_due_by_branch[lbid] += due_v
+                    sched_paid_by_branch[lbid] += paid_v
+
+        # Bulk fetch closed/verified master cashbooks for live cash variance comparison
+        mc_by_branch: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
+        try:
+            res_mc = uow.client.table("master_cashbook") \
+                .select("branch_id, date, closing_balance, status") \
+                .lte("date", e_date) \
+                .execute()
+            for row in (res_mc.data or []):
+                if not isinstance(row, dict):
+                    continue
+                bid_mc = str(row.get("branch_id") or "").strip()
+                st_mc = str(row.get("status") or "").strip().lower()
+                if bid_mc and st_mc in ["closed", "verified"]:
+                    mc_by_branch[bid_mc].append(row)
+        except Exception:
+            pass
 
         savings_by_branch = defaultdict(float)
         try:
@@ -259,22 +360,42 @@ class InstitutionPerformanceService:
                     full_recoveries_count += 1
             recoveries_count = len(b_recs)
             total_overdue_pool = overdue_recovered + overdue_amount
-            recovery_rate_pct = round((overdue_recovered / total_overdue_pool * 100.0), 1) if total_overdue_pool > 0 else 100.0
+            recovery_rate_pct = round((overdue_recovered / total_overdue_pool * 100.0), 1) if total_overdue_pool > 0 else 0.0
 
-            # E. Collections
+            # E. Collections & Live Schedule Compliance
             collected_amount = 0.0
             for r in b_reps:
                 if str(r.get("transaction_type", "")).upper() == "ONBOARDING_LEGACY" or str(r.get("note", "")).strip() == "Legacy Repayments Onboarded":
                     continue
                 collected_amount += float(r.get("amount_paid") or 0.0)
 
-            comp_pct = 95.0
+            b_sched_due = sched_due_by_branch.get(bid, 0.0)
+            b_sched_paid = sched_paid_by_branch.get(bid, 0.0)
+            comp_pct = round((b_sched_paid / b_sched_due * 100.0), 1) if b_sched_due > 0 else 0.0
 
-            # F. Vault Cash (Account 1000)
+            # F. Vault Cash (Account 1000) & Live Master Cashbook Variance
             deb = sum(float(l["amount"]) for l in b_ledger if l.get("side") == "Debit")
             crd = sum(float(l["amount"]) for l in b_ledger if l.get("side") == "Credit")
             vault_cash = max(0.0, deb - crd)
+
             cash_variance = 0.0
+            closed_mcs = mc_by_branch.get(bid, [])
+            if closed_mcs:
+                latest_mc = max(closed_mcs, key=lambda x: str(x.get("date") or ""))
+                mc_date = str(latest_mc.get("date") or "")[:10]
+                mc_closing = float(latest_mc.get("closing_balance") or 0.0)
+                if mc_date:
+                    mc_deb = sum(
+                        float(l["amount"])
+                        for l in b_ledger
+                        if l.get("side") == "Debit" and (not l.get("created_at") or str(l.get("created_at"))[:10] <= mc_date)
+                    )
+                    mc_crd = sum(
+                        float(l["amount"])
+                        for l in b_ledger
+                        if l.get("side") == "Credit" and (not l.get("created_at") or str(l.get("created_at"))[:10] <= mc_date)
+                    )
+                    cash_variance = round(abs(max(0.0, mc_deb - mc_crd) - mc_closing), 2)
 
             # G. Net Savings
             net_savings = savings_by_branch.get(bid, 0.0)
@@ -326,36 +447,36 @@ class InstitutionPerformanceService:
                 "top_officer_name": top_officer,
             })
 
-        # 3. Calculate Normalized 6-Pillar Composite Scores
-        max_disb = max([b["disb_principal"] for b in branch_stats] or [1.0])
-        max_active = max([b["active_members"] for b in branch_stats] or [1.0])
-        max_rec = max([b["overdue_recovered"] for b in branch_stats] or [1.0])
+        # 3. Calculate Normalized 6-Pillar Composite Scores (zero points when denominators are zero)
+        max_disb = max([b["disb_principal"] for b in branch_stats] or [0.0])
+        max_active = max([b["active_members"] for b in branch_stats] or [0.0])
+        max_rec = max([b["overdue_recovered"] for b in branch_stats] or [0.0])
 
         for b in branch_stats:
             # Pillar 1: Capital Deployment (Weight: 20 pts)
-            score_disb = min(20.0, (b["disb_principal"] / max_disb * 20.0)) if max_disb > 0 else 10.0
+            score_disb = min(20.0, (b["disb_principal"] / max_disb * 20.0)) if max_disb > 0 else 0.0
 
             # Pillar 2: Delinquency & PAR Containment (Weight: 25 pts)
-            # 0% PAR = 25 pts; 5% PAR = 12.5 pts; >= 10% PAR = 0 pts; minus 1 pt per defaulter
-            score_quality = max(0.0, 25.0 - (b["par_pct"] * 2.5) - (b["defaulters_count"] * 0.5))
+            # Only award delinquency containment points when the branch holds an active book or recoveries
+            has_portfolio = b["active_credit_book"] > 0 or b["disb_principal"] > 0
+            score_quality = max(0.0, 25.0 - (b["par_pct"] * 2.5) - (b["defaulters_count"] * 0.5)) if has_portfolio else 0.0
 
             # Pillar 3: Overdue Debt Recovery & Rehabilitation (Weight: 20 pts)
-            # 10 pts for volume recovered + 6 pts for recovery rate % + 4 pts for full client restorations
-            score_rec_vol = min(10.0, (b["overdue_recovered"] / max_rec * 10.0)) if max_rec > 0 else 5.0
-            score_rec_rate = (b["recovery_rate_pct"] / 100.0) * 6.0
+            score_rec_vol = min(10.0, (b["overdue_recovered"] / max_rec * 10.0)) if max_rec > 0 else 0.0
+            score_rec_rate = (b["recovery_rate_pct"] / 100.0) * 6.0 if (b["overdue_recovered"] > 0 or b["overdue_amount"] > 0) else 0.0
             score_rec_full = min(4.0, b["full_recoveries_count"] * 0.8)
             score_recovery = min(20.0, score_rec_vol + score_rec_rate + score_rec_full)
 
             # Pillar 4: Active Borrower Outreach & Retention (Weight: 15 pts)
-            score_outreach = min(15.0, (b["active_members"] / max_active * 15.0)) if max_active > 0 else 8.0
+            score_outreach = min(15.0, (b["active_members"] / max_active * 15.0)) if max_active > 0 else 0.0
 
             # Pillar 5: Repayment Compliance Rate (Weight: 10 pts)
             score_repay = (min(100.0, b["compliance_pct"]) / 100.0) * 10.0
 
             # Pillar 6: Vault & Operational Discipline (Weight: 10 pts)
-            # Deduct points for physical cashbook differences
             variance_penalty = min(6.0, (b["cash_variance"] / 50000.0) * 2.0) if b["cash_variance"] > 0 else 0.0
-            score_vault = max(0.0, 10.0 - variance_penalty)
+            has_vault_activity = b["vault_cash"] > 0 or b["collected_amount"] > 0 or has_portfolio
+            score_vault = max(0.0, 10.0 - variance_penalty) if has_vault_activity else 0.0
 
             total_composite = round(score_disb + score_quality + score_recovery + score_outreach + score_repay + score_vault, 1)
 
@@ -502,6 +623,33 @@ class InstitutionPerformanceService:
         except Exception:
             all_reps = []
 
+        # Live officer schedule compliance from `loan_schedule` (BR-DASH-003)
+        loan_officer_map: Dict[str, str] = {}
+        for l in all_loans:
+            if not isinstance(l, dict):
+                continue
+            st_u = str(l.get("status") or "").upper()
+            if st_u in ["ACTIVE", "APPROVED", "COMPLETED", "CLOSED", "DEFAULTER"]:
+                lid = str(l.get("loan_id") or "").strip()
+                oid = str(l.get("officer_id") or "").strip()
+                if lid and oid:
+                    loan_officer_map[lid] = oid
+
+        sched_due_by_officer = defaultdict(float)
+        sched_paid_by_officer = defaultdict(float)
+        if loan_officer_map:
+            sched_totals = cls.compute_schedule_compliance_by_loan(
+                uow,
+                list(loan_officer_map.keys()),
+                start_date=s_date,
+                end_date=e_date,
+            )
+            for lid, (due_v, paid_v) in sched_totals.items():
+                oid = loan_officer_map.get(lid)
+                if oid:
+                    sched_due_by_officer[oid] += due_v
+                    sched_paid_by_officer[oid] += paid_v
+
         officer_stats = []
 
         for co in co_users:
@@ -557,14 +705,16 @@ class InstitutionPerformanceService:
                 if str(r.get("recovery_type") or "").upper() == "FULL_RECOVERY":
                     full_recoveries_count += 1
 
-            # Collections & Compliance
+            # Collections & Live Compliance
             collected_amount = 0.0
             for r in o_reps:
                 if str(r.get("transaction_type", "")).upper() == "ONBOARDING_LEGACY" or str(r.get("note", "")).strip() == "Legacy Repayments Onboarded":
                     continue
                 collected_amount += float(r.get("amount_paid") or 0.0)
 
-            compliance_pct = 95.0
+            o_sched_due = sched_due_by_officer.get(cid, 0.0)
+            o_sched_paid = sched_paid_by_officer.get(cid, 0.0)
+            compliance_pct = round((o_sched_paid / o_sched_due * 100.0), 1) if o_sched_due > 0 else 0.0
 
             officer_stats.append({
                 "officer_id": cid,
@@ -585,16 +735,17 @@ class InstitutionPerformanceService:
                 "compliance_pct": compliance_pct,
             })
 
-        max_co_disb = max([o["disb_principal"] for o in officer_stats] or [1.0])
-        max_co_rec = max([o["overdue_recovered"] for o in officer_stats] or [1.0])
-        max_co_clients = max([o["active_clients"] for o in officer_stats] or [1.0])
+        max_co_disb = max([o["disb_principal"] for o in officer_stats] or [0.0])
+        max_co_rec = max([o["overdue_recovered"] for o in officer_stats] or [0.0])
+        max_co_clients = max([o["active_clients"] for o in officer_stats] or [0.0])
 
         for o in officer_stats:
-            score_disb = (o["disb_principal"] / max_co_disb * 25.0) if max_co_disb > 0 else 12.0
-            score_quality = max(0.0, 30.0 - (o["par_pct"] * 3.0) - (o["defaulters_count"] * 1.0))
-            score_rec = (o["overdue_recovered"] / max_co_rec * 20.0) if max_co_rec > 0 else 10.0
-            score_outreach = (o["active_clients"] / max_co_clients * 15.0) if max_co_clients > 0 else 8.0
-            score_comp = (o["compliance_pct"] / 100.0) * 10.0
+            has_portfolio = o["active_credit"] > 0 or o["disb_principal"] > 0
+            score_disb = (o["disb_principal"] / max_co_disb * 25.0) if max_co_disb > 0 else 0.0
+            score_quality = max(0.0, 30.0 - (o["par_pct"] * 3.0) - (o["defaulters_count"] * 1.0)) if has_portfolio else 0.0
+            score_rec = (o["overdue_recovered"] / max_co_rec * 20.0) if max_co_rec > 0 else 0.0
+            score_outreach = (o["active_clients"] / max_co_clients * 15.0) if max_co_clients > 0 else 0.0
+            score_comp = (min(100.0, o["compliance_pct"]) / 100.0) * 10.0
 
             o["composite_score"] = round(score_disb + score_quality + score_rec + score_outreach + score_comp, 1)
 

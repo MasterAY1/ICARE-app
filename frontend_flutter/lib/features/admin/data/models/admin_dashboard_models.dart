@@ -79,7 +79,7 @@ class AdminOperationsSnapshotModel {
       todaySavingsDeposit: (liq['today_savings_deposit'] as num?)?.toDouble() ?? 0.0,
       todaySavingsWithdrawal: (liq['today_savings_withdrawal'] as num?)?.toDouble() ?? 0.0,
       todayNetSavings: (liq['today_net_savings'] as num?)?.toDouble() ?? 0.0,
-      collectionCompliancePct: (liq['collection_compliance_pct'] as num?)?.toDouble() ?? 95.0,
+      collectionCompliancePct: (liq['collection_compliance_pct'] as num?)?.toDouble() ?? 0.0,
       financialActivityWeek: fawList,
       branchPerformanceSummary: bpsList,
       branchMatrix: bList,
@@ -342,9 +342,9 @@ class BranchPerformanceItemModel {
       overdueRecovered: (json['overdue_recovered'] as num?)?.toDouble() ?? 0.0,
       recoveriesCount: (json['recoveries_count'] as num?)?.toInt() ?? 0,
       fullRecoveriesCount: (json['full_recoveries_count'] as num?)?.toInt() ?? 0,
-      recoveryRatePct: (json['recovery_rate_pct'] as num?)?.toDouble() ?? 100.0,
+      recoveryRatePct: (json['recovery_rate_pct'] as num?)?.toDouble() ?? 0.0,
       collectedAmount: (json['collected_amount'] as num?)?.toDouble() ?? 0.0,
-      compliancePct: (json['compliance_pct'] as num?)?.toDouble() ?? 95.0,
+      compliancePct: (json['compliance_pct'] as num?)?.toDouble() ?? 0.0,
       vaultCash: (json['vault_cash'] as num?)?.toDouble() ?? 0.0,
       netSavingsBalance: (json['net_savings_balance'] as num?)?.toDouble() ?? 0.0,
       fullPayoffsCount: (json['full_payoffs_count'] as num?)?.toInt() ?? 0,
@@ -449,7 +449,7 @@ class OfficerPerformanceItemModel {
       overdueRecovered: (json['overdue_recovered'] as num?)?.toDouble() ?? 0.0,
       fullRecoveriesCount: (json['full_recoveries_count'] as num?)?.toInt() ?? 0,
       collectedAmount: (json['collected_amount'] as num?)?.toDouble() ?? 0.0,
-      compliancePct: (json['compliance_pct'] as num?)?.toDouble() ?? 95.0,
+      compliancePct: (json['compliance_pct'] as num?)?.toDouble() ?? 0.0,
       compositeScore: (json['composite_score'] as num?)?.toDouble() ?? 0.0,
     );
   }
@@ -502,11 +502,11 @@ class AdminRiskHealthModel {
       fullPayoffsSettledAmount: (set['full_payoffs_settled_amount'] as num?)?.toDouble() ?? 0.0,
       fullPayoffCount: (set['full_payoff_count'] as num?)?.toInt() ?? 0,
       excessCashCollected: (set['excess_cash_collected'] as num?)?.toDouble() ?? 0.0,
-      projectionEngineStatus: eng['projection_engine_status']?.toString() ?? 'Synchronized',
+      projectionEngineStatus: eng['projection_engine_status']?.toString() ?? 'Unavailable',
       pendingEventBacklog: (eng['pending_event_backlog'] as num?)?.toInt() ?? 0,
-      offlineDeviceSyncStatus: eng['offline_device_sync_status']?.toString() ?? 'Active',
-      databaseCluster: eng['database_cluster']?.toString() ?? 'Supabase Managed',
-      immutableAuditState: eng['immutable_audit_state']?.toString() ?? 'Enforced',
+      offlineDeviceSyncStatus: eng['offline_device_sync_status']?.toString() ?? 'Unavailable',
+      databaseCluster: eng['database_cluster']?.toString() ?? 'Unavailable',
+      immutableAuditState: eng['immutable_audit_state']?.toString() ?? 'Unavailable',
     );
   }
 }
@@ -549,9 +549,10 @@ class InstitutionalOverviewModel {
   });
 
   factory InstitutionalOverviewModel.fromJson(Map<String, dynamic> json) {
+    final totalClients = (json['total_clients_count'] as num?)?.toInt() ?? 0;
     return InstitutionalOverviewModel(
-      totalClientsCount: (json['total_clients_count'] as num?)?.toInt() ?? 0,
-      totalClientsDisplay: json['total_clients_display']?.toString() ?? '10,000+',
+      totalClientsCount: totalClients,
+      totalClientsDisplay: json['total_clients_display']?.toString() ?? '$totalClients',
       activeBranchesCount: (json['active_branches_count'] as num?)?.toInt() ?? 0,
       totalPortfolio: (json['total_portfolio'] as num?)?.toDouble() ?? 0.0,
       todayCollections: (json['today_collections'] as num?)?.toDouble() ?? 0.0,

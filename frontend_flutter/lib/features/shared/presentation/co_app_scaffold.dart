@@ -443,13 +443,12 @@ class CoAppScaffold extends ConsumerWidget {
       navItems = [
         'Dashboard',
         'Asset & Procurement',
-        'Withdrawal Operations',
         'Portfolio',
         'User Management',
         'Reports & Export',
       ];
     } else if (isAm) {
-      navItems = ['Dashboard', 'Withdrawal Operations', 'Portfolio', 'Master Cashbook', 'Branch Onboarding', 'User Management', 'Audit Ledger', 'Reports & Export'];
+      navItems = ['Dashboard', 'Portfolio', 'Master Cashbook', 'Branch Onboarding', 'User Management', 'Audit Ledger', 'Reports & Export'];
     } else {
       navItems = ['Dashboard', 'Loan Origination', 'Collections', 'Withdrawal Operations', 'Portfolio', 'CO Cashbook'];
     }

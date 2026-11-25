@@ -171,7 +171,7 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
   bool get _isManager {
     final authState = ref.read(authControllerProvider);
     final role = authState is AuthStateAuthenticated ? authState.user.role : 'Credit Officer';
-    return const {'Branch Manager', 'BM', 'Area Manager', 'AM', 'Admin', 'Super Admin'}.contains(role);
+    return const {'Branch Manager', 'BM'}.contains(role);
   }
 
   static final RegExp _internalTagPattern = RegExp(
@@ -832,7 +832,49 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
     final authState = ref.watch(authControllerProvider);
     final user = authState is AuthStateAuthenticated ? authState.user : null;
     final role = user?.role ?? 'Credit Officer';
-    final isManager = role == 'Branch Manager' || role == 'BM' || role == 'Area Manager' || role == 'AM' || role == 'Admin' || role == 'Super Admin';
+    final isCo = role == 'Credit Officer' || role == 'CO' || role == 'Officer';
+    final isBm = role == 'Branch Manager' || role == 'BM';
+    if (!isCo && !isBm) {
+      final tokens = IcareSurfaceTokens.of(context);
+      return Center(
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 480),
+          margin: const EdgeInsets.all(24),
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: tokens.surface,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: tokens.borderSubtle),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: tokens.dangerBg,
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(Icons.lock_outline_rounded, size: 28, color: tokens.dangerText),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Withdrawal Operations Restricted',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: tokens.textPrimary),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Withdrawal requests and approvals are restricted to Credit Officers and Branch Managers for branch vault control.',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 13, color: tokens.textMuted, height: 1.4),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    final isManager = isBm;
     final isOnline = ref.watch(isOnlineProvider);
 
     final activeTab = ref.watch(withdrawalTabProvider);

@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
 import '../../../core/theme/icare_theme_tokens.dart';
+import '../../../core/widgets/icare_card.dart';
+import '../../../core/widgets/icare_status_badge.dart';
 import '../data/datasources/admin_api_service.dart';
 import 'widgets/admin_overview_tab.dart';
 import 'widgets/admin_rankings_tab.dart';
@@ -370,13 +372,9 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen>
             : 'Monitor late repayments, recoveries, and early loan payoffs.';
 
     final tokens = IcareSurfaceTokens.of(context);
-    return Container(
+    return IcareCard(
       padding: EdgeInsets.all(isCompact ? 14 : 18),
-      decoration: BoxDecoration(
-        color: tokens.surface,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: tokens.borderSubtle),
-      ),
+      topAccentColor: tokens.brandPrimary,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -390,15 +388,16 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen>
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Container(
-                    padding: const EdgeInsets.all(7),
+                    padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
-                      color: tokens.surfaceSubtle,
-                      borderRadius: BorderRadius.circular(8),
+                      color: tokens.brandSoftBg,
+                      borderRadius: BorderRadius.circular(9),
+                      border: Border.all(color: tokens.brandSoftBorder),
                     ),
                     child: Icon(
                       Icons.account_balance,
                       size: 18,
-                      color: tokens.textPrimary,
+                      color: tokens.brandPrimary,
                     ),
                   ),
                   const SizedBox(width: 10),
@@ -431,24 +430,11 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen>
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   if (isWeekend)
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 4,
-                      ),
-                      margin: const EdgeInsets.only(right: 4),
-                      decoration: BoxDecoration(
-                        color: tokens.warningBg,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: tokens.warningBorder),
-                      ),
-                      child: Text(
-                        'Weekend (Closed)',
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                          color: tokens.warningText,
-                        ),
+                    const Padding(
+                      padding: EdgeInsets.only(right: 6),
+                      child: IcareStatusBadge(
+                        label: 'Weekend (Closed)',
+                        variant: IcareBadgeVariant.warning,
                       ),
                     ),
                   IconButton(

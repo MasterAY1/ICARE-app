@@ -4,13 +4,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/errors/app_error_formatter.dart';
 import '../../../../core/theme/icare_theme_tokens.dart';
 import '../../../../core/utils/currency_formatter.dart';
+import '../../../../core/widgets/icare_card.dart';
+import '../../../../core/widgets/icare_metric_card.dart';
 import '../../../../core/widgets/icare_skeleton_loader.dart';
 import '../../data/datasources/admin_api_service.dart';
 import '../../data/models/admin_dashboard_models.dart';
 import '../admin_branch_detail_sheet.dart';
 import '../admin_branch_reconciliation_sheet.dart';
-import '../admin_dashboard_screen.dart';
 import 'admin_approval_actions.dart';
+import 'admin_governance_flow_card.dart';
+import 'admin_overview_charts.dart';
 import 'admin_responsive.dart';
 
 class AdminOverviewTab extends ConsumerWidget {
@@ -119,13 +122,19 @@ class AdminOverviewTab extends ConsumerWidget {
         final hasPendingApprovals = data.pendingReversals.isNotEmpty ||
             data.pendingHighLoans.isNotEmpty;
 
-        final chartCard = _buildFinancialActivityCard(
-          context,
-          ref,
-          tokens,
-          data.financialActivityWeek,
-          size,
+        final chartCard = AdminWeeklyCashFlowChart(
+          weekData: data.financialActivityWeek,
+          size: size,
         );
+        final flowCard = AdminOperationalFlowCard(
+          operations: data,
+          size: size,
+        );
+        final branchLiquidityChart = AdminBranchLiquidityChart(
+          branches: data.branchPerformanceSummary,
+          size: size,
+        );
+        final assetPulseCard = AdminAssetPortfolioPulseCard(size: size);
         final approvalsCard = AdminApprovalsActionCenter(
           data: data,
           size: size,
@@ -150,6 +159,8 @@ class AdminOverviewTab extends ConsumerWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               _buildTopKpiGrid(tokens, data, size),
+              const SizedBox(height: 12),
+              _buildLiquidityKpiStrip(tokens, data, size),
               const SizedBox(height: 18),
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -159,6 +170,12 @@ class AdminOverviewTab extends ConsumerWidget {
                   Expanded(flex: 5, child: approvalsCard),
                 ],
               ),
+              const SizedBox(height: 18),
+              flowCard,
+              const SizedBox(height: 18),
+              branchLiquidityChart,
+              const SizedBox(height: 18),
+              assetPulseCard,
               const SizedBox(height: 18),
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -180,8 +197,16 @@ class AdminOverviewTab extends ConsumerWidget {
               const SizedBox(height: 16),
             ],
             _buildTopKpiGrid(tokens, data, size),
+            const SizedBox(height: 12),
+            _buildLiquidityKpiStrip(tokens, data, size),
             const SizedBox(height: 16),
             chartCard,
+            const SizedBox(height: 16),
+            flowCard,
+            const SizedBox(height: 16),
+            branchLiquidityChart,
+            const SizedBox(height: 16),
+            assetPulseCard,
             const SizedBox(height: 16),
             branchCollectionsCard,
             const SizedBox(height: 16),
@@ -247,13 +272,9 @@ class AdminOverviewTab extends ConsumerWidget {
   }
 
   Widget _buildCompactKpiCard(IcareSurfaceTokens tokens, _OverviewKpiItem item) {
-    return Container(
+    return IcareCard(
       padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: tokens.surface,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: tokens.borderSubtle),
-      ),
+      topAccentColor: tokens.brandPrimary,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -267,7 +288,7 @@ class AdminOverviewTab extends ConsumerWidget {
                   item.label,
                   style: TextStyle(
                     fontSize: 12,
-                    fontWeight: FontWeight.w500,
+                    fontWeight: FontWeight.w600,
                     color: tokens.textMuted,
                   ),
                   maxLines: 1,
@@ -306,226 +327,67 @@ class AdminOverviewTab extends ConsumerWidget {
     );
   }
 
-  Widget _buildFinancialActivityCard(
-    BuildContext context,
-    WidgetRef ref,
-    IcareSurfaceTokens tokens,
-    List<FinancialActivityDayModel> weekData,
-    AdminSize size,
-  ) {
-    final showFull7d = ref.watch(adminCalendarMode7dProvider);
-    final displayedDays = showFull7d
-        ? weekData
-        : weekData.where((d) => d.day != 'Sat' && d.day != 'Sun').toList();
+  Widget _buildLiquidityKpiStrip(
+      IcareSurfaceTokens tokens, AdminOperationsSnapshotModel data, AdminSize size) {
+    final compText = data.collectionCompliancePct > 0
+        ? '${data.collectionCompliancePct.toStringAsFixed(1)}%'
+        : '0.0%';
+    final netSign = data.todayNetSavings < 0 ? '-' : '';
+    final netFormatted =
+        '$netSign${CurrencyFormatter.format(data.todayNetSavings.abs())}';
 
-    double maxVol = 1.0;
-    for (final d in displayedDays) {
-      if (d.collections > maxVol) maxVol = d.collections;
-      if (d.disbursements > maxVol) maxVol = d.disbursements;
-    }
-
-    final isCompact = size.isCompact;
-
-    return Container(
-      padding: EdgeInsets.all(isCompact ? 14 : 18),
-      decoration: BoxDecoration(
-        color: tokens.surface,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: tokens.borderSubtle),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Weekly Cash Flow',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                        color: tokens.textPrimary,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      'Money collected vs loans given out Monday to Friday',
-                      style: TextStyle(fontSize: 11, color: tokens.textMuted),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 8),
-              InkWell(
-                onTap: () => ref
-                    .read(adminCalendarMode7dProvider.notifier)
-                    .state = !showFull7d,
-                borderRadius: BorderRadius.circular(6),
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: tokens.surfaceSubtle,
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: tokens.borderSubtle),
-                  ),
-                  child: Text(
-                    showFull7d ? 'All 7 Days' : 'Work Days Only (Mon–Fri)',
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      color: tokens.textSecondary,
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 16,
-            runSpacing: 6,
-            children: [
-              _buildLegendItem(tokens, 'Money Collected', tokens.successDot),
-              _buildLegendItem(tokens, 'Loans Given Out', tokens.infoDot),
-            ],
-          ),
-          const SizedBox(height: 16),
-          SizedBox(
-            height: 140,
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: displayedDays.map((d) {
-                final isNonWorking = !d.isWorkingDay;
-                final colRatio = (d.collections / maxVol).clamp(0.04, 1.0);
-                final disbRatio = (d.disbursements / maxVol).clamp(0.04, 1.0);
-                final colHeight = d.collections > 0 ? (90.0 * colRatio) : 4.0;
-                final disbHeight =
-                    d.disbursements > 0 ? (90.0 * disbRatio) : 4.0;
-
-                final netChange = d.collections - d.disbursements;
-                final netFormatted = CurrencyFormatter.format(netChange.abs());
-                final netSign =
-                    netChange >= 0 ? '+$netFormatted' : '-$netFormatted';
-
-                return Expanded(
-                  child: Tooltip(
-                    message: '${d.day} (${d.date})\n'
-                        'Collected: ${CurrencyFormatter.format(d.collections)}\n'
-                        'Loans given out: ${CurrencyFormatter.format(d.disbursements)}\n'
-                        'Difference: $netSign'
-                        '${isNonWorking ? '\n(${d.statusReason})' : ''}',
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.end,
-                      children: [
-                        if (isNonWorking)
-                          Container(
-                            height: 28,
-                            width: isCompact ? 32 : 54,
-                            decoration: BoxDecoration(
-                              color: tokens.surfaceSubtle,
-                              borderRadius: BorderRadius.circular(6),
-                              border: Border.all(color: tokens.borderSubtle),
-                            ),
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(
-                                  Icons.lock_outline,
-                                  size: 11,
-                                  color: tokens.textLight,
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  'Closed',
-                                  style: TextStyle(
-                                    fontSize: 8.5,
-                                    fontWeight: FontWeight.w700,
-                                    color: tokens.textLight,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          )
-                        else
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            crossAxisAlignment: CrossAxisAlignment.end,
-                            children: [
-                              Container(
-                                width: isCompact ? 12 : 18,
-                                height: colHeight,
-                                decoration: BoxDecoration(
-                                  color: tokens.successDot,
-                                  borderRadius: const BorderRadius.vertical(
-                                    top: Radius.circular(4),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 3),
-                              Container(
-                                width: isCompact ? 12 : 18,
-                                height: disbHeight,
-                                decoration: BoxDecoration(
-                                  color: tokens.infoDot,
-                                  borderRadius: const BorderRadius.vertical(
-                                    top: Radius.circular(4),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        const SizedBox(height: 8),
-                        Text(
-                          d.day,
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: isNonWorking
-                                ? FontWeight.w500
-                                : FontWeight.w700,
-                            color: isNonWorking
-                                ? tokens.textLight
-                                : tokens.textSecondary,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                );
-              }).toList(),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildLegendItem(
-      IcareSurfaceTokens tokens, String label, Color color) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
+    return AdminResponsiveGrid(
+      columns: size.isCompact ? 2 : 4,
+      crossAxisSpacing: 10,
+      mainAxisSpacing: 10,
       children: [
-        Container(
-          width: 10,
-          height: 10,
-          decoration: BoxDecoration(
-            color: color,
-            borderRadius: BorderRadius.circular(2),
-          ),
+        IcareMetricCard(
+          icon: Icons.account_balance_outlined,
+          label: 'Vault Cash Custody',
+          value: CurrencyFormatter.format(data.vaultCashInCustody),
+          delta: 'Consolidated physical branch cash reserves',
+          isFullEmerald: true,
         ),
-        const SizedBox(width: 6),
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 11.5,
-            fontWeight: FontWeight.w600,
-            color: tokens.textSecondary,
-          ),
+        IcareMetricCard(
+          icon: Icons.outbound_outlined,
+          label: "Today's Disbursements",
+          value: data.todayDisbursements > 0
+              ? CurrencyFormatter.format(data.todayDisbursements)
+              : '₦0',
+          delta: '${data.todayDisbursedCount} loans released today',
+          topBorderColor: tokens.infoDot,
+          statusTextColor: tokens.infoText,
+        ),
+        IcareMetricCard(
+          icon: Icons.savings_outlined,
+          label: "Today's Net Savings",
+          value: netFormatted,
+          delta:
+              'Deposits ${CurrencyFormatter.format(data.todaySavingsDeposit)} • Withdrawals ${CurrencyFormatter.format(data.todaySavingsWithdrawal)}',
+          topBorderColor: data.todayNetSavings >= 0
+              ? tokens.successDot
+              : tokens.warningDot,
+          statusTextColor: data.todayNetSavings >= 0
+              ? tokens.successText
+              : tokens.warningText,
+        ),
+        IcareMetricCard(
+          icon: Icons.fact_check_outlined,
+          label: 'Schedule Compliance',
+          value: compText,
+          delta: data.collectionCompliancePct > 0
+              ? 'Paid vs due across active schedules'
+              : 'No due installments recorded up to date',
+          topBorderColor: data.collectionCompliancePct >= 90
+              ? tokens.successDot
+              : (data.collectionCompliancePct > 0
+                  ? tokens.warningDot
+                  : tokens.borderStrong),
+          statusTextColor: data.collectionCompliancePct >= 90
+              ? tokens.successText
+              : (data.collectionCompliancePct > 0
+                  ? tokens.warningText
+                  : tokens.textMuted),
         ),
       ],
     );
@@ -539,13 +401,8 @@ class AdminOverviewTab extends ConsumerWidget {
   ) {
     final isCompact = size.isCompact;
 
-    return Container(
+    return IcareCard(
       padding: EdgeInsets.all(isCompact ? 14 : 18),
-      decoration: BoxDecoration(
-        color: tokens.surface,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: tokens.borderSubtle),
-      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -829,13 +686,8 @@ class AdminOverviewTab extends ConsumerWidget {
   ) {
     final isCompact = size.isCompact;
 
-    return Container(
+    return IcareCard(
       padding: EdgeInsets.all(isCompact ? 14 : 18),
-      decoration: BoxDecoration(
-        color: tokens.surface,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: tokens.borderSubtle),
-      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

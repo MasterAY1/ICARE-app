@@ -271,6 +271,125 @@ def test_admin_dashboard_risk_health_admin_success():
         assert "settlement_overview" in risk
         engine = data["engine_health"]
         assert "projection_engine_status" in engine
+        assert "Synchronized / Up to Date" not in engine["projection_engine_status"]
+        assert "All Field Nodes Active" not in engine["offline_device_sync_status"]
+        assert "Supabase PostgreSQL Managed" not in engine["database_cluster"]
     finally:
         app.dependency_overrides.pop(get_current_user, None)
         app.dependency_overrides.pop(get_uow, None)
+
+
+def test_admin_operations_and_performance_zero_hardcoded_compliance():
+    """
+    BR-DASH-003 / FP-006: Ensures collection_compliance_pct, branch compliance_pct,
+    and officer compliance_pct never return static 98.4 / 95.0 literals, and zero-activity
+    scorecards never award fabricated baseline points.
+    """
+    mock_admin = CurrentUser(
+        id="admin-test-id",
+        username="Admin",
+        role="Admin",
+        branch="Head Office",
+        permissions={"system_admin"}
+    )
+    app.dependency_overrides[get_current_user] = lambda: mock_admin
+
+    def _table_router(table_name):
+        tbl = MagicMock()
+        if table_name == "branches":
+            rows = [{"branch_id": "b-1", "name": "Ogijo", "code": "OGI"}]
+        elif table_name == "loans":
+            rows = [{
+                "loan_id": "l-1",
+                "branch_id": "b-1",
+                "client_id": "c-1",
+                "officer_id": "o-1",
+                "loan_amount": 100000.0,
+                "active_credit": 100000.0,
+                "total_outstanding": 50000.0,
+                "status": "ACTIVE",
+                "start_date": "2026-01-10",
+                "disbursement_date": "2026-01-10",
+                "end_date": "2026-12-30",
+            }]
+        elif table_name == "loan_schedule":
+            rows = [{
+                "loan_id": "l-1",
+                "total_due": 20000.0,
+                "paid_amount": 15000.0,
+                "due_date": "2026-01-20",
+            }]
+        elif table_name == "user_roles":
+            rows = [{
+                "user_id": "o-1",
+                "roles": {"name": "Credit Officer"},
+                "app_users": {
+                    "id": "o-1",
+                    "username": "OGI_CO1",
+                    "full_name": "Officer One",
+                    "branch_id": "b-1",
+                },
+            }]
+        else:
+            rows = []
+
+        resp = MagicMock()
+        resp.data = rows
+        resp.count = len(rows)
+
+        # Support all Supabase chained filter builders cleanly
+        chain = MagicMock()
+        chain.execute.return_value = resp
+        for m in ("eq", "in_", "gte", "lte", "gt", "lt", "or_", "order", "limit"):
+            getattr(chain, m).return_value = chain
+        tbl.select.return_value = chain
+        return tbl
+
+    mock_uow = MagicMock()
+    mock_uow.client.table.side_effect = _table_router
+    app.dependency_overrides[get_uow] = lambda: mock_uow
+
+    try:
+        ops_res = client.get("/api/v1/admin/dashboard/operations?business_date=2026-02-01")
+        assert ops_res.status_code == 200
+        ops_data = ops_res.json()
+        # Live schedule ratio 15,000 / 20,000 = 75.0% (NOT static 98.4%)
+        assert ops_data["liquidity"]["collection_compliance_pct"] == 75.0
+
+        perf_res = client.get("/api/v1/admin/dashboard/performance?year=2026")
+        assert perf_res.status_code == 200
+        perf_data = perf_res.json()
+        b_list = perf_data["branch_performance"]["rankings"]
+        assert len(b_list) == 1
+        assert b_list[0]["compliance_pct"] == 75.0
+        o_list = perf_data["officer_performance"]["rankings"]
+        assert len(o_list) == 1
+        assert o_list[0]["compliance_pct"] == 75.0
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+        app.dependency_overrides.pop(get_uow, None)
+
+
+def test_performance_service_empty_portfolio_awards_zero_points():
+    """Ensures idle branches receive 0.0 points instead of fabricated 10/5/8 fallback constants."""
+    def _empty_table(table_name):
+        tbl = MagicMock()
+        rows = [{"branch_id": "b-empty", "name": "New Branch", "code": "NEW"}] if table_name == "branches" else []
+        resp = MagicMock()
+        resp.data = rows
+        chain = MagicMock()
+        chain.execute.return_value = resp
+        for m in ("eq", "in_", "gte", "lte", "gt", "lt", "or_", "order", "limit"):
+            getattr(chain, m).return_value = chain
+        tbl.select.return_value = chain
+        return tbl
+
+    mock_uow = MagicMock()
+    mock_uow.client.table.side_effect = _empty_table
+
+    res = InstitutionPerformanceService.get_branch_performance_rankings(mock_uow, 2026)
+    assert len(res["rankings"]) == 1
+    b = res["rankings"][0]
+    assert b["compliance_pct"] == 0.0
+    assert b["recovery_rate_pct"] == 0.0
+    assert b["composite_score"] == 0.0

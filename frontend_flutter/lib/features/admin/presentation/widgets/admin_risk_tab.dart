@@ -4,12 +4,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/errors/app_error_formatter.dart';
 import '../../../../core/theme/icare_theme_tokens.dart';
 import '../../../../core/utils/currency_formatter.dart';
+import '../../../../core/widgets/icare_card.dart';
 import '../../../../core/widgets/icare_skeleton_loader.dart';
+import '../../../../core/widgets/icare_status_badge.dart';
 import '../../data/datasources/admin_api_service.dart';
 import '../../data/models/admin_dashboard_models.dart';
 import '../admin_branch_detail_sheet.dart';
 import '../admin_dashboard_screen.dart';
 import 'admin_responsive.dart';
+import 'admin_risk_charts.dart';
 
 class AdminRiskTab extends ConsumerWidget {
   final AdminSize size;
@@ -73,6 +76,10 @@ class AdminRiskTab extends ConsumerWidget {
         );
       },
       data: (risk) {
+        final branches = perfAsync.maybeWhen(
+          data: (perf) => perf.branchRankings,
+          orElse: () => const <BranchPerformanceItemModel>[],
+        );
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -80,15 +87,25 @@ class AdminRiskTab extends ConsumerWidget {
             const SizedBox(height: 16),
             _buildRiskMetricsGrid(tokens, risk, size),
             const SizedBox(height: 16),
-            perfAsync.maybeWhen(
-              data: (perf) => _buildBranchRiskBreakdown(
+            AdminRiskAnalyticsCharts(
+              risk: risk,
+              branches: branches,
+              size: size,
+            ),
+            const SizedBox(height: 16),
+            AdminLiveTelemetryCard(
+              risk: risk,
+              size: size,
+            ),
+            if (branches.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              _buildBranchRiskBreakdown(
                 context,
                 tokens,
-                perf.branchRankings,
+                branches,
                 size,
               ),
-              orElse: () => const SizedBox.shrink(),
-            ),
+            ],
           ],
         );
       },
@@ -98,20 +115,13 @@ class AdminRiskTab extends ConsumerWidget {
   Widget _buildHeroRiskCard(IcareSurfaceTokens tokens, AdminRiskHealthModel risk, AdminSize size) {
     final isElevated = risk.parPct > 10.0;
     final accentColor = isElevated ? tokens.dangerDot : tokens.successDot;
-    final badgeTextColor = isElevated ? tokens.dangerText : tokens.successText;
-    final badgeBg = isElevated ? tokens.dangerBg : tokens.successBg;
-    final badgeBorder = isElevated ? tokens.dangerBorder : tokens.successBorder;
     final statusLabel = isElevated
         ? 'Needs Attention • Above 10% Limit'
         : 'Healthy • Within 10% Limit';
 
-    return Container(
+    return IcareCard(
       padding: EdgeInsets.all(size.isCompact ? 14 : 18),
-      decoration: BoxDecoration(
-        color: tokens.surface,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: tokens.borderSubtle),
-      ),
+      topAccentColor: accentColor,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -139,22 +149,11 @@ class AdminRiskTab extends ConsumerWidget {
                   ),
                 ],
               ),
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                  color: badgeBg,
-                  borderRadius: BorderRadius.circular(999),
-                  border: Border.all(color: badgeBorder),
-                ),
-                child: Text(
-                  statusLabel,
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    color: badgeTextColor,
-                  ),
-                ),
+              IcareStatusBadge(
+                label: statusLabel,
+                variant: isElevated
+                    ? IcareBadgeVariant.danger
+                    : IcareBadgeVariant.success,
               ),
             ],
           ),
@@ -249,13 +248,9 @@ class AdminRiskTab extends ConsumerWidget {
   }
 
   Widget _buildRiskMetricTile(IcareSurfaceTokens tokens, _RiskMetricCardData item) {
-    return Container(
+    return IcareCard(
       padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: tokens.surface,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: tokens.borderSubtle),
-      ),
+      topAccentColor: item.color,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -325,13 +320,8 @@ class AdminRiskTab extends ConsumerWidget {
 
     final columns = size.isExpanded ? 2 : 1;
 
-    return Container(
+    return IcareCard(
       padding: EdgeInsets.all(size.isCompact ? 14 : 18),
-      decoration: BoxDecoration(
-        color: tokens.surface,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: tokens.borderSubtle),
-      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

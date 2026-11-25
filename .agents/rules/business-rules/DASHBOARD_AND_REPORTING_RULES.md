@@ -16,13 +16,18 @@
 - **Prohibited Behavior:** CO Dashboard computing "Collection Today" from `repayments.amount_paid` while BM Dashboard computes it from `loan_schedule.paid_amount`.
 - **Status:** CONFIRMED
 
-## BR-DASH-003: No Hardcoded Financial Values
+## BR-DASH-003: No Hardcoded Financial, Compliance, Telemetry, or Chart Values (Zero-Hardcode Rule)
 - **Rule ID:** BR-DASH-003
-- **Name:** No Hardcoded Financial Values
-- **Description:** Dashboard metrics must be calculated from actual data.
-- **Required Behavior:** All metrics computed from database queries.
-- **Prohibited Behavior:** Hardcoded values like `today_collections: 3500000.0` or `par: "0.0%"`.
-- **Status:** CONFIRMED
+- **Name:** Strict Zero Hardcoded, Simulated, or Placeholder Data
+- **Description:** Every financial metric, compliance rate, cash variance, performance score, chart bar/line/pie series, flow-diagram indicator, and system health status across both backend services/routes and Flutter views MUST be calculated from live database queries or runtime instrumentation.
+- **Required Behavior:**
+  - All metrics computed from authoritative database queries or live runtime probes (`Account 1000`, `loan_schedule`, `repayments`, `loans`, `master_cashbook`, `area_eod_confirmations`, circuit breaker, metrics service).
+  - Return/display `0.0` or an explicit unscheduled/empty state (`"No due installments"`, `"Unavailable"`) whenever denominators or query results are empty.
+  - Scorecards and ranking engines must assign `0.0` (never default baseline points such as `10.0` or `5.0`) when maximum branch/officer activity is zero.
+  - Frontend JSON model parsers must default missing numeric fields to `0` / `0.0` and missing statuses to neutral unknown states, never optimistic `"Synchronized"` / `"Active"` / `95.0` / `"10,000+"` literals.
+- **Prohibited Behavior:**
+  - Hardcoded values like `today_collections: 3500000.0`, `collection_compliance_pct: 98.4`, `comp_pct = 95.0`, `cash_variance = 0.0`, static `engine_health` / `system_health` text, arbitrary `"10,000+"` display caps, or dummy chart/flow datasets in Dart widgets.
+- **Status:** CONFIRMED & MANDATORY
 
 ## BR-DASH-004: PAR Calculation
 - **Rule ID:** BR-DASH-004

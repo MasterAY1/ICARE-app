@@ -98,10 +98,10 @@ def _emit_wr_user_audit(
 
 WR_ALLOWED_ROLES = [
     "CO", "Credit Officer", "Officer",
-    "BM", "Branch Manager", "AM", "Area Manager", "Admin", "Super Admin",
+    "BM", "Branch Manager",
 ]
 WR_MANAGER_ROLES = [
-    "BM", "Branch Manager", "AM", "Area Manager", "Admin", "Super Admin",
+    "BM", "Branch Manager",
 ]
 
 
@@ -256,7 +256,7 @@ router = APIRouter(prefix="/api/v1/co/withdrawals", tags=["CO Withdrawals"])
 
 @router.get("/individual-options", response_model=IndividualOptionsResponse)
 def get_individual_options(
-    current_user: CurrentUser = Depends(require_role(["CO", "Credit Officer", "Officer", "BM", "Branch Manager", "AM", "Area Manager", "Admin", "Super Admin"])),
+    current_user: CurrentUser = Depends(require_role(WR_ALLOWED_ROLES)),
     uow: SupabaseUnitOfWork = Depends(get_uow)
 ):
     """
@@ -264,16 +264,13 @@ def get_individual_options(
     1:1 replica of app.py L7325–7492.
     """
     officer_id = uow.loans._resolve_officer_id(current_user.username) or current_user.id
-    is_manager = current_user.role in ["BM", "Branch Manager", "AM", "Area Manager", "Admin", "Super Admin"]
+    is_manager = current_user.role in WR_MANAGER_ROLES
 
-    # 1. Query clients scoped by role
+    # 1. Query clients scoped by role (CO & BM only)
     query = uow.client.table("clients").select(
         "client_id, client_code, name, status, status_id, client_memberships(group_id, groups(group_id, name, group_number, meeting_day)), client_statuses(name)"
     )
-    if current_user.role in ["AM", "Area Manager"]:
-        allowed_bids = getattr(current_user, "assigned_branch_ids", [current_user.branch_id])
-        query = query.in_("branch_id", allowed_bids) if allowed_bids else query
-    elif is_manager:
+    if is_manager:
         query = query.eq("branch_id", current_user.branch_id)
     else:
         query = query.eq("officer_id", officer_id)
@@ -369,7 +366,7 @@ def get_individual_options(
     bal_by_client, batch_sav_ok = _fetch_individual_balances_batch(uow, client_ids)
 
     ind_pending, _, _, _ = _fetch_pending_reserved_map(
-        uow, None if current_user.role in ["Admin", "Super Admin"] else current_user.branch_id
+        uow, current_user.branch_id
     )
 
     client_options: List[ClientWithdrawalOption] = []
@@ -425,14 +422,11 @@ def get_group_options(
     """
     officer_id = uow.loans._resolve_officer_id(current_user.username) or current_user.id
     is_manager = current_user.role in WR_MANAGER_ROLES
-    branch_scope = current_user.branch_id if current_user.role not in ["AM", "Area Manager", "Admin", "Super Admin"] else None
+    branch_scope = current_user.branch_id
     _, grp_pending, _, _ = _fetch_pending_reserved_map(uow, branch_scope)
 
     query = uow.client.table("groups").select("group_id, name, group_number, meeting_day, officer_id")
-    if current_user.role in ["AM", "Area Manager"]:
-        allowed_bids = getattr(current_user, "assigned_branch_ids", [current_user.branch_id])
-        query = query.in_("branch_id", allowed_bids) if allowed_bids else query
-    elif is_manager:
+    if is_manager:
         query = query.eq("branch_id", current_user.branch_id)
     else:
         query = query.eq("branch_id", current_user.branch_id).eq("officer_id", officer_id)
@@ -602,23 +596,17 @@ def get_laps_options(
     """
     Returns branch/officer-scoped LAPS records with positive available balances and joined client details.
     """
-    is_admin = current_user.role in ["Admin", "Super Admin"]
-    is_am = current_user.role in ["AM", "Area Manager"]
     is_manager = current_user.role in WR_MANAGER_ROLES
     officer_id = uow.loans._resolve_officer_id(current_user.username) or current_user.id
-    allowed_bids = set(str(b) for b in (getattr(current_user, "assigned_branch_ids", None) or ([current_user.branch_id] if current_user.branch_id else [])) if b)
-    laps_branch_scope = current_user.branch_id if (not is_admin and not is_am) else None
+    laps_branch_scope = current_user.branch_id
     _, _, laps_pending, _ = _fetch_pending_reserved_map(uow, laps_branch_scope)
 
     client_map: Dict[str, dict] = {}
     co_client_ids: set = set()
     try:
         c_q = uow.client.table("clients").select("client_id, client_code, name, branch_id, officer_id")
-        if not is_admin:
-            if is_am and allowed_bids:
-                c_q = c_q.in_("branch_id", list(allowed_bids))
-            elif current_user.branch_id:
-                c_q = c_q.eq("branch_id", current_user.branch_id)
+        if current_user.branch_id:
+            c_q = c_q.eq("branch_id", current_user.branch_id)
         c_res = c_q.execute()
         if isinstance(c_res.data, list):
             for c in c_res.data:
@@ -631,7 +619,7 @@ def get_laps_options(
         logger.warning(f"LAPS client lookup failed: {e}")
 
     l_q = uow.client.table("laps_savings").select("id, client_id, branch_id, officer_id, deposit_amount, withdrawal_amount, remarks, created_at")
-    if not is_admin and not is_am and current_user.branch_id:
+    if current_user.branch_id:
         l_q = l_q.eq("branch_id", current_user.branch_id)
     res_laps = l_q.execute()
     laps_data: Dict[str, Dict] = {}
@@ -646,18 +634,11 @@ def get_laps_options(
             eff_branch = str(lr.get("branch_id") or c_info.get("branch_id") or "")
             eff_officer = str(lr.get("officer_id") or c_info.get("officer_id") or "")
 
-            if not is_admin:
-                if is_am:
-                    if allowed_bids and eff_branch and eff_branch not in allowed_bids:
-                        continue
-                elif is_manager:
-                    if current_user.branch_id and eff_branch and eff_branch != str(current_user.branch_id):
-                        continue
-                else:
-                    if current_user.branch_id and eff_branch and eff_branch != str(current_user.branch_id):
-                        continue
-                    if str(cid) not in co_client_ids and (not eff_officer or eff_officer != str(officer_id)):
-                        continue
+            if current_user.branch_id and eff_branch and eff_branch != str(current_user.branch_id):
+                continue
+            if not is_manager:
+                if str(cid) not in co_client_ids and (not eff_officer or eff_officer != str(officer_id)):
+                    continue
 
             if cid not in laps_data:
                 laps_data[cid] = {
@@ -1240,8 +1221,6 @@ def get_daily_withdrawals(
     Returns live daily withdrawals data across all 4 savings tables (including cross-date reversals),
     Top KPIs, categorized tables, and filtered withdrawal requests history.
     """
-    is_admin = current_user.role in ["Admin", "Super Admin"]
-    is_am = current_user.role in ["AM", "Area Manager"]
     is_manager = current_user.role in WR_MANAGER_ROLES
     officer_id = uow.loans._resolve_officer_id(current_user.username) or current_user.id
     if show_all:
@@ -1251,18 +1230,12 @@ def get_daily_withdrawals(
     else:
         biz_dt = BusinessDateService.get_business_date(uow, current_user.branch_id or current_user.branch)
         target_date_str = (biz_dt if isinstance(biz_dt, date) else date.today()).isoformat()
-    allowed_bids = [
-        str(b) for b in (getattr(current_user, "assigned_branch_ids", None) or ([current_user.branch_id] if current_user.branch_id else []))
-        if b
-    ]
 
-    # 1. Fetch clients scoped by role
+    # 1. Fetch clients scoped by role (CO & BM only)
     c_q = uow.client.table("clients").select("client_id, client_code, name, nickname, officer_id, branch_id")
     if not is_manager:
         c_q = c_q.eq("officer_id", officer_id)
-    elif is_am and allowed_bids:
-        c_q = c_q.in_("branch_id", allowed_bids)
-    elif not is_admin and current_user.branch_id:
+    elif current_user.branch_id:
         c_q = c_q.eq("branch_id", current_user.branch_id)
 
     dw_clients = c_q.execute().data or []
@@ -1284,9 +1257,7 @@ def get_daily_withdrawals(
     wr_q = uow.client.table("withdrawal_requests").select("*")
     if not is_manager:
         wr_q = wr_q.eq("requested_by", current_user.username)
-    elif is_am and allowed_bids:
-        wr_q = wr_q.in_("branch_id", allowed_bids)
-    elif not is_admin and current_user.branch_id:
+    elif current_user.branch_id:
         wr_q = wr_q.eq("branch_id", current_user.branch_id)
 
     if target_date_str:
@@ -1309,11 +1280,8 @@ def get_daily_withdrawals(
             q = q.eq("posting_date", target_date_str)
         else:
             q = q.order("posting_date", desc=True).limit(500)
-        if tbl != "group_savings" and not is_admin:
-            if is_am and allowed_bids:
-                q = q.in_("branch_id", allowed_bids)
-            elif current_user.branch_id:
-                q = q.eq("branch_id", current_user.branch_id)
+        if tbl != "group_savings" and current_user.branch_id:
+            q = q.eq("branch_id", current_user.branch_id)
         return q
 
     raw_ind_w = _scope_table_query("individual_savings").execute().data or []
@@ -1767,10 +1735,7 @@ def get_pending_approvals(
     Returns pending withdrawal requests for Branch Manager approval queue.
     """
     query = uow.client.table("withdrawal_requests").select("*").eq("status", "PENDING").order("created_at", desc=False)
-    if current_user.role in ["AM", "Area Manager"]:
-        allowed_bids = getattr(current_user, "assigned_branch_ids", [current_user.branch_id])
-        query = query.in_("branch_id", allowed_bids) if allowed_bids else query
-    elif current_user.role in ["BM", "Branch Manager"]:
+    if current_user.branch_id:
         query = query.eq("branch_id", current_user.branch_id)
 
     res = query.execute()

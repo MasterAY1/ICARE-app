@@ -2,13 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/errors/app_error_formatter.dart';
+import '../../../../core/theme/icare_motion.dart';
 import '../../../../core/theme/icare_theme_tokens.dart';
 import '../../../../core/utils/currency_formatter.dart';
+import '../../../../core/widgets/icare_card.dart';
 import '../../../../core/widgets/icare_skeleton_loader.dart';
 import '../../data/datasources/admin_api_service.dart';
 import '../../data/models/admin_dashboard_models.dart';
 import '../admin_branch_detail_sheet.dart';
 import '../admin_dashboard_screen.dart';
+import 'admin_rankings_charts.dart';
 import 'admin_responsive.dart';
 
 class AdminRankingsTab extends ConsumerStatefulWidget {
@@ -95,13 +98,8 @@ class _AdminRankingsTabState extends ConsumerState<AdminRankingsTab> {
 
   Widget _buildToolbar(
       IcareSurfaceTokens tokens, int selectedYear, List<int> availableYears) {
-    return Container(
+    return IcareCard(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      decoration: BoxDecoration(
-        color: tokens.surface,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: tokens.borderSubtle),
-      ),
       child: Wrap(
         alignment: WrapAlignment.spaceBetween,
         crossAxisAlignment: WrapCrossAlignment.center,
@@ -191,11 +189,17 @@ class _AdminRankingsTabState extends ConsumerState<AdminRankingsTab> {
   ) {
     final branches = data.branchRankings;
     final officers = data.officerRankings;
+    final chartsSection = AdminRankingsAnalyticsSection(
+      performance: data,
+      size: size,
+    );
 
     if (size.isCompact) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          chartsSection,
+          const SizedBox(height: 14),
           _buildCompactSubToggle(tokens, branches.length, officers.length),
           const SizedBox(height: 12),
           if (_compactSectionIndex == 0)
@@ -210,6 +214,8 @@ class _AdminRankingsTabState extends ConsumerState<AdminRankingsTab> {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          chartsSection,
+          const SizedBox(height: 18),
           _buildBranchesCardSection(context, tokens, branches, columns: 2),
           const SizedBox(height: 18),
           _buildOfficersCardSection(tokens, officers, columns: 2, initialLimit: 6),
@@ -217,21 +223,28 @@ class _AdminRankingsTabState extends ConsumerState<AdminRankingsTab> {
       );
     }
 
-    // Expanded (>= 1024px): Side-by-side 2-column layout
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    // Expanded (>= 1024px): Charts ribbon above side-by-side 2-column leaderboards
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Expanded(
-          child: _buildBranchesCardSection(context, tokens, branches, columns: 1),
-        ),
-        const SizedBox(width: 18),
-        Expanded(
-          child: _buildOfficersCardSection(
-            tokens,
-            officers,
-            columns: 1,
-            initialLimit: 10,
-          ),
+        chartsSection,
+        const SizedBox(height: 18),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: _buildBranchesCardSection(context, tokens, branches, columns: 1),
+            ),
+            const SizedBox(width: 18),
+            Expanded(
+              child: _buildOfficersCardSection(
+                tokens,
+                officers,
+                columns: 1,
+                initialLimit: 10,
+              ),
+            ),
+          ],
         ),
       ],
     );
@@ -315,13 +328,8 @@ class _AdminRankingsTabState extends ConsumerState<AdminRankingsTab> {
     List<BranchPerformanceItemModel> branches, {
     required int columns,
   }) {
-    return Container(
+    return IcareCard(
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: tokens.surface,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: tokens.borderSubtle),
-      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -377,14 +385,15 @@ class _AdminRankingsTabState extends ConsumerState<AdminRankingsTab> {
     final score = b.compositeScore.clamp(0.0, 100.0);
     final isParHigh = b.parPct > 10.0;
 
-    return InkWell(
-      onTap: () => AdminBranchDetailSheet.show(
-        context,
-        branchId: b.branchId,
-        branchName: b.branchName,
-      ),
-      borderRadius: BorderRadius.circular(8),
-      child: Container(
+    return IcareTactileScale(
+      child: InkWell(
+        onTap: () => AdminBranchDetailSheet.show(
+          context,
+          branchId: b.branchId,
+          branchName: b.branchName,
+        ),
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
           color: tokens.surfaceSubtle,
@@ -529,6 +538,7 @@ class _AdminRankingsTabState extends ConsumerState<AdminRankingsTab> {
           ],
         ),
       ),
+    ),
     );
   }
 
@@ -543,13 +553,8 @@ class _AdminRankingsTabState extends ConsumerState<AdminRankingsTab> {
         ? officers
         : officers.take(initialLimit).toList();
 
-    return Container(
+    return IcareCard(
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: tokens.surface,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: tokens.borderSubtle),
-      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

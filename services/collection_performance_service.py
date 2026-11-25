@@ -112,7 +112,7 @@ class CollectionPerformanceService:
         not_paid = sum(1 for r in records if r.get("status") == "NOT_PAID")
         total_expected = sum(float(r.get("expected_amount", 0)) for r in records)
         total_collected = sum(float(r.get("amount_paid", 0)) for r in records)
-        compliance_pct = (total_collected / total_expected * 100) if total_expected > 0 else 100.0
+        compliance_pct = (total_collected / total_expected * 100) if total_expected > 0 else 0.0
 
         return {
             "officer_id": officer_id,
@@ -166,7 +166,7 @@ class CollectionPerformanceService:
         except Exception:
             total_collected = sum(float(r.get("paid_amount", 0)) for r in records)
 
-        compliance_pct = (total_collected / total_expected * 100) if total_expected > 0 else 100.0
+        compliance_pct = (total_collected / total_expected * 100) if total_expected > 0 else 0.0
 
         return {
             "branch_id": branch_id,

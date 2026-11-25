@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/theme/icare_motion.dart';
 import '../../../../core/theme/icare_theme_tokens.dart';
 import '../../../../core/utils/currency_formatter.dart';
+import '../../../../core/widgets/icare_card.dart';
+import '../../../../core/widgets/icare_status_badge.dart';
 import '../../data/models/admin_dashboard_models.dart';
 import 'admin_responsive.dart';
-import 'package:frontend_flutter/core/theme/icare_motion.dart';
 
 /// Shows a confirmation dialog before approving or declining a reversal or loan.
 /// Returns `true` only when the administrator explicitly confirms.
@@ -257,15 +259,12 @@ class _AdminApprovalsActionCenterState
     final isCompact = widget.size.isCompact;
     final tokens = IcareSurfaceTokens.of(context);
 
-    return Container(
+    return IcareCard(
       padding: EdgeInsets.all(isCompact ? 14 : 18),
-      decoration: BoxDecoration(
-        color: tokens.surface,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(
-          color: totalWaiting > 0 ? tokens.dangerBorder : tokens.borderSubtle,
-        ),
+      border: Border.all(
+        color: totalWaiting > 0 ? tokens.dangerBorder : tokens.borderSubtle,
       ),
+      topAccentColor: totalWaiting > 0 ? tokens.dangerDot : tokens.successDot,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -294,20 +293,11 @@ class _AdminApprovalsActionCenterState
                 ),
               ),
               const SizedBox(width: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: totalWaiting > 0 ? tokens.dangerBg : tokens.surfaceSubtle,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Text(
-                  '$totalWaiting Waiting',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    color: totalWaiting > 0 ? tokens.dangerText : tokens.textMuted,
-                  ),
-                ),
+              IcareStatusBadge(
+                label: '$totalWaiting Waiting',
+                variant: totalWaiting > 0
+                    ? IcareBadgeVariant.danger
+                    : IcareBadgeVariant.neutral,
               ),
             ],
           ),

@@ -1,5 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../../core/auth/auth_controller.dart';
+import '../../../../core/auth/auth_state.dart';
 import '../../../../core/network/api_client.dart';
+import '../../../procurement/data/datasources/procurement_api_service.dart';
 import '../models/admin_dashboard_models.dart';
 
 final adminApiServiceProvider = Provider<AdminApiService>((ref) {
@@ -25,6 +28,21 @@ final adminRiskHealthProvider = FutureProvider<AdminRiskHealthModel>((ref) async
 final adminBranchDetailProvider = FutureProvider.family<AdminBranchDetailModel, String>((ref, branchId) async {
   final api = ref.watch(adminApiServiceProvider);
   return api.getBranchDetail(branchId);
+});
+
+/// Read-only executive asset portfolio overview for the Admin Dashboard.
+/// Only fetches when authenticated; returns `null` if unavailable so core KPIs never fail.
+final adminProcurementPulseProvider = FutureProvider.autoDispose<Map<String, dynamic>?>((ref) async {
+  final authState = ref.watch(authControllerProvider);
+  if (authState is! AuthStateAuthenticated) {
+    return null;
+  }
+  final procApi = ref.watch(procurementApiServiceProvider);
+  try {
+    return await procApi.getOverview();
+  } catch (_) {
+    return null;
+  }
 });
 
 class AdminApiService {

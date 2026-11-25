@@ -7,14 +7,14 @@ import 'package:frontend_flutter/features/admin/data/models/admin_dashboard_mode
 import 'package:frontend_flutter/features/admin/presentation/admin_dashboard_screen.dart';
 
 AdminOperationsSnapshotModel _buildMockOperations() {
-  return AdminOperationsSnapshotModel(
+  return const AdminOperationsSnapshotModel(
     businessDate: '2026-11-08',
-    businessDateStatus: const BusinessDateStatusModel(
+    businessDateStatus: BusinessDateStatusModel(
       isWorkingDay: true,
       statusReason: 'Valid working day',
       nextWorkingDay: '2026-11-09',
     ),
-    overview: const InstitutionalOverviewModel(
+    overview: InstitutionalOverviewModel(
       totalClientsCount: 1420,
       totalClientsDisplay: '1,420',
       activeBranchesCount: 4,
@@ -29,7 +29,7 @@ AdminOperationsSnapshotModel _buildMockOperations() {
     todaySavingsWithdrawal: 50000.0,
     todayNetSavings: 270000.0,
     collectionCompliancePct: 96.4,
-    financialActivityWeek: const [
+    financialActivityWeek: [
       FinancialActivityDayModel(
         day: 'Mon',
         date: '2026-11-02',
@@ -55,7 +55,7 @@ AdminOperationsSnapshotModel _buildMockOperations() {
         disbursements: 300000,
       ),
     ],
-    branchPerformanceSummary: const [
+    branchPerformanceSummary: [
       BranchPerformanceRowModel(
         branchId: 'b-1',
         branchName: 'Ikeja Branch',
@@ -97,9 +97,9 @@ AdminOperationsSnapshotModel _buildMockOperations() {
         isHeadOffice: true,
       ),
     ],
-    branchMatrix: const [],
+    branchMatrix: [],
     pendingReversalsCount: 1,
-    pendingReversals: const [
+    pendingReversals: [
       PendingReversalItemModel(
         requestId: 'rev-101',
         branchName: 'Ikeja Branch',
@@ -111,7 +111,7 @@ AdminOperationsSnapshotModel _buildMockOperations() {
       ),
     ],
     pendingHighLoansCount: 1,
-    pendingHighLoans: const [
+    pendingHighLoans: [
       PendingHighLoanItemModel(
         loanId: 'loan-501',
         branchName: 'Surulere Branch',
@@ -242,7 +242,7 @@ AdminRiskHealthModel _buildMockRiskHealth() {
   );
 }
 
-List<Override> _buildOverrides() {
+List<Override> _buildOverrides({bool includeProcurementPulse = false}) {
   return [
     adminOperationsProvider.overrideWith(
       (ref, dateStr) async => _buildMockOperations(),
@@ -252,6 +252,28 @@ List<Override> _buildOverrides() {
     ),
     adminRiskHealthProvider.overrideWith(
       (ref) async => _buildMockRiskHealth(),
+    ),
+    adminProcurementPulseProvider.overrideWith(
+      (ref) async => includeProcurementPulse
+          ? <String, dynamic>{
+              'inventory_summary': <String, dynamic>{
+                'units_available': 205,
+                'units_reserved': 4,
+                'inventory_cash_value': 12500000.0,
+                'inventory_cost_value': 9400000.0,
+              },
+              'pnl_summary': <String, dynamic>{
+                'units_sold': 18,
+                'realized_package_revenue': 2400000.0,
+                'net_realized_profit': 420000.0,
+                'net_margin_pct': 17.5,
+              },
+              'catalog_readiness': <String, dynamic>{
+                'cost_configured_skus': 310,
+                'total_catalog_skus': 540,
+              },
+            }
+          : null,
     ),
   ];
 }
@@ -372,7 +394,9 @@ void main() {
         await tester.pumpAndSettle();
 
         // At 1280px (expanded), initialLimit is 10 out of 12 officers
-        expect(find.text('Officer 1'), findsOneWidget);
+        // Officer 1 appears in both the Top Officers chart and leaderboard list
+        expect(find.text('Officer 1'), findsWidgets);
+        expect(find.text('Officer 7'), findsOneWidget);
         expect(find.text('Officer 10'), findsOneWidget);
         expect(find.text('Officer 12'), findsNothing);
 
@@ -416,6 +440,52 @@ void main() {
         await tester.tap(find.text('Cancel'));
         await tester.pumpAndSettle();
         expect(find.text('Approve Correction Request?'), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'Renders Interactive Flow, Liquidity Strip, Charts, Asset Pulse & Dark Mode cleanly (BIA-ADMIN-DASH-004)',
+      (tester) async {
+        await tester.binding.setSurfaceSize(const Size(1280, 1400));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: _buildOverrides(includeProcurementPulse: true),
+            child: MaterialApp(
+              themeMode: ThemeMode.dark,
+              darkTheme: ThemeData.dark(useMaterial3: true),
+              home: const Scaffold(
+                body: AdminDashboardScreen(),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(tester.takeException(), isNull);
+        expect(find.text('VAULT CASH CUSTODY'), findsOneWidget);
+        expect(find.text('96.4%'), findsOneWidget);
+        expect(find.text('Institution Capital & Governance Flow'), findsOneWidget);
+        expect(find.text('Asset Financing & Stock Pulse (Read-Only)'), findsOneWidget);
+
+        // Switch flow diagram from Credit & Vault Cycle to Asset & SKU Flow
+        await tester.tap(find.text('Asset & SKU Flow'));
+        await tester.pumpAndSettle();
+        expect(find.text('01 • Master SKU Catalog'), findsOneWidget);
+        expect(find.text('540 SKUs'), findsOneWidget);
+
+        // Check Rankings Charts + 6-Pillar Breakdown
+        await tester.tap(find.text('Branch & Officer Rankings'));
+        await tester.pumpAndSettle();
+        expect(find.text('Branch Composite Scorecard (0–100)'), findsOneWidget);
+        expect(find.text('6-Pillar Breakdown: Ikeja Branch'), findsOneWidget);
+
+        // Check Risk Charts + Live Telemetry
+        await tester.tap(find.text('Loan Health & Risk'));
+        await tester.pumpAndSettle();
+        expect(find.text('Active Loan Exposure Mix'), findsOneWidget);
+        expect(find.text('Live System & Ledger Telemetry'), findsOneWidget);
       },
     );
   });

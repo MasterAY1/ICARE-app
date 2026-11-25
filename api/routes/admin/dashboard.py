@@ -4,6 +4,7 @@ Global Administrator Dashboard, Approvals Clearinghouse & Performance Engine.
 Strict Zero-Emoji Governance & Corporate Banking Abstraction.
 """
 from datetime import date, timedelta
+import time
 from typing import Optional, List, Dict, Any
 from fastapi import APIRouter, Depends, Query, HTTPException, status
 from pydantic import BaseModel, Field
@@ -16,6 +17,8 @@ from services.correction_service import CorrectionService
 from services.loan_service import LoanService
 from services.dashboard_service import DashboardService
 from services.business_date_service import BusinessDateService
+from services.circuit_breaker import get_circuit_breaker
+from services.metrics_service import get_metrics_service
 
 
 router = APIRouter(prefix="/api/v1/admin/dashboard", tags=["Global Administrator Dashboard"])
@@ -301,17 +304,47 @@ def get_admin_operations(
         if isinstance(cnt, int):
             total_clients_count = cnt
         elif isinstance(getattr(c_res, "data", None), list):
-            total_clients_count = len(c_res.data)
+            total_clients_count = len([r for r in c_res.data if isinstance(r, dict) and r.get("id")])
     except Exception:
         pass
-    total_clients_display = "10,000+" if total_clients_count >= 10000 else f"{total_clients_count:,}"
+    total_clients_display = f"{total_clients_count:,}"
 
     total_active_portfolio = 0.0
+    valid_loan_ids: List[str] = []
     try:
-        res_ac = uow.client.table("loans").select("active_credit").in_("status", ["ACTIVE", "Active"]).execute()
-        total_active_portfolio = sum(float(r.get("active_credit") or 0.0) for r in (res_ac.data or []))
+        res_ac = (
+            uow.client.table("loans")
+            .select("loan_id, active_credit, status, extra_fields")
+            .in_("status", ["ACTIVE", "Active", "APPROVED", "COMPLETED", "DEFAULTER"])
+            .execute()
+        )
+        for r in (res_ac.data or []):
+            if not isinstance(r, dict):
+                continue
+            st_u = str(r.get("status") or "").upper()
+            if st_u == "ACTIVE":
+                total_active_portfolio += float(r.get("active_credit") or 0.0)
+            ef = r.get("extra_fields")
+            if isinstance(ef, dict) and ef.get("is_legacy") is True:
+                continue
+            lid = str(r.get("loan_id") or "").strip()
+            if lid:
+                valid_loan_ids.append(lid)
     except Exception:
         pass
+
+    # Live Institutional Repayment Schedule Compliance (BR-DASH-003, FP-006)
+    collection_compliance_pct = 0.0
+    if valid_loan_ids:
+        sched_totals = InstitutionPerformanceService.compute_schedule_compliance_by_loan(
+            uow,
+            valid_loan_ids,
+            end_date=p_date_str,
+        )
+        total_due_sum = sum(v[0] for v in sched_totals.values())
+        total_paid_sum = sum(v[1] for v in sched_totals.values())
+        if total_due_sum > 0:
+            collection_compliance_pct = round((total_paid_sum / total_due_sum) * 100.0, 1)
 
     # Working Week Financial Activity (Mon-Fri active, Sat-Sun frozen per BR-DATE-004)
     try:
@@ -361,7 +394,7 @@ def get_admin_operations(
             "today_savings_deposit": today_savings_deposit,
             "today_savings_withdrawal": today_savings_withdrawal,
             "today_net_savings": today_net_savings,
-            "collection_compliance_pct": 98.4
+            "collection_compliance_pct": collection_compliance_pct
         },
         "financial_activity_week": financial_activity_week,
         "branch_performance_summary": branch_performance_summary,
@@ -463,6 +496,92 @@ def get_risk_and_platform_health(
     except Exception:
         pass
 
+    # 4. Live Engine, Queue, EOD & DB Health Telemetry (BR-DASH-003, FP-006)
+    today_iso = date.today().isoformat()
+    db_t0 = time.monotonic()
+    db_connected = False
+    db_latency_ms = 0.0
+    db_error_name = ""
+    field_branch_ids: List[str] = []
+    try:
+        res_branches = uow.client.table("branches").select("branch_id, name").execute()
+        db_connected = True
+        db_latency_ms = round((time.monotonic() - db_t0) * 1000.0, 1)
+        for br in (res_branches.data or []):
+            if not isinstance(br, dict):
+                continue
+            b_name = str(br.get("name") or "").strip().lower()
+            if b_name not in ["head office", "headquarters", "headoffice"]:
+                bid = str(br.get("branch_id") or "").strip()
+                if bid:
+                    field_branch_ids.append(bid)
+    except Exception as db_exc:
+        db_connected = False
+        db_error_name = type(db_exc).__name__
+
+    pending_reversals_cnt = 0
+    try:
+        res_rev_p = uow.client.table("correction_requests").select("id").eq("status", "Pending").execute()
+        pending_reversals_cnt = len([r for r in (res_rev_p.data or []) if isinstance(r, dict) and r.get("id")])
+    except Exception:
+        pass
+
+    pending_loans_cnt = 0
+    try:
+        res_loan_p = uow.client.table("loans").select("loan_id").in_("status", ["PENDING", "Pending", "AWAITING_APPROVAL"]).execute()
+        pending_loans_cnt = len([r for r in (res_loan_p.data or []) if isinstance(r, dict) and r.get("loan_id")])
+    except Exception:
+        pass
+
+    pending_eod_cnt = 0
+    confirmed_eod_branch_ids = set()
+    try:
+        res_eod = uow.client.table("area_eod_confirmations").select("branch_id, status").eq("closure_date", today_iso).execute()
+        for row in (res_eod.data or []):
+            if not isinstance(row, dict):
+                continue
+            bid = str(row.get("branch_id") or "").strip()
+            e_st = str(row.get("status") or "").upper()
+            if e_st in ["CONFIRMED", "CLOSED"] and bid:
+                confirmed_eod_branch_ids.add(bid)
+            elif e_st in ["PENDING", "READY_FOR_REVIEW"] and bid:
+                pending_eod_cnt += 1
+    except Exception:
+        pass
+
+    ledger_entries_cnt = 0
+    ledger_verified = False
+    try:
+        res_led = uow.client.table("financial_ledger_entries").select("id", count="exact").limit(1).execute()
+        ledger_verified = True
+        cnt_val = getattr(res_led, "count", None)
+        if isinstance(cnt_val, int):
+            ledger_entries_cnt = cnt_val
+        elif isinstance(getattr(res_led, "data", None), list):
+            ledger_entries_cnt = len([r for r in res_led.data if isinstance(r, dict) and r.get("id")])
+    except Exception:
+        ledger_verified = False
+
+    pending_backlog = pending_reversals_cnt + pending_loans_cnt + pending_eod_cnt
+    cb_status = get_circuit_breaker("database").get_status()
+    cb_state = str(cb_status.get("state") or "UNKNOWN")
+    active_alerts = get_metrics_service().get_active_alerts()
+
+    if not db_connected or cb_state != "CLOSED":
+        projection_status = f"Degraded ({db_error_name or cb_state})"
+    elif active_alerts:
+        projection_status = f"Attention ({len(active_alerts)} active alerts)"
+    elif pending_backlog > 0:
+        projection_status = f"Live ({pending_backlog} queued approvals)"
+    else:
+        projection_status = f"Live ({db_latency_ms:.0f} ms)"
+
+    if field_branch_ids:
+        closed_cnt = len([b for b in field_branch_ids if b in confirmed_eod_branch_ids])
+        eod_sync_status = f"{closed_cnt}/{len(field_branch_ids)} Field Branches EOD Closed"
+    else:
+        eod_sync_status = "0 Field Branches Found"
+
     return {
         "risk_indicators": {
             "par_pct": par_val,
@@ -479,11 +598,11 @@ def get_risk_and_platform_health(
             }
         },
         "engine_health": {
-            "projection_engine_status": "Synchronized / Up to Date",
-            "pending_event_backlog": 0,
-            "offline_device_sync_status": "All Field Nodes Active",
-            "database_cluster": "Supabase PostgreSQL Managed",
-            "immutable_audit_state": "Enforced"
+            "projection_engine_status": projection_status,
+            "pending_event_backlog": pending_backlog,
+            "offline_device_sync_status": eod_sync_status,
+            "database_cluster": f"Connected ({db_latency_ms:.0f} ms)" if db_connected else f"Unavailable ({db_error_name or cb_state})",
+            "immutable_audit_state": f"Verified ({ledger_entries_cnt:,} ledger rows)" if ledger_verified else "Ledger Check Unavailable"
         }
     }
 
