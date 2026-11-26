@@ -1082,5 +1082,83 @@ void main() {
       expect((ind['clients'] as List).length, 1);
       connectivity.dispose();
     });
+
+    test('preCacheWithdrawalWorkspace caches withdrawal requests and preCacheAllAvailableGroups caches collections history', () async {
+      final connectivity = ConnectivityService();
+      dbService.setSessionScope(userId: 'co-pre2', branchId: 'br-test');
+      final adapter = _SequencedResponseAdapter((options) async {
+        if (options.path.contains('/origination/business-date')) {
+          return ResponseBody.fromBytes(
+            Uint8List.fromList(jsonEncode({'business_date': '2026-11-23'}).codeUnits),
+            200,
+            headers: {Headers.contentTypeHeader: [Headers.jsonContentType]},
+          );
+        }
+        if (options.path.contains('/withdrawals/requests')) {
+          return ResponseBody.fromBytes(
+            Uint8List.fromList(jsonEncode({
+              'requests': [
+                {'id': 'req-1', 'client_name': 'Seyi Ade', 'amount': 4000.0, 'status': 'PENDING'}
+              ],
+            }).codeUnits),
+            200,
+            headers: {Headers.contentTypeHeader: [Headers.jsonContentType]},
+          );
+        }
+        if (options.path.contains('/collections/sheet')) {
+          return ResponseBody.fromBytes(
+            Uint8List.fromList(jsonEncode({
+              'groups': ['Unity'],
+              'clients': [],
+              'is_open': true,
+              'open_reason': 'Working Day',
+            }).codeUnits),
+            200,
+            headers: {Headers.contentTypeHeader: [Headers.jsonContentType]},
+          );
+        }
+        if (options.path.contains('/collections/history')) {
+          return ResponseBody.fromBytes(
+            Uint8List.fromList(jsonEncode({
+              'total_repayments': 12500.0,
+              'total_savings': 3500.0,
+              'grand_total_cash': 16000.0,
+              'groups': [],
+              'repayments': [],
+              'savings': [],
+            }).codeUnits),
+            200,
+            headers: {Headers.contentTypeHeader: [Headers.jsonContentType]},
+          );
+        }
+        return ResponseBody.fromBytes(
+          Uint8List.fromList(jsonEncode({}).codeUnits),
+          200,
+          headers: {Headers.contentTypeHeader: [Headers.jsonContentType]},
+        );
+      });
+
+      final preClient = ApiClient(
+        connectivityService: connectivity,
+        offlineDb: dbService,
+        adapter: adapter,
+      );
+      final preApi = CoApiService(preClient);
+      final preSyncMgr = OfflineSyncManager(
+        dbService,
+        preApi,
+        notifier,
+      );
+
+      await preSyncMgr.preCacheWithdrawalWorkspace();
+      await preSyncMgr.preCacheAllAvailableGroups(const ['Unity'], '2026-11-23');
+      connectivity.reportOffline();
+
+      final reqs = await preApi.getWithdrawalRequests();
+      final hist = await preApi.getCollectionsHistory(date: '2026-11-23');
+      expect((reqs['requests'] as List).length, 1);
+      expect(hist['grand_total_cash'], 16000.0);
+      connectivity.dispose();
+    });
   });
 }

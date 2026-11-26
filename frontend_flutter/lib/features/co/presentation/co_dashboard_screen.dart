@@ -20,6 +20,7 @@ import '../../../core/offline/offline_sync_manager.dart';
 import '../data/datasources/co_api_service.dart';
 import '../data/models/co_dashboard_models.dart';
 import '../../shared/presentation/co_app_scaffold.dart';
+import 'widgets/co_dashboard_charts.dart';
 
 final coDashboardProvider = FutureProvider.autoDispose<CoDashboardData>((ref) async {
   final api = ref.watch(coApiServiceProvider);
@@ -364,14 +365,38 @@ class CoDashboardScreen extends ConsumerWidget {
         const SizedBox(height: 20),
 
         // ---------------------------------------------------------------------
-        // LEVEL 5: Portfolio Health Grid (2x2 on Mobile, 4 across on Desktop)
+        // LEVEL 5: Portfolio Health Grid & Live Operational Pipeline
         // ---------------------------------------------------------------------
         _buildPortfolioHealthGrid(context, data),
+        const SizedBox(height: 18),
+        CoDashboardFlowCard(
+          data: data,
+          onOpenCollections: isClosed
+              ? null
+              : () => ref.read(activeCoPageProvider.notifier).state = 'Collections',
+          onOpenCashbook: () =>
+              ref.read(activeCoPageProvider.notifier).state = 'CO Cashbook',
+          onSelectAttention: () {
+            if (isMobile) {
+              ref.read(coDashboardMobileTabProvider.notifier).state = 3;
+            } else {
+              ref.read(activeCoPageProvider.notifier).state = 'Portfolio';
+            }
+          },
+        ),
         const SizedBox(height: 24),
 
         if (isMobile) ...[
           _buildMobileSegmentedHub(context, ref, data),
         ] else ...[
+          const IcareSectionHeader(
+            title: 'Live Field Analytics & Collection Mix',
+            subtitle: 'Expected vs collected performance by group and repayment status distribution',
+          ),
+          const SizedBox(height: 10),
+          CoDashboardAnalyticsSection(data: data),
+          const SizedBox(height: 24),
+
           // ---------------------------------------------------------------------
           // LEVEL 6: Today's Solidarity Meeting Portfolio (Desktop & Tablet)
           // ---------------------------------------------------------------------
@@ -595,24 +620,27 @@ class CoDashboardScreen extends ConsumerWidget {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'CASHBOOK SETTLEMENT STATUS',
-                        style: IcareTypography.cardLabel.copyWith(color: tokens.textMuted),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        _cleanStatusText(cp['status']?.toString() ?? 'Unverified'),
-                        style: IcareTypography.metricValueCompact.copyWith(
-                          color: (cp['status']?.toString().toLowerCase().contains('unbal') ?? false)
-                              ? tokens.dangerText
-                              : tokens.successText,
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'CASHBOOK SETTLEMENT STATUS',
+                          style: IcareTypography.cardLabel.copyWith(color: tokens.textMuted),
                         ),
-                      ),
-                    ],
+                        const SizedBox(height: 4),
+                        Text(
+                          _cleanStatusText(cp['status']?.toString() ?? 'Unverified'),
+                          style: IcareTypography.metricValueCompact.copyWith(
+                            color: (cp['status']?.toString().toLowerCase().contains('unbal') ?? false)
+                                ? tokens.dangerText
+                                : tokens.successText,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
+                  const SizedBox(width: 8),
                   IcareStatusBadge.fromStatus(cp['status']?.toString() ?? 'Unverified'),
                 ],
               ),
@@ -709,8 +737,11 @@ class CoDashboardScreen extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        Wrap(
+          alignment: WrapAlignment.spaceBetween,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          spacing: 8,
+          runSpacing: 4,
           children: [
             Text(
               'OPERATIONAL HUB',
@@ -976,29 +1007,38 @@ class CoDashboardScreen extends ConsumerWidget {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'TOTAL REPAYMENT TODAY',
-                    style: TextStyle(
-                      fontSize: 10.5,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.white.withValues(alpha: 0.82),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'TOTAL REPAYMENT TODAY',
+                      style: TextStyle(
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white.withValues(alpha: 0.82),
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    CurrencyFormatter.formatNaira(totalCollected),
-                    style: const TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.w800,
-                      color: Colors.white,
-                      fontFeatures: [FontFeature.tabularFigures()],
+                    const SizedBox(height: 4),
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        CurrencyFormatter.formatNaira(totalCollected),
+                        maxLines: 1,
+                        softWrap: false,
+                        style: const TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w800,
+                          color: Colors.white,
+                          fontFeatures: [FontFeature.tabularFigures()],
+                        ),
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
+              const SizedBox(width: 8),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                 decoration: BoxDecoration(
@@ -1013,6 +1053,9 @@ class CoDashboardScreen extends ConsumerWidget {
             ],
           ),
         ),
+        const SizedBox(height: 12),
+        CoDashboardAnalyticsSection(data: data),
+        const SizedBox(height: 12),
         const SizedBox(height: 8),
         Row(
           children: [
@@ -1253,34 +1296,32 @@ class CoDashboardScreen extends ConsumerWidget {
         ),
         const SizedBox(height: 12),
         // Settlement Status Card
-        Container(
+        IcareCard(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-          decoration: BoxDecoration(
-            color: tokens.surface,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: tokens.borderSubtle),
-          ),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'SETTLEMENT STATUS',
-                    style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: tokens.textMuted),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    _cleanStatusText(status),
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w800,
-                      color: isUnbalanced ? tokens.dangerText : tokens.successText,
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'SETTLEMENT STATUS',
+                      style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: tokens.textMuted),
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 2),
+                    Text(
+                      _cleanStatusText(status),
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w800,
+                        color: isUnbalanced ? tokens.dangerText : tokens.successText,
+                      ),
+                    ),
+                  ],
+                ),
               ),
+              const SizedBox(width: 8),
               Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
@@ -1446,77 +1487,69 @@ class CoDashboardScreen extends ConsumerWidget {
     final status =
         (r['Status'] ?? r['Issue Type'] ?? r['issue_type'] ?? r['status'] ?? 'Shortfall').toString();
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: tokens.surface,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: tokens.borderSubtle),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: tokens.isDark ? 0.14 : 0.03),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      clientName,
-                      style: TextStyle(
-                        fontSize: 13.5,
-                        fontWeight: FontWeight.w700,
-                        color: tokens.textPrimary,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      group,
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: tokens.textMuted,
-                        fontWeight: FontWeight.w500,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                ),
-              ),
-              IcareStatusBadge.fromStatus(status),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-            decoration: BoxDecoration(
-              color: tokens.surfaceSubtle,
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: tokens.borderSubtle),
-            ),
-            child: Row(
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: IcareCard(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _buildMicroStat(tokens, 'Expected', CurrencyFormatter.formatNaira(expected), tokens.textSecondary),
-                _buildMicroStat(tokens, 'Paid', CurrencyFormatter.formatNaira(paid), tokens.brandPrimary),
-                _buildMicroStat(tokens, 'Shortfall', CurrencyFormatter.formatNaira(shortfall), tokens.dangerText),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        clientName,
+                        style: TextStyle(
+                          fontSize: 13.5,
+                          fontWeight: FontWeight.w700,
+                          color: tokens.textPrimary,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        group,
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: tokens.textMuted,
+                          fontWeight: FontWeight.w500,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                IcareStatusBadge.fromStatus(status),
               ],
             ),
-          ),
-        ],
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              decoration: BoxDecoration(
+                color: tokens.surfaceSubtle,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: tokens.borderSubtle),
+              ),
+              child: Row(
+                children: [
+                  Expanded(child: _buildMicroStat(tokens, 'Expected', CurrencyFormatter.formatNaira(expected), tokens.textSecondary)),
+                  const SizedBox(width: 6),
+                  Expanded(child: _buildMicroStat(tokens, 'Paid', CurrencyFormatter.formatNaira(paid), tokens.brandPrimary)),
+                  const SizedBox(width: 6),
+                  Expanded(child: _buildMicroStat(tokens, 'Shortfall', CurrencyFormatter.formatNaira(shortfall), tokens.dangerText)),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1527,6 +1560,8 @@ class CoDashboardScreen extends ConsumerWidget {
       children: [
         Text(
           label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
           style: TextStyle(
             fontSize: 10,
             fontWeight: FontWeight.w600,
@@ -1534,13 +1569,19 @@ class CoDashboardScreen extends ConsumerWidget {
           ),
         ),
         const SizedBox(height: 2),
-        Text(
-          value,
-          style: TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.w700,
-            color: valueColor,
-            fontFeatures: const [FontFeature.tabularFigures()],
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.centerLeft,
+          child: Text(
+            value,
+            maxLines: 1,
+            softWrap: false,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: valueColor,
+              fontFeatures: const [FontFeature.tabularFigures()],
+            ),
           ),
         ),
       ],
@@ -1555,34 +1596,13 @@ class CoDashboardScreen extends ConsumerWidget {
     Color? valueColor,
     Color? topAccent,
   }) {
-    return Container(
+    return IcareCard(
+      topAccentColor: topAccent,
+      topAccentHeight: topAccent != null ? 3.0 : 0.0,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: tokens.surface,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: tokens.borderSubtle),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: tokens.isDark ? 0.14 : 0.03),
-            blurRadius: 6,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (topAccent != null) ...[
-            Container(
-              width: 24,
-              height: 3,
-              decoration: BoxDecoration(
-                color: topAccent,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            const SizedBox(height: 6),
-          ],
           Text(
             label,
             style: TextStyle(
@@ -1594,16 +1614,20 @@ class CoDashboardScreen extends ConsumerWidget {
             overflow: TextOverflow.ellipsis,
           ),
           const SizedBox(height: 4),
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: 14.5,
-              fontWeight: FontWeight.w800,
-              color: valueColor ?? tokens.textPrimary,
-              fontFeatures: const [FontFeature.tabularFigures()],
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(
+              value,
+              style: TextStyle(
+                fontSize: 14.5,
+                fontWeight: FontWeight.w800,
+                color: valueColor ?? tokens.textPrimary,
+                fontFeatures: const [FontFeature.tabularFigures()],
+              ),
+              maxLines: 1,
+              softWrap: false,
             ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
           ),
           const SizedBox(height: 2),
           Text(
@@ -1707,28 +1731,36 @@ class CoDashboardScreen extends ConsumerWidget {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Row(
-                      children: [
-                        Container(
-                          width: 8,
-                          height: 8,
-                          decoration: const BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: Color(0xFF8CC63F),
+                    Flexible(
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 8,
+                            height: 8,
+                            decoration: const BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: Color(0xFF8CC63F),
+                            ),
                           ),
-                        ),
-                        const SizedBox(width: 8),
-                        const Text(
-                          'PRIMARY VAULT CASH',
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700,
-                            color: Color(0xFFA7F3D0),
-                            letterSpacing: 0.8,
+                          const SizedBox(width: 8),
+                          const Flexible(
+                            child: Text(
+                              'PRIMARY VAULT CASH',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFFA7F3D0),
+                                letterSpacing: 0.8,
+                              ),
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
+                    const SizedBox(width: 8),
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3.5),
                       decoration: BoxDecoration(
@@ -2202,8 +2234,11 @@ class CoDashboardScreen extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        Wrap(
+          alignment: WrapAlignment.spaceBetween,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          spacing: 8,
+          runSpacing: 6,
           children: [
             Text(
               'PORTFOLIO HEALTH',

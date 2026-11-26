@@ -11,8 +11,13 @@ import '../../../core/network/api_client.dart';
 import '../../../core/offline/connectivity_service.dart';
 import '../../../core/offline/offline_sync_manager.dart';
 import '../data/datasources/co_api_service.dart';
+import '../../../core/widgets/icare_card.dart';
+import '../../../core/widgets/icare_data_table.dart';
 import '../../../core/widgets/icare_skeleton_loader.dart';
+import '../../../core/widgets/icare_status_badge.dart';
 import '../../../core/theme/icare_theme_tokens.dart';
+import 'widgets/co_shared_widgets.dart';
+import 'widgets/co_withdrawal_charts.dart';
 import 'co_dashboard_screen.dart';
 import 'daily_cashbook_screen.dart';
 import '../../bm/presentation/bm_dashboard_screen.dart';
@@ -920,6 +925,16 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
         ),
 
         if (!isOnline) _buildOfflineNoticeBanner(IcareSurfaceTokens.of(context), isManager: isManager),
+
+        // Interactive Withdrawal & Governance Flow Pipeline
+        CoWithdrawalFlowCard(
+          activeTab: activeTab,
+          isManager: isManager,
+          isOnline: isOnline,
+          pendingCount: pendingCount,
+          onSelectTab: (t) => ref.read(withdrawalTabProvider.notifier).state = t,
+        ),
+        const SizedBox(height: 12),
 
         // 2. Flash Banner
         if (_flashMessage != null) ...[
@@ -2482,9 +2497,8 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                                           ),
                                           child: Text(
                                             clientCode,
-                                            style: TextStyle(
+                                            style: coTabularStyle(
                                               fontSize: 10,
-                                              fontFamily: 'JetBrains Mono',
                                               fontWeight: FontWeight.w600,
                                               color: tokens.textSecondary,
                                             ),
@@ -2875,6 +2889,18 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
             ),
             const SizedBox(height: 12),
 
+            CoWithdrawalAnalyticsSection(
+              totalWithdrawn: totWithdrawn,
+              loanFeesDeducted: feesDeducted,
+              cashBankPaid: cashBankPaid,
+              debtOffsets: debtOffsets,
+              lapsReserved: lapsReserved,
+              waitingAmount: waitAmt,
+              waitingCount: waitCount,
+              showAll: showAll,
+            ),
+            const SizedBox(height: 12),
+
             // Filters Row
             LayoutBuilder(
               builder: (context, constraints) {
@@ -2992,133 +3018,194 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
   }
 
   Widget _buildStatusPill(String rawStatus) {
-    final tokens = IcareSurfaceTokens.of(context);
     final s = rawStatus.toUpperCase().trim();
-    Color bg = tokens.successBg;
-    Color txt = tokens.successText;
-    if (s == 'REVERSAL' || s == 'REJECTED') {
-      bg = tokens.dangerBg;
-      txt = tokens.dangerText;
-    } else if (s == 'REVERSED' || s == 'PENDING' || s == 'PROCESSING') {
-      bg = tokens.warningBg;
-      txt = tokens.warningText;
-    }
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(4),
-      ),
-      child: Text(
-        s.isEmpty ? 'ACTIVE' : s,
-        style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: txt),
-      ),
+    final variant = (s == 'REVERSAL' || s == 'REJECTED')
+        ? IcareBadgeVariant.danger
+        : (s == 'REVERSED' || s == 'PENDING' || s == 'PROCESSING')
+            ? IcareBadgeVariant.warning
+            : IcareBadgeVariant.success;
+    return IcareStatusBadge(
+      label: s.isEmpty ? 'ACTIVE' : s,
+      variant: variant,
     );
   }
 
   Widget _buildAllWithdrawalsTable(List<Map<String, dynamic>> records) {
     final tokens = IcareSurfaceTokens.of(context);
     if (records.isEmpty) {
-      return Container(
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(color: tokens.surfaceSubtle, borderRadius: BorderRadius.circular(8), border: Border.all(color: tokens.borderSubtle)),
-        child: Center(child: Text('No withdrawals found for the selected criteria.', style: TextStyle(color: tokens.textMuted, fontSize: 13), softWrap: true)),
+      return const CoEmptyStateCard(
+        title: 'No Withdrawals Found',
+        message: 'No withdrawals found for the selected criteria.',
+        icon: Icons.receipt_long_outlined,
       );
     }
 
-    return Container(
-      decoration: BoxDecoration(color: tokens.surface, borderRadius: BorderRadius.circular(8), border: Border.all(color: tokens.borderSubtle)),
-      child: Scrollbar(
-        thumbVisibility: true,
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: DataTable(
-            headingRowHeight: 36,
-            dataRowMinHeight: 34,
-            dataRowMaxHeight: 48,
-            horizontalMargin: 10,
-            columnSpacing: 12,
-            headingRowColor: WidgetStateProperty.all(tokens.surfaceSubtle),
-            headingTextStyle: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: tokens.textPrimary),
-            dataTextStyle: TextStyle(fontSize: 11.5, color: tokens.textSecondary),
-            columns: const [
-              DataColumn(label: Text('Date', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
-              DataColumn(label: Text('Client Name', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
-              DataColumn(label: Text('Client Code', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
-              DataColumn(label: Text('Group', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
-              DataColumn(label: Text('Type', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
-              DataColumn(label: Text('Amount', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
-              DataColumn(label: Text('Details', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
-              DataColumn(label: Text('Reference', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
-              DataColumn(label: Text('Status', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
-            ],
-            rows: records.map((r) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth < 720) {
+          return Column(
+            children: records.map((r) {
               final amt = (r['amount'] as num?)?.toDouble() ?? 0.0;
               final recStatus = (r['status']?.toString() ?? 'UNRECORDED').toUpperCase();
               final isNeg = amt < 0 || recStatus == 'REVERSAL';
               final formattedAmt = amt < 0
                   ? '-${CurrencyFormatter.formatNaira(amt.abs())}'
                   : CurrencyFormatter.formatNaira(amt);
-              return DataRow(cells: [
-                DataCell(Text(r['date']?.toString() ?? '', style: TextStyle(fontSize: 11, color: tokens.textSecondary))),
-                DataCell(
-                  ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 150),
-                    child: Text(r['client_name']?.toString() ?? '', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12, color: tokens.textPrimary), softWrap: true),
+              final details = _cleanRemarks(r['details']);
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: IcareCard(
+                  padding: const EdgeInsets.all(14),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              r['client_name']?.toString() ?? 'Client',
+                              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5, color: tokens.textPrimary),
+                              softWrap: true,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          _buildStatusPill(recStatus),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 4,
+                        children: [
+                          if ((r['client_code']?.toString() ?? '').isNotEmpty)
+                            Text(
+                              r['client_code'].toString(),
+                              style: coTabularStyle(fontSize: 11, color: tokens.textSecondary),
+                            ),
+                          if ((r['group']?.toString() ?? '').isNotEmpty)
+                            Text(r['group'].toString(), style: TextStyle(fontSize: 11, color: tokens.textSecondary)),
+                          if ((r['date']?.toString() ?? '').isNotEmpty)
+                            Text(r['date'].toString(), style: coTabularStyle(fontSize: 11, fontWeight: FontWeight.w500, color: tokens.textMuted)),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Flexible(
+                            child: Text(
+                              r['category']?.toString() ?? 'Withdrawal',
+                              style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: tokens.textSecondary),
+                              softWrap: true,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            formattedAmt,
+                            style: coTabularStyle(
+                              fontWeight: FontWeight.w800,
+                              fontSize: 14,
+                              color: isNeg ? tokens.dangerText : tokens.textPrimary,
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (details.isNotEmpty || (r['reference']?.toString() ?? '').isNotEmpty) ...[
+                        const SizedBox(height: 6),
+                        Text(
+                          [
+                            if (details.isNotEmpty) details,
+                            if ((r['reference']?.toString() ?? '').isNotEmpty) 'Ref: ${r['reference']}',
+                          ].join(' • '),
+                          style: coTabularStyle(fontSize: 10.5, fontWeight: FontWeight.w500, color: tokens.textMuted),
+                        ),
+                      ],
+                    ],
                   ),
                 ),
-                DataCell(Text(r['client_code']?.toString() ?? '', style: TextStyle(fontSize: 11, fontFamily: 'JetBrains Mono', color: tokens.textSecondary))),
-                DataCell(
-                  ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 110),
-                    child: Text(r['group']?.toString() ?? '', style: TextStyle(fontSize: 11, color: tokens.textSecondary), softWrap: true),
-                  ),
-                ),
-                DataCell(
-                  ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 130),
-                    child: Text(r['category']?.toString() ?? '', style: TextStyle(fontSize: 11, color: tokens.textSecondary), softWrap: true),
-                  ),
-                ),
-                DataCell(
-                  Text(
-                    formattedAmt,
-                    style: TextStyle(
-                      fontWeight: FontWeight.w700,
-                      fontSize: 12,
-                      color: isNeg ? tokens.dangerText : tokens.textPrimary,
-                      fontFeatures: const [FontFeature.tabularFigures()],
-                    ),
-                  ),
-                ),
-                DataCell(
-                  ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 170),
-                    child: Text(_cleanRemarks(r['details']), style: TextStyle(fontSize: 11, color: tokens.textSecondary), softWrap: true),
-                  ),
-                ),
-                DataCell(
-                  ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 120),
-                    child: Text(r['reference']?.toString() ?? '', style: TextStyle(fontFamily: 'JetBrains Mono', fontSize: 10, color: tokens.textMuted), softWrap: true),
-                  ),
-                ),
-                DataCell(_buildStatusPill(recStatus)),
-              ]);
+              );
             }).toList(),
-          ),
-        ),
-      ),
+          );
+        }
+
+        return IcareDataTable(
+          minWidth: 920,
+          columns: const [
+            DataColumn(label: Text('Date', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
+            DataColumn(label: Text('Client Name', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
+            DataColumn(label: Text('Client Code', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
+            DataColumn(label: Text('Group', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
+            DataColumn(label: Text('Type', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
+            DataColumn(label: Text('Amount', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
+            DataColumn(label: Text('Details', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
+            DataColumn(label: Text('Reference', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
+            DataColumn(label: Text('Status', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
+          ],
+          rows: records.map((r) {
+            final amt = (r['amount'] as num?)?.toDouble() ?? 0.0;
+            final recStatus = (r['status']?.toString() ?? 'UNRECORDED').toUpperCase();
+            final isNeg = amt < 0 || recStatus == 'REVERSAL';
+            final formattedAmt = amt < 0
+                ? '-${CurrencyFormatter.formatNaira(amt.abs())}'
+                : CurrencyFormatter.formatNaira(amt);
+            return DataRow(cells: [
+              DataCell(Text(r['date']?.toString() ?? '', style: coTabularStyle(fontSize: 11, fontWeight: FontWeight.w500, color: tokens.textSecondary))),
+              DataCell(
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 150),
+                  child: Text(r['client_name']?.toString() ?? '', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12, color: tokens.textPrimary), softWrap: true),
+                ),
+              ),
+              DataCell(Text(r['client_code']?.toString() ?? '', style: coTabularStyle(fontSize: 11, fontWeight: FontWeight.w600, color: tokens.textSecondary))),
+              DataCell(
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 110),
+                  child: Text(r['group']?.toString() ?? '', style: TextStyle(fontSize: 11, color: tokens.textSecondary), softWrap: true),
+                ),
+              ),
+              DataCell(
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 130),
+                  child: Text(r['category']?.toString() ?? '', style: TextStyle(fontSize: 11, color: tokens.textSecondary), softWrap: true),
+                ),
+              ),
+              DataCell(
+                Text(
+                  formattedAmt,
+                  style: coTabularStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 12,
+                    color: isNeg ? tokens.dangerText : tokens.textPrimary,
+                  ),
+                ),
+              ),
+              DataCell(
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 170),
+                  child: Text(_cleanRemarks(r['details']), style: TextStyle(fontSize: 11, color: tokens.textSecondary), softWrap: true),
+                ),
+              ),
+              DataCell(
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 120),
+                  child: Text(r['reference']?.toString() ?? '', style: coTabularStyle(fontSize: 10, fontWeight: FontWeight.w500, color: tokens.textMuted), softWrap: true),
+                ),
+              ),
+              DataCell(_buildStatusPill(recStatus)),
+            ]);
+          }).toList(),
+        );
+      },
     );
   }
 
   Widget _buildLoanFeeDeductionsTable(List<Map<String, dynamic>> records) {
     final tokens = IcareSurfaceTokens.of(context);
     if (records.isEmpty) {
-      return Container(
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(color: tokens.surfaceSubtle, borderRadius: BorderRadius.circular(8), border: Border.all(color: tokens.borderSubtle)),
-        child: Center(child: Text('No loan fee deductions found for the selected criteria.', style: TextStyle(color: tokens.textMuted, fontSize: 13), softWrap: true)),
+      return const CoEmptyStateCard(
+        title: 'No Fee Deductions Found',
+        message: 'No loan fee deductions found for the selected criteria.',
+        icon: Icons.percent_rounded,
       );
     }
 
@@ -3127,59 +3214,93 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
       children: [
         Text("When a loan is disbursed, markup interest and gap fees are automatically deducted from the borrower's savings.", style: TextStyle(fontSize: 11, color: tokens.textMuted), softWrap: true),
         const SizedBox(height: 8),
-        Container(
-          decoration: BoxDecoration(color: tokens.surface, borderRadius: BorderRadius.circular(8), border: Border.all(color: tokens.borderSubtle)),
-          child: Scrollbar(
-            thumbVisibility: true,
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: DataTable(
-                headingRowHeight: 36,
-                dataRowMinHeight: 34,
-                dataRowMaxHeight: 48,
-                horizontalMargin: 10,
-                columnSpacing: 12,
-                headingRowColor: WidgetStateProperty.all(tokens.surfaceSubtle),
-                headingTextStyle: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: tokens.textPrimary),
-                dataTextStyle: TextStyle(fontSize: 11.5, color: tokens.textSecondary),
-                columns: const [
-                  DataColumn(label: Text('Date', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
-                  DataColumn(label: Text('Client Name', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
-                  DataColumn(label: Text('Client Code', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
-                  DataColumn(label: Text('Loan Reference', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
-                  DataColumn(label: Text('Interest Deducted', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
-                  DataColumn(label: Text('Gap Fee Deducted', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
-                  DataColumn(label: Text('Total Deducted', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
-                  DataColumn(label: Text('Status', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
-                ],
-                rows: records.map((r) {
+        LayoutBuilder(
+          builder: (context, constraints) {
+            if (constraints.maxWidth < 720) {
+              return Column(
+                children: records.map((r) {
                   final uInt = (r['interest_deducted'] as num?)?.toDouble() ?? 0.0;
                   final uGap = (r['gap_fee_deducted'] as num?)?.toDouble() ?? 0.0;
                   final tot = (r['total_deducted'] as num?)?.toDouble() ?? 0.0;
-                  return DataRow(cells: [
-                    DataCell(Text(r['date']?.toString() ?? '', style: TextStyle(fontSize: 11, color: tokens.textSecondary))),
-                    DataCell(
-                      ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 150),
-                        child: Text(r['client_name']?.toString() ?? '', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12, color: tokens.textPrimary), softWrap: true),
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: IcareCard(
+                      padding: const EdgeInsets.all(14),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  r['client_name']?.toString() ?? 'Client',
+                                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5, color: tokens.textPrimary),
+                                ),
+                              ),
+                              _buildStatusPill(r['status']?.toString() ?? 'SETTLED'),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            '${r['client_code'] ?? ''} • Loan ${r['loan_ref'] ?? '-'} • ${r['date'] ?? ''}',
+                            style: coTabularStyle(fontSize: 11, fontWeight: FontWeight.w500, color: tokens.textMuted),
+                          ),
+                          const SizedBox(height: 8),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text('Interest: ${CurrencyFormatter.formatNaira(uInt)}', style: coTabularStyle(fontSize: 11, fontWeight: FontWeight.w500, color: tokens.textSecondary)),
+                              Text('Gap: ${CurrencyFormatter.formatNaira(uGap)}', style: coTabularStyle(fontSize: 11, fontWeight: FontWeight.w500, color: tokens.textSecondary)),
+                              Text('Total: ${CurrencyFormatter.formatNaira(tot)}', style: coTabularStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: tokens.textPrimary)),
+                            ],
+                          ),
+                        ],
                       ),
                     ),
-                    DataCell(Text(r['client_code']?.toString() ?? '', style: TextStyle(fontSize: 11, fontFamily: 'JetBrains Mono', color: tokens.textSecondary))),
-                    DataCell(
-                      ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 130),
-                        child: Text(r['loan_ref']?.toString() ?? '', style: TextStyle(fontSize: 11, color: tokens.textSecondary), softWrap: true),
-                      ),
-                    ),
-                    DataCell(Text(uInt > 0 ? CurrencyFormatter.formatNaira(uInt) : '-', style: TextStyle(fontSize: 11, color: tokens.textSecondary, fontFeatures: const [FontFeature.tabularFigures()]))),
-                    DataCell(Text(uGap > 0 ? CurrencyFormatter.formatNaira(uGap) : '-', style: TextStyle(fontSize: 11, color: tokens.textSecondary, fontFeatures: const [FontFeature.tabularFigures()]))),
-                    DataCell(Text(CurrencyFormatter.formatNaira(tot), style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: tokens.textPrimary, fontFeatures: const [FontFeature.tabularFigures()]))),
-                    DataCell(Text(r['status']?.toString() ?? 'Unrecorded', style: TextStyle(fontSize: 11, color: (r['status']?.toString() ?? '').isEmpty ? tokens.textMuted : tokens.successText), softWrap: true)),
-                  ]);
+                  );
                 }).toList(),
-              ),
-            ),
-          ),
+              );
+            }
+
+            return IcareDataTable(
+              minWidth: 820,
+              columns: const [
+                DataColumn(label: Text('Date', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
+                DataColumn(label: Text('Client Name', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
+                DataColumn(label: Text('Client Code', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
+                DataColumn(label: Text('Loan Reference', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
+                DataColumn(label: Text('Interest Deducted', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
+                DataColumn(label: Text('Gap Fee Deducted', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
+                DataColumn(label: Text('Total Deducted', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
+                DataColumn(label: Text('Status', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
+              ],
+              rows: records.map((r) {
+                final uInt = (r['interest_deducted'] as num?)?.toDouble() ?? 0.0;
+                final uGap = (r['gap_fee_deducted'] as num?)?.toDouble() ?? 0.0;
+                final tot = (r['total_deducted'] as num?)?.toDouble() ?? 0.0;
+                return DataRow(cells: [
+                  DataCell(Text(r['date']?.toString() ?? '', style: coTabularStyle(fontSize: 11, fontWeight: FontWeight.w500, color: tokens.textSecondary))),
+                  DataCell(
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 150),
+                      child: Text(r['client_name']?.toString() ?? '', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12, color: tokens.textPrimary), softWrap: true),
+                    ),
+                  ),
+                  DataCell(Text(r['client_code']?.toString() ?? '', style: coTabularStyle(fontSize: 11, fontWeight: FontWeight.w600, color: tokens.textSecondary))),
+                  DataCell(
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 130),
+                      child: Text(r['loan_ref']?.toString() ?? '', style: coTabularStyle(fontSize: 11, fontWeight: FontWeight.w500, color: tokens.textSecondary), softWrap: true),
+                    ),
+                  ),
+                  DataCell(Text(uInt > 0 ? CurrencyFormatter.formatNaira(uInt) : '-', style: coTabularStyle(fontSize: 11, fontWeight: FontWeight.w500, color: tokens.textSecondary))),
+                  DataCell(Text(uGap > 0 ? CurrencyFormatter.formatNaira(uGap) : '-', style: coTabularStyle(fontSize: 11, fontWeight: FontWeight.w500, color: tokens.textSecondary))),
+                  DataCell(Text(CurrencyFormatter.formatNaira(tot), style: coTabularStyle(fontWeight: FontWeight.w700, fontSize: 12, color: tokens.textPrimary))),
+                  DataCell(_buildStatusPill(r['status']?.toString() ?? 'ACTIVE')),
+                ]);
+              }).toList(),
+            );
+          },
         ),
       ],
     );
@@ -3188,72 +3309,110 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
   Widget _buildCashBankPayoutsTable(List<Map<String, dynamic>> records) {
     final tokens = IcareSurfaceTokens.of(context);
     if (records.isEmpty) {
-      return Container(
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(color: tokens.surfaceSubtle, borderRadius: BorderRadius.circular(8), border: Border.all(color: tokens.borderSubtle)),
-        child: Center(child: Text('No cash or bank payouts found for the selected criteria.', style: TextStyle(color: tokens.textMuted, fontSize: 13), softWrap: true)),
+      return const CoEmptyStateCard(
+        title: 'No Cash or Bank Payouts',
+        message: 'No cash or bank payouts found for the selected criteria.',
+        icon: Icons.account_balance_outlined,
       );
     }
 
-    return Container(
-      decoration: BoxDecoration(color: tokens.surface, borderRadius: BorderRadius.circular(8), border: Border.all(color: tokens.borderSubtle)),
-      child: Scrollbar(
-        thumbVisibility: true,
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: DataTable(
-            headingRowHeight: 36,
-            dataRowMinHeight: 34,
-            dataRowMaxHeight: 48,
-            horizontalMargin: 10,
-            columnSpacing: 12,
-            headingRowColor: WidgetStateProperty.all(tokens.surfaceSubtle),
-            headingTextStyle: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: tokens.textPrimary),
-            dataTextStyle: TextStyle(fontSize: 11.5, color: tokens.textSecondary),
-            columns: const [
-              DataColumn(label: Text('Date', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
-              DataColumn(label: Text('Client / Group', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
-              DataColumn(label: Text('Group', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
-              DataColumn(label: Text('Payment Type', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
-              DataColumn(label: Text('Amount', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
-              DataColumn(label: Text('Approval Notes', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
-              DataColumn(label: Text('Reference', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
-            ],
-            rows: records.map((r) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth < 720) {
+          return Column(
+            children: records.map((r) {
               final amt = (r['amount'] as num?)?.toDouble() ?? 0.0;
-              return DataRow(cells: [
-                DataCell(Text(r['date']?.toString() ?? '', style: TextStyle(fontSize: 11, color: tokens.textSecondary))),
-                DataCell(
-                  ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 150),
-                    child: Text(r['client_name']?.toString() ?? '', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12, color: tokens.textPrimary), softWrap: true),
+              final notes = _cleanRemarks(r['approval_notes']);
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: IcareCard(
+                  padding: const EdgeInsets.all(14),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Expanded(
+                            child: Text(
+                              r['client_name']?.toString() ?? 'Client',
+                              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5, color: tokens.textPrimary),
+                            ),
+                          ),
+                          Text(
+                            CurrencyFormatter.formatNaira(amt),
+                            style: coTabularStyle(fontSize: 14, fontWeight: FontWeight.w800, color: tokens.successText),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '${r['payment_type'] ?? 'Payout'} • ${r['group'] ?? '-'} • ${r['date'] ?? ''}',
+                        style: TextStyle(fontSize: 11, color: tokens.textSecondary),
+                      ),
+                      if (notes.isNotEmpty || (r['reference']?.toString() ?? '').isNotEmpty) ...[
+                        const SizedBox(height: 6),
+                        Text(
+                          [
+                            if (notes.isNotEmpty) notes,
+                            if ((r['reference']?.toString() ?? '').isNotEmpty) 'Ref: ${r['reference']}',
+                          ].join(' • '),
+                          style: coTabularStyle(fontSize: 10.5, fontWeight: FontWeight.w500, color: tokens.textMuted),
+                        ),
+                      ],
+                    ],
                   ),
                 ),
-                DataCell(
-                  ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 110),
-                    child: Text(r['group']?.toString() ?? '', style: TextStyle(fontSize: 11, color: tokens.textSecondary), softWrap: true),
-                  ),
-                ),
-                DataCell(Text(r['payment_type']?.toString() ?? '', style: TextStyle(fontSize: 11, color: tokens.textSecondary))),
-                DataCell(Text(CurrencyFormatter.formatNaira(amt), style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: tokens.textPrimary, fontFeatures: const [FontFeature.tabularFigures()]))),
-                DataCell(
-                  ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 170),
-                    child: Text(_cleanRemarks(r['approval_notes']), style: TextStyle(fontSize: 11, color: tokens.textSecondary), softWrap: true),
-                  ),
-                ),
-                DataCell(
-                  ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 120),
-                    child: Text(r['reference']?.toString() ?? '', style: TextStyle(fontFamily: 'JetBrains Mono', fontSize: 10, color: tokens.textMuted), softWrap: true),
-                  ),
-                ),
-              ]);
+              );
             }).toList(),
-          ),
-        ),
-      ),
+          );
+        }
+
+        return IcareDataTable(
+          minWidth: 820,
+          columns: const [
+            DataColumn(label: Text('Date', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
+            DataColumn(label: Text('Client / Group', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
+            DataColumn(label: Text('Group', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
+            DataColumn(label: Text('Payment Type', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
+            DataColumn(label: Text('Amount', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
+            DataColumn(label: Text('Approval Notes', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
+            DataColumn(label: Text('Reference', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
+          ],
+          rows: records.map((r) {
+            final amt = (r['amount'] as num?)?.toDouble() ?? 0.0;
+            return DataRow(cells: [
+              DataCell(Text(r['date']?.toString() ?? '', style: coTabularStyle(fontSize: 11, fontWeight: FontWeight.w500, color: tokens.textSecondary))),
+              DataCell(
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 150),
+                  child: Text(r['client_name']?.toString() ?? '', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12, color: tokens.textPrimary), softWrap: true),
+                ),
+              ),
+              DataCell(
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 110),
+                  child: Text(r['group']?.toString() ?? '', style: TextStyle(fontSize: 11, color: tokens.textSecondary), softWrap: true),
+                ),
+              ),
+              DataCell(Text(r['payment_type']?.toString() ?? '', style: TextStyle(fontSize: 11, color: tokens.textSecondary))),
+              DataCell(Text(CurrencyFormatter.formatNaira(amt), style: coTabularStyle(fontWeight: FontWeight.w700, fontSize: 12, color: tokens.textPrimary))),
+              DataCell(
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 170),
+                  child: Text(_cleanRemarks(r['approval_notes']), style: TextStyle(fontSize: 11, color: tokens.textSecondary), softWrap: true),
+                ),
+              ),
+              DataCell(
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 120),
+                  child: Text(r['reference']?.toString() ?? '', style: coTabularStyle(fontSize: 10, fontWeight: FontWeight.w500, color: tokens.textMuted), softWrap: true),
+                ),
+              ),
+            ]);
+          }).toList(),
+        );
+      },
     );
   }
 
@@ -3469,12 +3628,10 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                   const SizedBox(width: 5),
                   Text(
                     DateFormat('dd MMM yyyy').format(opDate),
-                    style: TextStyle(
+                    style: coTabularStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.w600,
                       color: tokens.textSecondary,
-                      fontFamily: 'JetBrains Mono',
-                      fontFeatures: const [FontFeature.tabularFigures()],
                     ),
                   ),
                   const SizedBox(width: 2),
@@ -3733,12 +3890,10 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
               ),
               Text(
                 CurrencyFormatter.formatNaira(balance),
-                style: TextStyle(
+                style: coTabularStyle(
                   fontSize: 15,
                   fontWeight: FontWeight.w800,
                   color: tokens.successText,
-                  fontFamily: 'JetBrains Mono',
-                  fontFeatures: const [FontFeature.tabularFigures()],
                 ),
               ),
             ],
@@ -3855,21 +4010,8 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
     String? subtitle,
   }) {
     final tokens = IcareSurfaceTokens.of(context);
-    return Container(
-      width: double.infinity,
+    return IcareCard(
       padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: tokens.surface,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: tokens.borderSubtle),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: tokens.isDark ? 0.16 : 0.02),
-            blurRadius: 6,
-            offset: const Offset(0, 1),
-          ),
-        ],
-      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -3910,25 +4052,9 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
 
   Widget _buildMetricTile(String label, String value, Color color, {IconData? icon}) {
     final tokens = IcareSurfaceTokens.of(context);
-    return Container(
+    return IcareCard(
+      topAccentColor: color,
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-      decoration: BoxDecoration(
-        color: tokens.surface,
-        borderRadius: BorderRadius.circular(8),
-        border: Border(
-          top: BorderSide(color: color, width: 3),
-          left: BorderSide(color: tokens.borderSubtle),
-          right: BorderSide(color: tokens.borderSubtle),
-          bottom: BorderSide(color: tokens.borderSubtle),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: color.withValues(alpha: tokens.isDark ? 0.08 : 0.03),
-            blurRadius: 4,
-            offset: const Offset(0, 1),
-          ),
-        ],
-      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
@@ -3959,12 +4085,10 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
               value,
               maxLines: 1,
               softWrap: false,
-              style: TextStyle(
+              style: coTabularStyle(
                 fontSize: 15,
                 fontWeight: FontWeight.w800,
                 color: color,
-                fontFamily: 'JetBrains Mono',
-                fontFeatures: const [FontFeature.tabularFigures()],
               ),
             ),
           ),

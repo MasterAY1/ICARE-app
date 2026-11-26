@@ -14,7 +14,13 @@ import '../../../core/widgets/icare_section_header.dart';
 
 import '../../../core/widgets/icare_skeleton_loader.dart';
 
+import '../../../core/theme/icare_motion.dart';
+
 import '../../../core/theme/icare_theme_tokens.dart';
+
+import 'widgets/co_collections_charts.dart';
+
+import 'widgets/co_shared_widgets.dart';
 
 import '../../../core/utils/currency_formatter.dart';
 
@@ -624,19 +630,19 @@ class _DailyCollectionsScreenState extends ConsumerState<DailyCollectionsScreen>
 
     final isOnline = ref.read(isOnlineProvider);
 
-    showGeneralDialog(
+    showIcareAdaptiveSheet(
 
       context: context,
 
-      barrierDismissible: false,
+      mobileBreakpoint: 700,
 
-      barrierLabel: 'Collection Flow',
+      mobileHeightFactor: 0.94,
 
-      barrierColor: const Color(0x8C000000),
+      enablePeekSnap: false,
 
-      transitionDuration: const Duration(milliseconds: 320),
+      desktopConstraints: const BoxConstraints(maxWidth: 720, maxHeight: 760),
 
-      pageBuilder: (dialogCtx, anim1, anim2) {
+      builder: (dialogCtx, isDialog) {
 
         return _CollectionFlowModal(
 
@@ -656,11 +662,13 @@ class _DailyCollectionsScreenState extends ConsumerState<DailyCollectionsScreen>
 
           isOnline: isOnline,
 
+          isDialog: isDialog,
+
           onConfirmPost: () => _executeBatchPost(groupName, dateStr),
 
           onDismissAndReset: () {
 
-            Navigator.of(dialogCtx, rootNavigator: true).pop();
+            Navigator.of(dialogCtx).pop();
 
             setState(() {
 
@@ -684,7 +692,7 @@ class _DailyCollectionsScreenState extends ConsumerState<DailyCollectionsScreen>
 
           onViewHistory: () {
 
-            Navigator.of(dialogCtx, rootNavigator: true).pop();
+            Navigator.of(dialogCtx).pop();
 
             setState(() {
 
@@ -697,26 +705,6 @@ class _DailyCollectionsScreenState extends ConsumerState<DailyCollectionsScreen>
             _invalidateCollectionRelatedProviders();
 
           },
-
-        );
-
-      },
-
-      transitionBuilder: (dialogCtx, anim1, anim2, child) {
-
-        final curved = CurvedAnimation(parent: anim1, curve: Curves.easeOutBack);
-
-        return ScaleTransition(
-
-          scale: Tween<double>(begin: 0.92, end: 1.0).animate(curved),
-
-          child: FadeTransition(
-
-            opacity: anim1,
-
-            child: child,
-
-          ),
 
         );
 
@@ -913,19 +901,19 @@ class _DailyCollectionsScreenState extends ConsumerState<DailyCollectionsScreen>
 
     final isLateEntry = _canAuthorizeLateEntry(ref.read(authControllerProvider)) && ref.read(collectionsLateEntryProvider);
 
-    showGeneralDialog(
+    showIcareAdaptiveSheet(
 
       context: context,
 
-      barrierDismissible: false,
+      mobileBreakpoint: 700,
 
-      barrierLabel: 'Single Client Collection Flow',
+      mobileHeightFactor: 0.94,
 
-      barrierColor: const Color(0x8C000000),
+      enablePeekSnap: false,
 
-      transitionDuration: const Duration(milliseconds: 320),
+      desktopConstraints: const BoxConstraints(maxWidth: 680, maxHeight: 760),
 
-      pageBuilder: (dialogCtx, anim1, anim2) {
+      builder: (dialogCtx, isDialog) {
 
         return _SingleClientFlowModal(
 
@@ -954,6 +942,8 @@ class _DailyCollectionsScreenState extends ConsumerState<DailyCollectionsScreen>
           note: note,
 
           isOnline: isOnline,
+
+          isDialog: isDialog,
 
           onConfirmPost: () async {
             final isOnline = ref.read(isOnlineProvider);
@@ -1030,7 +1020,7 @@ class _DailyCollectionsScreenState extends ConsumerState<DailyCollectionsScreen>
           },
           onDismissAndReset: () {
 
-            Navigator.of(dialogCtx, rootNavigator: true).pop();
+            Navigator.of(dialogCtx).pop();
 
             setState(() {
 
@@ -1060,7 +1050,7 @@ class _DailyCollectionsScreenState extends ConsumerState<DailyCollectionsScreen>
 
           onViewHistory: () {
 
-            Navigator.of(dialogCtx, rootNavigator: true).pop();
+            Navigator.of(dialogCtx).pop();
 
             setState(() {
 
@@ -1179,6 +1169,9 @@ class _DailyCollectionsScreenState extends ConsumerState<DailyCollectionsScreen>
   Widget build(BuildContext context) {
     final tokens = IcareSurfaceTokens.of(context);
     final activeTab = ref.watch(collectionsTabProvider);
+    final activeMode = ref.watch(collectionsModeProvider);
+    final selectedGroup = ref.watch(collectionsSelectedGroupProvider);
+    final outboxCount = ref.watch(pendingOutboxCountProvider);
 
     return Stack(
       children: [
@@ -1187,6 +1180,15 @@ class _DailyCollectionsScreenState extends ConsumerState<DailyCollectionsScreen>
           children: [
             const IcareSectionHeader(
               title: 'Daily Collections',
+            ),
+            const SizedBox(height: 12),
+            CoCollectionsFlowCard(
+              activeTab: activeTab,
+              activeMode: activeMode,
+              selectedGroup: selectedGroup,
+              outboxCount: outboxCount,
+              onSelectTab: (t) =>
+                  ref.read(collectionsTabProvider.notifier).state = t,
             ),
             const SizedBox(height: 12),
 
@@ -1407,12 +1409,15 @@ class _DailyCollectionsScreenState extends ConsumerState<DailyCollectionsScreen>
                     color: isSel ? const Color(0xFFA7F3D0) : tokens.textMuted,
                   ),
                   const SizedBox(width: 5),
-                  Text(
-                    isGroup ? 'Group Sheet' : (isMobile ? 'Single' : 'Single Entry'),
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: isSel ? FontWeight.w700 : FontWeight.w600,
-                      color: isSel ? Colors.white : tokens.textSecondary,
+                  Flexible(
+                    child: Text(
+                      isGroup ? 'Group Sheet' : (isMobile ? 'Single' : 'Single Entry'),
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: isSel ? FontWeight.w700 : FontWeight.w600,
+                        color: isSel ? Colors.white : tokens.textSecondary,
+                      ),
                     ),
                   ),
                 ],
@@ -1955,11 +1960,15 @@ Status: CONFIRMED & POSTED TO LEDGER''';
 
           if (items.isNotEmpty) ...[
 
-            Theme(
+            Material(
 
-              data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+              color: Colors.transparent,
 
-              child: ExpansionTile(
+              child: Theme(
+
+                data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+
+                child: ExpansionTile(
 
                 initiallyExpanded: true,
 
@@ -1987,9 +1996,7 @@ Status: CONFIRMED & POSTED TO LEDGER''';
 
                     ),
 
-                    child: SingleChildScrollView(
-
-                      scrollDirection: Axis.horizontal,
+                    child: CoControlledHorizontalScroll(
 
                       child: ConstrainedBox(
 
@@ -2057,7 +2064,7 @@ Status: CONFIRMED & POSTED TO LEDGER''';
 
                                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
 
-                                    child: Text(rep > 0 ? CurrencyFormatter.formatNaira(rep, showDecimals: true) : '—', style: TextStyle(fontSize: 12, color: tokens.textPrimary, fontFamily: 'monospace')),
+                                    child: Text(rep > 0 ? CurrencyFormatter.formatNaira(rep, showDecimals: true) : '—', style: coTabularStyle(fontSize: 12, color: tokens.textPrimary)),
 
                                   ),
 
@@ -2065,7 +2072,7 @@ Status: CONFIRMED & POSTED TO LEDGER''';
 
                                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
 
-                                    child: Text(sav > 0 ? CurrencyFormatter.formatNaira(sav, showDecimals: true) : '—', style: TextStyle(fontSize: 12, color: tokens.textPrimary, fontFamily: 'monospace')),
+                                    child: Text(sav > 0 ? CurrencyFormatter.formatNaira(sav, showDecimals: true) : '—', style: coTabularStyle(fontSize: 12, color: tokens.textPrimary)),
 
                                   ),
 
@@ -2107,15 +2114,21 @@ Status: CONFIRMED & POSTED TO LEDGER''';
 
             ),
 
+            ),
+
           ],
 
           // Formatted WhatsApp Receipt Expander
 
-          Theme(
+          Material(
 
-            data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+            color: Colors.transparent,
 
-            child: ExpansionTile(
+            child: Theme(
+
+              data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+
+              child: ExpansionTile(
 
               title: Text(
 
@@ -2197,7 +2210,7 @@ Status: CONFIRMED & POSTED TO LEDGER''';
 
                         whatsappText,
 
-                        style: const TextStyle(fontFamily: 'monospace', fontSize: 12, color: Color(0xFFF1F5F9), height: 1.4),
+                        style: coTabularStyle(fontSize: 12, fontWeight: FontWeight.w500, color: const Color(0xFFF1F5F9), height: 1.4),
 
                       ),
 
@@ -2210,6 +2223,8 @@ Status: CONFIRMED & POSTED TO LEDGER''';
               ],
 
             ),
+
+          ),
 
           ),
 
@@ -2488,12 +2503,10 @@ Status: CONFIRMED & POSTED TO LEDGER''';
               value,
               maxLines: 1,
               softWrap: false,
-              style: TextStyle(
+              style: coTabularStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.w800,
                 color: valueColor,
-                fontFamily: 'monospace',
-                fontFeatures: const [FontFeature.tabularFigures()],
               ),
             ),
           ),
@@ -2800,13 +2813,15 @@ Status: CONFIRMED & POSTED TO LEDGER''';
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Row(
+                            Wrap(
+                              spacing: 6,
+                              runSpacing: 4,
+                              crossAxisAlignment: WrapCrossAlignment.center,
                               children: [
                                 Text(
                                   'Group Communal Savings',
                                   style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700, color: tokens.textPrimary),
                                 ),
-                                const SizedBox(width: 6),
                                 Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                   decoration: BoxDecoration(
@@ -2928,8 +2943,11 @@ Status: CONFIRMED & POSTED TO LEDGER''';
             const SizedBox(height: 16),
 
             // Section Header & Expand Toggle
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            Wrap(
+              spacing: 8,
+              runSpacing: 4,
+              alignment: WrapAlignment.spaceBetween,
+              crossAxisAlignment: WrapCrossAlignment.center,
               children: [
                 Text(
                   'Members in $currentGroup (${members.length})',
@@ -2937,6 +2955,7 @@ Status: CONFIRMED & POSTED TO LEDGER''';
                 ),
 
                 Row(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
                     Checkbox(
                       value: _expandAllMembers,
@@ -4512,13 +4531,15 @@ Status: CONFIRMED & POSTED TO LEDGER''';
                   const SizedBox(height: 16),
 
                   // Additional Fees Expander (app.py L5367)
-                  Theme(
-                    data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-                    child: ExpansionTile(
-                      iconColor: tokens.textMuted,
-                      collapsedIconColor: tokens.textMuted,
-                      title: Text('Additional Fees (Optional)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: tokens.textPrimary)),
-                      children: [
+                  Material(
+                    color: Colors.transparent,
+                    child: Theme(
+                      data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+                      child: ExpansionTile(
+                        iconColor: tokens.textMuted,
+                        collapsedIconColor: tokens.textMuted,
+                        title: Text('Additional Fees (Optional)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: tokens.textPrimary)),
+                        children: [
                         LayoutBuilder(
                           builder: (context, constraints) {
                             InputDecoration feeDeco(String label) => InputDecoration(
@@ -4596,6 +4617,7 @@ Status: CONFIRMED & POSTED TO LEDGER''';
                         const SizedBox(height: 12),
                       ],
                     ),
+                  ),
                   ),
 
                   // Transaction Note Input
@@ -4711,12 +4733,10 @@ Status: CONFIRMED & POSTED TO LEDGER''';
               value,
               maxLines: 1,
               softWrap: false,
-              style: TextStyle(
+              style: coTabularStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.w800,
                 color: isLoanOutstanding ? tokens.dangerText : tokens.textPrimary,
-                fontFamily: value.contains('₦') ? 'monospace' : null,
-                fontFeatures: const [FontFeature.tabularFigures()],
               ),
             ),
           ),
@@ -5126,6 +5146,15 @@ Status: CONFIRMED & POSTED TO LEDGER''';
                 const SizedBox(height: 20),
 
                 // Group Summary Section (if groups exist)
+                CoCollectionsHistoryAnalyticsSection(
+                  totalRepayments: totReps,
+                  totalSavings: totSav,
+                  groups: groups,
+                  paidCount: paidCnt is int ? paidCnt : int.tryParse('$paidCnt') ?? 0,
+                  notPaidCount: notPaidCnt is int ? notPaidCnt : int.tryParse('$notPaidCnt') ?? 0,
+                ),
+                const SizedBox(height: 16),
+
                 if (groups.isNotEmpty) ...[
                   _buildGroupSummarySection(groups, repayments.length, savings.length),
                   const SizedBox(height: 20),
@@ -5143,12 +5172,13 @@ Status: CONFIRMED & POSTED TO LEDGER''';
                   const SizedBox(height: 20),
                   Theme(
                     data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: tokens.surface,
+                    child: Material(
+                      color: tokens.surface,
+                      shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: tokens.dangerBorder),
+                        side: BorderSide(color: tokens.dangerBorder),
                       ),
+                      clipBehavior: Clip.antiAlias,
                       child: ExpansionTile(
                         iconColor: tokens.dangerText,
                         collapsedIconColor: tokens.dangerText,
@@ -5157,8 +5187,7 @@ Status: CONFIRMED & POSTED TO LEDGER''';
                           style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: tokens.dangerText),
                         ),
                         children: [
-                          SingleChildScrollView(
-                            scrollDirection: Axis.horizontal,
+                          CoControlledHorizontalScroll(
                             child: ConstrainedBox(
                               constraints: const BoxConstraints(minWidth: 680),
                               child: Table(
@@ -5188,7 +5217,7 @@ Status: CONFIRMED & POSTED TO LEDGER''';
                                       children: [
                                         Padding(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8), child: Text(rev['type'] ?? '', style: TextStyle(fontSize: 11, color: tokens.textPrimary))),
                                         Padding(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8), child: Text(rev['client'] ?? '', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: tokens.textPrimary))),
-                                        Padding(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8), child: Text(CurrencyFormatter.formatNaira((rev['amount'] as num?)?.toDouble() ?? 0), style: TextStyle(fontSize: 11, fontFamily: 'monospace', color: tokens.textPrimary))),
+                                        Padding(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8), child: Text(CurrencyFormatter.formatNaira((rev['amount'] as num?)?.toDouble() ?? 0), style: coTabularStyle(fontSize: 11, fontWeight: FontWeight.w600, color: tokens.textPrimary))),
                                         Padding(
                                           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                                           child: Container(
@@ -5197,7 +5226,7 @@ Status: CONFIRMED & POSTED TO LEDGER''';
                                             child: Text('Reversed', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: tokens.dangerText), textAlign: TextAlign.center),
                                           ),
                                         ),
-                                        Padding(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8), child: Text((rev['ref_id'] ?? '').toString(), style: TextStyle(fontSize: 11, fontFamily: 'monospace', color: tokens.textSecondary))),
+                                        Padding(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8), child: Text((rev['ref_id'] ?? '').toString(), style: coTabularStyle(fontSize: 11, fontWeight: FontWeight.w500, color: tokens.textSecondary))),
                                         Padding(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8), child: Text(rev['reason'] ?? rev['note'] ?? '', style: TextStyle(fontSize: 11, color: tokens.textSecondary))),
                                       ],
                                     );
@@ -5316,10 +5345,14 @@ Status: CONFIRMED & POSTED TO LEDGER''';
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 8,
+            runSpacing: 8,
             children: [
               Row(
+                mainAxisSize: MainAxisSize.min,
                 children: [
                   Container(
                     padding: const EdgeInsets.all(6),
@@ -5330,9 +5363,11 @@ Status: CONFIRMED & POSTED TO LEDGER''';
                     child: Icon(Icons.workspaces_outlined, size: 16, color: tokens.infoDot),
                   ),
                   const SizedBox(width: 8),
-                  Text(
-                    'Group Breakdown (${groups.length})',
-                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: tokens.textPrimary),
+                  Flexible(
+                    child: Text(
+                      'Group Breakdown (${groups.length})',
+                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: tokens.textPrimary),
+                    ),
                   ),
                 ],
               ),
@@ -5408,7 +5443,7 @@ Status: CONFIRMED & POSTED TO LEDGER''';
                                     const SizedBox(height: 2),
                                     Text(
                                       CurrencyFormatter.formatNaira(totRep),
-                                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, fontFamily: 'monospace', color: tokens.brandPrimary),
+                                      style: coTabularStyle(fontSize: 12, fontWeight: FontWeight.w700, color: tokens.brandPrimary),
                                     ),
                                   ],
                                 ),
@@ -5421,7 +5456,7 @@ Status: CONFIRMED & POSTED TO LEDGER''';
                                     const SizedBox(height: 2),
                                     Text(
                                       CurrencyFormatter.formatNaira(totSav),
-                                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, fontFamily: 'monospace', color: tokens.infoText),
+                                      style: coTabularStyle(fontSize: 12, fontWeight: FontWeight.w700, color: tokens.infoText),
                                     ),
                                   ],
                                 ),
@@ -5429,8 +5464,11 @@ Status: CONFIRMED & POSTED TO LEDGER''';
                             ],
                           ),
                           const SizedBox(height: 8),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          Wrap(
+                            alignment: WrapAlignment.spaceBetween,
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            spacing: 8,
+                            runSpacing: 4,
                             children: [
                               Text(
                                 'Mem: ${CurrencyFormatter.formatNaira(memSav)} • Grp: ${CurrencyFormatter.formatNaira(grpSav)}',
@@ -5438,7 +5476,7 @@ Status: CONFIRMED & POSTED TO LEDGER''';
                               ),
                               Text(
                                 'Total: ${CurrencyFormatter.formatNaira(grpTotal)}',
-                                style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, fontFamily: 'monospace', color: tokens.textPrimary),
+                                style: coTabularStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: tokens.textPrimary),
                               ),
                             ],
                           ),
@@ -5449,8 +5487,7 @@ Status: CONFIRMED & POSTED TO LEDGER''';
                 );
               }
 
-              return SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
+              return CoControlledHorizontalScroll(
                 child: ConstrainedBox(
                   constraints: BoxConstraints(minWidth: constraints.maxWidth > 780 ? constraints.maxWidth : 780),
                   child: Table(
@@ -5481,11 +5518,11 @@ Status: CONFIRMED & POSTED TO LEDGER''';
                         return TableRow(
                           children: [
                             Padding(padding: const EdgeInsets.all(10), child: Text(g['group_name'] ?? '', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: tokens.textPrimary))),
-                            Padding(padding: const EdgeInsets.all(10), child: Text(CurrencyFormatter.formatNaira((g['total_repayment'] as num?)?.toDouble() ?? 0), style: TextStyle(fontSize: 11, fontFamily: 'monospace', color: tokens.textPrimary))),
-                            Padding(padding: const EdgeInsets.all(10), child: Text(CurrencyFormatter.formatNaira((g['member_savings'] as num?)?.toDouble() ?? 0), style: TextStyle(fontSize: 11, fontFamily: 'monospace', color: tokens.textPrimary))),
-                            Padding(padding: const EdgeInsets.all(10), child: Text(CurrencyFormatter.formatNaira((g['group_savings'] as num?)?.toDouble() ?? 0), style: TextStyle(fontSize: 11, fontFamily: 'monospace', color: tokens.textPrimary))),
-                            Padding(padding: const EdgeInsets.all(10), child: Text(CurrencyFormatter.formatNaira((g['total_savings'] as num?)?.toDouble() ?? 0), style: TextStyle(fontSize: 11, fontFamily: 'monospace', color: tokens.textPrimary))),
-                            Padding(padding: const EdgeInsets.all(10), child: Text(CurrencyFormatter.formatNaira((g['grand_total'] as num?)?.toDouble() ?? 0), style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, fontFamily: 'monospace', color: tokens.textPrimary))),
+                            Padding(padding: const EdgeInsets.all(10), child: Text(CurrencyFormatter.formatNaira((g['total_repayment'] as num?)?.toDouble() ?? 0), style: coTabularStyle(fontSize: 11, fontWeight: FontWeight.w500, color: tokens.textPrimary))),
+                            Padding(padding: const EdgeInsets.all(10), child: Text(CurrencyFormatter.formatNaira((g['member_savings'] as num?)?.toDouble() ?? 0), style: coTabularStyle(fontSize: 11, fontWeight: FontWeight.w500, color: tokens.textPrimary))),
+                            Padding(padding: const EdgeInsets.all(10), child: Text(CurrencyFormatter.formatNaira((g['group_savings'] as num?)?.toDouble() ?? 0), style: coTabularStyle(fontSize: 11, fontWeight: FontWeight.w500, color: tokens.textPrimary))),
+                            Padding(padding: const EdgeInsets.all(10), child: Text(CurrencyFormatter.formatNaira((g['total_savings'] as num?)?.toDouble() ?? 0), style: coTabularStyle(fontSize: 11, fontWeight: FontWeight.w500, color: tokens.textPrimary))),
+                            Padding(padding: const EdgeInsets.all(10), child: Text(CurrencyFormatter.formatNaira((g['grand_total'] as num?)?.toDouble() ?? 0), style: coTabularStyle(fontSize: 11, fontWeight: FontWeight.w700, color: tokens.textPrimary))),
                             Padding(padding: const EdgeInsets.all(10), child: Text('${g['paying_members_count'] ?? 0} Clients', style: TextStyle(fontSize: 11, color: tokens.textSecondary))),
                           ],
                         );
@@ -5725,8 +5762,7 @@ Status: CONFIRMED & POSTED TO LEDGER''';
                   );
                 }
 
-                return SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
+                return CoControlledHorizontalScroll(
                   child: ConstrainedBox(
                     constraints: BoxConstraints(minWidth: constraints.maxWidth > 920 ? constraints.maxWidth : 920),
                     child: Table(
@@ -5785,11 +5821,11 @@ Status: CONFIRMED & POSTED TO LEDGER''';
                               ),
                               Padding(padding: const EdgeInsets.all(10), child: Text(gname, style: TextStyle(fontSize: 11, color: tokens.textSecondary))),
                               Padding(padding: const EdgeInsets.all(10), child: Text(prod, style: TextStyle(fontSize: 11, color: tokens.textSecondary))),
-                              Padding(padding: const EdgeInsets.all(10), child: Text(exp > 0 ? CurrencyFormatter.formatNaira(exp) : '—', style: TextStyle(fontSize: 11, fontFamily: 'monospace', color: tokens.textPrimary))),
-                              Padding(padding: const EdgeInsets.all(10), child: Text(repPaid > 0 ? CurrencyFormatter.formatNaira(repPaid) : '—', style: TextStyle(fontSize: 11, fontFamily: 'monospace', fontWeight: FontWeight.w600, color: repPaid > 0 ? tokens.textPrimary : tokens.textMuted))),
+                              Padding(padding: const EdgeInsets.all(10), child: Text(exp > 0 ? CurrencyFormatter.formatNaira(exp) : '—', style: coTabularStyle(fontSize: 11, fontWeight: FontWeight.w500, color: tokens.textPrimary))),
+                              Padding(padding: const EdgeInsets.all(10), child: Text(repPaid > 0 ? CurrencyFormatter.formatNaira(repPaid) : '—', style: coTabularStyle(fontSize: 11, fontWeight: FontWeight.w600, color: repPaid > 0 ? tokens.textPrimary : tokens.textMuted))),
                               Padding(padding: const EdgeInsets.all(10), child: _buildStatusBadge(stat)),
-                              Padding(padding: const EdgeInsets.all(10), child: Text(savPaid > 0 ? CurrencyFormatter.formatNaira(savPaid) : '—', style: TextStyle(fontSize: 11, fontFamily: 'monospace', color: savPaid > 0 ? tokens.brandPrimary : tokens.textMuted, fontWeight: FontWeight.w600))),
-                              Padding(padding: const EdgeInsets.all(10), child: Text(totalCash > 0 ? CurrencyFormatter.formatNaira(totalCash) : '—', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, fontFamily: 'monospace', color: totalCash > 0 ? tokens.textPrimary : tokens.textMuted))),
+                              Padding(padding: const EdgeInsets.all(10), child: Text(savPaid > 0 ? CurrencyFormatter.formatNaira(savPaid) : '—', style: coTabularStyle(fontSize: 11, color: savPaid > 0 ? tokens.brandPrimary : tokens.textMuted, fontWeight: FontWeight.w600))),
+                              Padding(padding: const EdgeInsets.all(10), child: Text(totalCash > 0 ? CurrencyFormatter.formatNaira(totalCash) : '—', style: coTabularStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: totalCash > 0 ? tokens.textPrimary : tokens.textMuted))),
                               Padding(
                                 padding: const EdgeInsets.all(10),
                                 child: Column(
@@ -5821,14 +5857,18 @@ Status: CONFIRMED & POSTED TO LEDGER''';
               decoration: BoxDecoration(
                 border: Border(top: BorderSide(color: tokens.borderSubtle, width: 1)),
               ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              child: Wrap(
+                alignment: WrapAlignment.spaceBetween,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: 8,
+                runSpacing: 8,
                 children: [
                   Text(
                     'Showing ${startIndex + 1}–$endIndex of $totalFiltered',
                     style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: tokens.textMuted),
                   ),
                   Row(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
                       OutlinedButton.icon(
                         onPressed: _histClientPage > 1
@@ -5965,55 +6005,62 @@ Status: CONFIRMED & POSTED TO LEDGER''';
               border: Border.all(color: tokens.borderSubtle),
             ),
             child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('Loan Repaid', style: TextStyle(fontSize: 10, color: tokens.textMuted)),
-                    const SizedBox(height: 1),
-                    Text(
-                      repPaid > 0 ? CurrencyFormatter.formatNaira(repPaid) : '—',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                        fontFamily: 'monospace',
-                        color: repPaid > 0 ? tokens.brandPrimary : tokens.textMuted,
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Loan Repaid', style: TextStyle(fontSize: 10, color: tokens.textMuted)),
+                      const SizedBox(height: 1),
+                      Text(
+                        repPaid > 0 ? CurrencyFormatter.formatNaira(repPaid) : '—',
+                        overflow: TextOverflow.ellipsis,
+                        style: coTabularStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: repPaid > 0 ? tokens.brandPrimary : tokens.textMuted,
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('Savings Deposit', style: TextStyle(fontSize: 10, color: tokens.textMuted)),
-                    const SizedBox(height: 1),
-                    Text(
-                      savPaid > 0 ? CurrencyFormatter.formatNaira(savPaid) : '—',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                        fontFamily: 'monospace',
-                        color: savPaid > 0 ? tokens.infoText : tokens.textMuted,
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Text('Savings Deposit', overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 10, color: tokens.textMuted)),
+                      const SizedBox(height: 1),
+                      Text(
+                        savPaid > 0 ? CurrencyFormatter.formatNaira(savPaid) : '—',
+                        overflow: TextOverflow.ellipsis,
+                        style: coTabularStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: savPaid > 0 ? tokens.infoText : tokens.textMuted,
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Text('Total Cash', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: tokens.textPrimary)),
-                    const SizedBox(height: 1),
-                    Text(
-                      totalCash > 0 ? CurrencyFormatter.formatNaira(totalCash) : '—',
-                      style: TextStyle(
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.w800,
-                        fontFamily: 'monospace',
-                        color: totalCash > 0 ? tokens.textPrimary : tokens.textMuted,
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text('Total Cash', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: tokens.textPrimary)),
+                      const SizedBox(height: 1),
+                      Text(
+                        totalCash > 0 ? CurrencyFormatter.formatNaira(totalCash) : '—',
+                        overflow: TextOverflow.ellipsis,
+                        style: coTabularStyle(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w800,
+                          color: totalCash > 0 ? tokens.textPrimary : tokens.textMuted,
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ],
             ),
@@ -6035,7 +6082,7 @@ Status: CONFIRMED & POSTED TO LEDGER''';
                 else
                   const SizedBox.shrink(),
                 if (time.isNotEmpty && time != '00:00' && time != '0:00')
-                  Text(time, style: TextStyle(fontSize: 10.5, color: tokens.textMuted, fontFamily: 'monospace'))
+                  Text(time, style: coTabularStyle(fontSize: 10.5, fontWeight: FontWeight.w500, color: tokens.textMuted))
                 else
                   const SizedBox.shrink(),
               ],
@@ -6085,12 +6132,13 @@ Status: CONFIRMED & POSTED TO LEDGER''';
           const SizedBox(height: 16),
           Theme(
             data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-            child: Container(
-              decoration: BoxDecoration(
-                color: tokens.surfaceSubtle,
+            child: Material(
+              color: tokens.surfaceSubtle,
+              shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: tokens.borderSubtle),
+                side: BorderSide(color: tokens.borderSubtle),
               ),
+              clipBehavior: Clip.antiAlias,
               child: ExpansionTile(
                 iconColor: tokens.textMuted,
                 collapsedIconColor: tokens.textMuted,
@@ -6102,8 +6150,7 @@ Status: CONFIRMED & POSTED TO LEDGER''';
                       child: Text('No historical EOD inputs found for this filter.', style: TextStyle(fontSize: 12, color: tokens.textMuted)),
                     )
                   else
-                    SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
+                    CoControlledHorizontalScroll(
                       child: ConstrainedBox(
                         constraints: const BoxConstraints(minWidth: 960),
                         child: Table(
@@ -6152,15 +6199,15 @@ Status: CONFIRMED & POSTED TO LEDGER''';
                                 children: [
                                   Padding(padding: const EdgeInsets.all(8), child: Text(log['Date']?.toString() ?? '', style: TextStyle(fontSize: 11, color: tokens.textPrimary))),
                                   Padding(padding: const EdgeInsets.all(8), child: Text(log['Officer']?.toString() ?? '', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: tokens.textPrimary))),
-                                  Padding(padding: const EdgeInsets.all(8), child: Text(CurrencyFormatter.formatNaira(bf), style: TextStyle(fontSize: 11, fontFamily: 'monospace', color: tokens.textPrimary))),
-                                  Padding(padding: const EdgeInsets.all(8), child: Text(CurrencyFormatter.formatNaira(bd), style: TextStyle(fontSize: 11, fontFamily: 'monospace', color: tokens.textPrimary))),
-                                  Padding(padding: const EdgeInsets.all(8), child: Text(CurrencyFormatter.formatNaira(exp), style: TextStyle(fontSize: 11, fontFamily: 'monospace', color: tokens.textPrimary))),
-                                  Padding(padding: const EdgeInsets.all(8), child: Text(CurrencyFormatter.formatNaira(appF), style: TextStyle(fontSize: 11, fontFamily: 'monospace', color: tokens.textPrimary))),
-                                  Padding(padding: const EdgeInsets.all(8), child: Text(CurrencyFormatter.formatNaira(pb), style: TextStyle(fontSize: 11, fontFamily: 'monospace', color: tokens.textPrimary))),
-                                  Padding(padding: const EdgeInsets.all(8), child: Text(CurrencyFormatter.formatNaira(misc), style: TextStyle(fontSize: 11, fontFamily: 'monospace', color: tokens.textPrimary))),
-                                  Padding(padding: const EdgeInsets.all(8), child: Text(CurrencyFormatter.formatNaira(fd), style: TextStyle(fontSize: 11, fontFamily: 'monospace', color: tokens.textPrimary))),
-                                  Padding(padding: const EdgeInsets.all(8), child: Text(CurrencyFormatter.formatNaira(bon), style: TextStyle(fontSize: 11, fontFamily: 'monospace', color: tokens.textPrimary))),
-                                  Padding(padding: const EdgeInsets.all(8), child: Text(CurrencyFormatter.formatNaira(cc), style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, fontFamily: 'monospace', color: tokens.textPrimary))),
+                                  Padding(padding: const EdgeInsets.all(8), child: Text(CurrencyFormatter.formatNaira(bf), style: coTabularStyle(fontSize: 11, fontWeight: FontWeight.w500, color: tokens.textPrimary))),
+                                  Padding(padding: const EdgeInsets.all(8), child: Text(CurrencyFormatter.formatNaira(bd), style: coTabularStyle(fontSize: 11, fontWeight: FontWeight.w500, color: tokens.textPrimary))),
+                                  Padding(padding: const EdgeInsets.all(8), child: Text(CurrencyFormatter.formatNaira(exp), style: coTabularStyle(fontSize: 11, fontWeight: FontWeight.w500, color: tokens.textPrimary))),
+                                  Padding(padding: const EdgeInsets.all(8), child: Text(CurrencyFormatter.formatNaira(appF), style: coTabularStyle(fontSize: 11, fontWeight: FontWeight.w500, color: tokens.textPrimary))),
+                                  Padding(padding: const EdgeInsets.all(8), child: Text(CurrencyFormatter.formatNaira(pb), style: coTabularStyle(fontSize: 11, fontWeight: FontWeight.w500, color: tokens.textPrimary))),
+                                  Padding(padding: const EdgeInsets.all(8), child: Text(CurrencyFormatter.formatNaira(misc), style: coTabularStyle(fontSize: 11, fontWeight: FontWeight.w500, color: tokens.textPrimary))),
+                                  Padding(padding: const EdgeInsets.all(8), child: Text(CurrencyFormatter.formatNaira(fd), style: coTabularStyle(fontSize: 11, fontWeight: FontWeight.w500, color: tokens.textPrimary))),
+                                  Padding(padding: const EdgeInsets.all(8), child: Text(CurrencyFormatter.formatNaira(bon), style: coTabularStyle(fontSize: 11, fontWeight: FontWeight.w500, color: tokens.textPrimary))),
+                                  Padding(padding: const EdgeInsets.all(8), child: Text(CurrencyFormatter.formatNaira(cc), style: coTabularStyle(fontSize: 11, fontWeight: FontWeight.w700, color: tokens.textPrimary))),
                                 ],
                               );
                             }),
@@ -6196,7 +6243,7 @@ Status: CONFIRMED & POSTED TO LEDGER''';
               CurrencyFormatter.formatNaira(dVal),
               maxLines: 1,
               softWrap: false,
-              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, fontFamily: 'monospace', color: tokens.textPrimary),
+              style: coTabularStyle(fontSize: 13, fontWeight: FontWeight.w700, color: tokens.textPrimary),
             ),
           ),
         ],
@@ -6928,7 +6975,7 @@ Status: CONFIRMED & POSTED TO LEDGER''';
 
                                 'Full Ref ID: ${selItem['ref_id']} • Note: ${selItem['note'] ?? '—'}',
 
-                                style: TextStyle(fontSize: 11, color: tokens.textMuted, fontFamily: 'monospace'),
+                                style: coTabularStyle(fontSize: 11, fontWeight: FontWeight.w500, color: tokens.textMuted),
 
                                 overflow: TextOverflow.ellipsis,
 
@@ -7150,9 +7197,7 @@ Status: CONFIRMED & POSTED TO LEDGER''';
 
               ),
 
-              child: SingleChildScrollView(
-
-                scrollDirection: Axis.horizontal,
+              child: CoControlledHorizontalScroll(
 
                 child: ConstrainedBox(
 
@@ -7242,7 +7287,7 @@ Status: CONFIRMED & POSTED TO LEDGER''';
 
                             Padding(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10), child: Text(r['record_type'] ?? '', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: tokens.textSecondary))),
 
-                            Padding(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10), child: Text(r['record_ref'] ?? '', style: TextStyle(fontSize: 11.5, color: tokens.textPrimary, fontFamily: 'monospace'))),
+                            Padding(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10), child: Text(r['record_ref'] ?? '', style: coTabularStyle(fontSize: 11.5, fontWeight: FontWeight.w500, color: tokens.textPrimary))),
 
                             Padding(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10), child: Text(r['reason'] ?? '', style: TextStyle(fontSize: 11.5, color: tokens.textPrimary), softWrap: true)),
 
@@ -7428,17 +7473,13 @@ Status: CONFIRMED & POSTED TO LEDGER''';
 
               softWrap: false,
 
-              style: TextStyle(
+              style: coTabularStyle(
 
                 fontSize: 13,
 
                 fontWeight: FontWeight.w800,
 
                 color: isAmount ? tokens.dangerText : tokens.textPrimary,
-
-                fontFamily: 'monospace',
-
-                fontFeatures: const [FontFeature.tabularFigures()],
 
               ),
 
@@ -7488,6 +7529,8 @@ class _CollectionFlowModal extends StatefulWidget {
 
   final VoidCallback onViewHistory;
 
+  final bool isDialog;
+
   const _CollectionFlowModal({
 
     required this.groupName,
@@ -7511,6 +7554,8 @@ class _CollectionFlowModal extends StatefulWidget {
     required this.onDismissAndReset,
 
     required this.onViewHistory,
+
+    this.isDialog = true,
 
   });
 
@@ -7646,127 +7691,71 @@ class _CollectionFlowModalState extends State<_CollectionFlowModal> {
 
     final media = MediaQuery.of(context);
 
-    final isMobile = media.size.width < 600;
+    final isMobile = !widget.isDialog || media.size.width < 700;
 
-    final maxDialogWidth = isMobile ? double.infinity : 720.0;
+    return Material(
 
-    final maxDialogHeight = media.size.height * (isMobile ? 0.94 : 0.88);
+      color: tokens.surface,
 
-    return Dialog(
+      borderRadius: widget.isDialog ? BorderRadius.circular(18) : BorderRadius.zero,
 
-      backgroundColor: Colors.transparent,
+      child: ClipRRect(
 
-      elevation: 0,
+        borderRadius: widget.isDialog ? BorderRadius.circular(18) : BorderRadius.zero,
 
-      insetPadding: EdgeInsets.symmetric(
+        child: Column(
 
-        horizontal: isMobile ? 12 : 24,
+          children: [
 
-        vertical: isMobile ? 12 : 24,
+            _buildHeader(context, isMobile),
 
-      ),
+            Divider(height: 1, color: tokens.borderSubtle),
 
-      child: Center(
+            Expanded(
 
-        child: ConstrainedBox(
+              child: AnimatedSwitcher(
 
-          constraints: BoxConstraints(
+                duration: const Duration(milliseconds: 320),
 
-            maxWidth: maxDialogWidth,
+                switchInCurve: Curves.easeOutCubic,
 
-            maxHeight: maxDialogHeight,
+                switchOutCurve: Curves.easeInCubic,
 
-          ),
+                transitionBuilder: (child, anim) {
 
-          child: Container(
+                  return FadeTransition(
 
-            decoration: BoxDecoration(
+                    opacity: anim,
 
-              color: tokens.surface,
+                    child: ScaleTransition(
 
-              borderRadius: BorderRadius.circular(isMobile ? 16 : 18),
+                      scale: Tween<double>(begin: 0.95, end: 1.0).animate(anim),
 
-              border: Border.all(color: tokens.borderSubtle),
-
-              boxShadow: [
-
-                BoxShadow(
-
-                  color: Colors.black.withValues(alpha: tokens.isDark ? 0.45 : 0.15),
-
-                  blurRadius: 28,
-
-                  offset: const Offset(0, 10),
-
-                ),
-
-              ],
-
-            ),
-
-            child: ClipRRect(
-
-              borderRadius: BorderRadius.circular(isMobile ? 16 : 18),
-
-              child: Column(
-
-                children: [
-
-                  _buildHeader(context, isMobile),
-
-                  Divider(height: 1, color: tokens.borderSubtle),
-
-                  Expanded(
-
-                    child: AnimatedSwitcher(
-
-                      duration: const Duration(milliseconds: 320),
-
-                      switchInCurve: Curves.easeOutCubic,
-
-                      switchOutCurve: Curves.easeInCubic,
-
-                      transitionBuilder: (child, anim) {
-
-                        return FadeTransition(
-
-                          opacity: anim,
-
-                          child: ScaleTransition(
-
-                            scale: Tween<double>(begin: 0.95, end: 1.0).animate(anim),
-
-                            child: child,
-
-                          ),
-
-                        );
-
-                      },
-
-                      child: switch (_phase) {
-
-                        _ModalStage.confirmation => _buildConfirmationView(isMobile),
-
-                        _ModalStage.posting => _buildPostingView(isMobile),
-
-                        _ModalStage.success => _buildSuccessView(isMobile),
-
-                        _ModalStage.error => _buildErrorView(isMobile),
-
-                      },
+                      child: child,
 
                     ),
 
-                  ),
+                  );
 
-                ],
+                },
+
+                child: switch (_phase) {
+
+                  _ModalStage.confirmation => _buildConfirmationView(isMobile),
+
+                  _ModalStage.posting => _buildPostingView(isMobile),
+
+                  _ModalStage.success => _buildSuccessView(isMobile),
+
+                  _ModalStage.error => _buildErrorView(isMobile),
+
+                },
 
               ),
 
             ),
 
-          ),
+          ],
 
         ),
 
@@ -8315,7 +8304,7 @@ class _CollectionFlowModalState extends State<_CollectionFlowModal> {
 
                                         CurrencyFormatter.formatNaira(widget.grpSavings),
 
-                                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: tokens.infoText, fontFamily: 'monospace'),
+                                        style: coTabularStyle(fontSize: 12, fontWeight: FontWeight.w800, color: tokens.infoText),
 
                                       ),
 
@@ -8465,7 +8454,7 @@ class _CollectionFlowModalState extends State<_CollectionFlowModal> {
 
                                                 const SizedBox(height: 1),
 
-                                                Text(repDisplay, style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: pStat == 'NOT_PAID' ? tokens.dangerText : tokens.textPrimary, fontFamily: 'monospace')),
+                                                Text(repDisplay, style: coTabularStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: pStat == 'NOT_PAID' ? tokens.dangerText : tokens.textPrimary)),
 
                                               ],
 
@@ -8485,7 +8474,7 @@ class _CollectionFlowModalState extends State<_CollectionFlowModal> {
 
                                                 const SizedBox(height: 1),
 
-                                                Text(sDep > 0 ? CurrencyFormatter.formatNaira(sDep) : '₦0.00', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: sDep > 0 ? tokens.successText : tokens.textMuted, fontFamily: 'monospace')),
+                                                Text(sDep > 0 ? CurrencyFormatter.formatNaira(sDep) : '₦0.00', style: coTabularStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: sDep > 0 ? tokens.successText : tokens.textMuted)),
 
                                               ],
 
@@ -8513,9 +8502,7 @@ class _CollectionFlowModalState extends State<_CollectionFlowModal> {
 
                       ] else ...[
 
-                      SingleChildScrollView(
-
-                        scrollDirection: Axis.horizontal,
+                      CoControlledHorizontalScroll(
 
                         child: ConstrainedBox(
 
@@ -8575,7 +8562,7 @@ class _CollectionFlowModalState extends State<_CollectionFlowModal> {
 
                                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
 
-                                      child: Text(CurrencyFormatter.formatNaira(widget.grpSavings), style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: tokens.textPrimary, fontFamily: 'monospace', fontFeatures: const [FontFeature.tabularFigures()])),
+                                      child: Text(CurrencyFormatter.formatNaira(widget.grpSavings), style: coTabularStyle(fontSize: 12, fontWeight: FontWeight.w700, color: tokens.textPrimary)),
 
                                     ),
 
@@ -8719,8 +8706,6 @@ class _CollectionFlowModalState extends State<_CollectionFlowModal> {
 
                                           color: sDep > 0 ? tokens.textPrimary : tokens.textMuted,
 
-                                          fontFamily: 'monospace',
-
                                           fontFeatures: const [FontFeature.tabularFigures()],
 
                                         ),
@@ -8744,8 +8729,6 @@ class _CollectionFlowModalState extends State<_CollectionFlowModal> {
                                           fontWeight: lRep > 0 ? FontWeight.w700 : FontWeight.w500,
 
                                           color: pStat == 'NOT_PAID' ? tokens.dangerText : tokens.textPrimary,
-
-                                          fontFamily: 'monospace',
 
                                           fontFeatures: const [FontFeature.tabularFigures()],
 
@@ -9426,9 +9409,7 @@ class _CollectionFlowModalState extends State<_CollectionFlowModal> {
 
                         Divider(height: 1, color: tokens.borderSubtle),
 
-                        SingleChildScrollView(
-
-                          scrollDirection: Axis.horizontal,
+                        CoControlledHorizontalScroll(
 
                           child: ConstrainedBox(
 
@@ -9484,9 +9465,9 @@ class _CollectionFlowModalState extends State<_CollectionFlowModal> {
 
                                       Padding(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8), child: Text(cName.toString(), style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: tokens.textPrimary))),
 
-                                      Padding(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8), child: Text(rep > 0 ? CurrencyFormatter.formatNaira(rep, showDecimals: true) : '—', style: TextStyle(fontSize: 11.5, color: tokens.textPrimary, fontFamily: 'monospace', fontFeatures: const [FontFeature.tabularFigures()]))),
+                                      Padding(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8), child: Text(rep > 0 ? CurrencyFormatter.formatNaira(rep, showDecimals: true) : '—', style: coTabularStyle(fontSize: 11.5, fontWeight: FontWeight.w500, color: tokens.textPrimary))),
 
-                                      Padding(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8), child: Text(sav > 0 ? CurrencyFormatter.formatNaira(sav, showDecimals: true) : '—', style: TextStyle(fontSize: 11.5, color: tokens.textPrimary, fontFamily: 'monospace', fontFeatures: const [FontFeature.tabularFigures()]))),
+                                      Padding(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8), child: Text(sav > 0 ? CurrencyFormatter.formatNaira(sav, showDecimals: true) : '—', style: coTabularStyle(fontSize: 11.5, fontWeight: FontWeight.w500, color: tokens.textPrimary))),
 
                                       Padding(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8), child: Container(padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2), decoration: BoxDecoration(color: tokens.successBg, borderRadius: BorderRadius.circular(4), border: Border.all(color: tokens.successBorder)), child: Text(stat, style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.w700, color: tokens.successText), textAlign: TextAlign.center))),
 
@@ -9620,7 +9601,7 @@ class _CollectionFlowModalState extends State<_CollectionFlowModal> {
 
                             whatsappText,
 
-                            style: const TextStyle(fontFamily: 'monospace', fontSize: 11.5, color: Color(0xFFF1F5F9), height: 1.4),
+                            style: coTabularStyle(fontSize: 11.5, fontWeight: FontWeight.w500, color: const Color(0xFFF1F5F9), height: 1.4),
 
                           ),
 
@@ -9982,17 +9963,13 @@ class _CollectionFlowModalState extends State<_CollectionFlowModal> {
 
               softWrap: false,
 
-              style: TextStyle(
+              style: coTabularStyle(
 
                 fontSize: 16,
 
                 fontWeight: FontWeight.w800,
 
                 color: isHero ? accentColor : tokens.textPrimary,
-
-                fontFamily: 'monospace',
-
-                fontFeatures: const [FontFeature.tabularFigures()],
 
               ),
 
@@ -10133,6 +10110,7 @@ class _SingleClientFlowModal extends StatefulWidget {
   final Future<Map<String, dynamic>> Function() onConfirmPost;
   final VoidCallback onDismissAndReset;
   final VoidCallback onViewHistory;
+  final bool isDialog;
 
   const _SingleClientFlowModal({
     required this.clientObj,
@@ -10151,6 +10129,7 @@ class _SingleClientFlowModal extends StatefulWidget {
     required this.onConfirmPost,
     required this.onDismissAndReset,
     required this.onViewHistory,
+    this.isDialog = true,
   });
 
   @override
@@ -10213,70 +10192,40 @@ class _SingleClientFlowModalState extends State<_SingleClientFlowModal> {
   Widget build(BuildContext context) {
     final tokens = IcareSurfaceTokens.of(context);
     final media = MediaQuery.of(context);
-    final isMobile = media.size.width < 600;
-    final maxDialogWidth = isMobile ? double.infinity : 680.0;
-    final maxDialogHeight = media.size.height * (isMobile ? 0.94 : 0.88);
+    final isMobile = !widget.isDialog || media.size.width < 700;
 
-    return Dialog(
-      backgroundColor: Colors.transparent,
-      elevation: 0,
-      insetPadding: EdgeInsets.symmetric(
-        horizontal: isMobile ? 12 : 24,
-        vertical: isMobile ? 12 : 24,
-      ),
-      child: Center(
-        child: ConstrainedBox(
-          constraints: BoxConstraints(
-            maxWidth: maxDialogWidth,
-            maxHeight: maxDialogHeight,
-          ),
-          child: Container(
-            decoration: BoxDecoration(
-              color: tokens.surface,
-              borderRadius: BorderRadius.circular(isMobile ? 16 : 18),
-              border: Border.all(color: tokens.borderSubtle),
-              boxShadow: tokens.isDark
-                  ? null
-                  : const [
-                      BoxShadow(
-                        color: Color(0x260F172A),
-                        blurRadius: 28,
-                        offset: Offset(0, 10),
-                      ),
-                    ],
-            ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(isMobile ? 16 : 18),
-              child: Column(
-                children: [
-                  _buildHeader(context, isMobile),
-                  Divider(height: 1, color: tokens.borderSubtle),
-                  Expanded(
-                    child: AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 320),
-                      switchInCurve: Curves.easeOutCubic,
-                      switchOutCurve: Curves.easeInCubic,
-                      transitionBuilder: (child, anim) {
-                        return FadeTransition(
-                          opacity: anim,
-                          child: ScaleTransition(
-                            scale: Tween<double>(begin: 0.95, end: 1.0).animate(anim),
-                            child: child,
-                          ),
-                        );
-                      },
-                      child: switch (_phase) {
-                        _ModalStage.confirmation => _buildConfirmationView(isMobile),
-                        _ModalStage.posting => _buildPostingView(isMobile),
-                        _ModalStage.success => _buildSuccessView(isMobile),
-                        _ModalStage.error => _buildErrorView(isMobile),
-                      },
+    return Material(
+      color: tokens.surface,
+      borderRadius: widget.isDialog ? BorderRadius.circular(18) : BorderRadius.zero,
+      child: ClipRRect(
+        borderRadius: widget.isDialog ? BorderRadius.circular(18) : BorderRadius.zero,
+        child: Column(
+          children: [
+            _buildHeader(context, isMobile),
+            Divider(height: 1, color: tokens.borderSubtle),
+            Expanded(
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 320),
+                switchInCurve: Curves.easeOutCubic,
+                switchOutCurve: Curves.easeInCubic,
+                transitionBuilder: (child, anim) {
+                  return FadeTransition(
+                    opacity: anim,
+                    child: ScaleTransition(
+                      scale: Tween<double>(begin: 0.95, end: 1.0).animate(anim),
+                      child: child,
                     ),
-                  ),
-                ],
+                  );
+                },
+                child: switch (_phase) {
+                  _ModalStage.confirmation => _buildConfirmationView(isMobile),
+                  _ModalStage.posting => _buildPostingView(isMobile),
+                  _ModalStage.success => _buildSuccessView(isMobile),
+                  _ModalStage.error => _buildErrorView(isMobile),
+                },
               ),
             ),
-          ),
+          ],
         ),
       ),
     );
@@ -10828,7 +10777,7 @@ class _SingleClientFlowModalState extends State<_SingleClientFlowModal> {
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           Text('Receipt Reference:', style: TextStyle(fontSize: 12, color: tokens.textMuted)),
-                          Text(batchId, style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, fontFamily: 'monospace', color: tokens.textPrimary)),
+                          Text(batchId, style: coTabularStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: tokens.textPrimary)),
                         ],
                       ),
                       const SizedBox(height: 6),

@@ -141,13 +141,18 @@ class OfflineSyncManager {
     }
   }
 
-  /// Pre-caches all available group collection sheets and single-client options in background.
+  /// Pre-caches all available group collection sheets, single-client options, and daily collections history in background.
   Future<void> preCacheAllAvailableGroups(
     List<String> groupNames,
     String dateStr, {
     String? skipGroup,
   }) async {
     await preCacheSingleClients();
+    try {
+      await _api.getCollectionsHistory(date: dateStr);
+    } catch (_) {
+      // Non-critical background cache warm-up
+    }
     for (final rawName in groupNames) {
       final name = rawName.trim();
       if (name.isEmpty || name == 'Ungrouped' || name == skipGroup) continue;
@@ -184,6 +189,7 @@ class OfflineSyncManager {
       safeCall(_api.getGroupWithdrawalOptions),
       safeCall(_api.getLapsWithdrawalOptions),
       safeCall(_api.getMiscWithdrawalBalance),
+      safeCall(_api.getWithdrawalRequests),
       if (effectiveDate != null && effectiveDate.isNotEmpty)
         safeCall(() => _api.getDailyWithdrawals(
               date: effectiveDate,

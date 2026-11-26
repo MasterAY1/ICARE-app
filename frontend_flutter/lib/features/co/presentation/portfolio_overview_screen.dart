@@ -12,6 +12,10 @@ import '../../../core/auth/auth_controller.dart';
 
 import '../../../core/auth/auth_state.dart';
 
+import '../../../core/widgets/icare_card.dart';
+
+import '../../../core/widgets/icare_section_header.dart';
+
 import '../../../core/widgets/icare_skeleton_loader.dart';
 
 import '../../../core/theme/icare_motion.dart';
@@ -22,6 +26,10 @@ import '../../../core/errors/app_error_formatter.dart';
 import '../../shared/utils/file_download_helper.dart';
 
 import '../data/datasources/co_api_service.dart';
+
+import 'widgets/co_portfolio_charts.dart';
+
+import 'widgets/co_shared_widgets.dart';
 
 final portfolioMainTabProvider = StateProvider<String>((ref) => 'Portfolio Summary & Analytics');
 
@@ -92,7 +100,7 @@ final clientDossierDataProvider = FutureProvider.family<Map<String, dynamic>, St
 
 /// - Full RBAC Scoped Hierarchy & Dynamic Cascading Filters
 
-/// - Tab 1: 5 Rows of KPI Metrics (22 total), Excess/Payoff Audit Ledger, Category Intelligence, Group Matrix with Totals, Detailed Client Table & Group Summary
+/// - Tab 1: Dynamic Portfolio Summary KPIs, Excess/Payoff Audit Ledger, Category Intelligence, Group Matrix with Totals, Detailed Client Table & Group Summary
 
 /// - Tab 2: Searchable Client Selector, 4-Metric Executive Banner, 7 Drilldown Subtabs with Reversal Requests & Lifecycle Transitions
 
@@ -300,7 +308,6 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
 
   @override
   Widget build(BuildContext context) {
-    final tokens = IcareSurfaceTokens.of(context);
     final authState = ref.watch(authControllerProvider);
     final user = authState is AuthStateAuthenticated ? authState.user : null;
     final role = user?.role ?? 'CO';
@@ -318,21 +325,32 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
     final activeMainTab = ref.watch(portfolioMainTabProvider);
     final filterKey = _buildFilterKey();
     final portfolioAsync = ref.watch(portfolioDataProvider(filterKey));
+    final summary = portfolioAsync.valueOrNull?['summary'] as Map<String, dynamic>? ?? const <String, dynamic>{};
+    final activeCred = (summary['total_active_credit'] as num?)?.toDouble() ?? 0.0;
+    final activeLoans = (summary['active_loans_count'] as num?)?.toInt() ?? 0;
+    final parStr = summary['par']?.toString().replaceAll('%', '') ?? '0.0';
+    final parVal = double.tryParse(parStr) ?? 0.0;
+    final overdueMap = summary['overdue'];
+    final overdueCnt = overdueMap is Map ? (overdueMap['count'] as num?)?.toInt() ?? 0 : 0;
+    final selectedCode = ref.watch(selectedClientCodeProvider);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         // 1. Page Header
-        Text(
-          pageTitle,
-          style: TextStyle(
-            fontSize: 22,
-            fontWeight: FontWeight.w800,
-            color: tokens.textPrimary,
-            letterSpacing: -0.4,
-          ),
+        IcareSectionHeader(title: pageTitle),
+        const SizedBox(height: 12),
+        CoPortfolioFlowCard(
+          activeMainTab: activeMainTab,
+          selectedPeriod: _selectedTimePeriod,
+          activeCredit: activeCred,
+          activeLoansCount: activeLoans,
+          parPercent: parVal,
+          overdueCount: overdueCnt,
+          selectedClientCode: selectedCode,
+          onSelectMainTab: (t) => ref.read(portfolioMainTabProvider.notifier).state = t,
         ),
-        const SizedBox(height: 10),
+        const SizedBox(height: 12),
         // 2. Filters & Scope Bar
         _buildFilterBar(portfolioAsync, user),
         const SizedBox(height: 20),
@@ -960,14 +978,9 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
     final tokens = IcareSurfaceTokens.of(context);
     return portfolioAsync.when(
       loading: () => const IcareTableSkeleton(rowCount: 8),
-      error: (err, _) => Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: tokens.dangerBg,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: tokens.dangerBorder),
-        ),
-        child: Text(AppErrorDetails.from(err).message, style: TextStyle(color: tokens.dangerText)),
+      error: (err, _) => CoInlineErrorCard(
+        error: err,
+        onRetry: () => ref.invalidate(portfolioDataProvider(_buildFilterKey())),
       ),
       data: (data) {
         final summary = data['summary'] as Map<String, dynamic>? ?? {};
@@ -1001,6 +1014,11 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
                   style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: tokens.textPrimary),
                 ),
                 const SizedBox(height: 12),
+                CoPortfolioAnalyticsSection(
+                  summary: summary,
+                  categorySummary: categorySummary,
+                ),
+                const SizedBox(height: 16),
                 _buildSectionHeader(
                   'Client Lifecycle Status Breakdown',
                   icon: Icons.donut_large_outlined,
@@ -1059,6 +1077,39 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
   // ===========================================================================
   // MOBILE SEGMENTED PORTFOLIO HUB
   // ===========================================================================
+  int _countActiveSummaryMetrics(Map<String, dynamic> summary) {
+    if (summary.isEmpty) return 0;
+    const keys = [
+      'registered_clients',
+      'active_clients',
+      'completed_clients',
+      'pending_loan_clients',
+      'savings_only_clients',
+      'dormant_clients',
+      'suspended_clients',
+      'closed_clients',
+      'defaulters',
+      'total_savings_balance',
+      'total_deposits',
+      'total_withdrawals',
+      'total_disbursed',
+      'total_active_credit',
+      'total_outstanding_balance',
+      'total_actual_collection',
+      'today_collection',
+      'active_loans_count',
+      'par',
+      'repayment_rate',
+    ];
+    int count = 0;
+    for (final k in keys) {
+      if (summary.containsKey(k) && summary[k] != null) {
+        count++;
+      }
+    }
+    return count > 0 ? count : summary.length;
+  }
+
   Widget _buildMobilePortfolioSummary({
     required Map<String, dynamic> summary,
     required Map<String, dynamic> categorySummary,
@@ -1114,6 +1165,11 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
         tabContent = Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            CoPortfolioAnalyticsSection(
+              summary: summary,
+              categorySummary: categorySummary,
+            ),
+            const SizedBox(height: 16),
             Text('Loan Products & Category Intelligence', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: tokens.textPrimary)),
             const SizedBox(height: 10),
             _buildCategoryIntelligenceCards(categorySummary),
@@ -1148,7 +1204,7 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
               children: [
                 _buildPortfolioTabPill(index: 0, label: 'Directory', icon: Icons.people_outline, count: clientTable.length),
                 const SizedBox(width: 4),
-                _buildPortfolioTabPill(index: 1, label: 'KPIs & Risk', icon: Icons.analytics_outlined, count: 23),
+                _buildPortfolioTabPill(index: 1, label: 'KPIs & Risk', icon: Icons.analytics_outlined, count: _countActiveSummaryMetrics(summary)),
                 const SizedBox(width: 4),
                 _buildPortfolioTabPill(index: 2, label: 'Products', icon: Icons.category_outlined, count: groupMatrix.length),
                 const SizedBox(width: 4),
@@ -1306,9 +1362,15 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
 
         children: [
 
-          Row(
+          Wrap(
 
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            alignment: WrapAlignment.spaceBetween,
+
+            crossAxisAlignment: WrapCrossAlignment.center,
+
+            spacing: 8,
+
+            runSpacing: 6,
 
             children: [
 
@@ -1496,13 +1558,21 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
 
             ),
 
-            child: Row(
+            child: Wrap(
 
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              spacing: 10,
+
+              runSpacing: 6,
+
+              alignment: WrapAlignment.spaceBetween,
+
+              crossAxisAlignment: WrapCrossAlignment.center,
 
               children: [
 
                 Row(
+
+                  mainAxisSize: MainAxisSize.min,
 
                   children: [
 
@@ -1510,11 +1580,15 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
 
                     const SizedBox(width: 6),
 
-                    Text(
+                    Flexible(
 
-                      'Collections: ${CurrencyFormatter.formatNaira(actualCol)}',
+                      child: Text(
 
-                      style: const TextStyle(fontSize: 11.5, color: Colors.white, fontWeight: FontWeight.w600),
+                        'Collections: ${CurrencyFormatter.formatNaira(actualCol)}',
+
+                        style: const TextStyle(fontSize: 11.5, color: Colors.white, fontWeight: FontWeight.w600),
+
+                      ),
 
                     ),
 
@@ -2056,16 +2130,8 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
 
   Widget _buildSmallMetricCard(String title, String subtitle, Color color) {
     final tokens = IcareSurfaceTokens.of(context);
-    return Container(
+    return IcareCard(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-      decoration: BoxDecoration(
-        color: tokens.surface,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: tokens.borderSubtle),
-        boxShadow: const [
-          BoxShadow(color: Color(0x060F172A), blurRadius: 4, offset: Offset(0, 1)),
-        ],
-      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisAlignment: MainAxisAlignment.center,
@@ -2098,11 +2164,10 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
               subtitle,
               maxLines: 1,
               softWrap: false,
-              style: TextStyle(
+              style: coTabularStyle(
                 fontSize: 12.5,
                 fontWeight: FontWeight.w800,
                 color: tokens.textPrimary,
-                fontFeatures: const [FontFeature.tabularFigures()],
               ),
             ),
           ),
@@ -2369,12 +2434,8 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Scrollbar(
-                thumbVisibility: true,
-                child: SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  physics: const BouncingScrollPhysics(),
-                  child: DataTable(
+              CoControlledHorizontalScroll(
+                child: DataTable(
                     columnSpacing: 16,
                     horizontalMargin: 12,
                     headingRowHeight: 40,
@@ -2405,7 +2466,6 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
                     }).toList(),
                   ),
                 ),
-              ),
               const SizedBox(height: 12),
               ElevatedButton.icon(
                 icon: const Icon(Icons.download, size: 16),
@@ -2504,12 +2564,13 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
       );
     }
 
-    return Container(
-      decoration: BoxDecoration(
-        color: tokens.surface,
+    return Material(
+      color: tokens.surface,
+      shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: tokens.borderSubtle),
+        side: BorderSide(color: tokens.borderSubtle),
       ),
+      clipBehavior: Clip.antiAlias,
       child: ExpansionTile(
         initiallyExpanded: _excessAuditExpanded,
         onExpansionChanged: (v) => setState(() => _excessAuditExpanded = v),
@@ -2714,11 +2775,8 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Scrollbar(
-                thumbVisibility: true,
-                child: SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: DataTable(
+              CoControlledHorizontalScroll(
+                child: DataTable(
                     headingRowColor: WidgetStateProperty.all(tokens.surfaceSubtle),
                     headingTextStyle: TextStyle(fontWeight: FontWeight.w700, color: tokens.textSecondary, fontSize: 11.5),
                     dataTextStyle: TextStyle(fontSize: 11.5, color: tokens.textPrimary),
@@ -2779,7 +2837,6 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
                     }).toList(),
                   ),
                 ),
-              ),
             ],
           );
         },
@@ -2858,12 +2915,13 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
       );
     }
 
-    return Container(
-      decoration: BoxDecoration(
-        color: tokens.surface,
+    return Material(
+      color: tokens.surface,
+      shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: tokens.borderSubtle),
+        side: BorderSide(color: tokens.borderSubtle),
       ),
+      clipBehavior: Clip.antiAlias,
       child: Theme(
         data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
         child: ExpansionTile(
@@ -3217,12 +3275,13 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
       totMonthly += (r['Monthly'] as num?)?.toInt() ?? 0;
     }
 
-    return Container(
-      decoration: BoxDecoration(
-        color: tokens.surface,
+    return Material(
+      color: tokens.surface,
+      shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: tokens.borderSubtle),
+        side: BorderSide(color: tokens.borderSubtle),
       ),
+      clipBehavior: Clip.antiAlias,
       child: ExpansionTile(
         initiallyExpanded: _groupMatrixExpanded,
         onExpansionChanged: (v) => setState(() => _groupMatrixExpanded = v),
@@ -3354,12 +3413,8 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
                           ],
                         ),
                       ),
-                      Scrollbar(
-                        thumbVisibility: true,
-                        child: SingleChildScrollView(
-                          scrollDirection: Axis.horizontal,
-                          physics: const BouncingScrollPhysics(),
-                          child: DataTable(
+                      CoControlledHorizontalScroll(
+                        child: DataTable(
                             columnSpacing: 14,
                             horizontalMargin: 8,
                             headingRowHeight: 38,
@@ -3413,7 +3468,6 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
                             ],
                           ),
                         ),
-                      ),
                     ],
                   ),
           ),
@@ -3515,6 +3569,7 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
 
               final quickFilterDropdown = DropdownButtonFormField<String>(
                 value: validQuickFilter,
+                isExpanded: true,
                 dropdownColor: tokens.surfaceElevated,
                 decoration: InputDecoration(
                   labelText: 'Quick Filter',
@@ -3873,11 +3928,8 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
               ],
             ] else ...[
               // Desktop / Tablet Horizontal Data Table
-              Scrollbar(
-                thumbVisibility: true,
-                child: SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: DataTable(
+              CoControlledHorizontalScroll(
+                child: DataTable(
                     headingRowColor: WidgetStateProperty.all(tokens.surfaceSubtle),
                     headingTextStyle: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: tokens.textSecondary),
                     dataTextStyle: TextStyle(fontSize: 12, color: tokens.textPrimary),
@@ -3924,7 +3976,6 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
                     }).toList(),
                   ),
                 ),
-              ),
             ],
             const SizedBox(height: 12),
             Wrap(
@@ -4182,11 +4233,8 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
               }),
             ] else ...[
               // Desktop / Tablet Horizontal Data Table
-              Scrollbar(
-                thumbVisibility: true,
-                child: SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: DataTable(
+              CoControlledHorizontalScroll(
+                child: DataTable(
                     headingRowColor: WidgetStateProperty.all(tokens.surfaceSubtle),
                     headingTextStyle: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: tokens.textSecondary),
                     dataTextStyle: TextStyle(fontSize: 12, color: tokens.textPrimary),
@@ -4212,7 +4260,6 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
                     }).toList(),
                   ),
                 ),
-              ),
             ],
             const SizedBox(height: 12),
             ElevatedButton.icon(
@@ -4384,10 +4431,9 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
     final dossierAsync = ref.watch(clientDossierDataProvider(clientCode));
     return dossierAsync.when(
       loading: () => const IcareListSkeleton(itemCount: 6),
-      error: (err, _) => Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(color: tokens.dangerBg, borderRadius: BorderRadius.circular(8), border: Border.all(color: tokens.dangerBorder)),
-        child: Text(AppErrorDetails.from(err).message, style: TextStyle(color: tokens.dangerText)),
+      error: (err, _) => CoInlineErrorCard(
+        error: err,
+        onRetry: () => ref.invalidate(clientDossierDataProvider(clientCode)),
       ),
       data: (dossier) {
         final cInfo = dossier['customer_info'] as Map<String, dynamic>? ?? {};
@@ -4597,11 +4643,13 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
                     const SizedBox(height: 4),
                     Text('Code: ${c['client_code'] ?? "N/A"} · Nickname: ${c['nickname'] ?? "None"}', style: TextStyle(fontSize: 12, color: tokens.textMuted)),
                     const SizedBox(height: 4),
-                    Row(
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 6,
+                      crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
                         _buildLifecycleBadge(c['status']?.toString() ?? 'Unknown'),
                         if (!isOfficer) ...[
-                          const SizedBox(width: 8),
                           OutlinedButton.icon(
                             style: OutlinedButton.styleFrom(
                               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -4834,11 +4882,8 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
         return Container(
           padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(color: tokens.surface, borderRadius: BorderRadius.circular(8), border: Border.all(color: tokens.borderSubtle)),
-          child: Scrollbar(
-            thumbVisibility: true,
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: DataTable(
+          child: CoControlledHorizontalScroll(
+            child: DataTable(
                 headingRowColor: WidgetStateProperty.all(tokens.surfaceSubtle),
                 headingTextStyle: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: tokens.textSecondary),
                 dataTextStyle: TextStyle(fontSize: 12, color: tokens.textPrimary),
@@ -4867,7 +4912,6 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
                 }).toList(),
               ),
             ),
-          ),
         );
       },
     );
@@ -4886,8 +4930,11 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          Wrap(
+            spacing: 8,
+            runSpacing: 6,
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               Text('Repayment Ledger & Transaction History', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15, color: tokens.textPrimary)),
               Row(
@@ -5009,11 +5056,8 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
                   );
                 }
 
-                return Scrollbar(
-                  thumbVisibility: true,
-                  child: SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: DataTable(
+                return CoControlledHorizontalScroll(
+                  child: DataTable(
                       headingRowColor: WidgetStateProperty.all(tokens.surfaceSubtle),
                       headingTextStyle: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: tokens.textSecondary),
                       dataTextStyle: TextStyle(fontSize: 12, color: tokens.textPrimary),
@@ -5045,23 +5089,24 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
                         ]);
                       }).toList(),
                     ),
-                  ),
-                );
+                  );
               },
             ),
           const SizedBox(height: 20),
 
           // Flag for Reversal Expander
-          Theme(
-            data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-            child: ExpansionTile(
-              iconColor: tokens.dangerText,
-              collapsedIconColor: tokens.dangerText,
-              title: Text('Flag a Repayment for Reversal', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: tokens.dangerText)),
-              children: [
-                Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
+          Material(
+            color: Colors.transparent,
+            child: Theme(
+              data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+              child: ExpansionTile(
+                iconColor: tokens.dangerText,
+                collapsedIconColor: tokens.dangerText,
+                title: Text('Flag a Repayment for Reversal', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: tokens.dangerText)),
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       DropdownButtonFormField<String>(
@@ -5116,6 +5161,7 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
                 ),
               ],
             ),
+          ),
           ),
         ],
       ),
@@ -5188,8 +5234,11 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          Wrap(
+            spacing: 8,
+            runSpacing: 6,
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               Text('Savings Ledger & Running Balance', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15, color: tokens.textPrimary)),
               Row(
@@ -5306,11 +5355,8 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
                 );
               }
 
-              return Scrollbar(
-                thumbVisibility: true,
-                child: SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: DataTable(
+              return CoControlledHorizontalScroll(
+                child: DataTable(
                     headingRowColor: WidgetStateProperty.all(tokens.surfaceSubtle),
                     headingTextStyle: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: tokens.textSecondary),
                     dataTextStyle: TextStyle(fontSize: 12, color: tokens.textPrimary),
@@ -5358,8 +5404,7 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
                       ]);
                     }).toList(),
                   ),
-                ),
-              );
+                );
             },
           ),
           const SizedBox(height: 20),
@@ -5487,11 +5532,8 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
                       );
                     }
 
-                    return Scrollbar(
-                      thumbVisibility: true,
-                      child: SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        child: DataTable(
+                    return CoControlledHorizontalScroll(
+                      child: DataTable(
                           headingRowColor: WidgetStateProperty.all(tokens.surfaceSubtle),
                           headingTextStyle: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: tokens.textSecondary),
                           dataTextStyle: TextStyle(fontSize: 12, color: tokens.textPrimary),
@@ -5520,8 +5562,7 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
                             ]);
                           }).toList(),
                         ),
-                      ),
-                    );
+                      );
                   },
                 ),
             ],
@@ -5683,11 +5724,8 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
               if (history.isEmpty)
                 Center(child: Padding(padding: const EdgeInsets.all(16), child: Text('No prior status transitions recorded.', style: TextStyle(color: tokens.textMuted))))
               else
-                Scrollbar(
-                  thumbVisibility: true,
-                  child: SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: DataTable(
+                CoControlledHorizontalScroll(
+                  child: DataTable(
                       headingRowColor: WidgetStateProperty.all(tokens.surfaceSubtle),
                       headingTextStyle: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: tokens.textSecondary),
                       dataTextStyle: TextStyle(fontSize: 12, color: tokens.textPrimary),
@@ -5709,7 +5747,6 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
                       }).toList(),
                     ),
                   ),
-                ),
             ],
           ),
         ),
@@ -6087,38 +6124,37 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
     final tokens = IcareSurfaceTokens.of(context);
     final incomingAsync = ref.watch(incomingTransfersProvider);
 
-    return Container(
-      decoration: BoxDecoration(
-        color: tokens.surface,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: tokens.borderSubtle),
-      ),
-      padding: const EdgeInsets.all(24),
+    return IcareCard(
+      padding: EdgeInsets.all(MediaQuery.of(context).size.width < 700 ? 14 : 20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: tokens.infoBg,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Icon(Icons.move_to_inbox_rounded, color: tokens.infoDot, size: 24),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('Incoming Client Transfers', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: tokens.textPrimary)),
-                    const SizedBox(height: 2),
-                    Text('Review, accept, and assign incoming clients transferred from other branches to a local Credit Officer and Solidarity Group.', style: TextStyle(fontSize: 12, color: tokens.textMuted)),
-                  ],
-                ),
-              ),
-              OutlinedButton.icon(
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final titleGroup = Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: tokens.infoBg,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Icon(Icons.move_to_inbox_rounded, color: tokens.infoDot, size: 22),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Incoming Client Transfers', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: tokens.textPrimary)),
+                        const SizedBox(height: 2),
+                        Text('Review, accept, and assign incoming clients transferred from other branches to a local Credit Officer and Solidarity Group.', style: TextStyle(fontSize: 12, color: tokens.textMuted)),
+                      ],
+                    ),
+                  ),
+                ],
+              );
+              final refreshBtn = OutlinedButton.icon(
                 style: OutlinedButton.styleFrom(
                   foregroundColor: tokens.textSecondary,
                   side: BorderSide(color: tokens.borderStrong),
@@ -6126,34 +6162,34 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
                 onPressed: () => ref.invalidate(incomingTransfersProvider),
                 icon: const Icon(Icons.refresh_rounded, size: 16),
                 label: const Text('Refresh'),
-              ),
-            ],
+              );
+              if (constraints.maxWidth < 520) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    titleGroup,
+                    const SizedBox(height: 10),
+                    refreshBtn,
+                  ],
+                );
+              }
+              return Row(
+                children: [
+                  Expanded(child: titleGroup),
+                  const SizedBox(width: 12),
+                  refreshBtn,
+                ],
+              );
+            },
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 16),
           Divider(color: tokens.borderSubtle),
           const SizedBox(height: 16),
           incomingAsync.when(
-            loading: () => const Padding(
-              padding: EdgeInsets.symmetric(vertical: 40),
-              child: Center(child: CircularProgressIndicator()),
-            ),
-            error: (err, stack) => Padding(
-              padding: const EdgeInsets.symmetric(vertical: 20),
-              child: Center(
-                child: Column(
-                  children: [
-                    Text(
-                      'Failed to load incoming transfers: ${AppErrorDetails.from(err).message}',
-                      style: TextStyle(color: tokens.dangerText, fontSize: 13),
-                    ),
-                    const SizedBox(height: 8),
-                    ElevatedButton(
-                      onPressed: () => ref.invalidate(incomingTransfersProvider),
-                      child: const Text('Retry'),
-                    ),
-                  ],
-                ),
-              ),
+            loading: () => const IcareListSkeleton(itemCount: 4),
+            error: (err, stack) => CoInlineErrorCard(
+              error: err,
+              onRetry: () => ref.invalidate(incomingTransfersProvider),
             ),
             data: (transfers) {
               if (transfers.isEmpty) {
@@ -6505,8 +6541,11 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          Wrap(
+            spacing: 8,
+            runSpacing: 4,
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               Text('Immutable Compliance Audit Trail', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15, color: tokens.textPrimary)),
               Text('${auditTrail.length} Audit Entries', style: TextStyle(fontSize: 12, color: tokens.textMuted, fontWeight: FontWeight.w600)),
@@ -6567,11 +6606,8 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
                 );
               }
 
-              return Scrollbar(
-                thumbVisibility: true,
-                child: SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: DataTable(
+              return CoControlledHorizontalScroll(
+                child: DataTable(
                     headingRowColor: WidgetStateProperty.all(tokens.surfaceSubtle),
                     headingTextStyle: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: tokens.textSecondary),
                     dataTextStyle: TextStyle(fontSize: 12, color: tokens.textPrimary),
@@ -6592,8 +6628,7 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
                       ]);
                     }).toList(),
                   ),
-                ),
-              );
+                );
             },
           ),
         ],
@@ -6624,9 +6659,11 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
             children: [
               Icon(Icons.calendar_month_outlined, size: 18, color: tokens.brandPrimary),
               const SizedBox(width: 8),
-              Text(
-                'Repayment Schedule & Installments',
-                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15, color: tokens.textPrimary),
+              Flexible(
+                child: Text(
+                  'Repayment Schedule & Installments',
+                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15, color: tokens.textPrimary),
+                ),
               ),
             ],
           ),
@@ -6651,11 +6688,8 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
               ),
             )
           else
-            Scrollbar(
-              thumbVisibility: true,
-              child: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: DataTable(
+            CoControlledHorizontalScroll(
+              child: DataTable(
                   headingRowColor: WidgetStateProperty.all(tokens.surfaceSubtle),
                   headingTextStyle: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: tokens.textSecondary),
                   dataTextStyle: TextStyle(fontSize: 12, color: tokens.textPrimary),
@@ -6708,7 +6742,6 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
                   }).toList(),
                 ),
               ),
-            ),
         ],
       ),
     );

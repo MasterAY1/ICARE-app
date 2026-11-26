@@ -6,12 +6,18 @@ import '../../../core/utils/currency_formatter.dart';
 import '../../../core/auth/auth_controller.dart';
 import '../../../core/auth/auth_state.dart';
 import '../../shared/utils/file_picker_helper.dart';
+import '../../../core/widgets/icare_card.dart';
+import '../../../core/widgets/icare_data_table.dart';
+import '../../../core/widgets/icare_section_header.dart';
 import '../../../core/widgets/icare_skeleton_loader.dart';
+import '../../../core/widgets/icare_status_badge.dart';
 import '../../../core/theme/icare_theme_tokens.dart';
 import '../../../core/errors/app_error_formatter.dart';
 import '../../../core/offline/offline_database_service.dart';
 import '../data/datasources/co_api_service.dart';
 import 'widgets/asset_catalog_picker_card.dart';
+import 'widgets/co_origination_charts.dart';
+import 'widgets/co_shared_widgets.dart';
 import 'package:frontend_flutter/core/theme/icare_motion.dart';
 
 final loanOriginationTabProvider = StateProvider<String>((ref) => 'Client Registration');
@@ -1149,6 +1155,13 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
       'Edit Client & Guarantor'
     ];
 
+    final groupsCount = ref.watch(originationGroupsProvider).valueOrNull?.length ?? 0;
+    final pendingLoansList =
+        (ref.watch(pendingDisbursementsProvider).valueOrNull?['pending_loans'] as List<dynamic>?) ??
+            const [];
+    final stockedSkus = (_assetCatalogSummary['branch_stocked_skus'] as num?)?.toInt() ?? 0;
+    final totalStockUnits = (_assetCatalogSummary['total_units_available'] as num?)?.toInt() ?? 0;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1161,13 +1174,13 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
             children: [
               Text(
                 'Origination & Registration',
-                style: TextStyle(fontSize: 26, fontWeight: FontWeight.w800, color: tokens.textPrimary, letterSpacing: -0.5),
+                style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800, color: tokens.textPrimary, letterSpacing: -0.5),
               ),
               OutlinedButton.icon(
                 onPressed: _openAssetCatalogModal,
                 icon: Icon(Icons.inventory_2_outlined, size: 17, color: tokens.infoText),
                 label: Text(
-                  'Asset Stock & Price List (${(_assetCatalogSummary['total_units_available'] as num?)?.toInt() ?? 0})',
+                  'Asset Stock & Price List ($totalStockUnits)',
                   style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: tokens.infoText),
                 ),
                 style: OutlinedButton.styleFrom(
@@ -1181,16 +1194,27 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
           ),
           const SizedBox(height: 16),
 
+          CoOriginationFlowCard(
+            activeTab: activeTab,
+            groupsCount: groupsCount,
+            stockedSkus: stockedSkus,
+            totalStockUnits: totalStockUnits,
+            pendingLoans: pendingLoansList,
+            hasSelectedClient: _selectedAppClient != null,
+            hasSchedulePreview: _schedulePreview != null,
+            onSelectTab: (next) {
+              ref.read(loanOriginationTabProvider.notifier).state = next;
+              setState(() => _flashMessage = null);
+            },
+          ),
+          const SizedBox(height: 16),
+
           // Cross-tab Flash Message
           if (_flashMessage != null) ...[
-            Container(
+            IcareCard(
+              backgroundColor: tokens.successBg,
+              border: Border.all(color: tokens.successBorder),
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              margin: const EdgeInsets.only(bottom: 16),
-              decoration: BoxDecoration(
-                color: tokens.successBg,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: tokens.successBorder),
-              ),
               child: Row(
                 children: [
                   Icon(Icons.check_circle_outline, color: tokens.successText, size: 18),
@@ -1208,6 +1232,7 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                 ],
               ),
             ),
+            const SizedBox(height: 16),
           ],
 
           // Horizontal Pill Tabs Navigation (app.py L3220-3228 & L557-583)
@@ -1289,36 +1314,34 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Role-based Registration Method: Super Admin / Admin (app.py L3337-3341)
         if (isAdmin) ...[
-          Row(
+          Wrap(
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 8,
+            runSpacing: 8,
             children: [
               Text(
-                'Registration Method: ',
+                'Registration Method:',
                 style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: tokens.textSecondary),
               ),
-              const SizedBox(width: 8),
               ...['Single Client', 'Bulk Onboarding'].map((m) {
                 final isSel = _regType == m;
-                return Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: InkWell(
-                    onTap: () => setState(() => _regType = m),
-                    borderRadius: BorderRadius.circular(8),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: isSel ? const Color(0xFF1D4ED8) : tokens.surfaceSubtle,
-                        border: Border.all(color: isSel ? const Color(0xFF1D4ED8) : tokens.borderSubtle),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        m,
-                        style: TextStyle(
-                          fontSize: 12.5,
-                          fontWeight: isSel ? FontWeight.w700 : FontWeight.w500,
-                          color: isSel ? Colors.white : tokens.textSecondary,
-                        ),
+                return InkWell(
+                  onTap: () => setState(() => _regType = m),
+                  borderRadius: BorderRadius.circular(8),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: isSel ? const Color(0xFF1D4ED8) : tokens.surfaceSubtle,
+                      border: Border.all(color: isSel ? const Color(0xFF1D4ED8) : tokens.borderSubtle),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      m,
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: isSel ? FontWeight.w700 : FontWeight.w500,
+                        color: isSel ? Colors.white : tokens.textSecondary,
                       ),
                     ),
                   ),
@@ -1329,16 +1352,10 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
           const SizedBox(height: 16),
         ],
 
-        // BULK ONBOARDING MODE (app.py L3631-3792)
+        // BULK ONBOARDING MODE
         if (isAdmin && _regType == 'Bulk Onboarding') ...[
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(
-              color: tokens.surface,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: tokens.borderSubtle),
-            ),
+          IcareCard(
+            padding: const EdgeInsets.all(20),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -1366,7 +1383,7 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                 ),
                 const SizedBox(height: 16),
 
-                _buildStreamlitFileUploader(
+                _buildDocumentUploadZone(
                   label: 'Upload Excel Template',
                   allowedTypesText: 'Limit 10 MB per file • XLSX',
                   selectedFileName: _bulkExcelFileName,
@@ -1588,8 +1605,11 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 4,
+                  alignment: WrapAlignment.spaceBetween,
+                  crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
                     Text(
                       'STEP $_wizardStep OF 4',
@@ -1795,8 +1815,15 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                       ),
                       child: const Row(
                         mainAxisAlignment: MainAxisAlignment.center,
+                        mainAxisSize: MainAxisSize.min,
                         children: [
-                          Text('Continue to Business Profile', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
+                          Flexible(
+                            child: Text(
+                              'Continue to Business Profile',
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+                            ),
+                          ),
                           SizedBox(width: 8),
                           Icon(Icons.arrow_forward, size: 16),
                         ],
@@ -1894,8 +1921,15 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                             ),
                             child: const Row(
                               mainAxisAlignment: MainAxisAlignment.center,
+                              mainAxisSize: MainAxisSize.min,
                               children: [
-                                Text('Continue to Guarantor', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
+                                Flexible(
+                                  child: Text(
+                                    'Continue to Guarantor',
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+                                  ),
+                                ),
                                 SizedBox(width: 8),
                                 Icon(Icons.arrow_forward, size: 16),
                               ],
@@ -2013,8 +2047,15 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                             ),
                             child: const Row(
                               mainAxisAlignment: MainAxisAlignment.center,
+                              mainAxisSize: MainAxisSize.min,
                               children: [
-                                Text('Continue to KYC Uploads', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
+                                Flexible(
+                                  child: Text(
+                                    'Continue to KYC Uploads',
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+                                  ),
+                                ),
                                 SizedBox(width: 8),
                                 Icon(Icons.arrow_forward, size: 16),
                               ],
@@ -2090,9 +2131,9 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                           ],
                         ),
                         const SizedBox(height: 10),
-                        _buildStreamlitFileUploader(
+                        _buildDocumentUploadZone(
                           label: 'Upload ID Document',
-                          allowedTypesText: 'Limit 200MB per file • JPG, JPEG, PNG, PDF',
+                          allowedTypesText: 'Limit 10 MB per file • JPG, JPEG, PNG, PDF',
                           selectedFileName: _idDocFileName,
                           category: 'id_card',
                           sizeInfo: _uploadSizeInfo['id_card'],
@@ -2107,9 +2148,9 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                           }),
                         ),
                         const SizedBox(height: 10),
-                        _buildStreamlitFileUploader(
+                        _buildDocumentUploadZone(
                           label: 'Upload Passport Photograph',
-                          allowedTypesText: 'Limit 200MB per file • JPG, JPEG, PNG',
+                          allowedTypesText: 'Limit 10 MB per file • JPG, JPEG, PNG',
                           selectedFileName: _passportFileName,
                           category: 'passport',
                           sizeInfo: _uploadSizeInfo['passport'],
@@ -2179,9 +2220,9 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                           ],
                         ),
                         const SizedBox(height: 10),
-                        _buildStreamlitFileUploader(
+                        _buildDocumentUploadZone(
                           label: 'Upload Guarantor ID Document',
-                          allowedTypesText: 'Limit 200MB per file • JPG, JPEG, PNG, PDF',
+                          allowedTypesText: 'Limit 10 MB per file • JPG, JPEG, PNG, PDF',
                           selectedFileName: _guarIdDocFileName,
                           category: 'guarantor_id_card',
                           sizeInfo: _uploadSizeInfo['guarantor_id_card'],
@@ -2196,9 +2237,9 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                           }),
                         ),
                         const SizedBox(height: 10),
-                        _buildStreamlitFileUploader(
+                        _buildDocumentUploadZone(
                           label: 'Upload Guarantor Passport Photograph',
-                          allowedTypesText: 'Limit 200MB per file • JPG, JPEG, PNG',
+                          allowedTypesText: 'Limit 10 MB per file • JPG, JPEG, PNG',
                           selectedFileName: _guarPassportFileName,
                           category: 'guarantor_passport',
                           sizeInfo: _uploadSizeInfo['guarantor_passport'],
@@ -2249,13 +2290,17 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                             ),
                             child: _isSubmitting
                                 ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                                : const Row(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      Icon(Icons.check_circle_outline, size: 18),
-                                      SizedBox(width: 8),
-                                      Text('Register Client', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
-                                    ],
+                                : const FittedBox(
+                                    fit: BoxFit.scaleDown,
+                                    child: Row(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(Icons.check_circle_outline, size: 18),
+                                        SizedBox(width: 8),
+                                        Text('Register Client', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
+                                      ],
+                                    ),
                                   ),
                           ),
                         ),
@@ -2271,8 +2316,8 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
     );
   }
 
-  // Streamlit Authentic File Uploader Widget
-  Widget _buildStreamlitFileUploader({
+  // Modern Document Upload Zone Widget
+  Widget _buildDocumentUploadZone({
     required String label,
     required String allowedTypesText,
     required String? selectedFileName,
@@ -2494,12 +2539,10 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
               value,
               maxLines: 1,
               softWrap: false,
-              style: TextStyle(
+              style: coTabularStyle(
                 fontSize: isHero ? 16 : 14,
                 fontWeight: FontWeight.w800,
                 color: resolvedAccent,
-                fontFamily: 'monospace',
-                fontFeatures: const [FontFeature.tabularFigures()],
               ),
             ),
           ),
@@ -3503,58 +3546,46 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
 
     final isMobile = MediaQuery.of(context).size.width < 600;
 
-    return Container(
+    return IcareCard(
       padding: EdgeInsets.all(isMobile ? 14 : 20),
-      decoration: BoxDecoration(
-        color: tokens.surface,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: tokens.borderSubtle),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: tokens.isDark ? 0.16 : 0.02),
-            blurRadius: 6,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text('Pending Disbursements', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 18, color: tokens.textPrimary)),
-              IconButton(
-                icon: Icon(Icons.refresh, size: 20, color: tokens.textSecondary),
-                onPressed: () => ref.refresh(pendingDisbursementsProvider),
-              ),
-            ],
+          IcareSectionHeader(
+            title: 'Pending Disbursements',
+            subtitle: 'Queued loan applications awaiting checker verification & activation',
+            action: IconButton(
+              icon: Icon(Icons.refresh, size: 20, color: tokens.textSecondary),
+              onPressed: () => ref.refresh(pendingDisbursementsProvider),
+            ),
           ),
           const SizedBox(height: 12),
 
           if (_disbSuccessNotice != null) ...[
-            Container(
+            IcareCard(
+              backgroundColor: tokens.successBg,
+              border: Border.all(color: tokens.successBorder),
               padding: const EdgeInsets.all(12),
-              margin: const EdgeInsets.only(bottom: 12),
-              decoration: BoxDecoration(color: tokens.successBg, borderRadius: BorderRadius.circular(6), border: Border.all(color: tokens.successBorder)),
               child: Text(_disbSuccessNotice!, style: TextStyle(color: tokens.successText, fontWeight: FontWeight.w600, fontSize: 13)),
             ),
+            const SizedBox(height: 12),
           ],
           if (_disbAdjustNotice != null) ...[
-            Container(
+            IcareCard(
+              backgroundColor: tokens.warningBg,
+              border: Border.all(color: tokens.warningBorder),
               padding: const EdgeInsets.all(12),
-              margin: const EdgeInsets.only(bottom: 12),
-              decoration: BoxDecoration(color: tokens.warningBg, borderRadius: BorderRadius.circular(6), border: Border.all(color: tokens.warningBorder)),
               child: Text('Schedule Adjusted: $_disbAdjustNotice', style: TextStyle(color: tokens.warningText, fontWeight: FontWeight.w600, fontSize: 13)),
             ),
+            const SizedBox(height: 12),
           ],
 
           pendingAsync.when(
             loading: () => const IcareTableSkeleton(rowCount: 5, hasFilterBar: false),
-            error: (err, _) => Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(color: tokens.dangerBg, borderRadius: BorderRadius.circular(6), border: Border.all(color: tokens.dangerBorder)),
-              child: Text('Error loading pending loans: ${AppErrorDetails.from(err).message}', style: TextStyle(color: tokens.dangerText, fontSize: 13)),
+            error: (err, _) => CoInlineErrorCard(
+              error: err,
+              fallbackTitle: 'Unable to Load Pending Loans',
+              onRetry: () => ref.invalidate(pendingDisbursementsProvider),
             ),
             data: (data) {
               final loans = (data['pending_loans'] as List<dynamic>?) ?? [];
@@ -3564,65 +3595,120 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   if (!canAuthorize)
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(12),
-                      margin: const EdgeInsets.only(bottom: 16),
-                      decoration: BoxDecoration(color: tokens.infoBg, borderRadius: BorderRadius.circular(6), border: Border.all(color: tokens.infoBorder)),
-                      child: Text('Note: You are a Credit Officer. Only Branch Managers or Area Managers can authorize and activate disbursements.', style: TextStyle(color: tokens.infoText, fontSize: 13)),
-                    ),
-
-                  if (loans.isEmpty)
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(24),
-                      child: Center(
-                        child: Text('No pending loans found.', style: TextStyle(color: tokens.textMuted, fontSize: 13)),
-                      ),
-                    )
-                  else
-                    Container(
-                      width: double.infinity,
-                      decoration: BoxDecoration(border: Border.all(color: tokens.borderSubtle), borderRadius: BorderRadius.circular(6)),
-                      child: Scrollbar(
-                        thumbVisibility: true,
-                        child: SingleChildScrollView(
-                          scrollDirection: Axis.horizontal,
-                          child: DataTable(
-                            headingRowColor: WidgetStateProperty.all(tokens.surfaceSubtle),
-                            headingTextStyle: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: tokens.textPrimary),
-                            dataTextStyle: TextStyle(fontSize: 12, color: tokens.textSecondary),
-                            columns: const [
-                              DataColumn(label: Text('Client Name', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
-                              DataColumn(label: Text('Group Name', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
-                              DataColumn(label: Text('Date', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
-                              DataColumn(label: Text('Officer', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
-                              DataColumn(label: Text('Loan Amount', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12)), numeric: true),
-                              DataColumn(label: Text('Loan Product', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
-                              DataColumn(label: Text('Reserved Assets', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
-                            ],
-                            rows: loans.map((l) {
-                              final cName = l['client_name']?.toString() ?? '-';
-                              final gName = l['group_name']?.toString() ?? '-';
-                              final dDate = l['date']?.toString() ?? '-';
-                              final off = l['credit_officer']?.toString() ?? '-';
-                              final amt = (l['loan_amount'] as num?)?.toDouble() ?? 0.0;
-                              final prod = l['loan_product']?.toString() ?? '-';
-                              final assetSum = l['asset_summary']?.toString() ?? '—';
-
-                              return DataRow(cells: [
-                                DataCell(Text(cName, style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12, color: tokens.textPrimary))),
-                                DataCell(Text(gName, style: TextStyle(fontSize: 12, color: tokens.textSecondary))),
-                                DataCell(Text(dDate, style: TextStyle(fontSize: 12, color: tokens.textSecondary))),
-                                DataCell(Text(off, style: TextStyle(fontSize: 12, color: tokens.textSecondary))),
-                                DataCell(Text(CurrencyFormatter.formatNaira(amt), style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: tokens.brandPrimary, fontFeatures: const [FontFeature.tabularFigures()]))),
-                                DataCell(Text(prod, style: TextStyle(fontSize: 12, color: tokens.textSecondary))),
-                                DataCell(Text(assetSum, style: TextStyle(fontSize: 11.5, color: assetSum != '—' ? tokens.infoText : tokens.textMuted, fontWeight: assetSum != '—' ? FontWeight.w600 : FontWeight.w400))),
-                              ]);
-                            }).toList(),
-                          ),
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 16),
+                      child: IcareCard(
+                        backgroundColor: tokens.infoBg,
+                        border: Border.all(color: tokens.infoBorder),
+                        padding: const EdgeInsets.all(12),
+                        child: Text(
+                          'Credit Officer view: Branch Managers or Area Managers authorize and activate disbursements.',
+                          style: TextStyle(color: tokens.infoText, fontSize: 12.5, fontWeight: FontWeight.w600),
                         ),
                       ),
+                    ),
+
+                  if (loans.isNotEmpty) ...[
+                    CoPendingDisbursementAnalyticsCard(pendingLoans: loans),
+                    const SizedBox(height: 16),
+                  ],
+
+                  if (loans.isEmpty)
+                    const CoEmptyStateCard(
+                      title: 'Zero Pending Disbursements',
+                      message: 'No pending loans are currently queued for disbursement.',
+                      icon: Icons.check_circle_outline_rounded,
+                    )
+                  else if (isMobile)
+                    Column(
+                      children: loans.map((l) {
+                        final cName = l['client_name']?.toString() ?? '-';
+                        final gName = l['group_name']?.toString() ?? '-';
+                        final dDate = l['date']?.toString() ?? '-';
+                        final off = l['credit_officer']?.toString() ?? '-';
+                        final amt = (l['loan_amount'] as num?)?.toDouble() ?? 0.0;
+                        final prod = l['loan_product']?.toString() ?? '-';
+                        final assetSum = l['asset_summary']?.toString() ?? '—';
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 10),
+                          child: IcareCard(
+                            backgroundColor: tokens.surfaceSubtle,
+                            padding: const EdgeInsets.all(12),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        cName,
+                                        style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5, color: tokens.textPrimary),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    IcareStatusBadge(label: prod, variant: IcareBadgeVariant.info, showDot: false),
+                                  ],
+                                ),
+                                const SizedBox(height: 4),
+                                Text('$gName • Officer: $off • $dDate', style: TextStyle(fontSize: 11.5, color: tokens.textMuted)),
+                                const SizedBox(height: 8),
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Text(
+                                      CurrencyFormatter.formatNaira(amt),
+                                      style: coTabularStyle(fontSize: 14.5, fontWeight: FontWeight.w800, color: tokens.brandPrimary),
+                                    ),
+                                    if (assetSum != '—')
+                                      Flexible(
+                                        child: Text(
+                                          assetSum,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: tokens.infoText),
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      }).toList(),
+                    )
+                  else
+                    IcareDataTable(
+                      minWidth: 700,
+                      columns: const [
+                        DataColumn(label: Text('Client Name')),
+                        DataColumn(label: Text('Group Name')),
+                        DataColumn(label: Text('Date')),
+                        DataColumn(label: Text('Officer')),
+                        DataColumn(label: Text('Loan Amount'), numeric: true),
+                        DataColumn(label: Text('Loan Product')),
+                        DataColumn(label: Text('Reserved Assets')),
+                      ],
+                      rows: loans.map((l) {
+                        final cName = l['client_name']?.toString() ?? '-';
+                        final gName = l['group_name']?.toString() ?? '-';
+                        final dDate = l['date']?.toString() ?? '-';
+                        final off = l['credit_officer']?.toString() ?? '-';
+                        final amt = (l['loan_amount'] as num?)?.toDouble() ?? 0.0;
+                        final prod = l['loan_product']?.toString() ?? '-';
+                        final assetSum = l['asset_summary']?.toString() ?? '—';
+
+                        return DataRow(cells: [
+                          DataCell(Text(cName, style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12, color: tokens.textPrimary))),
+                          DataCell(Text(gName, style: TextStyle(fontSize: 12, color: tokens.textSecondary))),
+                          DataCell(Text(dDate, style: coTabularStyle(fontSize: 12, color: tokens.textSecondary))),
+                          DataCell(Text(off, style: TextStyle(fontSize: 12, color: tokens.textSecondary))),
+                          DataCell(Text(CurrencyFormatter.formatNaira(amt), style: coTabularStyle(fontSize: 12, fontWeight: FontWeight.w700, color: tokens.brandPrimary))),
+                          DataCell(IcareStatusBadge(label: prod, variant: IcareBadgeVariant.info, showDot: false)),
+                          DataCell(Text(assetSum, style: TextStyle(fontSize: 11.5, color: assetSum != '—' ? tokens.infoText : tokens.textMuted, fontWeight: assetSum != '—' ? FontWeight.w600 : FontWeight.w400))),
+                        ]);
+                      }).toList(),
                     ),
 
                   // Checker Action: Activate Loan (app.py L3251-3267)
@@ -4020,27 +4106,26 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
     final dur = preview['duration']?.toString() ?? '${installments.length}';
     final freq = preview['frequency']?.toString() ?? '';
 
-    return Container(
-      width: double.infinity,
+    return IcareCard(
+      backgroundColor: tokens.surfaceSubtle,
       padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: tokens.surfaceSubtle,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: tokens.borderStrong),
-      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                'Repayment Schedule Preview',
-                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13.5, color: tokens.textPrimary),
+              Expanded(
+                child: Text(
+                  'Repayment Schedule Preview',
+                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13.5, color: tokens.textPrimary),
+                ),
               ),
-              Text(
-                '$dur installments · $freq',
-                style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: tokens.brandPrimary),
+              const SizedBox(width: 8),
+              IcareStatusBadge(
+                label: '$dur installments · $freq',
+                variant: IcareBadgeVariant.success,
+                showDot: false,
               ),
             ],
           ),
@@ -4054,6 +4139,7 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
             ],
           ),
           if (installments.isNotEmpty) ...[
+            CoScheduleAmortizationChart(installments: installments),
             const SizedBox(height: 8),
             ExpansionTile(
               tilePadding: EdgeInsets.zero,

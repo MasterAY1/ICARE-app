@@ -3,8 +3,9 @@ import '../../../../core/errors/app_error_formatter.dart';
 import '../../../../core/theme/icare_motion.dart';
 import '../../../../core/theme/icare_theme_tokens.dart';
 import '../../../../core/utils/currency_formatter.dart';
+import '../../../../core/widgets/icare_status_badge.dart';
 
-/// Displays an interactive Branch Asset Inventory & October 2026 Price List
+/// Displays an interactive Branch Asset Inventory & Master Asset Price List
 /// selector on the Loan Application tab for Asset Loans and Cash & Carry sales.
 class AssetCatalogPickerSection extends StatefulWidget {
   final String branchName;
@@ -568,7 +569,7 @@ class _AssetCatalogPickerSectionState extends State<AssetCatalogPickerSection> {
   }
 }
 
-/// Interactive Modal Dialog to inspect the October 2026 Master Asset Price List,
+/// Interactive Adaptive Sheet to inspect the Master Asset Price List,
 /// monitor live branch physical stock, and allow Procurement Officers/Admins to restock or set prices.
 Future<void> showBranchAssetCatalogDialog({
   required BuildContext context,
@@ -586,9 +587,11 @@ Future<void> showBranchAssetCatalogDialog({
   bool inStockOnly = true;
   final searchCtrl = TextEditingController();
 
-  await showIcareDialog(
+  await showIcareAdaptiveSheet(
     context: context,
-    builder: (ctx) {
+    mobileBreakpoint: 700,
+    desktopConstraints: const BoxConstraints(maxWidth: 900, maxHeight: 700),
+    builder: (ctx, isDialog) {
       return StatefulBuilder(
         builder: (ctx, setModalState) {
           final tokens = IcareSurfaceTokens.of(ctx);
@@ -757,167 +760,157 @@ Future<void> showBranchAssetCatalogDialog({
             remarksCtrl.dispose();
           }
 
-          return Dialog(
-            backgroundColor: tokens.surfaceElevated,
-            insetPadding: const EdgeInsets.all(16),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 880, maxHeight: 680),
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Icon(Icons.storefront_outlined, color: tokens.brandPrimary, size: 22),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Master Asset Price List & Branch Stock',
-                                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: tokens.textPrimary),
-                              ),
-                              Text(
-                                '$branchName • ${currSummary['total_units_available'] ?? 0} units available across ${currSummary['branch_stocked_skus'] ?? 0} stocked items (${items.length} total SKUs)',
-                                style: TextStyle(fontSize: 12, color: tokens.textMuted),
-                              ),
-                            ],
-                          ),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.close),
-                          onPressed: () => Navigator.of(ctx).pop(),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      children: [
-                        SizedBox(
-                          width: 260,
-                          child: TextField(
-                            controller: searchCtrl,
-                            decoration: const InputDecoration(
-                              isDense: true,
-                              prefixIcon: Icon(Icons.search, size: 18),
-                              hintText: 'Search catalog or SKU...',
-                              border: OutlineInputBorder(),
+          return Material(
+            color: tokens.surfaceElevated,
+            borderRadius: isDialog ? BorderRadius.circular(14) : BorderRadius.zero,
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.storefront_outlined, color: tokens.brandPrimary, size: 22),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Master Asset Price List & Branch Stock',
+                              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: tokens.textPrimary),
                             ),
-                            onChanged: (_) => setModalState(() {}),
-                          ),
-                        ),
-                        SizedBox(
-                          width: 240,
-                          child: DropdownButtonFormField<String>(
-                            isExpanded: true,
-                            value: catFilter,
-                            decoration: const InputDecoration(
-                              isDense: true,
-                              labelText: 'Category',
-                              border: OutlineInputBorder(),
+                            Text(
+                              '$branchName • ${currSummary['total_units_available'] ?? 0} units available across ${currSummary['branch_stocked_skus'] ?? 0} stocked items (${items.length} total SKUs)',
+                              style: TextStyle(fontSize: 12, color: tokens.textMuted),
                             ),
-                            items: [
-                              const DropdownMenuItem(value: 'ALL', child: Text('All Categories')),
-                              ...categories.map((c) {
-                                final cn = c['category']?.toString() ?? '';
-                                return DropdownMenuItem(value: cn, child: Text(cn, overflow: TextOverflow.ellipsis));
-                              }),
-                            ],
-                            onChanged: (v) {
-                              if (v != null) setModalState(() => catFilter = v);
-                            },
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close),
+                        onPressed: () => Navigator.of(ctx).pop(),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      final narrow = constraints.maxWidth < 540;
+                      return Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          SizedBox(
+                            width: narrow ? constraints.maxWidth : 260,
+                            child: TextField(
+                              controller: searchCtrl,
+                              decoration: const InputDecoration(
+                                isDense: true,
+                                prefixIcon: Icon(Icons.search, size: 18),
+                                hintText: 'Search catalog or SKU...',
+                                border: OutlineInputBorder(),
+                              ),
+                              onChanged: (_) => setModalState(() {}),
+                            ),
                           ),
-                        ),
-                        FilterChip(
-                          selected: inStockOnly,
-                          label: const Text('In Stock Only'),
-                          onSelected: (v) => setModalState(() => inStockOnly = v),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                    Expanded(
-                      child: ListView.separated(
-                        itemCount: visible.length,
-                        separatorBuilder: (_, __) => Divider(height: 1, color: tokens.borderSubtle),
-                        itemBuilder: (_, idx) {
-                          final it = visible[idx];
-                          final avail = (it['quantity_available'] as num?)?.toInt() ?? 0;
-                          final resv = (it['quantity_reserved'] as num?)?.toInt() ?? 0;
-                          final cash = (it['cash_and_carry_price'] as num?)?.toDouble() ?? 0.0;
-                          final p60 = (it['easy_buy_60d_price'] as num?)?.toDouble() ?? 0.0;
-                          final p120 = (it['easy_buy_120d_price'] as num?)?.toDouble() ?? 0.0;
+                          SizedBox(
+                            width: narrow ? constraints.maxWidth : 240,
+                            child: DropdownButtonFormField<String>(
+                              isExpanded: true,
+                              value: catFilter,
+                              decoration: const InputDecoration(
+                                isDense: true,
+                                labelText: 'Category',
+                                border: OutlineInputBorder(),
+                              ),
+                              items: [
+                                const DropdownMenuItem(value: 'ALL', child: Text('All Categories')),
+                                ...categories.map((c) {
+                                  final cn = c['category']?.toString() ?? '';
+                                  return DropdownMenuItem(value: cn, child: Text(cn, overflow: TextOverflow.ellipsis));
+                                }),
+                              ],
+                              onChanged: (v) {
+                                if (v != null) setModalState(() => catFilter = v);
+                              },
+                            ),
+                          ),
+                          FilterChip(
+                            selected: inStockOnly,
+                            label: const Text('In Stock Only'),
+                            onSelected: (v) => setModalState(() => inStockOnly = v),
+                          ),
+                        ],
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 10),
+                  Expanded(
+                    child: ListView.separated(
+                      itemCount: visible.length,
+                      separatorBuilder: (_, __) => Divider(height: 1, color: tokens.borderSubtle),
+                      itemBuilder: (_, idx) {
+                        final it = visible[idx];
+                        final avail = (it['quantity_available'] as num?)?.toInt() ?? 0;
+                        final resv = (it['quantity_reserved'] as num?)?.toInt() ?? 0;
+                        final cash = (it['cash_and_carry_price'] as num?)?.toDouble() ?? 0.0;
+                        final p60 = (it['easy_buy_60d_price'] as num?)?.toDouble() ?? 0.0;
+                        final p120 = (it['easy_buy_120d_price'] as num?)?.toDouble() ?? 0.0;
 
-                          return ListTile(
-                            dense: true,
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                            title: Row(
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    '${it['item_name']} (${it['sku_code']})',
-                                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: tokens.textPrimary),
-                                  ),
+                        return ListTile(
+                          dense: true,
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                          title: Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  '${it['item_name']} (${it['sku_code']})',
+                                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: tokens.textPrimary),
                                 ),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                  decoration: BoxDecoration(
-                                    color: avail > 0 ? tokens.successBg : tokens.surfaceSubtle,
-                                    borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(
-                                      color: avail > 0 ? tokens.successBorder : tokens.borderSubtle,
-                                    ),
-                                  ),
-                                  child: Text(
-                                    avail > 0 ? '$avail in stock${resv > 0 ? ' ($resv rsv)' : ''}' : 'Out of stock',
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.w700,
-                                      color: avail > 0 ? tokens.successText : tokens.textMuted,
-                                    ),
+                              ),
+                              const SizedBox(width: 8),
+                              IcareStatusBadge(
+                                label: avail > 0 ? '$avail in stock${resv > 0 ? ' ($resv rsv)' : ''}' : 'Out of stock',
+                                variant: avail > 0 ? IcareBadgeVariant.success : IcareBadgeVariant.neutral,
+                                showDot: false,
+                              ),
+                            ],
+                          ),
+                          subtitle: Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: Wrap(
+                              spacing: 12,
+                              runSpacing: 4,
+                              children: [
+                                Text('${it['category']}', style: TextStyle(fontSize: 11, color: tokens.textMuted)),
+                                Text(
+                                  cash > 0
+                                      ? 'Cash: ${CurrencyFormatter.formatNaira(cash)}  |  60D/12W: ${CurrencyFormatter.formatNaira(p60)}  |  120D/24W: ${CurrencyFormatter.formatNaira(p120)}'
+                                      : 'Custom / Branch Legacy Price',
+                                  style: TextStyle(
+                                    fontSize: 11.5,
+                                    fontWeight: FontWeight.w600,
+                                    color: tokens.textSecondary,
+                                    fontFeatures: const [FontFeature.tabularFigures()],
                                   ),
                                 ),
                               ],
                             ),
-                            subtitle: Padding(
-                              padding: const EdgeInsets.only(top: 4),
-                              child: Wrap(
-                                spacing: 12,
-                                runSpacing: 4,
-                                children: [
-                                  Text('${it['category']}', style: TextStyle(fontSize: 11, color: tokens.textMuted)),
-                                  Text(
-                                    cash > 0
-                                        ? 'Cash: ${CurrencyFormatter.formatNaira(cash)}  |  60D/12W: ${CurrencyFormatter.formatNaira(p60)}  |  120D/24W: ${CurrencyFormatter.formatNaira(p120)}'
-                                        : 'Custom / Branch Legacy Price',
-                                    style: TextStyle(
-                                      fontSize: 11.5,
-                                      fontWeight: FontWeight.w600,
-                                      color: tokens.textSecondary,
-                                      fontFeatures: const [FontFeature.tabularFigures()],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            trailing: canManageInventory
-                                ? IconButton(
-                                    tooltip: 'Adjust Stock or Price',
-                                    icon: Icon(Icons.edit_outlined, size: 18, color: tokens.brandPrimary),
-                                    onPressed: () => openAdjustDialog(it),
-                                  )
-                                : null,
-                          );
-                        },
-                      ),
+                          ),
+                          trailing: canManageInventory
+                              ? IconButton(
+                                  tooltip: 'Adjust Stock or Price',
+                                  icon: Icon(Icons.edit_outlined, size: 18, color: tokens.brandPrimary),
+                                  onPressed: () => openAdjustDialog(it),
+                                )
+                              : null,
+                        );
+                      },
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
           );

@@ -9,6 +9,8 @@ import '../../../core/auth/auth_state.dart';
 import '../../../core/auth/auth_controller.dart';
 import '../../../core/errors/app_error_formatter.dart';
 import '../../../core/utils/currency_formatter.dart';
+import 'widgets/co_cashbook_charts.dart';
+import 'widgets/co_shared_widgets.dart';
 import '../data/datasources/co_api_service.dart';
 import '../../shared/presentation/co_app_scaffold.dart';
 import 'package:frontend_flutter/core/theme/icare_motion.dart';
@@ -33,9 +35,9 @@ final clientFeesProvider = FutureProvider.family<List<dynamic>, String>((ref, ke
   return api.getClientFees(dateStr: dateStr, officer: officer);
 });
 
-/// 1:1 Streamlit Parity Replica of Credit Officer Daily Cashbook & Reconciliation (app.py L10748–11186)
-/// Double-entry physical cashbook verified against Account 1000 Vault Cash.
-/// Strict Zero-Emoji Governance (GEMINI Rule 10: SVG / Material Icons only).
+/// Credit Officer Daily Cashbook & Reconciliation
+/// Double-entry physical cashbook verified against the Primary Vault Ledger.
+/// Strict Zero-Emoji Governance (Material / SVG Icons only).
 class DailyCashbookScreen extends ConsumerStatefulWidget {
   const DailyCashbookScreen({super.key});
 
@@ -165,7 +167,10 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
         padding: EdgeInsets.symmetric(vertical: 8),
         child: Center(child: SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))),
       ),
-      error: (e, _) => const SizedBox(),
+      error: (e, _) => CoInlineErrorCard(
+        error: e,
+        onRetry: () => ref.invalidate(clientFeesProvider(_currentKey)),
+      ),
       data: (fees) {
         if (fees.isEmpty) {
           return Container(
@@ -205,18 +210,24 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
             children: [
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      'Recorded Client Fees (${fees.length})',
-                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: tokens.textSecondary),
-                    ),
-                    Text(
-                      'Attributed in Audit View',
-                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: tokens.successText),
-                    ),
-                  ],
+                child: SizedBox(
+                  width: double.infinity,
+                  child: Wrap(
+                    alignment: WrapAlignment.spaceBetween,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    spacing: 8,
+                    runSpacing: 4,
+                    children: [
+                      Text(
+                        'Recorded Client Fees (${fees.length})',
+                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: tokens.textSecondary),
+                      ),
+                      Text(
+                        'Attributed in Audit View',
+                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: tokens.successText),
+                      ),
+                    ],
+                  ),
                 ),
               ),
               Divider(height: 1, color: tokens.borderSubtle),
@@ -824,11 +835,24 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
       Widget mobileTabContent;
       switch (_mobileCashbookTab) {
         case 0:
-          mobileTabContent = _buildMobileTAccountLedger(
-            inflows,
-            outflows,
-            totalInflows,
-            totalOutflows,
+          mobileTabContent = Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              CoCashbookAnalyticsSection(
+                openingBalance: openingBalance.toDouble(),
+                totalInflows: totalInflows.toDouble(),
+                totalOutflows: totalOutflows.toDouble(),
+                closingBalance: closingBalance.toDouble(),
+                outflows: outflows,
+              ),
+              const SizedBox(height: 14),
+              _buildMobileTAccountLedger(
+                inflows,
+                outflows,
+                totalInflows,
+                totalOutflows,
+              ),
+            ],
           );
           break;
         case 1:
@@ -864,7 +888,7 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
             const SizedBox(height: 12),
           ],
 
-          // 2. Executive Hero Card (Account 1000 Vault Cash in Custody)
+          // Executive Hero Card (Primary Vault Custody)
           _buildMobileExecutiveCashbookHero(
             openingBalance: openingBalance,
             totalInflows: totalInflows,
@@ -872,6 +896,16 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
             closingBalance: closingBalance,
             officerName: currentOfficer,
             branchName: branchName,
+          ),
+          const SizedBox(height: 14),
+          CoCashbookFlowCard(
+            openingBalance: openingBalance.toDouble(),
+            totalInflows: totalInflows.toDouble(),
+            totalOutflows: totalOutflows.toDouble(),
+            closingBalance: closingBalance.toDouble(),
+            isOpen: isOpen,
+            openReason: openReason,
+            onSelectMobileTab: (idx) => setState(() => _mobileCashbookTab = idx),
           ),
           const SizedBox(height: 14),
 
@@ -904,8 +938,27 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
           const SizedBox(height: 14),
         ],
 
-        // 1. Summary KPI Metric Cards (Immediate Cash Position on Mobile)
+        CoCashbookFlowCard(
+          openingBalance: openingBalance.toDouble(),
+          totalInflows: totalInflows.toDouble(),
+          totalOutflows: totalOutflows.toDouble(),
+          closingBalance: closingBalance.toDouble(),
+          isOpen: isOpen,
+          openReason: openReason,
+        ),
+        const SizedBox(height: 14),
+
+        // 1. Summary KPI Metric Cards
         _buildSummaryKpiCards(openingBalance, totalInflows, totalOutflows, closingBalance),
+        const SizedBox(height: 16),
+
+        CoCashbookAnalyticsSection(
+          openingBalance: openingBalance.toDouble(),
+          totalInflows: totalInflows.toDouble(),
+          totalOutflows: totalOutflows.toDouble(),
+          closingBalance: closingBalance.toDouble(),
+          outflows: outflows,
+        ),
         const SizedBox(height: 16),
 
         // 2. Balanced 2-Column T-Account Ledger Display (app.py L11020-11076)
@@ -1223,11 +1276,15 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Top row: Account 1000 badge + Reconciliation status badge
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                // Top row: Primary vault badge + Reconciliation status badge
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 6,
+                  alignment: WrapAlignment.spaceBetween,
+                  crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
                     Row(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
                         Container(
                           width: 8,
@@ -1636,12 +1693,15 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
                               ),
                             ),
                             const SizedBox(width: 6),
-                            Text(
-                              'Inflows (Debit)',
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: isInflow ? FontWeight.w700 : FontWeight.w500,
-                                color: isInflow ? tokens.successText : tokens.textMuted,
+                            Flexible(
+                              child: Text(
+                                'Inflows (Debit)',
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: isInflow ? FontWeight.w700 : FontWeight.w500,
+                                  color: isInflow ? tokens.successText : tokens.textMuted,
+                                ),
                               ),
                             ),
                           ],
@@ -1686,12 +1746,15 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
                               ),
                             ),
                             const SizedBox(width: 6),
-                            Text(
-                              'Outflows (Credit)',
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: !isInflow ? FontWeight.w700 : FontWeight.w500,
-                                color: !isInflow ? tokens.dangerText : tokens.textMuted,
+                            Flexible(
+                              child: Text(
+                                'Outflows (Credit)',
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: !isInflow ? FontWeight.w700 : FontWeight.w500,
+                                  color: !isInflow ? tokens.dangerText : tokens.textMuted,
+                                ),
                               ),
                             ),
                           ],
@@ -1716,8 +1779,11 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
         const SizedBox(height: 12),
 
         // Filter toggle row: Active non-zero vs All items
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        Wrap(
+          spacing: 8,
+          runSpacing: 6,
+          alignment: WrapAlignment.spaceBetween,
+          crossAxisAlignment: WrapCrossAlignment.center,
           children: [
             Text(
               isInflow ? 'Inflow Accounts' : 'Outflow Accounts',
@@ -1860,12 +1926,13 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
 
   Widget _buildEodForm(bool isOpen, String openReason, {bool isMobile = false}) {
     final tokens = IcareSurfaceTokens.of(context);
-    return Container(
-      decoration: BoxDecoration(
-        color: tokens.surface,
+    return Material(
+      color: tokens.surface,
+      shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: tokens.borderSubtle),
+        side: BorderSide(color: tokens.borderSubtle),
       ),
+      clipBehavior: Clip.antiAlias,
       child: Theme(
         data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
         child: ExpansionTile(
@@ -1914,8 +1981,11 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
                             const SizedBox(height: 12),
                             _buildNumberField('Bank Deposited', _bankDepCtrl, step: 500),
                             const SizedBox(height: 16),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              alignment: WrapAlignment.spaceBetween,
+                              crossAxisAlignment: WrapCrossAlignment.center,
                               children: [
                                 Text(
                                   'Additional Collections & Fees',
@@ -1987,8 +2057,11 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
                           const SizedBox(height: 16),
 
                           // Additional Collections Subheading (app.py L10887)
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          Wrap(
+                            spacing: 10,
+                            runSpacing: 8,
+                            alignment: WrapAlignment.spaceBetween,
+                            crossAxisAlignment: WrapCrossAlignment.center,
                             children: [
                               Text(
                                 'Additional Collections & Fees',
@@ -2114,9 +2187,13 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
       children: [
         Row(
           children: [
-            Text(
-              label,
-              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tokens.textSecondary),
+            Flexible(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tokens.textSecondary),
+              ),
             ),
             if (help != null) ...[
               const SizedBox(width: 4),
@@ -2405,12 +2482,13 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
           // Non-Paying Clients Collapsible Table (app.py L1113-1126)
           if (notPaidList.isNotEmpty) ...[
             const SizedBox(height: 12),
-            Container(
-              decoration: BoxDecoration(
-                color: tokens.surfaceSubtle,
+            Material(
+              color: tokens.surfaceSubtle,
+              shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: tokens.borderSubtle),
+                side: BorderSide(color: tokens.borderSubtle),
               ),
+              clipBehavior: Clip.antiAlias,
               child: Theme(
                 data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
                 child: ExpansionTile(
@@ -2429,8 +2507,7 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
                         children: [
                           ClipRRect(
                             borderRadius: BorderRadius.circular(6),
-                            child: SingleChildScrollView(
-                              scrollDirection: Axis.horizontal,
+                            child: CoControlledHorizontalScroll(
                               child: ConstrainedBox(
                                 constraints: const BoxConstraints(minWidth: 600),
                                 child: Table(
@@ -2694,17 +2771,13 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
           ),
           const SizedBox(height: 12),
 
-          // Double-Entry Balanced Table (app.py L11055-11066)
+          // Double-Entry Balanced Table
           ClipRRect(
             borderRadius: BorderRadius.circular(6),
-            child: Scrollbar(
-              thumbVisibility: true,
-              child: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                physics: const BouncingScrollPhysics(),
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(minWidth: 650),
-                  child: Table(
+            child: CoControlledHorizontalScroll(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(minWidth: 650),
+                child: Table(
                   border: TableBorder.all(color: tokens.borderSubtle, width: 1),
                   columnWidths: const {
                     0: FlexColumnWidth(3),
@@ -2783,10 +2856,9 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
               ),
             ),
           ),
-        ),
-      ],
-    ),
-  );
+        ],
+      ),
+    );
   }
 
   String _formatLedgerAmount(num val) {
@@ -2895,12 +2967,13 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
           const SizedBox(height: 14),
 
           // Expander: Flag an EOD Fee / Expense / Deposit for Reversal (app.py L11084-11153)
-          Container(
-            decoration: BoxDecoration(
-              color: tokens.surfaceSubtle,
+          Material(
+            color: tokens.surfaceSubtle,
+            shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(6),
-              border: Border.all(color: tokens.borderSubtle),
+              side: BorderSide(color: tokens.borderSubtle),
             ),
+            clipBehavior: Clip.antiAlias,
             child: Theme(
               data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
               child: ExpansionTile(
@@ -3077,8 +3150,7 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
           ] else ...[
             ClipRRect(
               borderRadius: BorderRadius.circular(6),
-              child: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
+              child: CoControlledHorizontalScroll(
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(minWidth: 700),
                   child: Table(
@@ -3133,35 +3205,9 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
   }
 
   Widget _buildErrorCard(String error) {
-    final tokens = IcareSurfaceTokens.of(context);
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: tokens.dangerBg,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: tokens.dangerBorder),
-      ),
-      child: Row(
-        children: [
-          Icon(Icons.error_outline, color: tokens.dangerDot, size: 18),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              'Error loading cashbook projection: ${AppErrorDetails.from(error).message}',
-              style: TextStyle(color: tokens.dangerText, fontSize: 13),
-            ),
-          ),
-          ElevatedButton(
-            onPressed: () => ref.refresh(coCashbookDataProvider(_currentKey)),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFFDC2626),
-              elevation: 0,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-            ),
-            child: const Text('Retry', style: TextStyle(color: Colors.white, fontSize: 12)),
-          ),
-        ],
-      ),
+    return CoInlineErrorCard(
+      error: error,
+      onRetry: () => ref.refresh(coCashbookDataProvider(_currentKey)),
     );
   }
 }
