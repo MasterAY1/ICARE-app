@@ -655,7 +655,12 @@ def register_client(
     member_number_str = str(next_seq).zfill(3)
     generated_client_code = f"{branch_code}-{g_code}-{member_number_str}"
     client_uuid = str(uuid.uuid4())
-    status_id = ClientStatusService.resolve_status_id(uow, "Registered") or "11111111-1111-1111-1111-111111110001"
+    status_id = ClientStatusService.resolve_status_id(uow, "Registered")
+    if not status_id:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Client lifecycle status 'Registered' is not configured in database."
+        )
 
     # Persist structured guarantor metadata on clients.next_of_kin so Tab 2 and /apply inherit it pre-loan
     nok_payload = None
@@ -1286,7 +1291,7 @@ def get_pending_disbursements(
 
         lp = l.get("loan_products") or {}
         extra = l.get("extra_fields") or {}
-        prod_name = lp.get("name") or extra.get("product_type") or "Weekly 12W"
+        prod_name = lp.get("name") or extra.get("product_type") or "Unspecified Product"
         prod_cat = l.get("product_category") or extra.get("product_category") or "Finance"
 
         loans.append(PendingLoanItem(
@@ -1372,7 +1377,9 @@ def disburse_loan(
     meeting_day = _resolve_meeting_day(uow, loan_row["client_id"], c_row.get("group_id"))
     closed_dates = BusinessDateService.expand_closure_dates(closures)
 
-    setup = LoanProductEngine.calculate_loan_setup(loan_amt or 100000.0, product, loan_row.get("product_category") or "Finance")
+    if loan_amt <= 0:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Loan principal amount must be greater than zero.")
+    setup = LoanProductEngine.calculate_loan_setup(loan_amt, product, loan_row.get("product_category") or "Finance")
     loan_freq = str(setup.get("freq", "Daily"))
     duration_in_installments = int(setup.get("duration", 60) or 1)
     is_cash_and_carry = "cash and carry" in product.lower() or "cash & carry" in product.lower() or loan_freq == "One-Time"

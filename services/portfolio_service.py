@@ -1448,11 +1448,12 @@ class PortfolioService:
                 for r in repayments:
                     paid = float(r.get("amount_paid") or 0.0)
                     expected = float(r.get("expected_amount") or 0.0)
-                    if expected <= 0.0 and paid > 0.0:
-                        expected = paid
                     status = r.get("payment_status")
                     if not status or str(status).upper() not in ["PAID", "PART_PAYMENT", "NOT_PAID"]:
-                        status = "PAID" if paid >= expected and expected > 0 else ("PART_PAYMENT" if paid > 0 else "NOT_PAID")
+                        if expected > 0:
+                            status = "PAID" if paid >= expected else ("PART_PAYMENT" if paid > 0 else "NOT_PAID")
+                        else:
+                            status = "PAID" if paid > 0 else "NOT_PAID"
                     m_date = str(r.get("date") or r.get("created_at") or "")[:10]
                     collections.append({
                         "id": r.get("id"),

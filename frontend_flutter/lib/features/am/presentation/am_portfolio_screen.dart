@@ -12,6 +12,7 @@ import 'officer_productivity_sheet.dart';
 import '../../../core/auth/auth_controller.dart';
 import '../../../core/auth/auth_state.dart';
 import '../../../core/theme/icare_theme_tokens.dart';
+import '../../../core/errors/app_error_formatter.dart';
 
 class AmPortfolioScreen extends ConsumerStatefulWidget {
   const AmPortfolioScreen({super.key});
@@ -70,7 +71,7 @@ class _AmPortfolioScreenState extends ConsumerState<AmPortfolioScreen> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _errorMessage = e.toString();
+        _errorMessage = AppErrorDetails.from(e).message;
         _isLoading = false;
       });
     }
@@ -259,7 +260,7 @@ class _AmPortfolioScreenState extends ConsumerState<AmPortfolioScreen> {
                       Text(
                         isBm
                             ? 'Branch credit portfolio, capital deployment, and officer productivity'
-                            : 'Consolidated branch supervision across Ogijo, Ikorodu, and Kola',
+                            : 'Consolidated regional branch supervision',
                         style: TextStyle(fontSize: 12, color: tokens.textMuted),
                       ),
                     ],

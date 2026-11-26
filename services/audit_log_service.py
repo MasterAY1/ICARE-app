@@ -3,9 +3,25 @@ ICARE Core Banking — Centralized Audit Log Service
 Provides a single entry point for all audit logging across the application.
 All modules call this service instead of direct DB inserts.
 """
+from contextvars import ContextVar
 from datetime import datetime
-from typing import Optional
-import streamlit as st
+from typing import Any, Optional
+
+_request_actor_var: ContextVar[Optional[Any]] = ContextVar("icare_audit_actor", default=None)
+_request_session_var: ContextVar[str] = ContextVar("icare_audit_session_id", default="")
+
+
+def set_audit_actor(user: Optional[Any], session_id: str = "") -> None:
+    """Bind the authenticated FastAPI actor for downstream domain audit logs."""
+    _request_actor_var.set(user)
+    if session_id:
+        _request_session_var.set(session_id)
+
+
+def clear_audit_actor() -> None:
+    """Clear the bound request actor context."""
+    _request_actor_var.set(None)
+    _request_session_var.set("")
 
 
 class AuditLogService:
@@ -28,6 +44,7 @@ class AuditLogService:
         username_override: Optional[str] = None,
         role_override: Optional[str] = None,
         branch_override: Optional[str] = None,
+        actor: Optional[Any] = None,
     ) -> None:
         """Record an immutable audit log entry.
         
@@ -37,34 +54,48 @@ class AuditLogService:
             status: 'SUCCESS', 'FAILURE', or 'ERROR'
             entity_type: Type of entity affected (e.g., 'Client', 'Loan', 'User')
             entity_id: UUID of the affected entity
-            display_name: Human-readable identifier (e.g., 'OGI-01-023')
+            display_name: Human-readable identifier
             previous_value: Dict of previous state (for updates/deletes)
             new_value: Dict of new state (for creates/updates)
             username_override: Override username (for pre-auth events like failed logins)
             role_override: Override role (for pre-auth events)
             branch_override: Override branch (for pre-auth events)
+            actor: Explicit CurrentUser / User entity performing the action
         """
         try:
             from database.repositories.unit_of_work import SupabaseUnitOfWork
 
-            # Extract user context from session
-            current_user = st.session_state.get('current_user')
-            
+            # Resolve user context: explicit actor -> FastAPI ContextVar -> optional Streamlit session
+            current_user = actor or _request_actor_var.get()
+            session_id = _request_session_var.get() or ""
+
+            if current_user is None:
+                try:
+                    import streamlit as st
+                    current_user = st.session_state.get("current_user")
+                    if not session_id:
+                        session_id = st.session_state.get("session_id", "")
+                except Exception:
+                    current_user = None
+
             user_id = None
             username = username_override or "System"
             role = role_override or "Unknown"
             branch = branch_override or "Unknown"
             area_manager = None
-            session_id = st.session_state.get('session_id', '')
 
             if current_user:
-                user_id = current_user.id
-                username = username_override or current_user.username
-                role = role_override or current_user.role
-                branch = branch_override or current_user.branch
-                # If user is an AM, record their name as area_manager
-                if current_user.role == "Area Manager":
-                    area_manager = current_user.username
+                user_id = getattr(current_user, "id", None)
+                username = username_override or getattr(current_user, "username", None) or username
+                role = role_override or getattr(current_user, "role", None) or role
+                branch = (
+                    branch_override
+                    or getattr(current_user, "branch", None)
+                    or getattr(current_user, "branch_name", None)
+                    or branch
+                )
+                if role in ("Area Manager", "AM", "AREA_MANAGER"):
+                    area_manager = username
 
             entry = {
                 "user_id": user_id,

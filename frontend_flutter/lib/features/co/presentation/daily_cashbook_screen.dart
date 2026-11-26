@@ -3147,7 +3147,7 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
           const SizedBox(width: 10),
           Expanded(
             child: Text(
-              'Error loading cashbook projection: $error',
+              'Error loading cashbook projection: ${AppErrorDetails.from(error).message}',
               style: TextStyle(color: tokens.dangerText, fontSize: 13),
             ),
           ),

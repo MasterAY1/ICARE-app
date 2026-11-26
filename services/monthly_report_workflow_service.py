@@ -88,10 +88,11 @@ class MonthlyReportWorkflowService:
 
         if res.data:
             rec = res.data[0]
+            resolved_area = rec.get("area_name") or AreaManagerService.resolve_area_name(uow, branch_id=branch_id)
             return {
                 "id": rec["id"],
                 "branch_id": rec["branch_id"],
-                "area_name": rec.get("area_name", "Area 1"),
+                "area_name": resolved_area,
                 "year": rec["year"],
                 "month": rec["month"],
                 "status": rec["status"],
@@ -126,7 +127,7 @@ class MonthlyReportWorkflowService:
         return {
             "id": None,
             "branch_id": branch_id,
-            "area_name": "Area 1",
+            "area_name": AreaManagerService.resolve_area_name(uow, branch_id=branch_id),
             "year": year,
             "month": month,
             "status": "DRAFT",
@@ -193,9 +194,10 @@ class MonthlyReportWorkflowService:
         branch_name = res_b.data[0]["name"] if res_b.data else "Branch"
 
         now_str = datetime.now().isoformat()
+        resolved_area = AreaManagerService.resolve_area_name(uow, branch_id=branch_id)
         payload = {
             "branch_id": branch_id,
-            "area_name": "Area 1",
+            "area_name": resolved_area,
             "year": year,
             "month": month,
             "status": "BM_SUBMITTED",

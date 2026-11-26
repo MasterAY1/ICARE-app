@@ -442,7 +442,7 @@ def get_collection_sheet(
                     start_date=s_date_str[:10] if s_date_str else None,
                     prev_rep=prev_rep_val,
                     prev_dep=prev_dep_val,
-                    prev_status=t_stat if t_stat != "UNRECORDED" else ("PAID" if exp_rep > 0 else "NOT_PAID"),
+                    prev_status=t_stat,
                     today_repayment=actual_t_rep,
                     today_savings=actual_t_sav,
                     today_status=t_stat,

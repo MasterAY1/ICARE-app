@@ -129,19 +129,10 @@ def get_admin_operations(
     # 5. Multi-Branch Operational Status Matrix
     branch_rows = []
     try:
-        res_b = uow.client.table("branches").select("branch_id, name").execute()
+        res_b = uow.client.table("branches").select("branch_id, name, code").execute()
         branch_rows = res_b.data or []
     except Exception:
         branch_rows = []
-
-    # Discover branches from loans or ledger if branches table access is restricted
-    if not branch_rows:
-        try:
-            res_lb = uow.client.table("loans").select("branch_id").limit(200).execute()
-            seen_bids = set(str(r["branch_id"]) for r in (res_lb.data or []) if r.get("branch_id"))
-            branch_rows = [{"branch_id": bid, "name": "Branch"} for bid in seen_bids]
-        except Exception:
-            pass
 
     # Head Office is a registered branch in the database (Central Treasury & Administration)
     # We flag it explicitly so the UI presents it as the Treasury Hub rather than an empty retail branch
@@ -149,7 +140,7 @@ def get_admin_operations(
         b_name_clean = str(b.get("name", "")).strip().lower()
         b["is_head_office"] = b_name_clean in ["head office", "headquarters", "headoffice"]
 
-    # Map managers
+    # Map Branch Managers strictly by role (never substitute arbitrary staff or Credit Officers)
     mgr_map = {}
     try:
         q_bm = uow.client.table("user_roles") \
@@ -160,26 +151,16 @@ def get_admin_operations(
             u = r.get("app_users") or {}
             bid = str(u.get("branch_id") or "")
             if bid and bid not in mgr_map:
-                mgr_map[bid] = u.get("full_name") or u.get("username") or "Branch Manager"
+                mgr_map[bid] = u.get("full_name") or u.get("username") or "Unassigned"
     except Exception:
         pass
-
-    if not mgr_map:
-        try:
-            res_mgrs = uow.client.table("app_users").select("id, username, full_name, branch_id").execute()
-            for m in (res_mgrs.data or []):
-                bid = str(m.get("branch_id") or "")
-                if bid and bid not in mgr_map:
-                    mgr_map[bid] = m.get("full_name") or m.get("username") or "Branch Manager"
-        except Exception:
-            pass
 
     branch_statuses = []
     for b in branch_rows:
         bid = str(b.get("branch_id") or b.get("id") or "")
-        bname = b.get("name") or "Branch"
+        bname = b.get("name") or "Unnamed Branch"
         bcode = b.get("code") or bname[:3].upper()
-        bm = mgr_map.get(bid, "Branch Manager")
+        bm = mgr_map.get(bid, "Unassigned")
 
         # Check EOD / Closure state
         op_state = "OPEN"
@@ -361,11 +342,11 @@ def get_admin_operations(
             rel_pct = round((vol / max_b_vol), 2) if max_b_vol > 0 else 0.0
             branch_performance_summary.append({
                 "branch_id": str(b.get("branch_id") or ""),
-                "branch_name": str(b.get("branch_name") or "Branch"),
+                "branch_name": str(b.get("branch_name") or "Unnamed Branch"),
                 "volume": vol,
                 "relative_pct": rel_pct,
                 "vault_cash": float(b.get("vault_cash") or 0.0),
-                "manager_name": str(b.get("manager_name") or "Branch Manager"),
+                "manager_name": str(b.get("manager_name") or "Unassigned"),
                 "status": str(b.get("operational_status") or "OPEN"),
                 "is_head_office": bool(b.get("is_head_office"))
             })

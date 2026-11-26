@@ -24,11 +24,11 @@ class TestAuditEnricher(unittest.TestCase):
         self.assertEqual(AuditEnricher.format_date(None), "N/A")
 
     def test_status_badges(self):
-        self.assertIn("🟢", AuditEnricher.format_status_badge("PAID"))
-        self.assertIn("🟢", AuditEnricher.format_status_badge("ACTIVE"))
-        self.assertIn("🟡", AuditEnricher.format_status_badge("PART_PAYMENT"))
-        self.assertIn("🔴", AuditEnricher.format_status_badge("NOT_PAID"))
-        self.assertIn("🔴", AuditEnricher.format_status_badge("OVERDUE"))
+        self.assertEqual(AuditEnricher.format_status_badge("PAID"), "Paid")
+        self.assertEqual(AuditEnricher.format_status_badge("ACTIVE"), "Active")
+        self.assertEqual(AuditEnricher.format_status_badge("PART_PAYMENT"), "Part Payment")
+        self.assertEqual(AuditEnricher.format_status_badge("NOT_PAID"), "Not Paid")
+        self.assertEqual(AuditEnricher.format_status_badge("OVERDUE"), "Overdue")
 
     def test_fallback_resolutions(self):
         client = self.enricher.resolve_client("c324c4d7-6181-47eb-b230-0b5b2f06a3dd")

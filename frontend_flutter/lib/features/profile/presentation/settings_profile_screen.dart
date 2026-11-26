@@ -426,7 +426,7 @@ class _SettingsProfileScreenState extends ConsumerState<SettingsProfileScreen> {
           .clearSessionStorage(clearOutbox: false);
       _showSnack('Read cache cleared. Outbox preserved.');
     } catch (e) {
-      _showSnack('Could not clear read cache: $e', isError: true);
+      _showSnack('Could not clear read cache: ${AppErrorDetails.from(e).message}', isError: true);
     }
   }
 

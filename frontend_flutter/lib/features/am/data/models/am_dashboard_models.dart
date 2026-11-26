@@ -37,7 +37,7 @@ class RegionalSummaryModel {
 
   factory RegionalSummaryModel.fromJson(Map<String, dynamic> json) {
     return RegionalSummaryModel(
-      areaName: json['area_name'] ?? 'Area 1',
+      areaName: json['area_name'] ?? 'Assigned Region',
       businessDate: json['business_date'] ?? '',
       branchesCount: (json['branches_count'] as num?)?.toInt() ?? 0,
       openBranchesCount: (json['open_branches_count'] as num?)?.toInt() ?? 0,

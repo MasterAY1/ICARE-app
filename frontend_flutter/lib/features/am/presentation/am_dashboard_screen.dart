@@ -156,7 +156,7 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
       _showFlash(res['message'] ?? 'Branch EOD confirmed successfully.');
       ref.invalidate(amDashboardDataProvider);
     } catch (e) {
-      _showFlash('Failed to confirm branch EOD: $e');
+      _showFlash('Failed to confirm branch EOD: ${AppErrorDetails.from(e).message}');
     } finally {
       if (mounted) setState(() => _isProcessing = false);
     }
@@ -230,7 +230,7 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
       _showFlash(res['message'] ?? 'Branch EOD returned to Branch Manager.');
       ref.invalidate(amDashboardDataProvider);
     } catch (e) {
-      _showFlash('Failed to return branch EOD: $e');
+      _showFlash('Failed to return branch EOD: ${AppErrorDetails.from(e).message}');
     } finally {
       if (mounted) setState(() => _isProcessing = false);
     }
@@ -290,7 +290,7 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
       _showFlash(res['message'] ?? 'Branch monthly report successfully endorsed.');
       ref.invalidate(amMonthlyWorkflowSubmissionsProvider);
     } catch (e) {
-      _showFlash('Failed to endorse report: $e');
+      _showFlash('Failed to endorse report: ${AppErrorDetails.from(e).message}');
     } finally {
       if (mounted) setState(() => _isProcessing = false);
     }
@@ -353,7 +353,7 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
       _showFlash(res['message'] ?? 'Report returned to Branch Manager with queries.');
       ref.invalidate(amMonthlyWorkflowSubmissionsProvider);
     } catch (e) {
-      _showFlash('Failed to return report: $e');
+      _showFlash('Failed to return report: ${AppErrorDetails.from(e).message}');
     } finally {
       if (mounted) setState(() => _isProcessing = false);
     }
@@ -414,7 +414,7 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
       _showFlash(res['message'] ?? '$areaName monthly package successfully sealed.');
       ref.invalidate(amMonthlyWorkflowSubmissionsProvider);
     } catch (e) {
-      _showFlash('Failed to seal regional package: $e');
+      _showFlash('Failed to seal regional package: ${AppErrorDetails.from(e).message}');
     } finally {
       if (mounted) setState(() => _isProcessing = false);
     }
@@ -453,7 +453,7 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
       _showFlash(res['message'] ?? '$areaName closure locked successfully.');
       ref.invalidate(amDashboardDataProvider);
     } catch (e) {
-      _showFlash('Failed to lock Area closure: $e');
+      _showFlash('Failed to lock Area closure: ${AppErrorDetails.from(e).message}');
     } finally {
       if (mounted) setState(() => _isProcessing = false);
     }
@@ -521,7 +521,7 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
       _showFlash(res['message'] ?? 'Loan approved successfully.');
       ref.invalidate(amDashboardDataProvider);
     } catch (e) {
-      _showFlash('Failed to approve loan: $e');
+      _showFlash('Failed to approve loan: ${AppErrorDetails.from(e).message}');
     } finally {
       if (mounted) setState(() => _isProcessing = false);
     }
@@ -576,7 +576,7 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
       _showFlash(res['message'] ?? 'Loan rejected.');
       ref.invalidate(amDashboardDataProvider);
     } catch (e) {
-      _showFlash('Failed to reject loan: $e');
+      _showFlash('Failed to reject loan: ${AppErrorDetails.from(e).message}');
     } finally {
       if (mounted) setState(() => _isProcessing = false);
     }
@@ -613,7 +613,7 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
       _showFlash(res['message'] ?? 'Transfer approved.');
       ref.invalidate(amDashboardDataProvider);
     } catch (e) {
-      _showFlash('Failed to sign off transfer: $e');
+      _showFlash('Failed to sign off transfer: ${AppErrorDetails.from(e).message}');
     } finally {
       if (mounted) setState(() => _isProcessing = false);
     }
@@ -632,7 +632,7 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
       downloadBlobFile(bytes, fileName, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
       _showFlash('$areaName report downloaded successfully.');
     } catch (e) {
-      _showFlash('Failed to download Area Excel: $e');
+      _showFlash('Failed to download Area Excel: ${AppErrorDetails.from(e).message}');
     } finally {
       if (mounted) setState(() => _isProcessing = false);
     }
@@ -723,7 +723,7 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
       }
       _showFlash('$branchName report downloaded successfully.');
     } catch (e) {
-      _showFlash('Failed to download report: $e');
+      _showFlash('Failed to download report: ${AppErrorDetails.from(e).message}');
     } finally {
       if (mounted) setState(() => _isProcessing = false);
     }
@@ -1452,7 +1452,7 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
       }
       ref.invalidate(adminOnboardingSessionsProvider);
     } catch (e) {
-      _showFlash('Failed to delete onboarding package: $e');
+      _showFlash('Failed to delete onboarding package: ${AppErrorDetails.from(e).message}');
     } finally {
       if (mounted) {
         setState(() {
@@ -1527,7 +1527,7 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
       _showFlash(res['message']?.toString() ?? 'Branch successfully approved and committed to live core database!');
       ref.invalidate(adminOnboardingSessionsProvider);
     } catch (e) {
-      _showFlash('Failed to approve onboarding package: $e');
+      _showFlash('Failed to approve onboarding package: ${AppErrorDetails.from(e).message}');
     } finally {
       if (mounted) setState(() => _isProcessing = false);
     }
@@ -2872,7 +2872,7 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
             children: [
               Icon(Icons.info_outline, color: tokens.dangerDot, size: 18),
               const SizedBox(width: 10),
-              Expanded(child: Text('Failed to load monthly submissions: $err', style: TextStyle(color: tokens.dangerText, fontSize: 12))),
+              Expanded(child: Text('Failed to load monthly submissions: ${AppErrorDetails.from(err).message}', style: TextStyle(color: tokens.dangerText, fontSize: 12))),
               TextButton(
                 onPressed: () => ref.invalidate(amMonthlyWorkflowSubmissionsProvider),
                 child: const Text('Retry', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
@@ -3621,7 +3621,7 @@ class _BranchHandoverSheetState extends ConsumerState<_BranchHandoverSheet> {
                 return Padding(
                   padding: const EdgeInsets.all(20),
                   child: Text(
-                    'Error loading handover reports: ${snapshot.error}',
+                    'Error loading handover reports: ${AppErrorDetails.from(snapshot.error).message}',
                     style: TextStyle(color: tokens.dangerText),
                   ),
                 );

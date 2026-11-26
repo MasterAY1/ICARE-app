@@ -96,11 +96,66 @@ class FinancialReconciliationService:
         except Exception:
             pass
 
-        # 5. Dashboard Total (Operational cash collection for date)
-        dashboard_total = audit_views_total
+        # 5. Dashboard Total (Independent operational inflow aggregation across repayments, savings, fees, and treasury)
+        dashboard_total = 0.0
+        try:
+            s_d_str = f"{p_date_str}T00:00:00"
+            e_d_str = f"{p_date_str}T23:59:59"
+            dash_rep_res = uow.client.table("repayments").select("amount_paid, transaction_type") \
+                .eq("branch_id", branch_id).gte("date", s_d_str).lte("date", e_d_str).execute()
+            dash_rep = sum(
+                float(r.get("amount_paid") or 0.0)
+                for r in (dash_rep_res.data or [])
+                if str(r.get("transaction_type") or "").upper() != "ONBOARDING_LEGACY"
+            )
 
-        # 6. Reports Total (Reporting engine source for date)
-        reports_total = audit_views_total
+            dash_sav = 0.0
+            for sav_tbl in ("individual_savings", "group_savings", "internal_savings", "laps_savings"):
+                try:
+                    s_res = uow.client.table(sav_tbl).select("deposit_amount, remarks") \
+                        .eq("branch_id", branch_id).eq("posting_date", p_date_str).execute()
+                    dash_sav += sum(
+                        float(r.get("deposit_amount") or 0.0)
+                        for r in (s_res.data or [])
+                        if float(r.get("deposit_amount") or 0.0) > 0
+                        and "legacy" not in str(r.get("remarks") or "").lower()
+                    )
+                except Exception:
+                    pass
+
+            dash_fees_res = uow.client.table("fees").select("amount") \
+                .eq("branch_id", branch_id).eq("posting_date", p_date_str).execute()
+            dash_fees = sum(float(r.get("amount") or 0.0) for r in (dash_fees_res.data or []))
+
+            dash_tr_res = uow.client.table("treasury_transactions").select("amount") \
+                .eq("branch_id", branch_id) \
+                .in_("transaction_type", ["BANK_WITHDRAWAL", "FUNDS_RECEIVED_HO", "FUNDS_RECEIVED_OTHER_BRANCH"]) \
+                .eq("posting_date", p_date_str).execute()
+            dash_tr = sum(float(r.get("amount") or 0.0) for r in (dash_tr_res.data or []))
+
+            dashboard_total = round(dash_rep + dash_sav + dash_fees + dash_tr, 2)
+        except Exception:
+            dashboard_total = 0.0
+
+        # 6. Reports Total (Independent reporting engine transaction & journal aggregation on date)
+        reports_total = 0.0
+        try:
+            res_ft = uow.client.table("financial_transactions") \
+                .select("transaction_id, reference, financial_ledger_entries(account_code, side, amount)") \
+                .eq("branch_id", branch_id) \
+                .eq("posting_date", p_date_str) \
+                .execute()
+            rep_sum = 0.0
+            for tx in (res_ft.data or []):
+                ref = str(tx.get("reference") or "").upper()
+                if ref.startswith("REV-"):
+                    continue
+                for leg in (tx.get("financial_ledger_entries") or []):
+                    if str(leg.get("account_code") or "") == "1000" and str(leg.get("side") or "") == "Debit":
+                        rep_sum += float(leg.get("amount") or 0.0)
+            reports_total = round(rep_sum, 2)
+        except Exception:
+            reports_total = 0.0
 
         # Compare values (tolerance of ₦0.01 for floating-point rounding)
         is_balanced = (
@@ -121,6 +176,14 @@ class FinancialReconciliationService:
                     "variance": abs(ledger_total - audit_views_total),
                     "cause": "Unposted ledger event or timing difference"
                 })
+            if abs(audit_views_total - co_cashbooks_total) >= 0.01:
+                variances.append({
+                    "source": "Audit Views vs CO Cashbooks",
+                    "expected": audit_views_total,
+                    "actual": co_cashbooks_total,
+                    "variance": abs(audit_views_total - co_cashbooks_total),
+                    "cause": "Officer cashbook projection lag or unmapped inflow"
+                })
             if abs(co_cashbooks_total - master_cashbook_total) >= 0.01:
                 variances.append({
                     "source": "CO Cashbooks vs Master Cashbook",
@@ -136,6 +199,14 @@ class FinancialReconciliationService:
                     "actual": dashboard_total,
                     "variance": abs(master_cashbook_total - dashboard_total),
                     "cause": "Dashboard collection query discrepancy"
+                })
+            if abs(dashboard_total - reports_total) >= 0.01:
+                variances.append({
+                    "source": "Dashboard vs Reports Total",
+                    "expected": dashboard_total,
+                    "actual": reports_total,
+                    "variance": abs(dashboard_total - reports_total),
+                    "cause": "Operational inflow vs ledger report variance"
                 })
 
         return {
@@ -154,17 +225,54 @@ class FinancialReconciliationService:
         }
 
     @staticmethod
-    def run_15_exception_reports(uow: UnitOfWork, branch_id: Optional[str] = None) -> Dict[str, Any]:
+    def _apply_branch_filter(q_obj: Any, branch_id: Any) -> Any:
+        if branch_id and branch_id not in ("All", "ALL", "All Branches"):
+            if isinstance(branch_id, (list, tuple, set)):
+                bids = [str(b) for b in branch_id if b]
+                if bids:
+                    return q_obj.in_("branch_id", bids)
+            else:
+                return q_obj.eq("branch_id", branch_id)
+        return q_obj
+
+    @staticmethod
+    def run_15_exception_reports(uow: UnitOfWork, branch_id: Any = None) -> Dict[str, Any]:
         """
         Run 15 automated audit exception rules across the platform.
         Returns itemized lists of anomalous records for immediate auditor inspection.
         """
+        exception_keys = [
+            "loans_approved_not_disbursed",
+            "loans_disbursed_no_ledger",
+            "repayments_without_loan",
+            "savings_withdrawal_no_ledger",
+            "negative_savings_balance",
+            "duplicate_receipt_numbers",
+            "duplicate_transaction_references",
+            "orphan_ledger_entries",
+            "unbalanced_journal_entries",
+            "cashbook_differences",
+            "projection_differences",
+            "missing_collection_records",
+            "overdue_repayments",
+            "loans_without_schedule",
+            "inactive_clients_active_loan",
+        ]
+        if isinstance(branch_id, (list, tuple, set)) and not any(branch_id):
+            return {
+                "total_exceptions": 0,
+                "exception_rules_evaluated": 15,
+                "details": {k: [] for k in exception_keys},
+            }
+
         exceptions = {}
 
         # 1. Loans Approved without Disbursement
         try:
-            q = uow.client.table("loans").select("loan_id, client_id, loan_amount, status").eq("status", "Approved")
-            if branch_id and branch_id != "All": q = q.eq("branch_id", branch_id)
+            q = FinancialReconciliationService._apply_branch_filter(
+                uow.client.table("loans").select("loan_id, client_id, loan_amount, status").eq("status", "Approved"),
+                branch_id,
+            )
             res = q.execute()
             exceptions["loans_approved_not_disbursed"] = res.data or []
         except Exception:
@@ -172,8 +280,10 @@ class FinancialReconciliationService:
 
         # 2. Loans Disbursed without Ledger Posting (BR-RECON-003 Orphan Detection)
         try:
-            q_loans = uow.client.table("loans").select("loan_id, client_id, loan_amount, branch_id, status").eq("status", "Active")
-            if branch_id and branch_id != "All": q_loans = q_loans.eq("branch_id", branch_id)
+            q_loans = FinancialReconciliationService._apply_branch_filter(
+                uow.client.table("loans").select("loan_id, client_id, loan_amount, branch_id, status").eq("status", "Active"),
+                branch_id,
+            )
             active_loans = q_loans.execute().data or []
             
             res_events = uow.client.table("event_store").select("aggregate_id").eq("event_type", "LoanDisbursed").execute()
@@ -186,8 +296,10 @@ class FinancialReconciliationService:
 
         # 3. Repayments without Loan
         try:
-            q = uow.client.table("repayments").select("*").is_("loan_id", "null")
-            if branch_id and branch_id != "All": q = q.eq("branch_id", branch_id)
+            q = FinancialReconciliationService._apply_branch_filter(
+                uow.client.table("repayments").select("*").is_("loan_id", "null"),
+                branch_id,
+            )
             res = q.execute()
             exceptions["repayments_without_loan"] = res.data or []
         except Exception:
@@ -232,9 +344,10 @@ class FinancialReconciliationService:
             ]
             all_sav_rows_for_check = []
             for tbl, key_col in sav_tables_meta:
-                q_s = uow.client.table(tbl).select(f"id, {key_col}, branch_id, deposit_amount, withdrawal_amount, reference, posting_date")
-                if branch_id and branch_id != "All":
-                    q_s = q_s.eq("branch_id", branch_id)
+                q_s = FinancialReconciliationService._apply_branch_filter(
+                    uow.client.table(tbl).select(f"id, {key_col}, branch_id, deposit_amount, withdrawal_amount, reference, posting_date"),
+                    branch_id,
+                )
                 s_rows = q_s.execute().data or []
                 if isinstance(s_rows, list):
                     bal_by_acct = {}
@@ -287,9 +400,10 @@ class FinancialReconciliationService:
 
         # 6. Duplicate Receipt Numbers
         try:
-            q_rep = uow.client.table("repayments").select("id, loan_id, client_id, amount_paid, receipt_number, branch_id")
-            if branch_id and branch_id != "All":
-                q_rep = q_rep.eq("branch_id", branch_id)
+            q_rep = FinancialReconciliationService._apply_branch_filter(
+                uow.client.table("repayments").select("id, loan_id, client_id, amount_paid, receipt_number, branch_id"),
+                branch_id,
+            )
             r_rows = q_rep.execute().data or []
             seen_rcpts = {}
             for r in (r_rows if isinstance(r_rows, list) else []):
@@ -315,26 +429,126 @@ class FinancialReconciliationService:
         # 7. Duplicate Transaction References
         exceptions["duplicate_transaction_references"] = dup_refs
 
-        # 8. Orphan Ledger Entries
-        exceptions["orphan_ledger_entries"] = []
+        # 8. Orphan Ledger Entries (entries whose transaction_id is missing or orphaned from financial_transactions)
+        orphan_entries = []
+        try:
+            q_le = FinancialReconciliationService._apply_branch_filter(
+                uow.client.table("financial_ledger_entries").select("entry_id, transaction_id, account_code, side, amount, branch_id").limit(1000),
+                branch_id,
+            )
+            le_rows = q_le.execute().data or []
+            tx_ids = {str(r.get("transaction_id")) for r in le_rows if r.get("transaction_id")}
+            valid_tx_ids = set()
+            if tx_ids:
+                tx_list = list(tx_ids)
+                for chunk in [tx_list[i:i + 100] for i in range(0, len(tx_list), 100)]:
+                    q_ft = uow.client.table("financial_transactions").select("transaction_id").in_("transaction_id", chunk).execute()
+                    for ft in (q_ft.data or []):
+                        if ft.get("transaction_id"):
+                            valid_tx_ids.add(str(ft["transaction_id"]))
+            for le in le_rows:
+                tid = le.get("transaction_id")
+                if not tid or str(tid) not in valid_tx_ids:
+                    orphan_entries.append(le)
+        except Exception:
+            orphan_entries = []
+        exceptions["orphan_ledger_entries"] = orphan_entries
 
-        # 9. Unbalanced Journal Entries
-        exceptions["unbalanced_journal_entries"] = []
+        # 9. Unbalanced Journal Entries (sum(Debit) != sum(Credit) within a transaction)
+        unbalanced_journals = []
+        try:
+            q_j = FinancialReconciliationService._apply_branch_filter(
+                uow.client.table("financial_transactions").select("transaction_id, reference, posting_date, branch_id, financial_ledger_entries(side, amount)").limit(500),
+                branch_id,
+            )
+            j_rows = q_j.execute().data or []
+            for j in j_rows:
+                legs = j.get("financial_ledger_entries") or []
+                tot_dr = sum(float(l.get("amount") or 0.0) for l in legs if str(l.get("side") or "").upper() == "DEBIT")
+                tot_cr = sum(float(l.get("amount") or 0.0) for l in legs if str(l.get("side") or "").upper() == "CREDIT")
+                if abs(tot_dr - tot_cr) >= 0.01:
+                    unbalanced_journals.append({
+                        "transaction_id": j.get("transaction_id"),
+                        "reference": j.get("reference"),
+                        "posting_date": j.get("posting_date"),
+                        "branch_id": j.get("branch_id"),
+                        "debit_total": round(tot_dr, 2),
+                        "credit_total": round(tot_cr, 2),
+                        "variance": round(abs(tot_dr - tot_cr), 2),
+                    })
+        except Exception:
+            unbalanced_journals = []
+        exceptions["unbalanced_journal_entries"] = unbalanced_journals
 
-        # 10. Cashbook Differences
-        exceptions["cashbook_differences"] = []
+        # 10. Cashbook Differences (co_cashbooks closing_balance mismatch against opening + inflows - outflows)
+        cb_diffs = []
+        try:
+            q_cb = FinancialReconciliationService._apply_branch_filter(
+                uow.client.table("co_cashbooks").select("branch_id, officer_id, date, opening_balance, total_inflows, total_outflows, closing_balance").order("date", desc=True).limit(300),
+                branch_id,
+            )
+            for cb in (q_cb.execute().data or []):
+                expected_close = float(cb.get("total_inflows") or 0.0) - float(cb.get("total_outflows") or 0.0)
+                recorded_close = float(cb.get("closing_balance") or 0.0)
+                if abs(expected_close - recorded_close) >= 0.01:
+                    cb_diffs.append({**cb, "expected_closing": round(expected_close, 2), "variance": round(abs(expected_close - recorded_close), 2)})
+        except Exception:
+            cb_diffs = []
+        exceptions["cashbook_differences"] = cb_diffs
 
-        # 11. Projection Differences
-        exceptions["projection_differences"] = []
+        # 11. Projection Differences (master_cashbook closing_balance vs aggregated co_cashbooks/date expectation)
+        proj_diffs = []
+        try:
+            q_mc = FinancialReconciliationService._apply_branch_filter(
+                uow.client.table("master_cashbook").select("branch_id, date, opening_balance, total_inflows, total_outflows, closing_balance").order("date", desc=True).limit(100),
+                branch_id,
+            )
+            q_cc = FinancialReconciliationService._apply_branch_filter(
+                uow.client.table("co_cashbooks").select("branch_id, date, total_inflows, total_outflows, closing_balance").order("date", desc=True).limit(500),
+                branch_id,
+            )
+            mc_rows = q_mc.execute().data or []
+            cc_rows = q_cc.execute().data or []
+            cc_by_bd = {}
+            for cc in cc_rows:
+                key = (str(cc.get("branch_id") or ""), str(cc.get("date") or "")[:10])
+                cc_by_bd[key] = cc_by_bd.get(key, 0.0) + float(cc.get("closing_balance") or 0.0)
+            for mc in mc_rows:
+                expected_mc_close = float(mc.get("total_inflows") or 0.0) - float(mc.get("total_outflows") or 0.0)
+                rec_mc_close = float(mc.get("closing_balance") or 0.0)
+                if abs(expected_mc_close - rec_mc_close) >= 0.01:
+                    proj_diffs.append({**mc, "expected_closing": round(expected_mc_close, 2), "variance": round(abs(expected_mc_close - rec_mc_close), 2)})
+        except Exception:
+            proj_diffs = []
+        exceptions["projection_differences"] = proj_diffs
 
-        # 12. Missing Collection Records
-        exceptions["missing_collection_records"] = []
+        # 12. Missing Collection Records (past-due Active loan schedules with zero payment & still Pending)
+        missing_colls = []
+        try:
+            q_al_mc = FinancialReconciliationService._apply_branch_filter(
+                uow.client.table("loans").select("loan_id, client_id, branch_id").eq("status", "Active"),
+                branch_id,
+            )
+            al_rows = q_al_mc.execute().data or []
+            al_ids = [l["loan_id"] for l in al_rows if l.get("loan_id")]
+            if al_ids:
+                today_iso = date.today().isoformat()
+                for chunk in [al_ids[i:i + 50] for i in range(0, len(al_ids), 50)]:
+                    s_res = uow.client.table("loan_schedule").select("schedule_id, loan_id, due_date, total_due, paid_amount, status") \
+                        .in_("loan_id", chunk).lt("due_date", today_iso).eq("status", "Pending").limit(200).execute()
+                    for sr in (s_res.data or []):
+                        if float(sr.get("paid_amount") or 0.0) <= 0.0 and float(sr.get("total_due") or 0.0) > 0.0:
+                            missing_colls.append(sr)
+        except Exception:
+            missing_colls = []
+        exceptions["missing_collection_records"] = missing_colls
 
         # 13. Clients with Overdue Repayments
         try:
-            q = uow.client.table("loans").select("loan_id, client_id, active_credit, loan_repay") \
-                .eq("status", "Active")
-            if branch_id and branch_id != "All": q = q.eq("branch_id", branch_id)
+            q = FinancialReconciliationService._apply_branch_filter(
+                uow.client.table("loans").select("loan_id, client_id, active_credit, loan_repay").eq("status", "Active"),
+                branch_id,
+            )
             res = q.execute()
             active_loans = res.data or []
             loan_ids = [l["loan_id"] for l in active_loans if l.get("loan_id")]
@@ -374,10 +588,56 @@ class FinancialReconciliationService:
             exceptions["overdue_repayments"] = []
 
         # 14. Loans without Installment Schedule
-        exceptions["loans_without_schedule"] = []
+        loans_no_sched = []
+        try:
+            q_ls = FinancialReconciliationService._apply_branch_filter(
+                uow.client.table("loans").select("loan_id, client_id, branch_id, status").in_("status", ["Active", "Disbursed", "Approved"]),
+                branch_id,
+            )
+            cand_loans = q_ls.execute().data or []
+            cand_ids = [l["loan_id"] for l in cand_loans if l.get("loan_id")]
+            sched_loan_ids = set()
+            for chunk in [cand_ids[i:i + 50] for i in range(0, len(cand_ids), 50)]:
+                s_res = uow.client.table("loan_schedule").select("loan_id").in_("loan_id", chunk).execute()
+                for s_row in (s_res.data or []):
+                    if s_row.get("loan_id"):
+                        sched_loan_ids.add(str(s_row["loan_id"]))
+            for cl in cand_loans:
+                if str(cl.get("loan_id")) not in sched_loan_ids:
+                    loans_no_sched.append(cl)
+        except Exception:
+            loans_no_sched = []
+        exceptions["loans_without_schedule"] = loans_no_sched
 
         # 15. Inactive Clients with Active Loan
-        exceptions["inactive_clients_active_loan"] = []
+        inactive_active = []
+        try:
+            q_act = FinancialReconciliationService._apply_branch_filter(
+                uow.client.table("loans").select("loan_id, client_id, branch_id, active_credit, status").eq("status", "Active"),
+                branch_id,
+            )
+            act_loans = q_act.execute().data or []
+            c_ids = list({str(l["client_id"]) for l in act_loans if l.get("client_id")})
+            client_map = {}
+            for chunk in [c_ids[i:i + 50] for i in range(0, len(c_ids), 50)]:
+                c_res = uow.client.table("clients").select("client_id, client_code, name, status, client_statuses(name)").in_("client_id", chunk).execute()
+                for c_row in (c_res.data or []):
+                    cs_rel = c_row.get("client_statuses")
+                    cs_name = cs_rel.get("name") if isinstance(cs_rel, dict) else c_row.get("status")
+                    client_map[str(c_row["client_id"])] = {
+                        "client_code": c_row.get("client_code"),
+                        "name": c_row.get("name"),
+                        "client_status": str(cs_name or c_row.get("status") or ""),
+                    }
+            inactive_statuses = {"closed", "dormant", "inactive (savings only)", "inactive", "suspended", "completed"}
+            for al in act_loans:
+                c_info = client_map.get(str(al.get("client_id")), {})
+                c_stat = str(c_info.get("client_status") or "").strip().lower()
+                if c_stat in inactive_statuses:
+                    inactive_active.append({**al, **c_info})
+        except Exception:
+            inactive_active = []
+        exceptions["inactive_clients_active_loan"] = inactive_active
 
 
         total_exception_count = sum(len(v) for v in exceptions.values())
@@ -412,14 +672,19 @@ class FinancialReconciliationService:
             pass
 
         # 2. Rebuild Master Cashbook projection
-        MasterCashbookProjectionBuilder.rebuild_master_projection(uow, branch_id, posting_date)
+        master_rebuilt = False
+        try:
+            rebuild_res = MasterCashbookProjectionBuilder.rebuild_master_projection(uow, branch_id, posting_date)
+            master_rebuilt = (rebuild_res is not False)
+        except Exception:
+            master_rebuilt = False
 
         # 3. Re-verify integrity
         verification = FinancialReconciliationService.verify_6way_financial_integrity(uow, branch_id, posting_date)
 
         return {
             "rebuilt_officer_count": rebuilt_officers,
-            "master_cashbook_rebuilt": True,
+            "master_cashbook_rebuilt": master_rebuilt,
             "verification_after_repair": verification
         }
 

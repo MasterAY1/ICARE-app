@@ -970,8 +970,6 @@ class SupabaseAuditViewRepository(BaseRepository):
                 for r in (res_rep.data or []):
                     paid = float(r.get("amount_paid") or 0.0)
                     expected = float(r.get("expected_amount") or 0.0)
-                    if expected <= 0.0 and paid > 0.0:
-                        expected = paid
 
                     status = r.get("payment_status")
                     if not status or status.upper() not in ["PAID", "PART_PAYMENT", "NOT_PAID"]:

@@ -178,6 +178,12 @@ class RetryingHTTPTransport(httpx.HTTPTransport):
                 time.sleep(0.5 * (2 ** attempt))
 
 
+POOL_CONFIG = {
+    "max_keepalive": 50,
+    "max_connections": 100,
+    "keepalive_expiry_seconds": 60.0,
+}
+
 _client_instance: Optional[Client] = None
 
 
@@ -192,9 +198,9 @@ def get_supabase_client() -> Client:
 
     url, key, _ = resolve_supabase_credentials()
     pool_limits = httpx.Limits(
-        max_keepalive_connections=50,
-        max_connections=100,
-        keepalive_expiry=60.0
+        max_keepalive_connections=POOL_CONFIG["max_keepalive"],
+        max_connections=POOL_CONFIG["max_connections"],
+        keepalive_expiry=POOL_CONFIG["keepalive_expiry_seconds"],
     )
     transport = RetryingHTTPTransport(retries=3, limits=pool_limits)
     http_client = httpx.Client(

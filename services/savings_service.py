@@ -946,7 +946,7 @@ class SavingsService:
         officer_clean = str(officer or "").strip().lower()
         
         # BR-SAV-002: If officer is the designated Misc Savings manager, include all branch Misc Savings
-        if officer_clean == managing_name.lower() or officer_clean == managing_id.lower() or "co3" in officer_clean:
+        if managing_name and (officer_clean == managing_name.lower() or officer_clean == str(managing_id).lower()):
             msc = uow.misc_savings.get_total_balance(branch)
         else:
             msc = 0.0
@@ -3110,13 +3110,16 @@ class SavingsService:
 
         for cand in candidates:
             try:
+                off_ident = cand.get("officer_name") or cand.get("officer_id")
+                if not off_ident:
+                    raise ValueError(f"Missing officer identity for automatic LAPS sweep of client {cand.get('client_id')}.")
                 res = SavingsService.transfer_to_laps(
                     uow=uow,
                     client_id=cand["client_id"],
                     client_name=cand["client_name"],
                     source_savings_type="IndividualSavings",
                     branch=cand["branch_name"] or cand["branch_id"],
-                    officer=cand["officer_name"] or "SYSTEM",
+                    officer=off_ident,
                     amount=cand["savings_balance"],
                     reference=f"AUTO-LAPS-{cand['client_id'][:8]}",
                     remarks=f"Automatic LAPS sweep after {cand['days_in_status']} days in {cand['status']}",

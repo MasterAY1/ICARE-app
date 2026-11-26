@@ -180,10 +180,10 @@ class ClientRiskRatingService:
     @staticmethod
     def get_branch_risk_distribution(
         uow: UnitOfWork,
-        branch_id: str
+        branch_id: Any = None
     ) -> Dict[str, Any]:
         """
-        Get risk rating distribution for all active loans in a branch.
+        Get risk rating distribution for all active loans in a branch, area, or enterprise.
         Returns count per rating category for director/BM dashboards.
         """
         distribution = {
@@ -196,11 +196,15 @@ class ClientRiskRatingService:
         }
 
         try:
-            # Get all active loans for this branch
-            res = uow.client.table("loans").select("loan_id, client_id") \
-                .eq("branch_id", branch_id) \
-                .in_("status", ["Active", "Approved"]) \
-                .execute()
+            q = uow.client.table("loans").select("loan_id, client_id")
+            if isinstance(branch_id, (list, tuple, set)):
+                bids = [str(b) for b in branch_id if b]
+                if not bids:
+                    return distribution
+                q = q.in_("branch_id", bids)
+            elif branch_id and str(branch_id).upper() not in ("ALL", "ALL BRANCHES"):
+                q = q.eq("branch_id", str(branch_id))
+            res = q.in_("status", ["Active", "Approved"]).execute()
 
             active_loans = res.data or []
             distribution["total_clients"] = len(active_loans)

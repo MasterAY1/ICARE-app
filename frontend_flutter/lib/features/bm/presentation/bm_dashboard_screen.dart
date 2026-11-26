@@ -3,6 +3,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import '../../../../core/errors/app_error_formatter.dart';
 import '../../../../core/utils/currency_formatter.dart';
 import '../../../core/theme/icare_theme_tokens.dart';
 import '../../../core/widgets/icare_skeleton_loader.dart';
@@ -3191,7 +3192,7 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
       _invalidateAllCashbookAndDashboardProviders();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Approval failed: $e'), backgroundColor: const Color(0xFFDC2626)));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Approval failed: ${AppErrorDetails.from(e).message}'), backgroundColor: const Color(0xFFDC2626)));
     } finally {
       if (mounted) setState(() => _isProcessing = false);
     }
@@ -3206,7 +3207,7 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
       _invalidateAllCashbookAndDashboardProviders();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Rejection failed: $e'), backgroundColor: const Color(0xFFDC2626)));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Rejection failed: ${AppErrorDetails.from(e).message}'), backgroundColor: const Color(0xFFDC2626)));
     } finally {
       if (mounted) setState(() => _isProcessing = false);
     }
@@ -3231,7 +3232,7 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
       _invalidateAllCashbookAndDashboardProviders();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Batch approval failed: $e'), backgroundColor: const Color(0xFFDC2626)));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Batch approval failed: ${AppErrorDetails.from(e).message}'), backgroundColor: const Color(0xFFDC2626)));
     } finally {
       if (mounted) setState(() => _isProcessing = false);
     }
@@ -3246,7 +3247,7 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
       _invalidateAllCashbookAndDashboardProviders();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Approval failed: $e'), backgroundColor: const Color(0xFFDC2626)));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Approval failed: ${AppErrorDetails.from(e).message}'), backgroundColor: const Color(0xFFDC2626)));
     } finally {
       if (mounted) setState(() => _isProcessing = false);
     }
@@ -3286,7 +3287,7 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
         _invalidateAllCashbookAndDashboardProviders();
       } catch (e) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Rejection failed: $e'), backgroundColor: const Color(0xFFDC2626)));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Rejection failed: ${AppErrorDetails.from(e).message}'), backgroundColor: const Color(0xFFDC2626)));
       } finally {
         if (mounted) setState(() => _isProcessing = false);
       }
@@ -3312,7 +3313,7 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
       _invalidateAllCashbookAndDashboardProviders();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Batch approval failed: $e'), backgroundColor: const Color(0xFFDC2626)));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Batch approval failed: ${AppErrorDetails.from(e).message}'), backgroundColor: const Color(0xFFDC2626)));
     } finally {
       if (mounted) setState(() => _isProcessing = false);
     }
@@ -3385,7 +3386,7 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
       _invalidateAllCashbookAndDashboardProviders();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Approval failed: $e'), backgroundColor: const Color(0xFFDC2626)));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Approval failed: ${AppErrorDetails.from(e).message}'), backgroundColor: const Color(0xFFDC2626)));
     } finally {
       if (mounted) setState(() => _isProcessing = false);
     }
@@ -3443,7 +3444,7 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
       _invalidateAllCashbookAndDashboardProviders();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Rejection failed: $e'), backgroundColor: const Color(0xFFDC2626)));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Rejection failed: ${AppErrorDetails.from(e).message}'), backgroundColor: const Color(0xFFDC2626)));
     } finally {
       if (mounted) setState(() => _isProcessing = false);
     }
@@ -3514,7 +3515,7 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
       _invalidateAllCashbookAndDashboardProviders();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Batch approval failed: $e'), backgroundColor: const Color(0xFFDC2626)));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Batch approval failed: ${AppErrorDetails.from(e).message}'), backgroundColor: const Color(0xFFDC2626)));
     } finally {
       if (mounted) setState(() => _isProcessing = false);
     }

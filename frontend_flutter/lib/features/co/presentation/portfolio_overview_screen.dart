@@ -1148,7 +1148,7 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
               children: [
                 _buildPortfolioTabPill(index: 0, label: 'Directory', icon: Icons.people_outline, count: clientTable.length),
                 const SizedBox(width: 4),
-                _buildPortfolioTabPill(index: 1, label: 'KPIs & Risk', icon: Icons.analytics_outlined, count: 22),
+                _buildPortfolioTabPill(index: 1, label: 'KPIs & Risk', icon: Icons.analytics_outlined, count: 23),
                 const SizedBox(width: 4),
                 _buildPortfolioTabPill(index: 2, label: 'Products', icon: Icons.category_outlined, count: groupMatrix.length),
                 const SizedBox(width: 4),
@@ -3642,7 +3642,7 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
                 final outBal = (c['Outstanding Balance'] as num?)?.toDouble() ?? 0.0;
                 final savings = (c['Savings Balance'] as num?)?.toDouble() ?? 0.0;
                 final excessPaid = (c['Period Excess Paid'] as num?)?.toDouble() ?? 0.0;
-                final lifecycle = c['Lifecycle Status']?.toString() ?? 'On Loan';
+                final lifecycle = c['Lifecycle Status']?.toString() ?? 'Unknown';
                 return Container(
                   margin: const EdgeInsets.only(bottom: 12),
                   decoration: BoxDecoration(
@@ -3918,8 +3918,8 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
                         DataCell(Text(CurrencyFormatter.formatNaira((c['Outstanding Balance'] as num?)?.toDouble() ?? 0.0), style: TextStyle(fontSize: 12, color: tokens.dangerText, fontWeight: FontWeight.w600, fontFeatures: const [FontFeature.tabularFigures()]))),
                         DataCell(Text(CurrencyFormatter.formatNaira((c['Total Paid'] as num?)?.toDouble() ?? 0.0), style: TextStyle(fontSize: 12, color: tokens.textPrimary, fontFeatures: const [FontFeature.tabularFigures()]))),
                         DataCell(Text(CurrencyFormatter.formatNaira((c['Period Excess Paid'] as num?)?.toDouble() ?? 0.0), style: TextStyle(fontSize: 12, color: tokens.infoText, fontFeatures: const [FontFeature.tabularFigures()]))),
-                        DataCell(_buildStatusBadge(c['Status']?.toString() ?? 'Active')),
-                        DataCell(_buildLifecycleBadge(c['Lifecycle Status']?.toString() ?? 'On Loan')),
+                        DataCell(_buildStatusBadge(c['Status']?.toString() ?? 'Unknown')),
+                        DataCell(_buildLifecycleBadge(c['Lifecycle Status']?.toString() ?? 'Unknown')),
                       ]);
                     }).toList(),
                   ),
@@ -4419,7 +4419,7 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
                 final c1 = _buildKpiCard('Total Active Credit', CurrencyFormatter.formatNaira((banner['total_active_credit'] as num?)?.toDouble() ?? 0.0), 'Principal Net of Gap Fee', tokens.textPrimary, icon: Icons.credit_card_outlined);
                 final c2 = _buildKpiCard('Outstanding Balance', CurrencyFormatter.formatNaira((banner['outstanding_balance'] as num?)?.toDouble() ?? 0.0), 'Unpaid Balance', tokens.dangerDot, isAlert: ((banner['outstanding_balance'] as num?)?.toDouble() ?? 0.0) > 0, icon: Icons.hourglass_bottom_outlined);
                 final c3 = _buildKpiCard('Savings Balance', CurrencyFormatter.formatNaira((banner['savings_balance'] as num?)?.toDouble() ?? 0.0), 'Available Balance', tokens.brandPrimary, icon: Icons.savings_outlined);
-                final c4 = _buildKpiCard('Account Status', banner['account_status']?.toString() ?? 'Active', 'Authoritative Standing', tokens.brandPrimaryDark, icon: Icons.verified_user_outlined);
+                final c4 = _buildKpiCard('Account Status', banner['account_status']?.toString() ?? 'Unknown', 'Authoritative Standing', tokens.brandPrimaryDark, icon: Icons.verified_user_outlined);
                 if (constraints.maxWidth >= 900) {
                   return Row(
                     children: [
@@ -4599,7 +4599,7 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
                     const SizedBox(height: 4),
                     Row(
                       children: [
-                        _buildLifecycleBadge(c['status']?.toString() ?? 'Active'),
+                        _buildLifecycleBadge(c['status']?.toString() ?? 'Unknown'),
                         if (!isOfficer) ...[
                           const SizedBox(width: 8),
                           OutlinedButton.icon(
@@ -4775,7 +4775,7 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
               final cred = (l['active_credit'] as num?)?.toDouble() ?? 0.0;
               final inst = (l['expected_installment'] as num?)?.toDouble() ?? 0.0;
               final rem = (l['remaining_balance'] as num?)?.toDouble() ?? 0.0;
-              final status = l['status']?.toString() ?? 'Active';
+              final status = l['status']?.toString() ?? 'Unknown';
               return Container(
                 margin: const EdgeInsets.only(bottom: 12),
                 padding: const EdgeInsets.all(16),
@@ -4862,7 +4862,7 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
                     DataCell(Text(CurrencyFormatter.formatNaira((l['active_credit'] as num?)?.toDouble() ?? 0.0), style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tokens.textPrimary, fontFeatures: const [FontFeature.tabularFigures()]))),
                     DataCell(Text(CurrencyFormatter.formatNaira((l['expected_installment'] as num?)?.toDouble() ?? 0.0), style: TextStyle(fontSize: 12, color: tokens.textPrimary, fontFeatures: const [FontFeature.tabularFigures()]))),
                     DataCell(Text(CurrencyFormatter.formatNaira(rem), style: TextStyle(fontSize: 12, color: rem > 0 ? tokens.dangerText : tokens.brandPrimary, fontWeight: FontWeight.w600, fontFeatures: const [FontFeature.tabularFigures()]))),
-                    DataCell(_buildStatusBadge(l['status']?.toString() ?? 'Active')),
+                    DataCell(_buildStatusBadge(l['status']?.toString() ?? 'Unknown')),
                   ]);
                 }).toList(),
               ),
@@ -4968,7 +4968,7 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
                                   r['date']?.toString() ?? '',
                                   style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tokens.textSecondary),
                                 ),
-                                _buildStatusBadge(isRev ? 'REVERSED' : (r['status']?.toString() ?? 'Completed')),
+                                _buildStatusBadge(isRev ? 'REVERSED' : (r['status']?.toString() ?? 'UNRECORDED')),
                               ],
                             ),
                             const SizedBox(height: 8),
@@ -5039,7 +5039,7 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
                               fontFeatures: const [FontFeature.tabularFigures()],
                             ),
                           )),
-                          DataCell(_buildStatusBadge(isRev ? 'REVERSED' : (r['status']?.toString() ?? 'Completed'))),
+                          DataCell(_buildStatusBadge(isRev ? 'REVERSED' : (r['status']?.toString() ?? 'UNRECORDED'))),
                           DataCell(Text(r['transaction_type']?.toString() ?? 'Repayment', style: TextStyle(fontSize: 12, color: tokens.textSecondary))),
                           DataCell(Text(r['notes']?.toString() ?? '', style: TextStyle(fontSize: 12, color: tokens.textSecondary))),
                         ]);
@@ -5446,7 +5446,7 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
                           final expM = ((m['expected'] ?? m['expected_amount']) as num?)?.toDouble() ?? 0.0;
                           final colM = ((m['collected'] ?? m['amount_paid'] ?? m['collected_amount']) as num?)?.toDouble() ?? 0.0;
                           final varM = (m['variance'] as num?)?.toDouble() ?? (expM - colM);
-                          final st = m['compliance_status']?.toString() ?? m['status']?.toString() ?? 'Compliant';
+                          final st = m['compliance_status']?.toString() ?? m['status']?.toString() ?? 'Unrecorded';
                           return Container(
                             margin: const EdgeInsets.only(bottom: 10),
                             padding: const EdgeInsets.all(14),
@@ -5508,7 +5508,7 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
                             final expM = ((m['expected'] ?? m['expected_amount']) as num?)?.toDouble() ?? 0.0;
                             final colM = ((m['collected'] ?? m['amount_paid'] ?? m['collected_amount']) as num?)?.toDouble() ?? 0.0;
                             final varM = (m['variance'] as num?)?.toDouble() ?? (expM - colM);
-                            final st = m['compliance_status']?.toString() ?? m['status']?.toString() ?? 'Compliant';
+                            final st = m['compliance_status']?.toString() ?? m['status']?.toString() ?? 'Unrecorded';
                             return DataRow(cells: [
                               DataCell(Text(m['meeting_date']?.toString() ?? '', style: TextStyle(fontSize: 12, color: tokens.textPrimary))),
                               DataCell(Text(CurrencyFormatter.formatNaira(expM), style: TextStyle(fontSize: 12, color: tokens.textPrimary, fontFeatures: const [FontFeature.tabularFigures()]))),
@@ -6142,7 +6142,10 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
               child: Center(
                 child: Column(
                   children: [
-                    Text('Failed to load incoming transfers: $err', style: TextStyle(color: tokens.dangerText, fontSize: 13)),
+                    Text(
+                      'Failed to load incoming transfers: ${AppErrorDetails.from(err).message}',
+                      style: TextStyle(color: tokens.dangerText, fontSize: 13),
+                    ),
                     const SizedBox(height: 8),
                     ElevatedButton(
                       onPressed: () => ref.invalidate(incomingTransfersProvider),

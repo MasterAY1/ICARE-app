@@ -21,9 +21,11 @@ class TreasuryTransactionRepository(BaseRepository):
         posting_date: Optional[date] = None
     ) -> Dict[str, Any]:
         p_date = (posting_date or date.today()).isoformat()
+        if not officer_id:
+            raise ValueError("officer_id is required to record a treasury entry.")
         payload = {
             "branch_id": branch_id,
-            "officer_id": officer_id or "00000000-0000-0000-0000-000000000000",
+            "officer_id": officer_id,
             "transaction_type": transaction_type,
             "amount": float(amount),
             "source_branch": source_branch,

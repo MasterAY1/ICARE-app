@@ -59,7 +59,7 @@ def get_system_health():
     Comprehensive system health inspection including FastAPI process,
     Supabase database connectivity, roundtrip latency, and circuit breaker status.
     """
-    from database.connection import get_supabase_client
+    from database.connection import get_supabase_client, POOL_CONFIG
     cb = get_circuit_breaker("database")
     cb_status = cb.get_status()
 
@@ -83,9 +83,9 @@ def get_system_health():
             "status": db_status,
             "latency_ms": db_latency_ms,
             "connection_pooling": {
-                "max_connections": 50,
-                "max_keepalive": 20,
-                "keepalive_expiry_seconds": 30.0
+                "max_connections": POOL_CONFIG["max_connections"],
+                "max_keepalive": POOL_CONFIG["max_keepalive"],
+                "keepalive_expiry_seconds": POOL_CONFIG["keepalive_expiry_seconds"],
             }
         },
         "circuit_breaker": cb_status

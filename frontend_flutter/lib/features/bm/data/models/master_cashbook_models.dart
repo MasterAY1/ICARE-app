@@ -211,7 +211,7 @@ class MasterReconciliationTallyData {
     this.actualCashCollected = 0.0,
     this.bankDeposited = 0.0,
     this.closingCashBalance = 0.0,
-    this.isCashBalanced = true,
+    this.isCashBalanced = false,
     this.arrearsFloat = 0.0,
     this.totalRepsCount = 0,
   });
@@ -234,7 +234,7 @@ class MasterReconciliationTallyData {
       actualCashCollected: toD(json['actual_cash_collected']),
       bankDeposited: toD(json['bank_deposited']),
       closingCashBalance: toD(json['closing_cash_balance']),
-      isCashBalanced: json['is_cash_balanced'] ?? true,
+      isCashBalanced: json['is_cash_balanced'] ?? false,
       arrearsFloat: toD(json['arrears_float']),
       totalRepsCount: json['total_reps_count'] ?? 0,
     );
@@ -350,8 +350,8 @@ class MasterCashbookDailyData {
     return MasterCashbookDailyData(
       date: json['date'] ?? '',
       branch: json['branch'] ?? '',
-      isOpen: json['is_open'] ?? true,
-      openReason: json['open_reason'] ?? 'Working Day',
+      isOpen: json['is_open'] ?? false,
+      openReason: json['open_reason'] ?? '',
       inflows: MasterCashbookInflowsData.fromJson(json['inflows'] ?? {}),
       outflows: MasterCashbookOutflowsData.fromJson(json['outflows'] ?? {}),
       totalInflows: toD(json['total_inflows']),
@@ -451,9 +451,9 @@ class CoAggregationData {
       totalInflows: toD(json['total_inflows']),
       totalOutflows: toD(json['total_outflows']),
       closingBalance: toD(json['closing_balance']),
-      isOpen: json['is_open'] ?? true,
-      openReason: json['open_reason'] ?? 'Working Day',
-      canCloseDay: json['can_close_day'] ?? true,
+      isOpen: json['is_open'] ?? false,
+      openReason: json['open_reason'] ?? '',
+      canCloseDay: json['can_close_day'] ?? false,
     );
   }
 }
@@ -638,7 +638,7 @@ class MonthlyLedgerData {
     double toD(dynamic val) => val == null ? 0.0 : (val as num).toDouble();
     return MonthlyLedgerData(
       month: json['month'] ?? 1,
-      year: json['year'] ?? 2026,
+      year: json['year'] ?? DateTime.now().year,
       branch: json['branch'] ?? '',
       rows: (json['rows'] as List<dynamic>?)
               ?.map((e) => MonthlyLedgerRowData.fromJson(e as Map<String, dynamic>))

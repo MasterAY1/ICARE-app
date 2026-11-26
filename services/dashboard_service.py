@@ -778,7 +778,7 @@ class DashboardService:
                         "Expected Collection": 0.0,
                         "Collected": 0.0,
                         "Outstanding": 0.0,
-                        "Compliance %": 100.0,
+                        "Compliance %": 0.0,
                         "Clients Expected": 0,
                         "Clients Paid": 0,
                         "Clients Not Paid": 0
@@ -845,15 +845,15 @@ class DashboardService:
             g_data["Outstanding"] = out_c
 
             if is_branch_closed:
-                g_data["Compliance %"] = 100.0
+                g_data["Compliance %"] = 0.0
                 g_data["Status"] = f"Closed ({closure_reason})"
             elif exp_c > 0:
                 comp = round((col_c / exp_c) * 100.0, 1)
                 g_data["Compliance %"] = min(100.0, comp)
                 g_data["Status"] = "Completed" if col_c >= exp_c else ("In Progress" if col_c > 0 else "Pending")
             else:
-                g_data["Compliance %"] = 100.0
-                g_data["Status"] = "Completed" if col_c > 0 else "Scheduled"
+                g_data["Compliance %"] = 0.0
+                g_data["Status"] = "Unscheduled Collection" if col_c > 0 else "Unscheduled"
 
             meeting_portfolio_rows.append(g_data)
 
@@ -1101,14 +1101,17 @@ class DashboardService:
 
                     if exp > 0:
                         comp = round((col / exp * 100), 1)
-                    elif col > 0:
-                        comp = 100.0
                     else:
-                        comp = 100.0 if is_branch_closed or grps_count == 0 else 0.0
+                        comp = 0.0
 
-                    status_str = f"Closed ({closure_reason})" if is_branch_closed else ("Normal" if comp >= 80 else "Requires Attention")
-                    if grps_count == 0 and exp == 0 and col == 0:
-                        status_str = "Normal"
+                    if is_branch_closed:
+                        status_str = f"Closed ({closure_reason})"
+                    elif grps_count == 0 and exp == 0 and col == 0:
+                        status_str = "No Scheduled Collections"
+                    elif exp == 0 and col > 0:
+                        status_str = "Unscheduled Inflow"
+                    else:
+                        status_str = "Normal" if comp >= 80 else "Requires Attention"
 
                     stats.append({
                         "Officer": oname,
@@ -1190,6 +1193,24 @@ class DashboardService:
             if branch_coll_today == 0.0 and summary.get("total_collected"):
                 branch_coll_today = summary.get("total_collected", 0.0)
 
+        # Derive live branch alerts from cash position variance, officer collection gaps, and pending approvals (FP-006)
+        dynamic_alerts = []
+        if is_branch_closed:
+            dynamic_alerts.append(f"Branch is closed today for {closure_reason}.")
+        else:
+            cp_diff = float(cash_position.get("difference") or 0.0) if isinstance(cash_position, dict) else 0.0
+            if abs(cp_diff) >= 0.01:
+                dynamic_alerts.append(f"Cashbook variance detected: ₦{cp_diff:,.2f} difference pending verification.")
+            else:
+                dynamic_alerts.append("Master Cashbook position matches verified vault entries.")
+            if pending_approvals:
+                dynamic_alerts.append(f"{len(pending_approvals)} item(s) awaiting Branch Manager review.")
+            low_off = 0
+            if isinstance(officer_df, pd.DataFrame) and not officer_df.empty and "Status" in officer_df.columns:
+                low_off = int((officer_df["Status"] == "Requires Attention").sum())
+            if low_off > 0:
+                dynamic_alerts.append(f"{low_off} officer schedule(s) below 80% collection target today.")
+
         return {
             "branch_summary": {
                 "active_clients": total_active_clients,
@@ -1211,10 +1232,7 @@ class DashboardService:
             "officer_collection_status": officer_df,
             "branch_cash_position": cash_position,
             "approval_queue": pending_approvals,
-            "branch_alerts": [
-                f"Branch is closed today for {closure_reason}." if is_branch_closed else "All officer cashbooks balanced for today.",
-                "Zero projection mismatches detected."
-            ]
+            "branch_alerts": dynamic_alerts,
         }
 
     @classmethod
@@ -1326,10 +1344,15 @@ class DashboardService:
 
                 coll = float(summary.get("total_collected", 0.0))
                 exp = float(summary.get("total_expected", 0.0)) if not is_b_closed else 0.0
-                comp = float(summary.get("compliance_pct", 100.0)) if not is_b_closed else 100.0
+                comp = round((coll / exp * 100.0), 1) if (not is_b_closed and exp > 0) else 0.0
                 b_par = DashboardService.calculate_par_pct(uow, b_id)
 
-                status_str = f"Closed ({b_closure_reason})" if is_b_closed else ("Normal" if comp >= 80 else "Requires Attention")
+                if is_b_closed:
+                    status_str = f"Closed ({b_closure_reason})"
+                elif exp <= 0:
+                    status_str = "Unscheduled"
+                else:
+                    status_str = "Normal" if comp >= 80 else "Requires Attention"
 
                 b_row = {
                     "Branch": b_name,
@@ -1359,6 +1382,19 @@ class DashboardService:
         b_df = pd.DataFrame(branch_stats) if branch_stats else pd.DataFrame(columns=["Branch", "Expected Collection", "Collected", "Outstanding", "PAR", "Cash Difference", "Compliance %", "Status"])
         regional_par = DashboardService.calculate_par_pct(uow)
 
+        attention_branches = [b["Branch"] for b in branch_stats if b.get("Status") == "Requires Attention"]
+        closed_branches = [b["Branch"] for b in branch_stats if str(b.get("Status") or "").startswith("Closed")]
+        regional_alerts = []
+        if attention_branches:
+            regional_alerts.append(f"Branches requiring collection attention: {', '.join(attention_branches)}.")
+        if closed_branches:
+            regional_alerts.append(f"Closed branches today: {', '.join(closed_branches)}.")
+        if not regional_alerts:
+            regional_alerts.append(
+                f"{len(branch_stats)} supervised branch(es) tracked with regional PAR at {regional_par}."
+                if branch_stats else "No assigned branches configured for regional monitoring."
+            )
+
         return {
             "regional_summary": {
                 "branches_count": len(branch_stats),
@@ -1369,10 +1405,7 @@ class DashboardService:
                 "par": regional_par
             },
             "branch_performance": b_df,
-            "regional_alerts": [
-                "Region operational stability is healthy.",
-                "Zero unassigned officer cashbooks."
-            ]
+            "regional_alerts": regional_alerts,
         }
 
     @classmethod
@@ -1458,6 +1491,22 @@ class DashboardService:
         except Exception:
             pass
 
+        # Live failed/exception telemetry counts from runtime instrumentation & exception engine
+        failed_tx_cnt = 0
+        audit_exc_cnt = 0
+        try:
+            from services.metrics_service import get_metrics_service
+            failed_tx_cnt = int(get_metrics_service().get_metrics_summary().get("domain_events", {}).get("financial_failures", 0))
+        except Exception:
+            failed_tx_cnt = 0
+
+        try:
+            from services.financial_reconciliation_service import FinancialReconciliationService
+            exc_res = FinancialReconciliationService.run_15_exception_reports(uow)
+            audit_exc_cnt = int(exc_res.get("total_exceptions") or 0)
+        except Exception:
+            audit_exc_cnt = pending_approvals_cnt
+
         return {
             "today_operations": {
                 "today_collection": today_coll,
@@ -1473,9 +1522,9 @@ class DashboardService:
             "system_health": {
                 "projection_status": "Live / Active" if db_status_str == "Connected" else db_status_str,
                 "event_queue_status": f"{pending_events_cnt:,} Event Store Entries",
-                "failed_transactions": 0,
+                "failed_transactions": failed_tx_cnt,
                 "pending_approvals": pending_approvals_cnt,
-                "audit_exceptions": pending_approvals_cnt,
+                "audit_exceptions": audit_exc_cnt,
                 "db_sync_status": db_status_str
             }
         }
@@ -1545,13 +1594,40 @@ class DashboardService:
                 branch_totals[b_name_str] = branch_totals.get(b_name_str, 0.0) + float(r.get("amount_paid") or 0.0)
             
             sorted_b = sorted(branch_totals.items(), key=lambda x: x[1], reverse=True)
-            top_branches = [b[0] for b in sorted_b[:5]] if sorted_b else ["Head Office"]
+            top_branches = [b[0] for b in sorted_b[:5]] if sorted_b else []
             bottom_branches = [b[0] for b in sorted_b[-5:]] if len(sorted_b) > 5 else []
         except Exception:
-            top_branches = ["Head Office"]
+            top_branches = []
             bottom_branches = []
 
         par_val = DashboardService.calculate_par_pct(uow)
+        # Compute live recovery rate from overdue recovery records vs total overdue exposure
+        recovery_rate_str = "0.0%"
+        try:
+            res_rec = uow.client.table("loan_overdue_recovery_records").select("recovered_amount").execute()
+            total_recovered = sum(float(r.get("recovered_amount") or 0.0) for r in (res_rec.data or []))
+            res_od = uow.client.table("loans").select("loan_amount").in_("status", ["Defaulter", "DEFAULTER"]).execute()
+            total_od = sum(float(r.get("loan_amount") or 0.0) for r in (res_od.data or []))
+            denom = total_recovered + total_od
+            if denom > 0:
+                recovery_rate_str = f"{round((total_recovered / denom) * 100.0, 1)}%"
+            elif all_paid > 0 or outstanding_portfolio > 0:
+                # Non-zero performing book with zero defaulters -> derive from live repayments / total_ac
+                tot_book = all_paid + outstanding_portfolio
+                recovery_rate_str = f"{round((all_paid / tot_book) * 100.0, 1)}%" if tot_book > 0 else "0.0%"
+        except Exception:
+            recovery_rate_str = "0.0%"
+
+        # Live Account 1000 liquidity ratio vs savings
+        liquidity_str = "No active savings liability recorded."
+        try:
+            res_cash = uow.client.table("financial_ledger_entries").select("amount, side").in_("account_code", ["1000", "1050"]).execute()
+            cash_bal = sum(float(r.get("amount") or 0.0) if r.get("side") == "Debit" else -float(r.get("amount") or 0.0) for r in (res_cash.data or []))
+            if total_sav > 0:
+                liq_pct = round((max(0.0, cash_bal) / total_sav) * 100.0, 1)
+                liquidity_str = f"Cash & bank liquidity covers {liq_pct}% of active member savings."
+        except Exception:
+            pass
 
         return {
             "executive_overview": {
@@ -1560,12 +1636,12 @@ class DashboardService:
                 "outstanding_portfolio": outstanding_portfolio,
                 "total_savings": total_sav,
                 "par": par_val,
-                "recovery_rate": "100.0%" if par_val == "0.0%" else f"{round(100.0 - float(par_val.replace('%', '')), 1)}%"
+                "recovery_rate": recovery_rate_str,
             },
             "top_five_branches": top_branches,
             "bottom_five_branches": bottom_branches,
             "strategic_alerts": [
-                f"Portfolio at Risk (PAR) is dynamically calculated at {par_val}.",
-                "Liquidity coverage ratio is optimal."
+                f"Portfolio at Risk (PAR) is calculated at {par_val}.",
+                liquidity_str,
             ]
         }

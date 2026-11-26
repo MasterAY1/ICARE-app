@@ -22,6 +22,19 @@ from config.roles import (
 class UserService:
     """Production-grade user management service for ICARE Core Banking."""
 
+    @staticmethod
+    def _norm_role(role: Optional[str]) -> str:
+        r = str(role or "").strip().lower().replace("_", " ")
+        if r in ("super admin", "admin", "superadmin"):
+            return "ADMIN"
+        if r in ("area manager", "am"):
+            return "AREA_MANAGER"
+        if r in ("branch manager", "bm"):
+            return "BRANCH_MANAGER"
+        if r in ("credit officer", "co", "officer"):
+            return "CREDIT_OFFICER"
+        return r.upper()
+
     # ---- User CRUD (Admin Only) ----
 
     @staticmethod
@@ -42,12 +55,12 @@ class UserService:
         if not requesting_user:
             return {"success": False, "message": "Authentication required."}
 
-        req_role = requesting_user.role
-        if req_role in (ROLE_SUPER_ADMIN, ROLE_ADMIN):
+        req_norm = UserService._norm_role(requesting_user.role)
+        target_norm = UserService._norm_role(role)
+        if req_norm == "ADMIN":
             pass
-        elif req_role == ROLE_AREA_MANAGER:
-            valid_roles = (ROLE_BRANCH_MANAGER, "Branch Manager", "BM", ROLE_CREDIT_OFFICER, "Credit Officer", "CO")
-            if role not in valid_roles:
+        elif req_norm == "AREA_MANAGER":
+            if target_norm not in ("BRANCH_MANAGER", "CREDIT_OFFICER"):
                 AuditLogService.log_permission_denied("CREATE_USER", "user_management")
                 return {"success": False, "message": "Area Managers can only create Branch Managers or Credit Officers."}
             from database.repositories.unit_of_work import SupabaseUnitOfWork
@@ -57,9 +70,8 @@ class UserService:
                 if not b_res.data or b_res.data[0]["branch_id"] not in am_bids:
                     AuditLogService.log_permission_denied("CREATE_USER", "user_management")
                     return {"success": False, "message": f"Branch '{branch_name}' is not in your supervised area."}
-        elif req_role in (ROLE_BRANCH_MANAGER, "Branch Manager", "BM"):
-            valid_roles = (ROLE_CREDIT_OFFICER, "Credit Officer", "CO")
-            if role not in valid_roles:
+        elif req_norm == "BRANCH_MANAGER":
+            if target_norm != "CREDIT_OFFICER":
                 AuditLogService.log_permission_denied("CREATE_USER", "user_management")
                 return {"success": False, "message": "Branch Managers can only create Credit Officers."}
             if requesting_user.branch_name and branch_name and branch_name.strip().lower() != requesting_user.branch_name.strip().lower():
@@ -120,9 +132,9 @@ class UserService:
     def _toggle_user_active(user_id: str, activate: bool, requesting_user=None) -> Dict:
         """Internal helper for activate/deactivate."""
         action_word = "activate" if activate else "deactivate"
-        allowed_roles = (ROLE_SUPER_ADMIN, ROLE_ADMIN, ROLE_AREA_MANAGER, ROLE_BRANCH_MANAGER, "Branch Manager", "BM", "Area Manager", "AM")
+        req_norm = UserService._norm_role(requesting_user.role) if requesting_user else ""
 
-        if requesting_user and requesting_user.role not in allowed_roles:
+        if requesting_user and req_norm not in ("ADMIN", "AREA_MANAGER", "BRANCH_MANAGER"):
             AuditLogService.log_permission_denied(f"{action_word.upper()}_USER", "user_management")
             return {"success": False, "message": f"You do not have permission to {action_word} users."}
 
@@ -139,21 +151,21 @@ class UserService:
                     return {"success": False, "message": f"You cannot {action_word} your own account."}
 
                 # BM scope: only subordinate Credit Officers in their own branch
-                if requesting_user and requesting_user.role in (ROLE_BRANCH_MANAGER, "Branch Manager", "BM"):
+                if requesting_user and req_norm == "BRANCH_MANAGER":
                     if target.branch_id != requesting_user.branch_id:
                         AuditLogService.log_permission_denied(f"{action_word.upper()}_USER", "user_management")
                         return {"success": False, "message": "You can only manage staff in your own branch."}
-                    if target.role not in (ROLE_CREDIT_OFFICER, "Credit Officer", "CO", "Officer"):
+                    if UserService._norm_role(target.role) != "CREDIT_OFFICER":
                         AuditLogService.log_permission_denied(f"{action_word.upper()}_USER", "user_management")
                         return {"success": False, "message": f"Branch Managers can only {action_word} Credit Officers."}
 
                 # AM scope: Branch Managers and Credit Officers in assigned branches
-                if requesting_user and requesting_user.role in (ROLE_AREA_MANAGER, "Area Manager", "AM"):
+                if requesting_user and req_norm == "AREA_MANAGER":
                     am_bids = set(requesting_user.assigned_branch_ids or [])
                     if target.branch_id not in am_bids:
                         AuditLogService.log_permission_denied(f"{action_word.upper()}_USER", "user_management")
                         return {"success": False, "message": "You can only manage staff in your supervised branches."}
-                    if target.role in (ROLE_SUPER_ADMIN, ROLE_ADMIN, ROLE_AREA_MANAGER, "Area Manager", "AM"):
+                    if UserService._norm_role(target.role) in ("ADMIN", "AREA_MANAGER"):
                         AuditLogService.log_permission_denied(f"{action_word.upper()}_USER", "user_management")
                         return {"success": False, "message": f"You cannot {action_word} administrative users or peers."}
 
@@ -184,10 +196,10 @@ class UserService:
 
     @staticmethod
     def reset_password(username: str, new_password: str, requesting_user=None) -> Dict:
-        """Reset a user's password. Admin or BM (own branch only) may call this."""
-        allowed_roles = (ROLE_SUPER_ADMIN, ROLE_ADMIN, ROLE_AREA_MANAGER, ROLE_BRANCH_MANAGER, "Branch Manager", "BM", "Area Manager", "AM")
+        """Reset a user's password. Admin, AM, or BM (scoped) may call this."""
+        req_norm = UserService._norm_role(requesting_user.role) if requesting_user else ""
 
-        if requesting_user and requesting_user.role not in allowed_roles:
+        if requesting_user and req_norm not in ("ADMIN", "AREA_MANAGER", "BRANCH_MANAGER"):
             AuditLogService.log_permission_denied("RESET_PASSWORD", "user_management")
             return {"success": False, "message": "You do not have permission to reset passwords."}
 
@@ -207,21 +219,21 @@ class UserService:
                     return {"success": False, "message": "You cannot reset your own password via this administrative panel."}
 
                 # BM scope: own branch and Credit Officers only (cannot reset own account or BM peers)
-                if requesting_user and requesting_user.role in (ROLE_BRANCH_MANAGER, "Branch Manager", "BM"):
+                if requesting_user and req_norm == "BRANCH_MANAGER":
                     if target.branch_id != requesting_user.branch_id:
                         AuditLogService.log_permission_denied("RESET_PASSWORD", "user_management")
                         return {"success": False, "message": "You can only reset passwords for staff in your own branch."}
-                    if target.role not in (ROLE_CREDIT_OFFICER, "Credit Officer", "CO", "Officer"):
+                    if UserService._norm_role(target.role) != "CREDIT_OFFICER":
                         AuditLogService.log_permission_denied("RESET_PASSWORD", "user_management")
                         return {"success": False, "message": "Branch Managers can only reset passwords for Credit Officers."}
 
                 # AM scope: Branch Managers and Credit Officers in assigned branches
-                if requesting_user and requesting_user.role in (ROLE_AREA_MANAGER, "Area Manager", "AM"):
+                if requesting_user and req_norm == "AREA_MANAGER":
                     am_bids = set(requesting_user.assigned_branch_ids or [])
                     if target.branch_id not in am_bids:
                         AuditLogService.log_permission_denied("RESET_PASSWORD", "user_management")
                         return {"success": False, "message": "You can only reset passwords for staff in your supervised branches."}
-                    if target.role in (ROLE_SUPER_ADMIN, ROLE_ADMIN, ROLE_AREA_MANAGER, "Area Manager", "AM"):
+                    if UserService._norm_role(target.role) in ("ADMIN", "AREA_MANAGER"):
                         AuditLogService.log_permission_denied("RESET_PASSWORD", "user_management")
                         return {"success": False, "message": "You cannot reset passwords for administrative users or peers."}
 
@@ -262,7 +274,7 @@ class UserService:
         
         Validates the 5-7 branch constraint.
         """
-        if requesting_user and requesting_user.role not in (ROLE_SUPER_ADMIN, ROLE_ADMIN):
+        if requesting_user and UserService._norm_role(requesting_user.role) != "ADMIN":
             AuditLogService.log_permission_denied("ASSIGN_AM_BRANCHES", "user_management")
             return {"success": False, "message": "Only administrators can assign branches to Area Managers."}
 
@@ -306,7 +318,7 @@ class UserService:
     @staticmethod
     def update_officer_name(username: str, new_name: str, requesting_user=None) -> Dict:
         """Update the display name for an officer (staff turnover scenario)."""
-        if requesting_user and requesting_user.role not in (ROLE_SUPER_ADMIN, ROLE_ADMIN):
+        if requesting_user and UserService._norm_role(requesting_user.role) != "ADMIN":
             AuditLogService.log_permission_denied("UPDATE_OFFICER_NAME", "user_management")
             return {"success": False, "message": "Only administrators can update officer names."}
 
@@ -377,25 +389,26 @@ class UserService:
             if not requesting_user:
                 return user_dicts
 
-            if requesting_user.role in (ROLE_SUPER_ADMIN, ROLE_ADMIN):
+            req_norm = UserService._norm_role(requesting_user.role)
+            if req_norm == "ADMIN":
                 return user_dicts
 
-            if requesting_user.role in (ROLE_AREA_MANAGER, "Area Manager", "AM"):
+            if req_norm == "AREA_MANAGER":
                 am_branch_ids = set(requesting_user.assigned_branch_ids or [])
                 # AM sees Branch Managers and Credit Officers in assigned branches; never sees self or Admin
                 return [
                     u for u in user_dicts
                     if u["branch_id"] in am_branch_ids
-                    and u["role"] in (ROLE_BRANCH_MANAGER, "Branch Manager", "BM", "BRANCH_MANAGER", ROLE_CREDIT_OFFICER, "Credit Officer", "CO", "Officer", "CREDIT_OFFICER")
+                    and UserService._norm_role(u.get("role")) in ("BRANCH_MANAGER", "CREDIT_OFFICER")
                     and u["id"] != requesting_user.id
                 ]
 
-            if requesting_user.role in (ROLE_BRANCH_MANAGER, "Branch Manager", "BM"):
+            if req_norm == "BRANCH_MANAGER":
                 # BM only sees subordinate Credit Officers in their branch; never sees self or other managers
                 return [
                     u for u in user_dicts
                     if u["branch_id"] == requesting_user.branch_id
-                    and u["role"] in (ROLE_CREDIT_OFFICER, "Credit Officer", "CO", "Officer", "CREDIT_OFFICER")
+                    and UserService._norm_role(u.get("role")) == "CREDIT_OFFICER"
                     and u["id"] != requesting_user.id
                 ]
 
@@ -410,8 +423,8 @@ class UserService:
     def remove_user_permanently(user_id: str, requesting_user=None) -> Dict:
         """Permanently delete a user from the system."""
         try:
-            allowed_roles = (ROLE_SUPER_ADMIN, ROLE_ADMIN, ROLE_AREA_MANAGER, ROLE_BRANCH_MANAGER, "Branch Manager", "BM", "Area Manager", "AM")
-            if not requesting_user or requesting_user.role not in allowed_roles:
+            req_norm = UserService._norm_role(requesting_user.role) if requesting_user else ""
+            if not requesting_user or req_norm not in ("ADMIN", "AREA_MANAGER", "BRANCH_MANAGER"):
                 return {"success": False, "message": "Unauthorized. You do not have permission to delete users."}
 
             from database.repositories.unit_of_work import SupabaseUnitOfWork
@@ -424,18 +437,18 @@ class UserService:
                     return {"success": False, "message": "You cannot delete your own account."}
 
                 # BM scope: can only delete Credit Officers in own branch
-                if requesting_user.role in (ROLE_BRANCH_MANAGER, "Branch Manager", "BM"):
+                if req_norm == "BRANCH_MANAGER":
                     if user.branch_id != requesting_user.branch_id:
                         return {"success": False, "message": "You can only delete staff in your own branch."}
-                    if user.role not in (ROLE_CREDIT_OFFICER, "Credit Officer", "CO", "Officer"):
+                    if UserService._norm_role(user.role) != "CREDIT_OFFICER":
                         return {"success": False, "message": "Branch Managers can only delete Credit Officers."}
 
                 # AM scope: can delete Branch Managers and Credit Officers in assigned branches
-                if requesting_user.role in (ROLE_AREA_MANAGER, "Area Manager", "AM"):
+                if req_norm == "AREA_MANAGER":
                     am_bids = set(requesting_user.assigned_branch_ids or [])
                     if user.branch_id not in am_bids:
                         return {"success": False, "message": "You can only delete staff in your supervised branches."}
-                    if user.role in (ROLE_SUPER_ADMIN, ROLE_ADMIN, ROLE_AREA_MANAGER, "Area Manager", "AM"):
+                    if UserService._norm_role(user.role) in ("ADMIN", "AREA_MANAGER"):
                         return {"success": False, "message": "You cannot delete administrative users or peers."}
 
                 deleted = uow.users.delete(user.id)

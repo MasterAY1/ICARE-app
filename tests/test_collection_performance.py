@@ -169,7 +169,7 @@ class TestCollectionPerformanceRepository(unittest.TestCase):
             "00000000-0000-0000-0000-000000000000"
         )
         self.assertEqual(result["paid_count"], 0)
-        self.assertEqual(result["compliance_pct"], 100.0)  # No expected = 100%
+        self.assertEqual(result["compliance_pct"], 0.0)
         self.assertEqual(result["consecutive_missed"], 0)
 
 

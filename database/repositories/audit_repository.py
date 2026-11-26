@@ -6,9 +6,9 @@ from database.repositories.base_repository import BaseRepository
 
 _officer_id_cache = {}
 
-def resolve_officer_id(client, username: str) -> str:
+def resolve_officer_id(client, username: str) -> Optional[str]:
     if not username:
-        return "00000000-0000-0000-0000-000000000000"
+        return None
     u_key = str(username).strip().lower()
     if u_key in _officer_id_cache:
         return _officer_id_cache[u_key]
@@ -25,7 +25,7 @@ def resolve_officer_id(client, username: str) -> str:
             return oid
     except Exception:
         pass
-    return "00000000-0000-0000-0000-000000000000"
+    return None
 
 def is_valid_uuid(val: str) -> bool:
     try:

@@ -3054,7 +3054,7 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
             ],
             rows: records.map((r) {
               final amt = (r['amount'] as num?)?.toDouble() ?? 0.0;
-              final recStatus = (r['status']?.toString() ?? 'ACTIVE').toUpperCase();
+              final recStatus = (r['status']?.toString() ?? 'UNRECORDED').toUpperCase();
               final isNeg = amt < 0 || recStatus == 'REVERSAL';
               final formattedAmt = amt < 0
                   ? '-${CurrencyFormatter.formatNaira(amt.abs())}'
@@ -3174,7 +3174,7 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                     DataCell(Text(uInt > 0 ? CurrencyFormatter.formatNaira(uInt) : '-', style: TextStyle(fontSize: 11, color: tokens.textSecondary, fontFeatures: const [FontFeature.tabularFigures()]))),
                     DataCell(Text(uGap > 0 ? CurrencyFormatter.formatNaira(uGap) : '-', style: TextStyle(fontSize: 11, color: tokens.textSecondary, fontFeatures: const [FontFeature.tabularFigures()]))),
                     DataCell(Text(CurrencyFormatter.formatNaira(tot), style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: tokens.textPrimary, fontFeatures: const [FontFeature.tabularFigures()]))),
-                    DataCell(Text(r['status']?.toString() ?? 'Auto-deducted on Disbursement', style: TextStyle(fontSize: 11, color: tokens.successText), softWrap: true)),
+                    DataCell(Text(r['status']?.toString() ?? 'Unrecorded', style: TextStyle(fontSize: 11, color: (r['status']?.toString() ?? '').isEmpty ? tokens.textMuted : tokens.successText), softWrap: true)),
                   ]);
                 }).toList(),
               ),

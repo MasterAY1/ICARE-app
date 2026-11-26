@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 import 'package:motor/motor.dart';
 import '../../../core/auth/auth_controller.dart';
 import '../../../core/auth/auth_state.dart';
+import '../../../core/auth/role_utils.dart';
 import '../../../core/offline/connectivity_service.dart';
 import '../../../core/offline/offline_sync_manager.dart';
 import '../../../core/offline/offline_database_service.dart';
@@ -23,10 +24,12 @@ import '../../co/presentation/portfolio_overview_screen.dart';
 import '../../co/presentation/daily_cashbook_screen.dart';
 import '../../bm/presentation/bm_dashboard_screen.dart';
 import '../../bm/presentation/master_cashbook_screen.dart';
+import '../../bm/presentation/providers/user_management_providers.dart';
 import '../../bm/presentation/user_management_screen.dart';
 import '../../am/presentation/am_dashboard_screen.dart';
 import '../../am/presentation/am_portfolio_screen.dart';
 import '../../audit/presentation/audit_ledger_screen.dart';
+import '../../audit/presentation/providers/audit_providers.dart';
 import '../../reports/presentation/reports_export_screen.dart';
 import '../../onboarding/presentation/branch_onboarding_admin_screen.dart';
 import '../../admin/data/datasources/admin_api_service.dart';
@@ -65,6 +68,8 @@ class CoAppScaffold extends ConsumerWidget {
     bool isBm,
     bool isAm,
     bool isAdmin, {
+    bool isDirector = false,
+    bool isAccountManager = false,
     bool isProcurement = false,
   }) {
     return PageTransitionSwitcher(
@@ -86,13 +91,24 @@ class CoAppScaffold extends ConsumerWidget {
           isBm,
           isAm,
           isAdmin,
+          isDirector: isDirector,
+          isAccountManager: isAccountManager,
           isProcurement: isProcurement,
         ),
       ),
     );
   }
 
-  Future<void> _triggerPageRefresh(WidgetRef ref, String activePage, bool isBm, bool isAm, {bool isAdmin = false, bool isProcurement = false}) async {
+  Future<void> _triggerPageRefresh(
+    WidgetRef ref,
+    String activePage,
+    bool isBm,
+    bool isAm, {
+    bool isAdmin = false,
+    bool isDirector = false,
+    bool isAccountManager = false,
+    bool isProcurement = false,
+  }) async {
     try {
       await ref.read(isOnlineProvider.notifier).refresh();
     } catch (_) {}
@@ -103,14 +119,14 @@ class CoAppScaffold extends ConsumerWidget {
       case 'Dashboard':
         if (isProcurement) {
           ref.read(procurementRefreshSignalProvider.notifier).state++;
-        } else if (isAdmin) {
+        } else if (isAdmin || isDirector) {
           ref.invalidate(adminOperationsProvider);
           ref.invalidate(institutionPerformanceProvider);
           ref.invalidate(adminRiskHealthProvider);
         } else if (isAm) {
           ref.invalidate(amDashboardDataProvider);
           ref.invalidate(amMonthlyWorkflowSubmissionsProvider);
-        } else if (isBm) {
+        } else if (isBm || isAccountManager) {
           ref.invalidate(bmDashboardDataProvider);
           ref.invalidate(masterDailyCashbookProvider);
           ref.invalidate(coAggregationProvider);
@@ -151,6 +167,13 @@ class CoAppScaffold extends ConsumerWidget {
         ref.invalidate(masterDailyCashbookProvider);
         ref.invalidate(coAggregationProvider);
         ref.invalidate(monthlyLedgerProvider);
+        break;
+      case 'User Management':
+        invalidateAllUserManagementProviders(ref);
+        break;
+      case 'Audit Ledger':
+      case 'Audit Center':
+        invalidateAllAuditProviders(ref);
         break;
       default:
         break;
@@ -319,21 +342,25 @@ class CoAppScaffold extends ConsumerWidget {
     final displayName = user.fullName.isNotEmpty ? user.fullName : user.username;
     final branchName = user.branch;
     final role = user.role.trim();
-    final roleLower = role.toLowerCase();
-    final isBm = role == 'Branch Manager' || role == 'BM';
-    final isDirector = role == 'Director' || role == 'DIRECTOR' || role == 'Executive Director';
-    final isProcurement = roleLower == 'procurement officer' ||
-        roleLower == 'procurement_officer' ||
-        roleLower == 'asset manager' ||
-        roleLower == 'asset_manager' ||
-        roleLower == 'procurement' ||
-        roleLower == 'po';
-    final isAdmin = role == 'Admin' || role == 'Super Admin' || role == 'ADMIN' || isDirector;
-    final isAm = role == 'Area Manager' || role == 'AM';
+    final isBm = IcareRoleUtils.isBm(role);
+    final isDirector = IcareRoleUtils.isDirector(role);
+    final isAccountManager = IcareRoleUtils.isAccountManager(role);
+    final isProcurement = IcareRoleUtils.isProcurement(role);
+    final isAdmin = IcareRoleUtils.isAdmin(role);
+    final isAm = IcareRoleUtils.isAm(role);
 
     ref.listen<bool>(isOnlineProvider, (previous, next) async {
       if (previous == false && next == true) {
-        _triggerPageRefresh(ref, activePage, isBm, isAm, isAdmin: isAdmin, isProcurement: isProcurement);
+        _triggerPageRefresh(
+          ref,
+          activePage,
+          isBm,
+          isAm,
+          isAdmin: isAdmin,
+          isDirector: isDirector,
+          isAccountManager: isAccountManager,
+          isProcurement: isProcurement,
+        );
         final pendingCount = ref.read(pendingOutboxCountProvider);
         if (pendingCount > 0) {
           final syncMgr = ref.read(offlineSyncManagerProvider);
@@ -349,7 +376,16 @@ class CoAppScaffold extends ConsumerWidget {
             ref.invalidate(miscBalanceProvider);
             ref.invalidate(dailyWithdrawalsProvider);
             ref.invalidate(pendingApprovalsProvider);
-            _triggerPageRefresh(ref, activePage, isBm, isAm, isAdmin: isAdmin, isProcurement: isProcurement);
+            _triggerPageRefresh(
+              ref,
+              activePage,
+              isBm,
+              isAm,
+              isAdmin: isAdmin,
+              isDirector: isDirector,
+              isAccountManager: isAccountManager,
+              isProcurement: isProcurement,
+            );
           }
           if (context.mounted) {
             ScaffoldMessenger.of(context).hideCurrentSnackBar();
@@ -402,27 +438,21 @@ class CoAppScaffold extends ConsumerWidget {
       }
     });
 
-    final roleBadge = isBm
-        ? 'Branch Manager'
-        : (isDirector
-            ? 'Director'
-            : (isProcurement
-                ? 'Procurement Officer'
-                : (isAdmin
-                    ? 'Admin'
-                    : (isAm
-                        ? 'Area Manager'
-                        : (role.isNotEmpty ? role : 'Credit Officer')))));
+    final roleBadge = IcareRoleUtils.displayLabel(role);
 
     final badgeColor = isBm
         ? const Color(0xFF2563EB)
-        : (isProcurement
-            ? const Color(0xFF0D9488)
-            : (isAdmin
-                ? const Color(0xFF7C3AED)
-                : (isAm
-                    ? const Color(0xFF0F766E)
-                    : const Color(0xFF8CC63F))));
+        : (isAccountManager
+            ? const Color(0xFF0284C7)
+            : (isDirector
+                ? const Color(0xFF6D28D9)
+                : (isProcurement
+                    ? const Color(0xFF0D9488)
+                    : (isAdmin
+                        ? const Color(0xFF7C3AED)
+                        : (isAm
+                            ? const Color(0xFF0F766E)
+                            : const Color(0xFF8CC63F))))));
 
     List<String> navItems;
     if (isBm) {
@@ -432,6 +462,12 @@ class CoAppScaffold extends ConsumerWidget {
         'Dashboard',
         'Portfolio',
         'Audit Ledger',
+        'Reports & Export',
+      ];
+    } else if (isAccountManager) {
+      navItems = [
+        'Dashboard',
+        'Master Cashbook',
         'Reports & Export',
       ];
     } else if (isProcurement) {
@@ -445,6 +481,7 @@ class CoAppScaffold extends ConsumerWidget {
         'Asset & Procurement',
         'Portfolio',
         'User Management',
+        'Audit Ledger',
         'Reports & Export',
       ];
     } else if (isAm) {
@@ -452,6 +489,28 @@ class CoAppScaffold extends ConsumerWidget {
     } else {
       navItems = ['Dashboard', 'Loan Origination', 'Collections', 'Withdrawal Operations', 'Portfolio', 'CO Cashbook'];
     }
+
+    const knownModulePages = <String>{
+      'Dashboard',
+      'Asset & Procurement',
+      'Loan Origination',
+      'Collections',
+      'Withdrawal Operations',
+      'Portfolio',
+      'CO Cashbook',
+      'Master Cashbook',
+      'Branch Onboarding',
+      'User Management',
+      'Audit Ledger',
+      'Audit Center',
+      'Reports & Export',
+      'Reports',
+    };
+    final resolvedPage = (activePage == 'Settings & Profile' ||
+            navItems.contains(activePage) ||
+            !knownModulePages.contains(activePage))
+        ? activePage
+        : navItems.first;
 
 
     final screenWidth = MediaQuery.of(context).size.width;
@@ -531,10 +590,12 @@ class CoAppScaffold extends ConsumerWidget {
                   child: _buildOnlineStatusPill(
                     context: context,
                     ref: ref,
-                    activePage: activePage,
+                    activePage: resolvedPage,
                     isBm: isBm,
                     isAm: isAm,
                     isAdmin: isAdmin,
+                    isDirector: isDirector,
+                    isAccountManager: isAccountManager,
                     isProcurement: isProcurement,
                   ),
                 ),
@@ -554,7 +615,16 @@ class CoAppScaffold extends ConsumerWidget {
                     IcareFluidMotion.lightImpactHaptic(
                       ref.read(themeControllerProvider).hapticsEnabled,
                     );
-                    await _triggerPageRefresh(ref, activePage, isBm, isAm, isAdmin: isAdmin, isProcurement: isProcurement);
+                    await _triggerPageRefresh(
+                      ref,
+                      resolvedPage,
+                      isBm,
+                      isAm,
+                      isAdmin: isAdmin,
+                      isDirector: isDirector,
+                      isAccountManager: isAccountManager,
+                      isProcurement: isProcurement,
+                    );
                     if (context.mounted) {
                       ScaffoldMessenger.of(context).hideCurrentSnackBar();
                       ScaffoldMessenger.of(context).showSnackBar(
@@ -614,7 +684,7 @@ class CoAppScaffold extends ConsumerWidget {
                 branchName,
                 badgeColor,
                 navItems,
-                activePage,
+                resolvedPage,
               ),
             ),
       bottomNavigationBar: isDesktop
@@ -623,10 +693,12 @@ class CoAppScaffold extends ConsumerWidget {
               context,
               ref,
               navItems,
-              activePage,
+              resolvedPage,
               isBm,
               isAm,
               isAdmin,
+              isDirector: isDirector,
+              isAccountManager: isAccountManager,
               isProcurement: isProcurement,
             ),
       body: Column(
@@ -662,10 +734,12 @@ class CoAppScaffold extends ConsumerWidget {
                           branchName,
                           badgeColor,
                           navItems,
-                          activePage,
+                          resolvedPage,
                           isBm: isBm,
                           isAm: isAm,
                           isAdmin: isAdmin,
+                          isDirector: isDirector,
+                          isAccountManager: isAccountManager,
                           isProcurement: isProcurement,
                         ),
                       ),
@@ -680,7 +754,16 @@ class CoAppScaffold extends ConsumerWidget {
                             IcareFluidMotion.lightImpactHaptic(
                               ref.read(themeControllerProvider).hapticsEnabled,
                             );
-                            await _triggerPageRefresh(ref, activePage, isBm, isAm, isAdmin: isAdmin, isProcurement: isProcurement);
+                            await _triggerPageRefresh(
+                              ref,
+                              resolvedPage,
+                              isBm,
+                              isAm,
+                              isAdmin: isAdmin,
+                              isDirector: isDirector,
+                              isAccountManager: isAccountManager,
+                              isProcurement: isProcurement,
+                            );
                           },
                           child: SingleChildScrollView(
                             physics: const AlwaysScrollableScrollPhysics(),
@@ -688,13 +771,23 @@ class CoAppScaffold extends ConsumerWidget {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                if (activePage != 'Settings & Profile') ...[
+                                if (resolvedPage != 'Settings & Profile') ...[
                                   _buildWelcomeBanner(context, displayName, branchName, roleBadge),
                                   const SizedBox(height: 24),
                                 ],
 
                                 // Active View Dispatcher
-                                _buildTransitionedActiveView(context, ref, activePage, isBm, isAm, isAdmin, isProcurement: isProcurement),
+                                _buildTransitionedActiveView(
+                                  context,
+                                  ref,
+                                  resolvedPage,
+                                  isBm,
+                                  isAm,
+                                  isAdmin,
+                                  isDirector: isDirector,
+                                  isAccountManager: isAccountManager,
+                                  isProcurement: isProcurement,
+                                ),
                               ],
                             ),
                           ),
@@ -710,7 +803,16 @@ class CoAppScaffold extends ConsumerWidget {
                       IcareFluidMotion.lightImpactHaptic(
                         ref.read(themeControllerProvider).hapticsEnabled,
                       );
-                      await _triggerPageRefresh(ref, activePage, isBm, isAm, isAdmin: isAdmin, isProcurement: isProcurement);
+                      await _triggerPageRefresh(
+                        ref,
+                        resolvedPage,
+                        isBm,
+                        isAm,
+                        isAdmin: isAdmin,
+                        isDirector: isDirector,
+                        isAccountManager: isAccountManager,
+                        isProcurement: isProcurement,
+                      );
                     },
                     child: SingleChildScrollView(
                       physics: const AlwaysScrollableScrollPhysics(),
@@ -719,13 +821,23 @@ class CoAppScaffold extends ConsumerWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           // Welcome Banner
-                          if (activePage != 'Settings & Profile' && (!isMobile || activePage != 'Dashboard')) ...[
+                          if (resolvedPage != 'Settings & Profile' && (!isMobile || resolvedPage != 'Dashboard')) ...[
                             _buildWelcomeBanner(context, displayName, branchName, roleBadge, isMobile: isMobile),
                             SizedBox(height: isMobile ? 12 : 20),
                           ],
 
                           // Active View Dispatcher
-                          _buildTransitionedActiveView(context, ref, activePage, isBm, isAm, isAdmin, isProcurement: isProcurement),
+                          _buildTransitionedActiveView(
+                            context,
+                            ref,
+                            resolvedPage,
+                            isBm,
+                            isAm,
+                            isAdmin,
+                            isDirector: isDirector,
+                            isAccountManager: isAccountManager,
+                            isProcurement: isProcurement,
+                          ),
                         ],
                       ),
                     ),
@@ -745,6 +857,8 @@ class CoAppScaffold extends ConsumerWidget {
     bool isBm,
     bool isAm,
     bool isAdmin, {
+    bool isDirector = false,
+    bool isAccountManager = false,
     bool isProcurement = false,
   }) {
     final List<({String key, String shortLabel, IconData icon, IconData activeIcon})> destinations;
@@ -753,13 +867,19 @@ class CoAppScaffold extends ConsumerWidget {
         (key: 'Dashboard', shortLabel: 'Overview', icon: Icons.analytics_outlined, activeIcon: Icons.analytics),
         (key: 'Asset & Procurement', shortLabel: 'Asset Hub', icon: Icons.inventory_2_outlined, activeIcon: Icons.inventory_2),
       ];
-    } else if (isAdmin) {
+    } else if (isAdmin || isDirector) {
       destinations = [
         (key: 'Dashboard', shortLabel: 'Dashboard', icon: Icons.dashboard_outlined, activeIcon: Icons.dashboard),
         (key: 'Portfolio', shortLabel: 'Branches', icon: Icons.domain_outlined, activeIcon: Icons.domain),
         (key: 'Audit Ledger', shortLabel: 'Audit', icon: Icons.security_outlined, activeIcon: Icons.security),
         (key: 'Reports & Export', shortLabel: 'Reports', icon: Icons.analytics_outlined, activeIcon: Icons.analytics),
         (key: 'User Management', shortLabel: 'Users', icon: Icons.people_alt_outlined, activeIcon: Icons.people_alt),
+      ];
+    } else if (isAccountManager) {
+      destinations = [
+        (key: 'Dashboard', shortLabel: 'Dashboard', icon: Icons.dashboard_outlined, activeIcon: Icons.dashboard),
+        (key: 'Master Cashbook', shortLabel: 'Cashbook', icon: Icons.account_balance_outlined, activeIcon: Icons.account_balance),
+        (key: 'Reports & Export', shortLabel: 'Reports', icon: Icons.analytics_outlined, activeIcon: Icons.analytics),
       ];
     } else if (isBm) {
       destinations = [
@@ -964,7 +1084,7 @@ class CoAppScaffold extends ConsumerWidget {
                     const SizedBox(width: 6),
                     Expanded(
                       child: Text(
-                        _formatBranchLocation(branchName, isAdmin: roleBadge == 'Admin'),
+                        _formatBranchLocation(branchName, isAdmin: roleBadge == 'Admin' || roleBadge == 'Super Admin' || roleBadge == 'Director'),
                         style: const TextStyle(
                           color: Color(0xE2FFFFFF),
                           fontSize: 12,
@@ -1092,6 +1212,8 @@ class CoAppScaffold extends ConsumerWidget {
     required bool isBm,
     required bool isAm,
     required bool isAdmin,
+    bool isDirector = false,
+    bool isAccountManager = false,
     bool isProcurement = false,
   }) {
     return Consumer(
@@ -1130,7 +1252,16 @@ class CoAppScaffold extends ConsumerWidget {
               );
             }
             if (connected) {
-              _triggerPageRefresh(ref, activePage, isBm, isAm, isAdmin: isAdmin, isProcurement: isProcurement);
+              _triggerPageRefresh(
+                ref,
+                activePage,
+                isBm,
+                isAm,
+                isAdmin: isAdmin,
+                isDirector: isDirector,
+                isAccountManager: isAccountManager,
+                isProcurement: isProcurement,
+              );
             }
           },
           child: Container(
@@ -1217,6 +1348,8 @@ class CoAppScaffold extends ConsumerWidget {
     required bool isBm,
     required bool isAm,
     required bool isAdmin,
+    bool isDirector = false,
+    bool isAccountManager = false,
     bool isProcurement = false,
   }) {
     final tokens = IcareSurfaceTokens.of(context);
@@ -1347,7 +1480,7 @@ class CoAppScaffold extends ConsumerWidget {
                                 const SizedBox(width: 6),
                                 Expanded(
                                   child: Text(
-                                    _formatBranchLocation(branchName, isAdmin: roleBadge == 'Admin'),
+                                    _formatBranchLocation(branchName, isAdmin: roleBadge == 'Admin' || roleBadge == 'Super Admin' || roleBadge == 'Director'),
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                     style: TextStyle(
@@ -1386,13 +1519,24 @@ class CoAppScaffold extends ConsumerWidget {
                     isBm: isBm,
                     isAm: isAm,
                     isAdmin: isAdmin,
+                    isDirector: isDirector,
+                    isAccountManager: isAccountManager,
                     isProcurement: isProcurement,
                   ),
                   const Spacer(),
                   _buildOutboxSyncBadge(context, ref, expandedLabel: true),
                   const SizedBox(width: 4),
                   InkWell(
-                    onTap: () => _triggerPageRefresh(ref, activePage, isBm, isAm, isAdmin: isAdmin, isProcurement: isProcurement),
+                    onTap: () => _triggerPageRefresh(
+                      ref,
+                      activePage,
+                      isBm,
+                      isAm,
+                      isAdmin: isAdmin,
+                      isDirector: isDirector,
+                      isAccountManager: isAccountManager,
+                      isProcurement: isProcurement,
+                    ),
                     borderRadius: BorderRadius.circular(6),
                     child: Padding(
                       padding: const EdgeInsets.all(4),
@@ -1684,14 +1828,24 @@ class CoAppScaffold extends ConsumerWidget {
     );
   }
 
-  Widget _buildActiveView(BuildContext context, WidgetRef ref, String page, bool isBm, bool isAm, bool isAdmin, {bool isProcurement = false}) {
+  Widget _buildActiveView(
+    BuildContext context,
+    WidgetRef ref,
+    String page,
+    bool isBm,
+    bool isAm,
+    bool isAdmin, {
+    bool isDirector = false,
+    bool isAccountManager = false,
+    bool isProcurement = false,
+  }) {
     final tokens = IcareSurfaceTokens.of(context);
     switch (page) {
       case 'Dashboard':
         if (isProcurement) return const ProcurementDashboardScreen();
-        if (isAdmin) return const AdminDashboardScreen();
+        if (isAdmin || isDirector) return const AdminDashboardScreen();
         if (isAm) return const AmDashboardScreen();
-        return isBm ? const BmDashboardScreen() : const CoDashboardScreen();
+        return (isBm || isAccountManager) ? const BmDashboardScreen() : const CoDashboardScreen();
       case 'Asset & Procurement':
         return const AssetProcurementScreen();
       case 'Loan Origination':
@@ -1701,7 +1855,7 @@ class CoAppScaffold extends ConsumerWidget {
       case 'Withdrawal Operations':
         return const WithdrawalOperationsScreen();
       case 'Portfolio':
-        if (isAdmin) return const AdminPortfolioScreen();
+        if (isAdmin || isDirector) return const AdminPortfolioScreen();
         if (isAm) return const AmPortfolioScreen();
         return const PortfolioOverviewScreen();
       case 'CO Cashbook':
@@ -1712,6 +1866,28 @@ class CoAppScaffold extends ConsumerWidget {
       case 'Audit Center':
         return const AuditLedgerScreen();
       case 'User Management':
+        if (isDirector || isAccountManager || isProcurement || (!isAdmin && !isBm && !isAm)) {
+          return Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: tokens.dangerBg,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: tokens.dangerBorder),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.gpp_bad_outlined, color: tokens.dangerDot, size: 22),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'You do not have permission to access User Management.',
+                    style: TextStyle(color: tokens.dangerText, fontSize: 14, fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
         return const UserManagementScreen();
       case 'Reports & Export':
       case 'Reports':

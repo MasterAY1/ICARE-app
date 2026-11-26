@@ -7,6 +7,7 @@ import '../data/datasources/master_cashbook_api_service.dart';
 import '../data/models/master_cashbook_models.dart';
 import '../../shared/utils/file_download_helper.dart';
 import '../../../core/theme/icare_theme_tokens.dart';
+import '../../../core/errors/app_error_formatter.dart';
 import '../../../core/widgets/icare_skeleton_loader.dart';
 import '../../../core/auth/auth_controller.dart';
 import '../../../core/auth/auth_state.dart';
@@ -201,12 +202,12 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
         _selectedYear,
         branch,
       );
-      final monthName = DateFormat('MMMM').format(DateTime(2026, _selectedMonth, 1));
+      final monthName = DateFormat('MMMM').format(DateTime(_selectedYear, _selectedMonth, 1));
       final fileName = 'ICARE_Master_Cashbook_${branch}_${monthName}_$_selectedYear.xlsx';
       downloadBlobFile(bytes, fileName, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
       _showBanner('Downloaded $fileName successfully', 'success', Icons.check_circle_outline);
     } catch (e) {
-      _showBanner('Failed to download Excel ledger: $e', 'error', Icons.error_outline);
+      _showBanner('Failed to download Excel ledger: ${AppErrorDetails.from(e).message}', 'error', Icons.error_outline);
     } finally {
       setState(() => _isDownloadingExcel = false);
     }
@@ -275,7 +276,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
       ref.invalidate(monthlyLedgerProvider);
     } catch (e) {
       _showBanner(
-        'Failed to save manual entries: $e',
+        'Failed to save manual entries: ${AppErrorDetails.from(e).message}',
         'error',
         Icons.error_outline,
       );
@@ -354,7 +355,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
       ref.invalidate(masterDailyCashbookProvider);
     } catch (e) {
       _showBanner(
-        'Approval failed: $e',
+        'Approval failed: ${AppErrorDetails.from(e).message}',
         'error',
         Icons.error_outline,
       );
@@ -396,7 +397,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
       ref.invalidate(masterDailyCashbookProvider);
     } catch (e) {
       _showBanner(
-        'Rejection failed: $e',
+        'Rejection failed: ${AppErrorDetails.from(e).message}',
         'error',
         Icons.error_outline,
       );
@@ -428,7 +429,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
       ref.invalidate(masterDailyCashbookProvider);
     } catch (e) {
       _showBanner(
-        'Failed to submit request: $e',
+        'Failed to submit request: ${AppErrorDetails.from(e).message}',
         'error',
         Icons.error_outline,
       );
@@ -455,7 +456,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
       ref.invalidate(masterDailyCashbookProvider);
     } catch (e) {
       _showBanner(
-        'EOD Day Close failed: $e',
+        'EOD Day Close failed: ${AppErrorDetails.from(e).message}',
         'error',
         Icons.error_outline,
       );
@@ -736,7 +737,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
       error: (err, _) => Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(color: tokens.dangerBg, borderRadius: BorderRadius.circular(8)),
-        child: Text('Error loading Master Cashbook: $err', style: TextStyle(color: tokens.dangerText)),
+        child: Text('Error loading Master Cashbook: ${AppErrorDetails.from(err).message}', style: TextStyle(color: tokens.dangerText)),
       ),
       data: (data) {
         final isAm = _isAm;
@@ -2605,7 +2606,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
       error: (err, _) => Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(color: tokens.dangerBg, borderRadius: BorderRadius.circular(8)),
-        child: Text('Error loading CO Cashbook aggregation: $err', style: TextStyle(color: tokens.dangerText)),
+        child: Text('Error loading CO Cashbook aggregation: ${AppErrorDetails.from(err).message}', style: TextStyle(color: tokens.dangerText)),
       ),
       data: (data) {
         if (_selectedOfficerTab2 == null && data.officers.isNotEmpty) {
@@ -3841,7 +3842,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
           borderRadius: BorderRadius.circular(8),
           border: Border.all(color: tokens.dangerBorder),
         ),
-        child: Text('Error loading Monthly Ledger: $err', style: TextStyle(color: tokens.dangerText)),
+        child: Text('Error loading Monthly Ledger: ${AppErrorDetails.from(err).message}', style: TextStyle(color: tokens.dangerText)),
       ),
       data: (data) {
         if (_selectedBranchTab3 == null && data.availableBranches.isNotEmpty) {

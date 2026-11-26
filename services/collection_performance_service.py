@@ -54,7 +54,7 @@ class CollectionPerformanceService:
             "not_paid_count": 0,
             "total_expected": 0.0,
             "total_paid": 0.0,
-            "compliance_pct": 100.0,
+            "compliance_pct": 0.0,
             "consecutive_missed": 0,
             "total_meetings": 0
         }

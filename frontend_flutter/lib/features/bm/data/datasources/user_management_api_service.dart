@@ -181,4 +181,14 @@ class UserManagementApiService {
     );
     return LoginHistoryResponseModel.fromJson(response.data as Map<String, dynamic>);
   }
+
+  /// 16. Revoke all active sessions for a user immediately
+  Future<GenericActionResponseModel> revokeUserSessions({
+    required String userId,
+  }) async {
+    final response = await _apiClient.post(
+      '/api/v1/users/$userId/revoke-sessions',
+    );
+    return GenericActionResponseModel.fromJson(response.data as Map<String, dynamic>);
+  }
 }

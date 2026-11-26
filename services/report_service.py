@@ -502,7 +502,7 @@ class ReportService:
 
         # Calculate scheduled base collections (Actual Collection - Excess Payments)
         base_collections = max(0.0, total_collected - excess_payment_amount)
-        collection_efficiency = (round((base_collections / total_expected * 100), 2)) if total_expected > 0 else 100.0
+        collection_efficiency = (round((base_collections / total_expected * 100), 2)) if total_expected > 0 else 0.0
 
         # Build product DataFrame
         prod_rows = []
@@ -560,7 +560,7 @@ class ReportService:
                 "total_area_savings": 0.0,
                 "total_area_collections": 0.0,
                 "total_area_expected": 0.0,
-                "overall_efficiency": 100.0,
+                "overall_efficiency": 0.0,
                 "total_area_portfolio": 0.0,
                 "overall_par": 0.0
             }
@@ -674,11 +674,13 @@ class ReportService:
             tot_area_exp += b_exp
             tot_area_overdue += b_overdue
 
-            b_eff = round((b_coll / b_exp * 100), 2) if b_exp > 0 else 100.0
+            b_eff = round((b_coll / b_exp * 100), 2) if b_exp > 0 else 0.0
             b_par = round((b_overdue / b_active_credit * 100), 2) if b_active_credit > 0 else 0.0
 
             # Status Badge
-            if b_eff >= 95.0 and b_par <= 5.0:
+            if b_exp <= 0 and b_coll <= 0:
+                status_badge = "[INACTIVE]"
+            elif b_eff >= 95.0 and b_par <= 5.0:
                 status_badge = "[EXCELLENT]"
             elif b_eff >= 85.0 and b_par <= 10.0:
                 status_badge = "[GOOD]"
@@ -707,7 +709,7 @@ class ReportService:
         if not df_comparison.empty:
             df_comparison = df_comparison.sort_values(by="Collections Received", ascending=False)
 
-        overall_eff = round((tot_area_coll / tot_area_exp * 100), 2) if tot_area_exp > 0 else 100.0
+        overall_eff = round((tot_area_coll / tot_area_exp * 100), 2) if tot_area_exp > 0 else 0.0
         overall_par = round((tot_area_overdue / tot_area_credit * 100), 2) if tot_area_credit > 0 else 0.0
 
         return {
@@ -1330,8 +1332,9 @@ class ReportService:
         # 1. Fetch branch name
         res_b = uow.client.table("branches").select("branch_id, name").eq("branch_id", branch_id).execute()
         b_data = res_b.data[0] if res_b.data else {}
-        branch_name = b_data.get("name") or "Branch"
-        area_name = "Area 1"
+        branch_name = b_data.get("name") or "Unnamed Branch"
+        from services.area_manager_service import AreaManagerService
+        area_name = AreaManagerService.resolve_area_name(uow, branch_id=branch_id)
 
         # 2. Get parity matrix for authoritative active credit & savings totals
         matrix = ReportService.get_monthly_parity_matrix(uow, branch_id, year, month, officer_name=officer_name, product_name=product_name)

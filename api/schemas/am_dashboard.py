@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 
 
 class RegionalSummary(BaseModel):
-    area_name: str = "Area 1"
+    area_name: str = ""
     business_date: str
     branches_count: int
     open_branches_count: int
@@ -63,7 +63,7 @@ class OfficerProductivityItem(BaseModel):
     full_payments_active_credit: float = 0.0
     net_loan_count: int = 0
     net_active_credit_volume: float = 0.0
-    compliance_pct: float = 100.0
+    compliance_pct: float = 0.0
     par_pct: str = "0.0%"
 
 
@@ -176,7 +176,7 @@ class RejectBranchEodRequest(BaseModel):
 
 
 class ConfirmAreaClosureRequest(BaseModel):
-    area_name: str = "Area 1"
+    area_name: str = ""
     closure_date: str
 
 

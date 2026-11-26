@@ -394,7 +394,7 @@ class CoDashboardScreen extends ConsumerWidget {
                 final idx = entry.key;
                 final row = entry.value;
                 final gName = (row['Group Name'] ?? row['group_name'] ?? '').toString();
-                final rawStatus = (row['Status'] ?? row['status'] ?? 'Completed').toString();
+                final rawStatus = (row['Status'] ?? row['status'] ?? 'Unrecorded').toString();
                 final cleanStatus = _cleanStatusText(rawStatus);
 
                 return ElevatedButton.icon(
@@ -604,7 +604,7 @@ class CoDashboardScreen extends ConsumerWidget {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        _cleanStatusText(cp['status']?.toString() ?? 'Balanced'),
+                        _cleanStatusText(cp['status']?.toString() ?? 'Unverified'),
                         style: IcareTypography.metricValueCompact.copyWith(
                           color: (cp['status']?.toString().toLowerCase().contains('unbal') ?? false)
                               ? tokens.dangerText
@@ -613,7 +613,7 @@ class CoDashboardScreen extends ConsumerWidget {
                       ),
                     ],
                   ),
-                  IcareStatusBadge.fromStatus(cp['status']?.toString() ?? 'Balanced'),
+                  IcareStatusBadge.fromStatus(cp['status']?.toString() ?? 'Unverified'),
                 ],
               ),
             ),
@@ -1199,7 +1199,7 @@ class CoDashboardScreen extends ConsumerWidget {
     final cashOut = (cp['cash_out'] as num?)?.toDouble() ?? 0.0;
     final closing = (cp['closing_balance'] as num?)?.toDouble() ?? 0.0;
     final diff = (cp['difference'] as num?)?.toDouble() ?? 0.0;
-    final status = cp['status']?.toString() ?? 'Balanced';
+    final status = cp['status']?.toString() ?? 'Unverified';
     final isUnbalanced = status.toLowerCase().contains('unbal');
 
     return Column(
@@ -1647,7 +1647,7 @@ class CoDashboardScreen extends ConsumerWidget {
 
     final progress = totalExpected > 0
         ? (totalCollected / totalExpected).clamp(0.0, 1.0)
-        : (totalCollected > 0 ? 1.0 : 0.0);
+        : 0.0;
     final remaining = totalExpected > totalCollected ? totalExpected - totalCollected : 0.0;
 
     return Container(
@@ -2148,7 +2148,7 @@ class CoDashboardScreen extends ConsumerWidget {
     final wdClients = (sav['withdrawn_clients'] as num?)?.toInt() ?? 0;
 
     final closingVault = (cp['closing_balance'] as num?)?.toDouble() ?? 0.0;
-    final cpStatus = _cleanStatusText(cp['status']?.toString() ?? 'Balanced');
+    final cpStatus = _cleanStatusText(cp['status']?.toString() ?? 'Unverified');
 
     final arrearsAmt = (stCards['overdue_arrears']?['amount'] as num?)?.toDouble() ?? 0.0;
     final arrearsCount = (stCards['overdue_arrears']?['count'] as num?)?.toInt() ?? 0;
@@ -2784,8 +2784,8 @@ class CoDashboardScreen extends ConsumerWidget {
             final complianceVal = r['Compliance'] ?? r['Compliance %'] ?? r['repayment_rate_pct'];
             final complianceStr = complianceVal is num
                 ? '${complianceVal.toStringAsFixed(1)}%'
-                : complianceVal?.toString() ?? '100.0%';
-            final status = (r['Status'] ?? r['status'] ?? 'Completed').toString();
+                : complianceVal?.toString() ?? '0.0%';
+            final status = (r['Status'] ?? r['status'] ?? 'Unrecorded').toString();
 
             return DataRow(cells: [
               DataCell(Text(groupName, style: IcareTypography.bodyBold.copyWith(color: tokens.textPrimary))),

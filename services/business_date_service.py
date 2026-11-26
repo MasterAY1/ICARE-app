@@ -394,8 +394,10 @@ class BusinessDateService:
                     else (f"Cash in safe: ₦{closing_bal:,.2f}." if closing_bal > 0
                           else f"Advance money banked ahead / savings paid out: ₦{abs(closing_bal):,.2f}.")
                 )
+                from services.area_manager_service import AreaManagerService
+                resolved_area = AreaManagerService.resolve_area_name(uow, branch_id=branch_id)
                 uow.client.table("area_eod_confirmations").upsert({
-                    "area_name": "Area 1",
+                    "area_name": resolved_area,
                     "branch_id": branch_id,
                     "closure_date": p_date_str,
                     "status": "PENDING",

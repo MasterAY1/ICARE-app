@@ -63,7 +63,7 @@ class ClientStatusService:
         """
         cls.get_all_statuses(uow)
         s = cls._status_by_id_cache.get(str(status_id))
-        return s["name"] if s else "Registered"
+        return s["name"] if s else "Unknown"
 
     @classmethod
     def transition_status(

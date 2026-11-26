@@ -76,7 +76,7 @@ class BranchReconciliationTally(BaseModel):
     actual_cash_collected: float = 0.0
     bank_deposited: float = 0.0
     closing_cash_balance: float = 0.0
-    is_cash_balanced: bool = True
+    is_cash_balanced: bool = False
     arrears_float: float = 0.0
     total_reps_count: int = 0
 

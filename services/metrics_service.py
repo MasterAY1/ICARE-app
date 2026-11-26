@@ -187,20 +187,28 @@ class MetricsService:
         with self._lock:
             total = self._total_requests
             err_5xx = self._status_5xx
-            avail_sli = round(((total - err_5xx) / total * 100.0), 3) if total > 0 else 100.0
+            avail_sli = round(((total - err_5xx) / total * 100.0), 3) if total > 0 else 0.0
 
             global_lat = list(self._global_latencies)
             pcts = self.calculate_percentiles(global_lat)
             global_p95 = pcts.get("p95_ms", 0.0)
             global_p99 = pcts.get("p99_ms", 0.0)
 
-            # Evaluate targets
+            fin_sub = self._financial_submissions_total
+            fin_fail = self._financial_failures_total
+            reconc_disc = self._reconciliation_discrepancies_total
+            dup_intercepted = self._duplicate_attempts_total
+
+            disc_rate = round((reconc_disc / fin_sub * 100.0), 2) if fin_sub > 0 else 0.0
+            fin_success_rate = round(((fin_sub - fin_fail) / fin_sub * 100.0), 2) if fin_sub > 0 else 0.0
+
+            # Evaluate targets dynamically from live metrics counters (FP-006)
             slo_results = [
                 {
                     "objective": "API Availability",
                     "target": ">= 99.9%",
                     "sli_value": f"{avail_sli}%",
-                    "status": "COMPLIANT" if avail_sli >= 99.9 else ("AT_RISK" if avail_sli >= 99.0 else "BREACHED")
+                    "status": "NO_TRAFFIC" if total == 0 else ("COMPLIANT" if avail_sli >= 99.9 else ("AT_RISK" if avail_sli >= 99.0 else "BREACHED"))
                 },
                 {
                     "objective": "Global P95 Response Latency",
@@ -215,16 +223,16 @@ class MetricsService:
                     "status": "COMPLIANT" if global_p99 < 3000 else ("AT_RISK" if global_p99 < 4000 else "BREACHED")
                 },
                 {
-                    "objective": "Ledger Account 1000 Zero Duplication",
+                    "objective": "Reconciliation Discrepancy Rate",
                     "target": "0.0%",
-                    "sli_value": "0.0%",
-                    "status": "COMPLIANT"
+                    "sli_value": f"{disc_rate}%",
+                    "status": "COMPLIANT" if reconc_disc == 0 else "BREACHED"
                 },
                 {
-                    "objective": "Idempotency Lock Replay Reliability",
-                    "target": "100.0%",
-                    "sli_value": "100.0%",
-                    "status": "COMPLIANT"
+                    "objective": "Financial Operation Completion Rate",
+                    "target": ">= 99.5%",
+                    "sli_value": f"{fin_success_rate}% ({dup_intercepted} dupes blocked)",
+                    "status": "IDLE" if fin_sub == 0 else ("COMPLIANT" if fin_success_rate >= 99.5 else "BREACHED")
                 }
             ]
 

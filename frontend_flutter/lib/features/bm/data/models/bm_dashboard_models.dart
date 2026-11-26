@@ -55,7 +55,7 @@ class BranchCashPositionModel {
       bankDeposit: (json['bank_deposit'] as num?)?.toDouble() ?? 0.0,
       bankWithdrawal: (json['bank_withdrawal'] as num?)?.toDouble() ?? 0.0,
       closingBalance: (json['closing_balance'] as num?)?.toDouble() ?? 0.0,
-      status: json['status']?.toString() ?? 'Balanced',
+      status: json['status']?.toString() ?? 'Unverified',
       difference: (json['difference'] as num?)?.toDouble() ?? 0.0,
     );
   }

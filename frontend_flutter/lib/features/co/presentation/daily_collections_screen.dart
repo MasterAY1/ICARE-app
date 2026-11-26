@@ -470,17 +470,31 @@ class _DailyCollectionsScreenState extends ConsumerState<DailyCollectionsScreen>
 
       final code = m['client_code']?.toString() ?? cid;
 
-      final expRep = (m['expected_repayment'] as num?)?.toDouble() ?? 0.0;
+      final rawLoanId = m['loan_id']?.toString().trim() ?? '';
 
-      final isNotPaid = _memberNotPaidFlags[cid] == true;
+      final hasActiveLoan = rawLoanId.isNotEmpty && rawLoanId.toLowerCase() != 'null';
+
+      final expRep = hasActiveLoan ? ((m['expected_repayment'] as num?)?.toDouble() ?? 0.0) : 0.0;
+
+      final isNotPaid = hasActiveLoan && (_memberNotPaidFlags[cid] == true);
 
       final repStr = _memberRepaymentCtrls[cid]?.text.replaceAll(',', '').trim() ?? '';
 
       final savStr = _memberSavingsCtrls[cid]?.text.replaceAll(',', '').trim() ?? '';
 
-      final repAmt = isNotPaid ? 0.0 : (repStr.isEmpty ? 0.0 : (double.tryParse(repStr) ?? 0.0));
+      final repAmt = hasActiveLoan
+          ? (isNotPaid ? 0.0 : (repStr.isEmpty ? 0.0 : (double.tryParse(repStr) ?? 0.0)))
+          : (repStr.isEmpty ? 0.0 : (double.tryParse(repStr) ?? 0.0));
 
       final savAmt = double.tryParse(savStr) ?? 0.0;
+
+      if (!hasActiveLoan && (repAmt > 0 || _memberNotPaidFlags[cid] == true)) {
+
+        _showNotification('$cname has no active loan and cannot receive a loan repayment or unpaid mark. Enter Savings only.', isSuccess: false);
+
+        return;
+
+      }
 
       if (repAmt > 0 || savAmt > 0 || isNotPaid) {
 
@@ -488,21 +502,25 @@ class _DailyCollectionsScreenState extends ConsumerState<DailyCollectionsScreen>
 
         double overdueVal = 0.0;
 
-        if (isNotPaid) {
+        if (hasActiveLoan) {
 
-          pStatus = 'NOT_PAID';
+          if (isNotPaid) {
 
-          overdueVal = expRep;
+            pStatus = 'NOT_PAID';
 
-        } else if (repAmt < expRep) {
+            overdueVal = expRep;
 
-          pStatus = 'PART_PAID';
+          } else if (repAmt < expRep) {
 
-          overdueVal = expRep - repAmt;
+            pStatus = 'PART_PAID';
 
-        } else if (repAmt > expRep && expRep > 0) {
+            overdueVal = expRep - repAmt;
 
-          pStatus = 'EXCESS';
+          } else if (repAmt > expRep && expRep > 0) {
+
+            pStatus = 'EXCESS';
+
+          }
 
         }
 
@@ -514,15 +532,15 @@ class _DailyCollectionsScreenState extends ConsumerState<DailyCollectionsScreen>
 
           'client_code': code,
 
-          'loan_id': m['loan_id'],
+          'loan_id': hasActiveLoan ? rawLoanId : null,
 
           'loan_product': m['loan_product'] ?? 'Standard Loan',
 
-          'loan_repayment_amount': repAmt,
+          'loan_repayment_amount': hasActiveLoan ? repAmt : 0.0,
 
           'savings_deposit_amount': savAmt,
 
-          'expected_amount': expRep,
+          'expected_amount': hasActiveLoan ? expRep : 0.0,
 
           'payment_status': pStatus,
 
@@ -808,6 +826,16 @@ class _DailyCollectionsScreenState extends ConsumerState<DailyCollectionsScreen>
     final pbVal = _scMarkNotPaid ? 0.0 : (double.tryParse(_scPbFeeCtrl.text.replaceAll(',', '').trim()) ?? 0.0);
 
     final miscVal = _scMarkNotPaid ? 0.0 : (double.tryParse(_scMiscFeeCtrl.text.replaceAll(',', '').trim()) ?? 0.0);
+
+    final hasSelectedLoan = _scSelectedLoanId != null && _scSelectedLoanId!.trim().isNotEmpty;
+
+    if (!hasSelectedLoan && (repVal > 0 || _scMarkNotPaid)) {
+
+      _showNotification('This client has no active loan and cannot record a loan repayment or unpaid mark. Record Savings or Fees instead.', isSuccess: false);
+
+      return;
+
+    }
 
     if (!_scMarkNotPaid && savVal == 0 && grpSavVal == 0 && repVal == 0 && appVal == 0 && pbVal == 0 && miscVal == 0) {
 
@@ -2011,7 +2039,7 @@ Status: CONFIRMED & POSTED TO LEDGER''';
 
                               final sav = (it['savings'] as num?)?.toDouble() ?? 0.0;
 
-                              final stat = it['status']?.toString() ?? 'POSTED';
+                              final stat = it['status']?.toString() ?? 'UNRECORDED';
 
                               return TableRow(
 
@@ -3130,9 +3158,11 @@ Status: CONFIRMED & POSTED TO LEDGER''';
     final cid = m['client_id']?.toString() ?? '';
     final code = m['client_code']?.toString() ?? cid;
     final name = m['client_name']?.toString() ?? 'Client';
+    final rawLoanId = m['loan_id']?.toString().trim() ?? '';
+    final hasActiveLoan = rawLoanId.isNotEmpty && rawLoanId.toLowerCase() != 'null';
     final actCred = (m['active_credit'] as num?)?.toDouble() ?? 0.0;
     final remBal = (m['remaining_balance'] as num?)?.toDouble() ?? 0.0;
-    final expRep = (m['expected_repayment'] as num?)?.toDouble() ?? 0.0;
+    final expRep = hasActiveLoan ? ((m['expected_repayment'] as num?)?.toDouble() ?? 0.0) : 0.0;
     final savBal = (m['savings_balance'] as num?)?.toDouble() ?? 0.0;
     final hasOverdue = m['has_overdue'] == true;
     final overdueArrears = (m['overdue_arrears'] as num?)?.toDouble() ?? 0.0;
@@ -3145,11 +3175,17 @@ Status: CONFIRMED & POSTED TO LEDGER''';
     final isAlreadyRecorded = tTot > 0 || tStat == 'PAID' || tStat == 'NOT_PAID';
 
     // Initialize state controllers for member
-    _memberRepaymentCtrls.putIfAbsent(cid, () => TextEditingController(text: expRep > 0 ? expRep.toStringAsFixed(0) : '0'));
+    if (!hasActiveLoan) {
+      _memberNotPaidFlags[cid] = false;
+    }
+    _memberRepaymentCtrls.putIfAbsent(cid, () => TextEditingController(text: (hasActiveLoan && expRep > 0) ? expRep.toStringAsFixed(0) : '0'));
+    if (!hasActiveLoan && _memberRepaymentCtrls[cid]!.text != '0') {
+      _memberRepaymentCtrls[cid]!.text = '0';
+    }
     _memberSavingsCtrls.putIfAbsent(cid, () => TextEditingController());
     _memberNotPaidFlags.putIfAbsent(cid, () => false);
 
-    final isNotPaid = _memberNotPaidFlags[cid] == true;
+    final isNotPaid = hasActiveLoan && (_memberNotPaidFlags[cid] == true);
     final isExpanded = _expandedMemberCards[cid] == true;
     final repCtrl = _memberRepaymentCtrls[cid]!;
     final savCtrl = _memberSavingsCtrls[cid]!;
@@ -3500,99 +3536,107 @@ Status: CONFIRMED & POSTED TO LEDGER''';
                     spacing: 8,
                     runSpacing: 6,
                     children: [
-                      Text('Loan Repayment', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: tokens.textPrimary)),
-                      Wrap(
-                        spacing: 6,
-                        runSpacing: 4,
-                        crossAxisAlignment: WrapCrossAlignment.center,
-                        children: [
-                          if (expRep > 0)
-                            InkWell(
-                              onTap: () {
-                                setState(() {
-                                  _memberNotPaidFlags[cid] = false;
-                                  repCtrl.text = expRep.toStringAsFixed(0);
-                                });
-                              },
-                              borderRadius: BorderRadius.circular(12),
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
-                                decoration: BoxDecoration(
-                                  color: tokens.successBg,
-                                  borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(color: tokens.successBorder),
-                                ),
-                                child: Text(
-                                  'Expected: ₦${expRep.toStringAsFixed(0)}',
-                                  style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: tokens.successText),
-                                ),
-                              ),
-                            ),
-                          if (remBal > 0)
-                            InkWell(
-                              onTap: () {
-                                setState(() {
-                                  _memberNotPaidFlags[cid] = false;
-                                  repCtrl.text = remBal.toStringAsFixed(0);
-                                });
-                              },
-                              borderRadius: BorderRadius.circular(12),
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
-                                decoration: BoxDecoration(
-                                  color: tokens.infoBg,
-                                  borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(color: tokens.infoBorder),
-                                ),
-                                child: Text(
-                                  'Payoff: ₦${remBal.toStringAsFixed(0)}',
-                                  style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: tokens.infoText),
-                                ),
-                              ),
-                            ),
-                          InkWell(
-                            onTap: () {
-                              setState(() {
-                                final nextVal = !isNotPaid;
-                                _memberNotPaidFlags[cid] = nextVal;
-                                if (nextVal) {
-                                  repCtrl.text = '0';
-                                } else {
-                                  repCtrl.text = expRep.toStringAsFixed(0);
-                                }
-                              });
-                            },
-                            borderRadius: BorderRadius.circular(12),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
-                              decoration: BoxDecoration(
-                                color: isNotPaid ? tokens.dangerBg : tokens.surfaceSubtle,
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(color: isNotPaid ? tokens.dangerBorder : tokens.borderStrong),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(
-                                    isNotPaid ? Icons.check_circle : Icons.circle_outlined,
-                                    size: 11,
-                                    color: isNotPaid ? tokens.dangerText : tokens.textMuted,
-                                  ),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    'Unpaid (₦0)',
-                                    style: TextStyle(
-                                      fontSize: 10.5,
-                                      fontWeight: FontWeight.w700,
-                                      color: isNotPaid ? tokens.dangerText : tokens.textSecondary,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ],
+                      Text(
+                        hasActiveLoan ? 'Loan Repayment' : 'No Active Loan (Savings Only)',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: hasActiveLoan ? tokens.textPrimary : tokens.textMuted,
+                        ),
                       ),
+                      if (hasActiveLoan)
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 4,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: [
+                            if (expRep > 0)
+                              InkWell(
+                                onTap: () {
+                                  setState(() {
+                                    _memberNotPaidFlags[cid] = false;
+                                    repCtrl.text = expRep.toStringAsFixed(0);
+                                  });
+                                },
+                                borderRadius: BorderRadius.circular(12),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
+                                  decoration: BoxDecoration(
+                                    color: tokens.successBg,
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(color: tokens.successBorder),
+                                  ),
+                                  child: Text(
+                                    'Expected: ₦${expRep.toStringAsFixed(0)}',
+                                    style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: tokens.successText),
+                                  ),
+                                ),
+                              ),
+                            if (remBal > 0)
+                              InkWell(
+                                onTap: () {
+                                  setState(() {
+                                    _memberNotPaidFlags[cid] = false;
+                                    repCtrl.text = remBal.toStringAsFixed(0);
+                                  });
+                                },
+                                borderRadius: BorderRadius.circular(12),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
+                                  decoration: BoxDecoration(
+                                    color: tokens.infoBg,
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(color: tokens.infoBorder),
+                                  ),
+                                  child: Text(
+                                    'Payoff: ₦${remBal.toStringAsFixed(0)}',
+                                    style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: tokens.infoText),
+                                  ),
+                                ),
+                              ),
+                            InkWell(
+                              onTap: () {
+                                setState(() {
+                                  final nextVal = !isNotPaid;
+                                  _memberNotPaidFlags[cid] = nextVal;
+                                  if (nextVal) {
+                                    repCtrl.text = '0';
+                                  } else {
+                                    repCtrl.text = expRep.toStringAsFixed(0);
+                                  }
+                                });
+                              },
+                              borderRadius: BorderRadius.circular(12),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
+                                decoration: BoxDecoration(
+                                  color: isNotPaid ? tokens.dangerBg : tokens.surfaceSubtle,
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(color: isNotPaid ? tokens.dangerBorder : tokens.borderStrong),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      isNotPaid ? Icons.check_circle : Icons.circle_outlined,
+                                      size: 11,
+                                      color: isNotPaid ? tokens.dangerText : tokens.textMuted,
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      'Unpaid (₦0)',
+                                      style: TextStyle(
+                                        fontSize: 10.5,
+                                        fontWeight: FontWeight.w700,
+                                        color: isNotPaid ? tokens.dangerText : tokens.textSecondary,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
                     ],
                   ),
                   const SizedBox(height: 6),
@@ -3600,19 +3644,21 @@ Status: CONFIRMED & POSTED TO LEDGER''';
                   // Repayment Input
                   TextField(
                     controller: repCtrl,
-                    enabled: !isNotPaid,
+                    enabled: hasActiveLoan && !isNotPaid,
+                    readOnly: !hasActiveLoan,
                     keyboardType: TextInputType.number,
-                    style: TextStyle(color: isNotPaid ? tokens.textMuted : tokens.textPrimary),
+                    style: TextStyle(color: (hasActiveLoan && !isNotPaid) ? tokens.textPrimary : tokens.textMuted),
                     onChanged: (_) => setState(() {}),
                     decoration: InputDecoration(
                       filled: true,
-                      fillColor: isNotPaid ? tokens.surfaceSubtle : tokens.surface,
+                      fillColor: (hasActiveLoan && !isNotPaid) ? tokens.surface : tokens.surfaceSubtle,
                       prefixText: '₦ ',
-                      prefixStyle: TextStyle(fontWeight: FontWeight.w700, color: tokens.textPrimary),
-                      hintText: 'Expected: ${expRep.toStringAsFixed(0)}',
+                      prefixStyle: TextStyle(fontWeight: FontWeight.w700, color: hasActiveLoan ? tokens.textPrimary : tokens.textMuted),
+                      hintText: hasActiveLoan ? 'Expected: ${expRep.toStringAsFixed(0)}' : 'No active loan — record savings below',
                       contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: tokens.borderStrong)),
                       enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: tokens.borderStrong)),
+                      disabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: tokens.borderSubtle)),
                       focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: tokens.brandAccent, width: 1.8)),
                     ),
                   ),
@@ -8293,7 +8339,7 @@ class _CollectionFlowModalState extends State<_CollectionFlowModal> {
 
                                 final ovAmt = (tx['overdue_amount'] as num?)?.toDouble() ?? 0.0;
 
-                                final pStat = tx['payment_status']?.toString() ?? 'PAID';
+                                final pStat = tx['payment_status']?.toString() ?? 'UNRECORDED';
 
                                 String badgeText = 'FULL PAID';
 
@@ -8573,21 +8619,31 @@ class _CollectionFlowModalState extends State<_CollectionFlowModal> {
 
                                 final expAmt = (tx['expected_amount'] as num?)?.toDouble() ?? 0.0;
 
-                                final pStat = tx['payment_status']?.toString() ?? 'PAID';
+                                final pStat = tx['payment_status']?.toString() ?? 'UNRECORDED';
 
                                 final ovAmt = (tx['overdue_amount'] as num?)?.toDouble() ?? 0.0;
 
-                                String badgeText = 'FULL PAID';
+                                String badgeText = 'UNRECORDED';
 
-                                Color badgeBg = tokens.successBg;
+                                Color badgeBg = tokens.neutralBg;
 
-                                Color badgeFg = tokens.successText;
+                                Color badgeFg = tokens.neutralText;
 
-                                Color badgeBorder = tokens.successBorder;
+                                Color badgeBorder = tokens.neutralBorder;
 
                                 String repDisplay = CurrencyFormatter.formatNaira(lRep);
 
-                                if (pStat == 'NOT_PAID') {
+                                if (pStat == 'PAID' || pStat == 'FULL' || pStat == 'FULL PAID') {
+
+                                  badgeText = 'FULL PAID';
+
+                                  badgeBg = tokens.successBg;
+
+                                  badgeFg = tokens.successText;
+
+                                  badgeBorder = tokens.successBorder;
+
+                                } else if (pStat == 'NOT_PAID') {
 
                                   badgeText = 'NOT PAID (₦${ovAmt.toStringAsFixed(0)} Arrears)';
 
@@ -9420,7 +9476,7 @@ class _CollectionFlowModalState extends State<_CollectionFlowModal> {
 
                                   final sav = (it['savings_deposit_amount'] ?? it['savings'] as num?)?.toDouble() ?? 0.0;
 
-                                  final stat = it['status']?.toString() ?? 'POSTED';
+                                  final stat = it['status']?.toString() ?? 'UNRECORDED';
 
                                   return TableRow(
 

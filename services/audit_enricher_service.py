@@ -9,7 +9,7 @@ Resolves raw UUIDs and foreign keys into business-friendly codes and names:
 Enforces strict commercial banking presentation rules:
 - Currency always formatted as ₦45,000.00
 - Dates always formatted as 24 Jul 2026
-- Statuses formatted as clean executive badges (🟢 Paid, 🟡 Part Payment, 🔴 Not Paid)
+- Statuses formatted as clean corporate status tags (Paid, Part Payment, Not Paid)
 """
 
 from typing import List, Dict, Any, Optional
@@ -247,14 +247,14 @@ class AuditEnricher:
             return pid
 
     def resolve_account(self, account_code_raw: Any) -> str:
-        """Resolves account code to friendly Name (e.g. 1000 -> 1000 — Vault Cash)."""
+        """Resolves account code to friendly display name (e.g. 1000 -> Vault Cash)."""
         code = str(account_code_raw or "").strip()
         if not code:
             return "General Account"
         name = self._chart_of_accounts.get(code) or CHART_OF_ACCOUNTS_MAP.get(code)
         if name:
-            return f"{code} — {name}"
-        return f"Account {code}"
+            return name
+        return "Ledger Account"
 
     @staticmethod
     def clean_reference(ref_raw: Any, prefix: str = "REF") -> str:
@@ -291,19 +291,19 @@ class AuditEnricher:
 
     @staticmethod
     def format_status_badge(status_raw: Any) -> str:
-        """Return executive color status badge: 🟢 Paid, 🟡 Part Payment, 🔴 Not Paid."""
+        """Return clean corporate status tag: Paid, Part Payment, Not Paid."""
         if not status_raw:
-            return "🟡 Pending"
+            return "Pending"
 
         st_str = str(status_raw).upper().strip()
         if st_str in ["PAID", "ACTIVE", "DISBURSED", "APPROVED", "COMPLETED", "CLOSED", "SUCCESS", "PERFECT_MATCH", "BALANCED", "100%"]:
-            return "🟢 Paid" if st_str == "PAID" else ("🟢 Approved" if st_str == "APPROVED" else f"🟢 {status_raw.capitalize() if isinstance(status_raw, str) else status_raw}")
+            return "Paid" if st_str == "PAID" else ("Approved" if st_str == "APPROVED" else (status_raw.capitalize() if isinstance(status_raw, str) else str(status_raw)))
         elif st_str in ["PART_PAYMENT", "PENDING", "REVIEW", "UNDER_REVIEW", "PARTIAL", "PARTIAL_MATCH", "50%"]:
-            return "🟡 Part Payment" if st_str == "PART_PAYMENT" else ("🟡 Pending" if st_str == "PENDING" else f"🟡 {status_raw.capitalize() if isinstance(status_raw, str) else status_raw}")
+            return "Part Payment" if st_str == "PART_PAYMENT" else ("Pending" if st_str == "PENDING" else (status_raw.capitalize() if isinstance(status_raw, str) else str(status_raw)))
         elif st_str in ["NOT_PAID", "OVERDUE", "REJECTED", "DEFAULTER", "MISMATCH", "FAILED", "0%"]:
-            return "🔴 Not Paid" if st_str == "NOT_PAID" else ("🔴 Rejected" if st_str == "REJECTED" else f"🔴 {status_raw.capitalize() if isinstance(status_raw, str) else status_raw}")
+            return "Not Paid" if st_str == "NOT_PAID" else ("Rejected" if st_str == "REJECTED" else (status_raw.capitalize() if isinstance(status_raw, str) else str(status_raw)))
 
-        return f"🔵 {status_raw}"
+        return str(status_raw)
 
     # -------------------------------------------------------------------------
     # Batch Record Sets Enrichment
@@ -595,8 +595,8 @@ class AuditEnricher:
             client_info = self.resolve_client(r.get("client_id"))
             expected = float(r.get("expected_amount") or 0)
             paid = float(r.get("collected_amount") or r.get("amount_paid") or 0)
-            ratio = (paid / expected * 100) if expected > 0 else (100.0 if paid > 0 else 0.0)
-            status_tag = "PAID" if ratio >= 99.0 else ("PART_PAYMENT" if ratio > 0 else "NOT_PAID")
+            ratio = (paid / expected * 100) if expected > 0 else 0.0
+            status_tag = "PAID" if (ratio >= 99.0 or (expected <= 0 and paid > 0)) else ("PART_PAYMENT" if ratio > 0 else "NOT_PAID")
 
             grp_name = r.get("group_name")
             if not grp_name or str(grp_name) in ["None", "null", ""]:
@@ -659,11 +659,11 @@ class AuditEnricher:
 
             is_balanced = (abs(tot_debit - tot_credit) < 0.01) and (tot_debit > 0)
             if is_balanced:
-                status_badge = "🟢 Balanced"
+                status_badge = "Balanced"
             elif tot_debit == 0 and tot_credit == 0 and amt == 0:
-                status_badge = "🟡 Non-Monetary"
+                status_badge = "Non-Monetary"
             else:
-                status_badge = "🔴 Unbalanced"
+                status_badge = "Unbalanced"
 
             # Pre-enrich double-entry legs so consumers / UI do not need to do lookups
             enriched_legs = []
@@ -674,7 +674,7 @@ class AuditEnricher:
                 enriched_legs.append({
                     "Journal Ref": ref_disp,
                     "Account": acct_name,
-                    "Leg": "📥 DEBIT" if etype == "DEBIT" else "📤 CREDIT",
+                    "Leg": "DEBIT" if etype == "DEBIT" else "CREDIT",
                     "Debit (₦)": self.format_currency(e_amt) if etype == "DEBIT" else "—",
                     "Credit (₦)": self.format_currency(e_amt) if etype == "CREDIT" else "—",
                     "Debit_Raw": e_amt if etype == "DEBIT" else 0.0,

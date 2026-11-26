@@ -121,8 +121,8 @@ class BranchOperationalStatusModel {
       branchId: json['branch_id']?.toString() ?? '',
       branchName: name,
       branchCode: json['branch_code']?.toString() ?? '',
-      managerName: json['manager_name']?.toString() ?? 'Manager',
-      operationalStatus: json['operational_status']?.toString() ?? 'OPEN',
+      managerName: json['manager_name']?.toString() ?? 'Unassigned',
+      operationalStatus: json['operational_status']?.toString() ?? 'UNVERIFIED',
       vaultCash: (json['vault_cash'] as num?)?.toDouble() ?? 0.0,
       todayCollected: (json['today_collected'] as num?)?.toDouble() ?? 0.0,
       isHeadOffice: isHo,
@@ -219,7 +219,7 @@ class InstitutionPerformanceModel {
     final sumMap = bp['summary'] as Map<String, dynamic>? ?? json['summary'] as Map<String, dynamic>? ?? {};
 
     return InstitutionPerformanceModel(
-      year: (json['year'] as num?)?.toInt() ?? 2026,
+      year: (json['year'] as num?)?.toInt() ?? DateTime.now().year,
       branchRankings: bList,
       officerRankings: oList,
       summary: PerformanceSummaryModel.fromJson(sumMap),
@@ -525,8 +525,8 @@ class BusinessDateStatusModel {
 
   factory BusinessDateStatusModel.fromJson(Map<String, dynamic> json) {
     return BusinessDateStatusModel(
-      isWorkingDay: json['is_working_day'] as bool? ?? true,
-      statusReason: json['status_reason']?.toString() ?? 'Valid working day',
+      isWorkingDay: json['is_working_day'] as bool? ?? false,
+      statusReason: json['status_reason']?.toString() ?? '',
       nextWorkingDay: json['next_working_day']?.toString() ?? '',
     );
   }
@@ -582,7 +582,7 @@ class FinancialActivityDayModel {
     return FinancialActivityDayModel(
       day: json['day']?.toString() ?? '',
       date: json['date']?.toString() ?? '',
-      isWorkingDay: json['is_working_day'] as bool? ?? true,
+      isWorkingDay: json['is_working_day'] as bool? ?? false,
       statusReason: json['status_reason']?.toString() ?? '',
       collections: (json['collections'] as num?)?.toDouble() ?? 0.0,
       disbursements: (json['disbursements'] as num?)?.toDouble() ?? 0.0,
@@ -622,8 +622,8 @@ class BranchPerformanceRowModel {
       volume: (json['volume'] as num?)?.toDouble() ?? 0.0,
       relativePct: (json['relative_pct'] as num?)?.toDouble() ?? 0.0,
       vaultCash: (json['vault_cash'] as num?)?.toDouble() ?? 0.0,
-      managerName: json['manager_name']?.toString() ?? 'Branch Manager',
-      status: json['status']?.toString() ?? 'OPEN',
+      managerName: json['manager_name']?.toString() ?? 'Unassigned',
+      status: json['status']?.toString() ?? 'UNVERIFIED',
       isHeadOffice: isHo,
     );
   }
@@ -697,9 +697,9 @@ class AdminBranchDetailModel {
 
     return AdminBranchDetailModel(
       branchId: json['branch_id']?.toString() ?? '',
-      branchName: json['branch_name']?.toString() ?? 'Branch',
-      managerName: json['manager_name']?.toString() ?? 'Branch Manager',
-      operationalStatus: json['operational_status']?.toString() ?? 'OPEN',
+      branchName: json['branch_name']?.toString() ?? 'Unnamed Branch',
+      managerName: json['manager_name']?.toString() ?? 'Unassigned',
+      operationalStatus: json['operational_status']?.toString() ?? 'UNVERIFIED',
       vaultCashInCustody: (json['vault_cash_in_custody'] as num?)?.toDouble() ?? 0.0,
       activeCreditBook: (json['active_credit_book'] as num?)?.toDouble() ?? 0.0,
       activeBorrowersCount: (json['active_borrowers_count'] as num?)?.toInt() ?? 0,

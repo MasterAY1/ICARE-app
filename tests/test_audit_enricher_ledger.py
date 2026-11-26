@@ -60,12 +60,12 @@ class TestAuditEnricherLedger(unittest.TestCase):
         self.assertNotIn("-44af-4dce-bd0a-", row["Journal Ref"])
 
         # 2. Friendly Accounts & Names
-        self.assertEqual(row["Debit Account"], "1200 — Loan Portfolio")
-        self.assertEqual(row["Credit Account"], "1000 — Vault Cash")
+        self.assertEqual(row["Debit Account"], "Loan Portfolio")
+        self.assertEqual(row["Credit Account"], "Vault Cash")
 
         # 3. Formatted Currency & Balancing Status
         self.assertEqual(row["Amount"], "₦50,000.00")
-        self.assertEqual(row["Status"], "🟢 Balanced")
+        self.assertEqual(row["Status"], "Balanced")
         self.assertEqual(row["Branch"], "Ogijo Branch")
         self.assertEqual(row["Officer"], "Adenuga Ayomide")
 
@@ -74,13 +74,13 @@ class TestAuditEnricherLedger(unittest.TestCase):
         self.assertEqual(len(entries), 2)
         debit_leg = entries[0]
         credit_leg = entries[1]
-        self.assertEqual(debit_leg["Leg"], "📥 DEBIT")
-        self.assertEqual(debit_leg["Account"], "1200 — Loan Portfolio")
+        self.assertEqual(debit_leg["Leg"], "DEBIT")
+        self.assertEqual(debit_leg["Account"], "Loan Portfolio")
         self.assertEqual(debit_leg["Debit (₦)"], "₦50,000.00")
         self.assertEqual(debit_leg["Credit (₦)"], "—")
 
-        self.assertEqual(credit_leg["Leg"], "📤 CREDIT")
-        self.assertEqual(credit_leg["Account"], "1000 — Vault Cash")
+        self.assertEqual(credit_leg["Leg"], "CREDIT")
+        self.assertEqual(credit_leg["Account"], "Vault Cash")
         self.assertEqual(credit_leg["Debit (₦)"], "—")
         self.assertEqual(credit_leg["Credit (₦)"], "₦50,000.00")
 
@@ -129,7 +129,7 @@ class TestAuditEnricherLedger(unittest.TestCase):
         self.assertEqual(len(res["ledger_transactions"]), 1)
         matched_tx = res["ledger_transactions"][0]
         self.assertEqual(matched_tx["Journal Ref"], "JNL-3E01B721")
-        self.assertEqual(matched_tx["Debit Account"], "1200 — Loan Portfolio")
+        self.assertEqual(matched_tx["Debit Account"], "Loan Portfolio")
 
 
 if __name__ == "__main__":

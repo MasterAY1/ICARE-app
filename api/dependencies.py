@@ -13,6 +13,7 @@ from auth.session_cache import (
     invalidate_user_session_cache,
 )
 from services.rbac_scope_service import RBACScopeService, RBACScope, UnknownRoleError
+from services.audit_log_service import set_audit_actor
 from models.user import CurrentUser
 from auth.authorization import PERMISSIONS
 
@@ -88,6 +89,7 @@ def get_current_user(
     # Fast-path: Check in-memory session cache (eliminates PostgREST roundtrip)
     cached_user = get_cached_user(user_id) or get_cached_user(username)
     if cached_user is not None:
+        set_audit_actor(cached_user, session_id=str(token_data.get("jti") or ""))
         return cached_user
 
     # Cache miss: fetch authoritative user record from database
@@ -150,6 +152,7 @@ def get_current_user(
         set_cached_user(user_id, current_user)
     if username:
         set_cached_user(username, current_user)
+    set_audit_actor(current_user, session_id=str(token_data.get("jti") or ""))
 
     return current_user
 

@@ -45,10 +45,12 @@ class UserListItemModel {
 class UserListResponseModel {
   final List<UserListItemModel> users;
   final int totalCount;
+  final List<BranchOptionItemModel> availableBranches;
 
   UserListResponseModel({
     required this.users,
     required this.totalCount,
+    this.availableBranches = const [],
   });
 
   factory UserListResponseModel.fromJson(Map<String, dynamic> json) {
@@ -58,6 +60,12 @@ class UserListResponseModel {
               .toList() ??
           [],
       totalCount: (json['total_count'] as num?)?.toInt() ?? 0,
+      availableBranches: (json['available_branches'] as List<dynamic>?)
+              ?.map(
+                (e) => BranchOptionItemModel.fromJson(e as Map<String, dynamic>),
+              )
+              .toList() ??
+          [],
     );
   }
 }
@@ -262,15 +270,23 @@ class BranchClosureItemModel {
 
 class BranchClosuresResponseModel {
   final List<BranchClosureItemModel> closures;
+  final List<BranchOptionItemModel> availableBranches;
 
   BranchClosuresResponseModel({
     required this.closures,
+    this.availableBranches = const [],
   });
 
   factory BranchClosuresResponseModel.fromJson(Map<String, dynamic> json) {
     return BranchClosuresResponseModel(
       closures: (json['closures'] as List<dynamic>?)
               ?.map((e) => BranchClosureItemModel.fromJson(e as Map<String, dynamic>))
+              .toList() ??
+          [],
+      availableBranches: (json['available_branches'] as List<dynamic>?)
+              ?.map(
+                (e) => BranchOptionItemModel.fromJson(e as Map<String, dynamic>),
+              )
               .toList() ??
           [],
     );

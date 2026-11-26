@@ -61,8 +61,18 @@ class LAPSMigrationService:
                 if c_id:
                     c_id = str(c_id).strip()
 
-                branch = str(rec.get("branch") or rec.get("branch_name") or "Main Branch").strip()
-                officer = str(rec.get("officer") or rec.get("officer_name") or user_id).strip()
+                raw_branch = rec.get("branch") or rec.get("branch_name")
+                if not raw_branch or not str(raw_branch).strip():
+                    errors.append(f"Row {idx}: Branch name is required for legacy LAPS migration (FP-001).")
+                    failed_count += 1
+                    continue
+                branch = str(raw_branch).strip()
+                raw_officer = rec.get("officer") or rec.get("officer_name") or user_id
+                if not raw_officer or not str(raw_officer).strip():
+                    errors.append(f"Row {idx}: Officer identifier is required for legacy LAPS migration.")
+                    failed_count += 1
+                    continue
+                officer = str(raw_officer).strip()
                 remarks = rec.get("remarks") or f"Legacy LAPS migration batch {batch_id}"
 
                 # Determine owner_known flag

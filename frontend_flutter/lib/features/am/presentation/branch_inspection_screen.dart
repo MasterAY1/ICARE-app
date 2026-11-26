@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/theme/icare_theme_tokens.dart';
+import '../../../../core/errors/app_error_formatter.dart';
 import '../../../../core/utils/currency_formatter.dart';
 import '../data/datasources/am_api_service.dart';
 
@@ -124,7 +125,7 @@ class _BranchInspectionScreenState extends ConsumerState<BranchInspectionScreen>
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      '${snapshot.error}',
+                      AppErrorDetails.from(snapshot.error).message,
                       style: TextStyle(fontSize: 12.5, color: tokens.textMuted),
                       textAlign: TextAlign.center,
                     ),
@@ -231,7 +232,7 @@ class _BranchInspectionScreenState extends ConsumerState<BranchInspectionScreen>
                                 const SizedBox(height: 10),
                                 _buildInspectionCard(
                                   'Cashbook Status',
-                                  cashPos['status'] ?? 'Balanced',
+                                  cashPos['status'] ?? 'Unverified',
                                   Icons.verified_outlined,
                                   tokens.brandPrimary,
                                   isStatus: true,
@@ -262,7 +263,7 @@ class _BranchInspectionScreenState extends ConsumerState<BranchInspectionScreen>
                                 Expanded(
                                   child: _buildInspectionCard(
                                     'Cashbook Status',
-                                    cashPos['status'] ?? 'Balanced',
+                                    cashPos['status'] ?? 'Unverified',
                                     Icons.verified_outlined,
                                     tokens.brandPrimary,
                                     isStatus: true,

@@ -74,10 +74,9 @@ class SupabaseLoanRepository(BaseRepository[Loan], LoanRepository):
                 return res_full.data[0]["id"]
             res_suffix = self.client.table("app_users").select("id, username").ilike("username", f"*_{username}").execute()
             if res_suffix.data:
-                ogi_match = [r for r in res_suffix.data if (r.get("username") or "").startswith("OGI_")]
-                if ogi_match:
-                    return ogi_match[0]["id"]
-                return res_suffix.data[0]["id"]
+                if len(res_suffix.data) == 1:
+                    return res_suffix.data[0]["id"]
+                raise ValueError(f"Ambiguous officer suffix '{username}'; supply branch-qualified username.")
         except Exception as e:
             raise ValueError(f"Failed to resolve officer_id for {username}: {str(e)}")
         raise ValueError(f"Officer '{username}' not found")

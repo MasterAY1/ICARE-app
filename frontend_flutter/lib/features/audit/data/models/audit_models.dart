@@ -436,7 +436,7 @@ class ExceptionReportsResponseModel {
 
     return ExceptionReportsResponseModel(
       totalExceptions: (json['total_exceptions'] as num?)?.toInt() ?? 0,
-      exceptionRulesEvaluated: (json['exception_rules_evaluated'] as num?)?.toInt() ?? 15,
+      exceptionRulesEvaluated: (json['exception_rules_evaluated'] as num?)?.toInt() ?? parsedDetails.length,
       details: parsedDetails,
     );
   }

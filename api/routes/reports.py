@@ -318,38 +318,14 @@ def _resolve_single_branch_id(
     uow: SupabaseUnitOfWork
 ) -> Optional[str]:
     """
-    Safely resolves a single branch_id from scope.
-    If multiple branch IDs are returned (e.g. Area Manager with Consolidated Area View or Admin),
-    prioritizes an active branch with loans/transactions (such as Ogijo) instead of blindly
-    falling back to an alphabetical branch with zero records (e.g. Kola).
+    Fail-closed resolution of a single branch_id from RBAC scope (FP-001).
+    Never guesses an arbitrary branch when operating across multiple branches or institution-wide.
     """
     if isinstance(resolved_branch_id, str) and resolved_branch_id:
         return resolved_branch_id
 
-    if isinstance(resolved_branch_id, list) and len(resolved_branch_id) > 0:
-        for b_id in resolved_branch_id:
-            try:
-                res = uow.client.table("loans").select("loan_id").eq("branch_id", b_id).limit(1).execute()
-                if res.data and len(res.data) > 0:
-                    return b_id
-            except Exception:
-                pass
+    if isinstance(resolved_branch_id, list) and len(resolved_branch_id) == 1:
         return resolved_branch_id[0]
-
-    # Institution-level fallback: find branch with active data
-    try:
-        res = uow.client.table("loans").select("branch_id").limit(1).execute()
-        if res.data and res.data[0].get("branch_id"):
-            return res.data[0]["branch_id"]
-    except Exception:
-        pass
-
-    try:
-        res_b = uow.client.table("branches").select("branch_id").order("name").limit(1).execute()
-        if res_b.data:
-            return res_b.data[0]["branch_id"]
-    except Exception:
-        pass
 
     return None
 
@@ -375,7 +351,7 @@ def get_reports_meta(
         res_prods = uow.client.table("loan_products").select("name").execute()
         products = sorted(list(set(p["name"] for p in (res_prods.data or []) if p.get("name"))))
     except Exception:
-        products = ["Daily 60 Days", "Daily 120 Days", "Weekly 12W", "Weekly 24W", "Monthly 3M", "Monthly 6M"]
+        products = []
 
     # 3. Credit Officers scoped to branches
     try:
@@ -775,10 +751,10 @@ def get_area_comparison(
                 total_savings=_to_float(r.get("Total Savings", 0.0)),
                 collections_received=_to_float(r.get("Collections Received", 0.0)),
                 expected_collections=_to_float(r.get("Expected Collections", 0.0)),
-                collection_efficiency=_to_float(r.get("_raw_eff", r.get("Collection Efficiency", 100.0))),
+                collection_efficiency=_to_float(r.get("_raw_eff", r.get("Collection Efficiency", 0.0))),
                 outstanding_portfolio=_to_float(r.get("Outstanding Portfolio", 0.0)),
                 par_percentage=_to_float(r.get("_raw_par", r.get("PAR %", 0.0))),
-                status=str(r.get("Status", "HEALTHY"))
+                status=str(r.get("Status", "[INACTIVE]"))
             ))
 
     return AreaComparisonResponse(
@@ -788,7 +764,7 @@ def get_area_comparison(
         total_active_savers=area_dict.get("total_active_savers", 0),
         total_area_collections=float(area_dict.get("total_area_collections", 0.0)),
         total_area_expected=float(area_dict.get("total_area_expected", 0.0)),
-        overall_efficiency=float(area_dict.get("overall_efficiency", 100.0)),
+        overall_efficiency=float(area_dict.get("overall_efficiency", 0.0)),
         total_area_savings=float(area_dict.get("total_area_savings", 0.0)),
         total_area_portfolio=float(area_dict.get("total_area_portfolio", 0.0)),
         overall_par=float(area_dict.get("overall_par", 0.0)),

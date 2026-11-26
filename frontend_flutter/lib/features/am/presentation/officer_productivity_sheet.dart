@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import '../../../../core/theme/icare_motion.dart';
 import '../../../../core/theme/icare_theme_tokens.dart';
+import '../../../../core/errors/app_error_formatter.dart';
 import '../../../../core/utils/currency_formatter.dart';
 import '../data/datasources/am_api_service.dart';
 import '../data/models/am_dashboard_models.dart';
@@ -99,7 +100,7 @@ class _OfficerProductivityModalSheetState extends ConsumerState<OfficerProductiv
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _errorMessage = e.toString();
+        _errorMessage = AppErrorDetails.from(e).message;
         _isLoading = false;
       });
     }

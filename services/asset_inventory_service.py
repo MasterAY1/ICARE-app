@@ -136,8 +136,6 @@ class AssetInventoryService:
             for b in branches:
                 if "head office" in str(b.get("name") or "").lower():
                     return str(b["branch_id"])
-            if branches:
-                return str(branches[0]["branch_id"])
         except Exception:
             pass
         return None
@@ -316,7 +314,7 @@ class AssetInventoryService:
                     return bid, bname, merged, True
             except Exception as ex:
                 if not _table_missing_error(ex):
-                    print(f"[ASSET CATALOG] Falling back to baseline seed due to DB read error: {ex}")
+                    raise RuntimeError(f"Asset catalog database read failed: {ex}") from ex
 
         # Fallback projection: MASTER_ASSET_CATALOG_SEED + pending/active/completed loan asset_items
         is_ogijo = _is_ogijo_branch(bname)

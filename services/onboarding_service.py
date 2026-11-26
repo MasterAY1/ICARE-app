@@ -835,7 +835,7 @@ class OnboardingService:
 
         def resolve_product_name(raw_name: Any) -> str:
             if not raw_name or str(raw_name).strip() in ("nan", "None", ""):
-                return "Daily 60 Days"
+                return ""
             raw_s = str(raw_name).strip()
             raw_low = raw_s.lower()
             for p in product_names:
@@ -858,7 +858,7 @@ class OnboardingService:
                 return "Monthly 6M Asset" if is_asset else "Monthly 6M"
             elif "cash" in raw_low:
                 return "Cash and Carry"
-            return "Daily 60 Days"
+            return raw_s
 
         # 1. Parse Groups Sheet (Header at row 3)
         ws_groups = wb["Groups"]
@@ -957,7 +957,7 @@ class OnboardingService:
 
             members.append({
                 "member_reference": str(m_ref).strip() if m_ref else None,
-                "group_reference": str(g_ref).strip() if g_ref else "GRP-01",
+                "group_reference": str(g_ref).strip() if g_ref else "",
                 "member_number": int(m_num) if str(m_num).isdigit() else (len(members) + 1),
                 "full_name": str(f_name).strip(),
                 "phone_number": str(phone).strip() if phone else None,
@@ -1007,14 +1007,13 @@ class OnboardingService:
 
         officers = []
         for idx, (name, phone) in enumerate(officers_dict.items(), 1):
-            is_misc = ("olajumoke" in name.lower() or "co3" in name.lower() or idx == 1)
             officers.append({
                 "name": name,
                 "officer_name": name,
                 "phone": phone,
                 "phone_number": phone,
                 "role": "Credit Officer",
-                "is_misc_savings_manager": is_misc
+                "is_misc_savings_manager": False
             })
 
         return {
@@ -1404,7 +1403,7 @@ class OnboardingService:
         # 5. Migrate Members
         for m_idx, m in enumerate(members, 1):
             f_name = str(m.get("full_name") or "").strip()
-            g_ref = str(m.get("group_reference") or "GRP-01").strip().upper()
+            g_ref = str(m.get("group_reference") or "").strip().upper()
             m_off_name = str(m.get("officer_name") or "").strip().lower()
 
             # Lookup group by composite (officer_name, g_ref) or fallback g_ref
@@ -1479,7 +1478,11 @@ class OnboardingService:
 
             # Seed Loan & Schedule
             if has_loan:
-                prod = product_map.get(l_type) or product_map.get("daily 60 days")
+                prod = product_map.get(l_type)
+                if not prod:
+                    raise ValueError(
+                        f"Unrecognized or missing loan product '{m.get('loan_type')}' for member '{f_name}'."
+                    )
                 duration = int(prod.get("installments") or 60)
                 cycle = prod.get("repayment_cycle", "Daily")
                 expected_inst = round(a_cred / duration, 2) if duration > 0 else 0.0

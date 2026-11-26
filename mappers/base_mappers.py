@@ -437,7 +437,8 @@ class BranchClosureMapper:
             id=dto.get("id"),
             start_date=_parse_date(dto.get("start_date")),
             end_date=_parse_date(dto.get("end_date")),
-            reason=str(dto.get("reason"))
+            reason=str(dto.get("reason")),
+            branch_id=dto.get("branch_id"),
         )
 
 STATUS_UUID_TO_NAME = {

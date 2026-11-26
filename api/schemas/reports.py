@@ -4,6 +4,7 @@ Models for General Ledger Trial Balance, Savings Summary, Repayment Summary,
 Portfolio Performance, Area Branch Comparison, and Data Exports.
 """
 from typing import Dict, Any, List, Optional, Union
+from datetime import date
 from pydantic import BaseModel, Field
 
 
@@ -389,36 +390,36 @@ class MonthlyWorkflowStatusResponse(BaseModel):
 
 class MonthlyWorkflowSubmitRequest(BaseModel):
     branch_name: Optional[str] = None
-    year: int = 2026
-    month: int = 9
+    year: int = Field(default_factory=lambda: date.today().year)
+    month: int = Field(default_factory=lambda: date.today().month)
     notes: Optional[str] = None
 
 
 class MonthlyWorkflowEndorseRequest(BaseModel):
     branch_name: Optional[str] = None
-    year: int = 2026
-    month: int = 9
+    year: int = Field(default_factory=lambda: date.today().year)
+    month: int = Field(default_factory=lambda: date.today().month)
     notes: Optional[str] = None
 
 
 class MonthlyWorkflowReturnRequest(BaseModel):
     branch_name: Optional[str] = None
-    year: int = 2026
-    month: int = 9
+    year: int = Field(default_factory=lambda: date.today().year)
+    month: int = Field(default_factory=lambda: date.today().month)
     query_notes: str
 
 
 class MonthlyWorkflowSealAreaRequest(BaseModel):
-    area_name: str = "Area 1"
-    year: int = 2026
-    month: int = 9
+    area_name: str = ""
+    year: int = Field(default_factory=lambda: date.today().year)
+    month: int = Field(default_factory=lambda: date.today().month)
     notes: Optional[str] = None
 
 
 class MonthlyWorkflowLockRequest(BaseModel):
     branch_name: Optional[str] = None
-    year: int = 2026
-    month: int = 9
+    year: int = Field(default_factory=lambda: date.today().year)
+    month: int = Field(default_factory=lambda: date.today().month)
     notes: Optional[str] = None
 
 

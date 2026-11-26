@@ -352,3 +352,160 @@ def test_reverse_repayment_atomically_reverts_completed_loan_and_client_status()
 
         sched_updates = [op for op in ops if op.get("type") == "update" and op.get("table") == "loan_schedule"]
         assert len(sched_updates) == 1
+
+
+def test_save_repayment_rejects_repayment_and_not_paid_when_client_has_no_active_loan():
+    """Loanless clients must fail closed cleanly rather than hitting SQL ERR_REPAYMENT_INSERT_PAYLOAD."""
+    import pytest
+
+    def _build_loanless_uow():
+        mock_uow = MagicMock()
+        mock_uow.loans._resolve_branch_id.return_value = BRANCH_UUID
+        mock_uow.loans._resolve_officer_id.return_value = USER_UUID
+
+        def fake_table(name):
+            if name == "clients":
+                return _FluentQuery([{"client_id": "client-uuid-loanless"}])
+            if name == "branches":
+                return _FluentQuery([{"branch_id": BRANCH_UUID, "name": "Ogijo"}])
+            if name == "groups":
+                return _FluentQuery([{"group_id": "grp-uuid-1"}])
+            if name == "app_users":
+                return _FluentQuery([{"id": USER_UUID, "username": "co_ayomide"}])
+            if name == "loans":
+                return _FluentQuery([])
+            return _FluentQuery([])
+
+        mock_uow.client.table.side_effect = fake_table
+        return mock_uow
+
+    with patch("services.business_date_service.BusinessDateService.is_operational_open", return_value=(True, "Working Day")):
+        # Case A: Cash loan repayment entered for loanless client
+        uow_a = _build_loanless_uow()
+        with pytest.raises(ValueError, match="does not have an active loan"):
+            collection_batch_service.save_repayment(
+                {
+                    "Client ID": "client-uuid-loanless",
+                    "Client Name": "Favour Member",
+                    "Group": "Favour",
+                    "Loan Repayment Amount": 2000.0,
+                    "Savings Amount": 0.0,
+                    "Date": "2026-11-24",
+                    "Officer": "co_ayomide",
+                    "Branch": "Ogijo",
+                },
+                override_uow=uow_a,
+            )
+        uow_a.client.rpc.assert_not_called()
+
+        # Case B: Unpaid (NOT_PAID) mark submitted for loanless client
+        uow_b = _build_loanless_uow()
+        with pytest.raises(ValueError, match="does not have an active loan"):
+            collection_batch_service.save_repayment(
+                {
+                    "Client ID": "client-uuid-loanless",
+                    "Client Name": "Favour Member",
+                    "Group": "Favour",
+                    "Loan Repayment Amount": 0.0,
+                    "mark_not_paid": True,
+                    "Payment Status": "NOT_PAID",
+                    "Date": "2026-11-24",
+                    "Officer": "co_ayomide",
+                    "Branch": "Ogijo",
+                },
+                override_uow=uow_b,
+            )
+        uow_b.client.rpc.assert_not_called()
+
+
+def test_repayment_service_resolves_loan_before_prepare_and_fails_closed_when_missing():
+    """RepaymentService must resolve loan_id before building the DB insert payload and fail closed if None."""
+    from datetime import date
+    import pytest
+    from domain.entities.repayment import Repayment
+
+    # 1. Resolved before _prepare_db_data
+    mock_uow = MagicMock()
+    mock_uow.client.table.return_value.select.return_value.eq.return_value.execute.return_value.data = []
+    mock_uow.repayments._resolve_loan_id.return_value = "resolved-loan-uuid"
+    mock_uow.repayments._prepare_db_data.side_effect = lambda rep_obj: {
+        "id": rep_obj.id,
+        "client_id": rep_obj.client_id,
+        "loan_id": rep_obj.loan_id,
+        "branch_id": BRANCH_UUID,
+        "amount_paid": rep_obj.amount_paid,
+    }
+
+    rep_ok = Repayment(
+        id="rep-resolve-1",
+        loan_id="",
+        client_id="client-uuid-1",
+        amount_paid=0.0,
+        savings_amount=0.0,
+        loan_repayment_amount=0.0,
+        withdrawal_amount=0.0,
+        others_amount=0.0,
+        recovery_amount=0.0,
+        initial_payment=0.0,
+        payment_date=date(2026, 11, 24),
+        transaction_type="Loan",
+        branch="Ogijo",
+        credit_officer="co_ayomide",
+        payment_status="NOT_PAID",
+        expected_amount=2000.0,
+        overdue_amount=2000.0,
+    )
+    with patch("services.business_date_service.BusinessDateService.is_operational_open", return_value=(True, "Working Day")), \
+         patch("services.client_status_service.ClientStatusService.on_loan_repayment_check"):
+        RepaymentService.post_repayment(mock_uow, rep_ok)
+
+    rpc_ops = mock_uow.client.rpc.call_args[0][1]["p_operations"]
+    rep_inserts = [op for op in rpc_ops if op.get("table") == "repayments"]
+    assert len(rep_inserts) == 1
+    assert rep_inserts[0]["record"]["loan_id"] == "resolved-loan-uuid"
+
+    # 2. Missing loan fails closed without invoking atomic RPC
+    mock_uow_missing = MagicMock()
+    mock_uow_missing.client.table.return_value.select.return_value.eq.return_value.execute.return_value.data = []
+    mock_uow_missing.repayments._resolve_loan_id.return_value = None
+    mock_uow_missing.repayments._prepare_db_data.side_effect = lambda rep_obj: {
+        "id": rep_obj.id,
+        "client_id": rep_obj.client_id,
+        "loan_id": None,
+        "branch_id": BRANCH_UUID,
+        "amount_paid": rep_obj.amount_paid,
+    }
+    rep_bad = Repayment(
+        id="rep-missing-1",
+        loan_id=None,
+        client_id="client-uuid-loanless",
+        amount_paid=2000.0,
+        savings_amount=0.0,
+        loan_repayment_amount=2000.0,
+        withdrawal_amount=0.0,
+        others_amount=0.0,
+        recovery_amount=0.0,
+        initial_payment=0.0,
+        payment_date=date(2026, 11, 24),
+        transaction_type="Loan",
+        branch="Ogijo",
+        credit_officer="co_ayomide",
+    )
+    with patch("services.business_date_service.BusinessDateService.is_operational_open", return_value=(True, "Working Day")):
+        with pytest.raises(ValueError, match="does not have an active loan"):
+            RepaymentService.post_repayment(mock_uow_missing, rep_bad)
+    mock_uow_missing.client.rpc.assert_not_called()
+
+
+def test_translate_error_scrubs_err_repayment_insert_payload():
+    """Error translator must never leak internal ERR_REPAYMENT_INSERT_PAYLOAD or SQL columns."""
+    from api.core.errors import translate_error_to_icare_response
+
+    exc = Exception(
+        "{'message': 'ERR_REPAYMENT_INSERT_PAYLOAD: amount_paid, loan_id, client_id, and branch_id are required', 'code': 'P0001'}"
+    )
+    res = translate_error_to_icare_response(exc)
+    assert res["error_code"] == "REPAYMENT_MISSING_LOAN_CONTEXT"
+    assert "ERR_REPAYMENT_INSERT_PAYLOAD" not in res["message"]
+    assert "amount_paid" not in res["message"]
+    assert "loan_id" not in res["message"]

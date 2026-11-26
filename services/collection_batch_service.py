@@ -119,22 +119,24 @@ def save_repayment(
         with UOWContext() as uow:
             db_data = {UI_TO_DB_REP.get(k, k): v for k, v in data.items()}
 
-            # Map officer and branch with safe fallbacks
+            # Map officer and branch strictly fail-closed (FP-001)
             officer = (
                 data.get('Officer') or
                 data.get('officer') or
                 db_data.get('credit_officer') or
                 db_data.get('officer') or
-                default_user or
-                'SYSTEM'
+                default_user
             )
             branch = (
                 data.get('Branch') or
                 data.get('branch') or
                 db_data.get('branch') or
-                default_branch or
-                'Head Office'
+                default_branch
             )
+            if not officer or not str(officer).strip():
+                raise ValueError("Missing credit officer identity for repayment posting.")
+            if not branch or not str(branch).strip():
+                raise ValueError("Missing branch context for repayment posting.")
 
             db_data['officer'] = officer
             db_data['credit_officer'] = officer
@@ -327,13 +329,18 @@ def save_repayment(
                                 if not is_asset_target:
                                     loan_cache[client_id] = active_loan_id
 
+                if not active_loan_id or str(active_loan_id).strip().lower() in ("", "none", "null"):
+                    action_label = "an unpaid loan mark" if (is_marked_not_paid and loan_repay == 0) else "a loan repayment"
+                    raise ValueError(
+                        f"Cannot record {action_label} for {client_name}: this client does not have an active loan. "
+                        "Record Personal Savings, Group Savings, or Fees instead."
+                    )
+
                 exp_amt = float(data.get('Expected Amount') or data.get('expected_amount') or db_data.get('expected_amount') or 0.0)
                 if exp_amt <= 0 and active_loan_id:
                     l_cached = loan_data_cache.get(active_loan_id) if loan_data_cache else None
                     if l_cached:
                         exp_amt = float(l_cached.get('loan_repay') or 0.0)
-                if exp_amt <= 0:
-                    exp_amt = (loan_repay if loan_repay > 0 else 0.0)
                 overdue_val = float(data.get('Overdue Amount') or data.get('overdue_amount') or db_data.get('overdue_amount') or (exp_amt if is_marked_not_paid else 0.0))
                 final_p_status = "NOT_PAID" if is_marked_not_paid else raw_p_status
 

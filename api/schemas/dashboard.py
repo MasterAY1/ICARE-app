@@ -62,7 +62,7 @@ class CashPosition(BaseModel):
     cash_in: float = 0.0
     cash_out: float = 0.0
     closing_balance: float = 0.0
-    status: str = "Balanced"
+    status: str = "Unverified"
     difference: float = 0.0
 
 

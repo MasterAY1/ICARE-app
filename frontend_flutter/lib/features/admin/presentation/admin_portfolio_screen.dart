@@ -129,7 +129,14 @@ class AdminPortfolioScreen extends ConsumerWidget {
                     dropdownColor: tokens.surfaceElevated,
                     isDense: true,
                     icon: Icon(Icons.arrow_drop_down, size: 18, color: tokens.textSecondary),
-                    items: [2026, 2025, 2024].map((y) {
+                    items: ({
+                      DateTime.now().year,
+                      DateTime.now().year - 1,
+                      DateTime.now().year - 2,
+                      year,
+                    }.toList()
+                          ..sort((a, b) => b.compareTo(a)))
+                        .map((y) {
                       return DropdownMenuItem<int>(
                         value: y,
                         child: Text(

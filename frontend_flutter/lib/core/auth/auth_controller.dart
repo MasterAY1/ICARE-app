@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../errors/app_error_formatter.dart';
 import '../network/api_client.dart';
 import '../offline/offline_database_service.dart';
 import 'auth_state.dart';
@@ -221,7 +222,7 @@ class AuthController extends StateNotifier<AuthState> {
     } on DioException catch (e) {
       state = AuthStateError(_extractDioError(e));
     } catch (e) {
-      state = AuthStateError('Unexpected authentication error: $e');
+      state = AuthStateError('Unexpected authentication error: ${AppErrorDetails.from(e).message}');
     }
   }
 
@@ -270,7 +271,7 @@ class AuthController extends StateNotifier<AuthState> {
     } catch (e) {
       state = current.copyWith(
         isSubmitting: false,
-        errorMessage: 'Unexpected verification error: $e',
+        errorMessage: 'Unexpected verification error: ${AppErrorDetails.from(e).message}',
       );
     }
   }
@@ -338,7 +339,7 @@ class AuthController extends StateNotifier<AuthState> {
     } catch (e) {
       state = current.copyWith(
         isSubmitting: false,
-        errorMessage: 'Unexpected error updating password: $e',
+        errorMessage: 'Unexpected error updating password: ${AppErrorDetails.from(e).message}',
       );
     }
   }

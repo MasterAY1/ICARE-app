@@ -97,6 +97,11 @@ ERROR_REGISTRY: Dict[str, Dict[str, str]] = {
         "message": "This client has missed 3 or more scheduled repayments and is classified as a Defaulter.",
         "action": "This loan application requires explicit Branch Manager review and physical sign-off."
     },
+    "REPAYMENT_MISSING_LOAN_CONTEXT": {
+        "title": "No Active Loan Found",
+        "message": "A loan repayment or unpaid mark cannot be posted because the selected client does not have an active loan.",
+        "action": "Please verify the client's loan status and record Personal Savings, Group Savings, or Fees instead."
+    },
 
     # Savings & LAPS
     "SAVINGS_INSUFFICIENT_BALANCE": {
@@ -173,6 +178,17 @@ def translate_error_to_icare_response(exc: Exception) -> Dict[str, Any]:
 
     err_str = str(exc)
 
+    # Detect atomic RPC missing loan/repayment payload rejection without leaking SQL codes
+    if "ERR_REPAYMENT_INSERT_PAYLOAD" in err_str:
+        template = ERROR_REGISTRY["REPAYMENT_MISSING_LOAN_CONTEXT"]
+        return {
+            "error_code": "REPAYMENT_MISSING_LOAN_CONTEXT",
+            "title": template["title"],
+            "message": template["message"],
+            "detail": template["message"],
+            "action": template["action"]
+        }
+
     # Detect PostgreSQL code 23505 (unique violation)
     if "23505" in err_str or "unique constraint" in err_str.lower():
         template = ERROR_REGISTRY["DB_DUPLICATE_ENTRY"]
@@ -225,11 +241,12 @@ def translate_error_to_icare_response(exc: Exception) -> Dict[str, Any]:
                 import ast
                 parsed = ast.literal_eval(err_str)
                 if isinstance(parsed, dict) and "message" in parsed:
-                    msg = parsed["message"]
+                    raw_msg = str(parsed["message"]).strip()
+                    msg = re.sub(r"^ERR_[A-Z0-9_]+:\s*", "", raw_msg) or msg
             except Exception:
                 pass
         elif len(err_str) < 200:
-            msg = err_str.strip()
+            msg = re.sub(r"^ERR_[A-Z0-9_]+:\s*", "", err_str.strip()) or msg
 
     return {
         "error_code": "SYSTEM_UNEXPECTED_ERROR",

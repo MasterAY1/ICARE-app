@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
 import '../../../../core/theme/icare_theme_tokens.dart';
+import '../../../../core/errors/app_error_formatter.dart';
 import '../../../../core/utils/currency_formatter.dart';
 import '../../../../core/utils/app_url_helper.dart';
 import '../../../../core/widgets/icare_skeleton_loader.dart';
@@ -542,7 +543,7 @@ class _BranchOnboardingAdminScreenState extends ConsumerState<BranchOnboardingAd
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Failed to approve session: $e', style: const TextStyle(color: Colors.white)),
+            content: Text('Failed to approve session: ${AppErrorDetails.from(e).message}', style: const TextStyle(color: Colors.white)),
             backgroundColor: const Color(0xFFDC2626),
           ),
         );
@@ -628,7 +629,7 @@ class _BranchOnboardingAdminScreenState extends ConsumerState<BranchOnboardingAd
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Failed to delete session: $e', style: const TextStyle(color: Colors.white)),
+            content: Text('Failed to delete session: ${AppErrorDetails.from(e).message}', style: const TextStyle(color: Colors.white)),
             backgroundColor: const Color(0xFFDC2626),
           ),
         );

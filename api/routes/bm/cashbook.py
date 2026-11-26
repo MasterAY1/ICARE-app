@@ -602,16 +602,14 @@ def get_co_aggregation(
     iso_date = target_date.isoformat()
     is_open, open_reason = BusinessDateService.is_operational_open(uow, branch_id, target_date)
 
-    # Resolve Branch Officers
+    # Resolve Branch Officers (strictly scoped to target branch)
     branch_cos = []
     try:
         all_users = uow.users.find_all()
         branch_cos = [
             u for u in all_users
-            if u.role in ["CO", "Officer", "Credit Officer"] and (not target_branch or u.branch_name == target_branch or u.branch_id == branch_id)
+            if u.role in ["CO", "Officer", "Credit Officer", "CREDIT_OFFICER"] and (u.branch_id == branch_id or (target_branch and u.branch_name == target_branch))
         ]
-        if not branch_cos:
-            branch_cos = [u for u in all_users if u.role in ["CO", "Officer", "Credit Officer"]]
     except Exception:
         branch_cos = []
 
@@ -1020,13 +1018,13 @@ def _resolve_available_branches(current_user: CurrentUser, uow: SupabaseUnitOfWo
         "branch": current_user.branch, "branch_id": current_user.branch_id, "assigned_branches": getattr(current_user, "assigned_branches", [])
     })
 
-    all_operational_branches = ["Ibadan", "Ikorodu", "Kola", "Ogijo"]
+    all_operational_branches: List[str] = []
     try:
         res_br = uow.client.table("branches").select("branch_id, name").eq("is_active", True).execute()
         if res_br.data:
             all_operational_branches = sorted(list(set(b["name"] for b in res_br.data if b.get("name") and b.get("name") != "Head Office")))
     except Exception:
-        pass
+        all_operational_branches = []
 
     if scope.scope_level == "INSTITUTION" or current_user.role in ["Admin", "Super Admin", "Director"]:
         return all_operational_branches

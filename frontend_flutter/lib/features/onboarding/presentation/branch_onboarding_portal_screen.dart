@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
 import '../../../../core/theme/icare_theme_tokens.dart';
+import '../../../../core/errors/app_error_formatter.dart';
 import '../../../../core/utils/currency_formatter.dart';
 import '../../../../core/utils/platform_file_picker.dart';
 import '../../auth/presentation/login_screen.dart';
@@ -262,7 +263,7 @@ class _BranchOnboardingPortalScreenState
       _showBanner(res['message']?.toString() ?? 'Draft saved successfully.', isSuccess: true);
     } catch (e) {
       setState(() => _isSaving = false);
-      _showBanner('Failed to save draft: $e', isSuccess: false);
+      _showBanner('Failed to save draft: ${AppErrorDetails.from(e).message}', isSuccess: false);
     }
   }
 
@@ -314,7 +315,7 @@ class _BranchOnboardingPortalScreenState
       _showBanner(res['message']?.toString() ?? 'Excel parsed and loaded successfully!', isSuccess: true);
     } catch (e) {
       setState(() => _isSaving = false);
-      _showBanner('Error uploading Excel: $e', isSuccess: false);
+      _showBanner('Error uploading Excel: ${AppErrorDetails.from(e).message}', isSuccess: false);
     }
   }
 
@@ -449,7 +450,7 @@ class _BranchOnboardingPortalScreenState
       await _loadSessionData();
     } catch (e) {
       setState(() => _isSaving = false);
-      _showBanner('Failed to submit roster: $e', isSuccess: false);
+      _showBanner('Failed to submit roster: ${AppErrorDetails.from(e).message}', isSuccess: false);
     }
   }
 
@@ -516,7 +517,7 @@ class _BranchOnboardingPortalScreenState
       _showBanner(res['message']?.toString() ?? 'Branch package successfully submitted to Area Manager!', isSuccess: true);
     } catch (e) {
       setState(() => _isSaving = false);
-      _showBanner('Submission error: $e', isSuccess: false);
+      _showBanner('Submission error: ${AppErrorDetails.from(e).message}', isSuccess: false);
     }
   }
 
@@ -587,7 +588,7 @@ class _BranchOnboardingPortalScreenState
       _showBanner(res['message']?.toString() ?? 'Branch onboarding successfully committed to live core database!', isSuccess: true);
     } catch (e) {
       setState(() => _isSaving = false);
-      _showBanner('Approval error: $e', isSuccess: false);
+      _showBanner('Approval error: ${AppErrorDetails.from(e).message}', isSuccess: false);
     }
   }
 
@@ -619,7 +620,7 @@ class _BranchOnboardingPortalScreenState
     }
     final nextNum = maxInSession >= startingNum ? (maxInSession + 1) : startingNum;
     final defaultRef = isEditing
-        ? (groupToEdit['group_reference']?.toString() ?? 'GRP-01')
+        ? (groupToEdit['group_reference']?.toString() ?? '')
         : 'GRP-${nextNum.toString().padLeft(2, '0')}';
 
     final refCtrl = TextEditingController(text: defaultRef);
@@ -3170,14 +3171,14 @@ class _BranchOnboardingPortalScreenState
   Widget _buildMemberCardMobile(Map<String, dynamic> m, bool isSubmitted) {
     final tokens = IcareSurfaceTokens.of(context);
     final refCode = m['member_reference'] ?? 'Pending';
-    final gRef = m['group_reference'] ?? 'GRP-01';
+    final gRef = (m['group_reference'] ?? '').toString();
     final name = m['full_name'] ?? '';
     final phone = m['phone_number'] ?? '';
     final savings = double.tryParse(m['savings_balance']?.toString() ?? '0') ?? 0.0;
     final activeCred = double.tryParse(m['active_credit']?.toString() ?? '0') ?? 0.0;
     final princLoan = double.tryParse(m['principal_loan']?.toString() ?? '') ?? activeCred;
     final curBal = double.tryParse(m['current_credit_balance']?.toString() ?? '0') ?? 0.0;
-    final prod = m['loan_type'] ?? 'Daily 60 Days';
+    final prod = (m['loan_type'] ?? '').toString();
 
     return Container(
       padding: const EdgeInsets.all(12),
@@ -3376,14 +3377,14 @@ class _BranchOnboardingPortalScreenState
   Widget _buildMemberRowDesktop(Map<String, dynamic> m, bool isSubmitted) {
     final tokens = IcareSurfaceTokens.of(context);
     final refCode = m['member_reference'] ?? 'Pending Code';
-    final gRef = m['group_reference'] ?? 'GRP-01';
+    final gRef = (m['group_reference'] ?? '').toString();
     final name = m['full_name'] ?? '';
     final phone = m['phone_number'] ?? '';
     final savings = double.tryParse(m['savings_balance']?.toString() ?? '0') ?? 0.0;
     final activeCred = double.tryParse(m['active_credit']?.toString() ?? '0') ?? 0.0;
     final princLoan = double.tryParse(m['principal_loan']?.toString() ?? '') ?? activeCred;
     final curBal = double.tryParse(m['current_credit_balance']?.toString() ?? '0') ?? 0.0;
-    final prod = m['loan_type'] ?? 'Daily 60 Days';
+    final prod = (m['loan_type'] ?? '').toString();
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
@@ -3641,9 +3642,9 @@ class _BranchOnboardingPortalScreenState
 
   Widget _buildGroupCardMobile(Map<String, dynamic> g, bool isSubmitted) {
     final tokens = IcareSurfaceTokens.of(context);
-    final gRef = g['group_reference'] ?? 'GRP-01';
+    final gRef = g['group_reference'] ?? '';
     final gName = g['group_name'] ?? '';
-    final mDay = g['meeting_day'] ?? 'Daily';
+    final mDay = g['meeting_day'] ?? 'Unassigned';
     final officer = g['officer_name'] ?? 'Unassigned';
     final gSav = double.tryParse(g['group_savings']?.toString() ?? '0') ?? 0.0;
     final memberCount = _members.where((m) => m['group_reference'] == gRef).length;
@@ -3747,9 +3748,9 @@ class _BranchOnboardingPortalScreenState
 
   Widget _buildGroupRowDesktop(Map<String, dynamic> g, bool isSubmitted) {
     final tokens = IcareSurfaceTokens.of(context);
-    final gRef = g['group_reference'] ?? 'GRP-01';
+    final gRef = g['group_reference'] ?? '';
     final gName = g['group_name'] ?? '';
-    final mDay = g['meeting_day'] ?? 'Daily';
+    final mDay = g['meeting_day'] ?? 'Unassigned';
     final officer = g['officer_name'] ?? 'Unassigned';
     final gSav = double.tryParse(g['group_savings']?.toString() ?? '0') ?? 0.0;
     final memberCount = _members.where((m) => m['group_reference'] == gRef).length;
@@ -4194,7 +4195,7 @@ class _BranchOnboardingPortalScreenState
                                       });
                                       _showBanner('Unlocked $name for roster edits.', isSuccess: true);
                                     } catch (e) {
-                                      _showBanner('Failed to unlock officer: $e', isSuccess: false);
+                                      _showBanner('Failed to unlock officer: ${AppErrorDetails.from(e).message}', isSuccess: false);
                                     }
                                   }
                                 },

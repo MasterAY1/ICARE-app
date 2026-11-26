@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 
 
 class BranchOption(BaseModel):
-    branch_id: str
+    branch_id: Optional[str] = None
     name: str
     code: Optional[str] = None
 
@@ -147,7 +147,7 @@ class LoanTimelineResponse(BaseModel):
 
 
 class RiskDistributionResponse(BaseModel):
-    branch_id: str
+    branch_id: Optional[str] = "ALL"
     distribution: Dict[str, int] = Field(default_factory=dict)
 
 

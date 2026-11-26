@@ -67,11 +67,17 @@ class SupabaseUserRepository(BaseRepository[User], UserRepository):
         )
         res = self._execute(query)
         results = []
-        for row in res.data:
-            b = row.get("branches") or {}
+        for row in (res.data or []):
+            bid = row.get("branch_id")
+            if not bid:
+                continue
+            b = row.get("branches")
+            if isinstance(b, list):
+                b = b[0] if b else {}
+            b_name = b.get("name") if isinstance(b, dict) else None
             results.append({
-                "branch_id": row.get("branch_id"),
-                "name": b.get("name", ""),
+                "branch_id": str(bid),
+                "name": str(b_name or ""),
             })
         return results
 
@@ -184,11 +190,8 @@ class SupabaseUserRepository(BaseRepository[User], UserRepository):
             except Exception:
                 pass
         if not role_id:
-            role_id = "bd8790ee-c0eb-485a-8b6a-93f54519965d"
-        try:
-            self.client.table("user_roles").upsert({"user_id": user_id, "role_id": role_id}).execute()
-        except Exception:
-            pass
+            raise ValueError(f"Cannot resolve authoritative role_id for role '{role_name}'.")
+        self.client.table("user_roles").upsert({"user_id": user_id, "role_id": role_id}).execute()
 
     # ------------------------------------------------------------------
     # CRUD (unchanged)

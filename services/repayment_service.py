@@ -52,13 +52,38 @@ class RepaymentService:
             op_type = "update"
         else:
             op_type = "insert"
-            
+
+        # Resolve loan_id BEFORE building the persistence payload so insert validation sees the active loan UUID
+        resolved_loan_id = getattr(repayment, 'loan_id', None)
+        if not resolved_loan_id or str(resolved_loan_id).strip().lower() in ("", "none", "null") or resolved_loan_id == repayment.client_id:
+            resolved_loan_id = uow.repayments._resolve_loan_id(repayment.client_id)
+        if resolved_loan_id:
+            repayment.loan_id = resolved_loan_id
+
         rep_record = uow.repayments._prepare_db_data(repayment)
         if "id" in rep_record and not rep_record["id"]:
             del rep_record["id"]
         if op_type == "insert" and "id" not in rep_record:
             rep_record["id"] = repayment.id
-            
+
+        # Fail closed with clear human-readable messaging before queuing atomic_execute_operations
+        if op_type == "insert":
+            if not rep_record.get("loan_id") or str(rep_record.get("loan_id")).strip().lower() in ("", "none", "null"):
+                raise ValueError(
+                    "Cannot record this loan repayment because the client does not have an active loan."
+                )
+            missing_fields = []
+            if not rep_record.get("client_id"):
+                missing_fields.append("client")
+            if ("branch_id" in rep_record and not rep_record.get("branch_id")) or not getattr(repayment, "branch", None):
+                missing_fields.append("branch")
+            if rep_record.get("amount_paid") is None:
+                missing_fields.append("repayment amount")
+            if missing_fields:
+                raise ValueError(
+                    f"Incomplete repayment details: {', '.join(missing_fields)} required before posting."
+                )
+
         operations.append({
             "type": op_type,
             "table": "repayments",
@@ -100,12 +125,8 @@ class RepaymentService:
             tx_id, post_op = FinancialPostingEngine.post_event(uow, evt, defer_commit=True)
             operations.append(post_op)
 
-        # 2.5 Resolve loan_id if needed
+        # 2.5 Keep resolved loan_id reference for downstream event & schedule updates
         resolved_loan_id = repayment.loan_id
-        if not resolved_loan_id or resolved_loan_id == repayment.client_id:
-            resolved_loan_id = uow.repayments._resolve_loan_id(repayment.client_id)
-        if resolved_loan_id:
-            repayment.loan_id = resolved_loan_id
 
         # 3. Create Event & Post (Only for actual loan repayment component)
         if repayment.loan_repayment_amount > 0:

@@ -193,8 +193,6 @@ def _get_resilient_collection_records(
             for r in (res_rep.data or []):
                 paid = float(r.get("amount_paid") or 0.0)
                 expected = float(r.get("expected_amount") or 0.0)
-                if expected <= 0.0 and paid > 0.0:
-                    expected = paid
 
                 status = r.get("payment_status")
                 if not status or status.upper() not in ["PAID", "PART_PAYMENT", "NOT_PAID"]:
@@ -267,9 +265,9 @@ def get_audit_metadata(
     except Exception:
         pass
 
-    if not is_admin and not branches and current_user.branch:
+    if not is_admin and not branches and current_user.branch and current_user.branch_id:
         branches.append(BranchOption(
-            branch_id=current_user.branch_id or "default",
+            branch_id=current_user.branch_id,
             name=current_user.branch,
             code=None
         ))
@@ -588,13 +586,31 @@ def get_withdrawal_lifecycle_audit(
     d_to = date.fromisoformat(date_to) if date_to else date.today()
 
     wr_q = uow.client.table("withdrawal_requests").select("*")
-    if b_id and b_id != "ALL":
+    if isinstance(b_id, list):
+        bids = [str(x) for x in b_id if x]
+        if not bids:
+            return WithdrawalAuditResponse(
+                summary=WithdrawalAuditSummary(
+                    total_requests=0, pending_count=0, approved_count=0,
+                    rejected_count=0, approved_amount=0.0, pending_amount=0.0,
+                ),
+                requests=[], audit_events=[],
+            )
+        wr_q = wr_q.in_("branch_id", bids)
+    elif b_id and b_id != "ALL":
         wr_q = wr_q.eq("branch_id", b_id)
     wr_q = wr_q.gte("created_at", f"{d_from.isoformat()}T00:00:00").lte("created_at", f"{d_to.isoformat()}T23:59:59.999999")
     role = (current_user.role or "").strip()
     if role in ["CO", "Officer", "Credit Officer", "CREDIT_OFFICER"]:
         wr_q = wr_q.eq("requested_by", current_user.username)
     raw_reqs = wr_q.order("created_at", desc=True).limit(300).execute().data or []
+
+    branch_name_map = {}
+    try:
+        b_res = uow.client.table("branches").select("branch_id, name").execute()
+        branch_name_map = {str(b["branch_id"]): str(b.get("name") or "") for b in (b_res.data or []) if b.get("branch_id")}
+    except Exception:
+        branch_name_map = {}
 
     def _clean_rem(txt: Optional[str]) -> str:
         t = str(txt or "")
@@ -611,22 +627,53 @@ def get_withdrawal_lifecycle_audit(
         if status_filter != "ALL" and st_val != status_filter.upper():
             continue
         rem_clean = _clean_rem(r.get("remarks"))
+        op_date = str(r.get("operational_date") or str(r.get("created_at") or ""))[:10]
+        c_name = str(r.get("client_name") or "-")
+        s_type = str(r.get("savings_type") or "Individual")
+        op_type = str(r.get("operation_type") or "Withdrawal")
+        p_method = str(r.get("payout_method") or "Cash")
+        amt_val = float(r.get("amount") or 0.0)
+        req_by = str(r.get("requested_by") or "-")
+        app_by = str(r.get("approved_by") or "-")
+        ref_val = str(r.get("reference") or "-")
+        rej_reason = str(r.get("rejection_reason") or "")
+        exec_tbl = str(r.get("executed_table") or "")
+        exec_id = str(r.get("executed_record_id") or "")
+        req_bid = str(r.get("branch_id") or "")
+        req_bname = branch_name_map.get(req_bid, str(r.get("branch") or ""))
         row = {
             "id": str(r.get("id") or ""),
-            "Date": str(r.get("operational_date") or str(r.get("created_at") or ""))[:10],
-            "Client": str(r.get("client_name") or "-"),
-            "Savings Type": str(r.get("savings_type") or "Individual"),
-            "Operation": str(r.get("operation_type") or "Withdrawal"),
-            "Payout Method": str(r.get("payout_method") or "Cash"),
-            "Amount": float(r.get("amount") or 0.0),
-            "Requested By": str(r.get("requested_by") or "-"),
-            "Approved By": str(r.get("approved_by") or "-"),
+            "branch_id": req_bid,
+            "branch": req_bname,
+            "operational_date": op_date,
+            "created_at": str(r.get("created_at") or ""),
+            "client_name": c_name,
+            "savings_type": s_type,
+            "operation_type": op_type,
+            "payout_method": p_method,
+            "amount": amt_val,
+            "requested_by": req_by,
+            "approved_by": app_by,
+            "status": st_val,
+            "reference": ref_val,
+            "remarks": rem_clean,
+            "rejection_reason": rej_reason,
+            "executed_table": exec_tbl,
+            "executed_record_id": exec_id,
+            "Date": op_date,
+            "Client": c_name,
+            "Savings Type": s_type,
+            "Operation": op_type,
+            "Payout Method": p_method,
+            "Amount": amt_val,
+            "Requested By": req_by,
+            "Approved By": app_by,
             "Status": st_val,
-            "Reference": str(r.get("reference") or "-"),
+            "Reference": ref_val,
             "Remarks": rem_clean,
-            "Rejection Reason": str(r.get("rejection_reason") or ""),
-            "Executed Table": str(r.get("executed_table") or ""),
-            "Executed Record ID": str(r.get("executed_record_id") or ""),
+            "Rejection Reason": rej_reason,
+            "Executed Table": exec_tbl,
+            "Executed Record ID": exec_id,
         }
         if search:
             sk = search.lower().strip()
@@ -637,10 +684,23 @@ def get_withdrawal_lifecycle_audit(
     audit_events = []
     try:
         aq = uow.client.table("user_audit_logs").select("*").eq("module", "Withdrawals")
-        if b_id and b_id != "ALL" and current_user.branch:
-            aq = aq.eq("branch", current_user.branch)
+        allowed_branch_names = None
+        if isinstance(b_id, list):
+            allowed_branch_names = {
+                branch_name_map[x].strip().lower()
+                for x in b_id
+                if x in branch_name_map and branch_name_map[x]
+            }
+        elif b_id and b_id != "ALL":
+            bn = branch_name_map.get(str(b_id)) or (current_user.branch or "")
+            if bn:
+                allowed_branch_names = {bn.strip().lower()}
         aq_res = aq.order("timestamp", desc=True).limit(100).execute().data or []
         for ev in aq_res:
+            if allowed_branch_names is not None:
+                ev_b = str(ev.get("branch") or "").strip().lower()
+                if ev_b not in allowed_branch_names and ev_b.replace(" branch", "").strip() not in {x.replace(" branch", "").strip() for x in allowed_branch_names}:
+                    continue
             audit_events.append({
                 "timestamp": str(ev.get("timestamp") or "")[:19].replace("T", " "),
                 "username": str(ev.get("username") or "-"),
@@ -650,6 +710,7 @@ def get_withdrawal_lifecycle_audit(
                 "previous_value": str(ev.get("previous_value") or ""),
                 "new_value": str(ev.get("new_value") or ""),
                 "status": str(ev.get("status") or ""),
+                "branch": str(ev.get("branch") or ""),
             })
     except Exception:
         pass
@@ -862,7 +923,7 @@ def get_collections_audit_ledger(
     tot_exp = sum(float(c.get("Expected_Raw", 0.0) or 0.0) for c in enriched)
     tot_act = sum(float(c.get("Paid_Raw", 0.0) or 0.0) for c in enriched)
     tot_var = sum(max(0.0, float(c.get("Expected_Raw", 0.0) or 0.0) - float(c.get("Paid_Raw", 0.0) or 0.0)) for c in enriched)
-    comp_ratio = (tot_act / tot_exp * 100.0) if tot_exp > 0 else (100.0 if tot_act > 0 else 0.0)
+    comp_ratio = (tot_act / tot_exp * 100.0) if tot_exp > 0 else 0.0
     paid_count = sum(1 for c in enriched if c.get("Status_Raw") == "PAID" or "PAID" in str(c.get("Status", "")).upper())
 
     metrics = CollectionPerformanceMetrics(
@@ -886,11 +947,8 @@ def get_15_exception_reports(
     uow: SupabaseUnitOfWork = Depends(get_uow),
     current_user: CurrentUser = Depends(get_current_user),
 ):
-    """Scans core database for compliance breaches, unposted transactions, or anomalies (app.py L10628-10642)."""
-    target_b_id = branch_id if branch_id not in ["All", "All Branches", None] else None
-    if current_user.role in ["BM", "Branch Manager"]:
-        target_b_id = current_user.branch_id
-
+    """Scans core database for compliance breaches, unposted transactions, or anomalies."""
+    target_b_id, _ = _resolve_scope(current_user, branch_id)
     ex_data = FinancialReconciliationService.run_15_exception_reports(uow, target_b_id)
     return ExceptionReportsResponse(
         total_exceptions=int(ex_data.get("total_exceptions", 0)),
@@ -909,10 +967,8 @@ def search_360_universal_explorer(
     uow: SupabaseUnitOfWork = Depends(get_uow),
     current_user: CurrentUser = Depends(get_current_user),
 ):
-    """Universal 360-degree transaction search by Client Code / Name / Ref (app.py L10646-10716)."""
-    target_b_id = branch_id if branch_id not in ["All", "All Branches", None] else None
-    if current_user.role in ["BM", "Branch Manager", "CO", "Officer"]:
-        target_b_id = current_user.branch_id
+    """Universal 360-degree transaction search by Client Code / Name / Ref."""
+    target_b_id, _ = _resolve_scope(current_user, branch_id)
 
     res = TransactionExplorerService.explore_transaction(uow, query, branch_id=target_b_id)
     return UniversalExplorerResponse(
@@ -934,7 +990,33 @@ def get_loan_audit_timeline(
     uow: SupabaseUnitOfWork = Depends(get_uow),
     current_user: CurrentUser = Depends(get_current_user),
 ):
-    """Builds chronological audit timeline for a specific loan (app.py L10666-10670)."""
+    """Builds chronological audit timeline for a specific loan with strict RBAC scoping."""
+    try:
+        loan_res = uow.client.table("loans").select("loan_id, branch_id, officer_id").eq("loan_id", loan_id).limit(1).execute()
+        if loan_res.data:
+            l_row = loan_res.data[0]
+            target_b_id, target_off_id = _resolve_scope(current_user, None, None)
+            if target_off_id and str(l_row.get("officer_id") or "") != str(target_off_id):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="You do not have permission to inspect another officer's loan timeline."
+                )
+            if isinstance(target_b_id, list):
+                if str(l_row.get("branch_id") or "") not in {str(b) for b in target_b_id}:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="This loan is outside your supervised area."
+                    )
+            elif target_b_id and target_b_id != "ALL":
+                if str(l_row.get("branch_id") or "") != str(target_b_id):
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="This loan belongs to another branch."
+                    )
+    except HTTPException:
+        raise
+    except Exception:
+        pass
     timeline = TransactionExplorerService.build_loan_audit_timeline(uow, loan_id)
     return LoanTimelineResponse(loan_id=loan_id, timeline=timeline)
 
@@ -948,8 +1030,8 @@ def get_performance_insights(
     uow: SupabaseUnitOfWork = Depends(get_uow),
     current_user: CurrentUser = Depends(get_current_user),
 ):
-    """Returns risk distribution breakdown for branch portfolio (app.py L10720-10730)."""
-    target_b_id = branch_id or current_user.branch_id
+    """Returns risk distribution breakdown scoped to branch, area, or enterprise."""
+    target_b_id, _ = _resolve_scope(current_user, branch_id)
     risk_dist = ClientRiskRatingService.get_branch_risk_distribution(uow, target_b_id)
     dist = {
         "EXCELLENT": int(risk_dist.get("EXCELLENT", 0)),
@@ -959,7 +1041,8 @@ def get_performance_insights(
         "HIGH_RISK": int(risk_dist.get("HIGH_RISK", 0)),
         "total_clients": int(risk_dist.get("total_clients", 0)),
     }
-    return RiskDistributionResponse(branch_id=target_b_id, distribution=dist)
+    resp_branch = target_b_id if isinstance(target_b_id, str) else "ALL"
+    return RiskDistributionResponse(branch_id=resp_branch, distribution=dist)
 
 
 # -----------------------------------------------------------------------------
@@ -971,7 +1054,13 @@ def execute_reconciliation_wizard_repair(
     uow: SupabaseUnitOfWork = Depends(get_uow),
     current_user: CurrentUser = Depends(get_current_user),
 ):
-    """Guided projection repair and 6-way integrity re-evaluation (app.py L10734-10746)."""
+    """Guided projection repair and 6-way integrity re-evaluation (Admin / Super Admin only)."""
+    role_norm = (current_user.role or "").strip().lower()
+    if role_norm not in ["admin", "super admin", "super_admin"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only Admin or Super Admin may execute reconciliation projection repairs."
+        )
     try:
         rw_date = date.fromisoformat(req.reconciliation_date)
     except Exception:

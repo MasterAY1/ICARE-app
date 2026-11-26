@@ -38,23 +38,53 @@ from api.schemas.users import (
 router = APIRouter(prefix="/api/v1/users", tags=["User Management"])
 
 
-def _check_not_co(current_user: CurrentUser):
+def _is_am(current_user: CurrentUser) -> bool:
     role = (current_user.role or "").strip().lower()
-    if role in ["co", "credit officer", "officer"]:
+    return role in ["area manager", "am", "area_manager"]
+
+
+def _is_admin(current_user: CurrentUser) -> bool:
+    role = (current_user.role or "").strip().lower()
+    return role in [ROLE_SUPER_ADMIN.lower(), ROLE_ADMIN.lower(), "super admin", "super_admin", "admin"]
+
+
+def _is_bm(current_user: CurrentUser) -> bool:
+    role = (current_user.role or "").strip().lower()
+    return role in [ROLE_BRANCH_MANAGER.lower(), "bm", "branch manager", "branch_manager"]
+
+
+def _check_not_co(current_user: CurrentUser):
+    if not (_is_admin(current_user) or _is_am(current_user) or _is_bm(current_user)):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You do not have permission to access User Management."
         )
 
 
-def _is_admin(current_user: CurrentUser) -> bool:
-    role = (current_user.role or "").strip()
-    return role in [ROLE_SUPER_ADMIN, ROLE_ADMIN, "Super Admin", "Admin", "ADMIN"]
-
-
-def _is_bm(current_user: CurrentUser) -> bool:
-    role = (current_user.role or "").strip()
-    return role in [ROLE_BRANCH_MANAGER, "BM", "Branch Manager"]
+def _get_scoped_branches(uow: SupabaseUnitOfWork, current_user: CurrentUser) -> List[BranchOptionItem]:
+    try:
+        res_b = uow.client.table("branches").select("branch_id, name").eq("is_active", True).execute()
+        rows = res_b.data or []
+    except Exception:
+        rows = []
+    out: List[BranchOptionItem] = []
+    if _is_admin(current_user):
+        for b in rows:
+            if b.get("branch_id"):
+                out.append(BranchOptionItem(branch_id=str(b["branch_id"]), name=str(b.get("name") or "")))
+    elif _is_am(current_user):
+        am_bids = {str(x) for x in (current_user.assigned_branch_ids or []) if x}
+        if current_user.branch_id:
+            am_bids.add(str(current_user.branch_id))
+        for b in rows:
+            if str(b.get("branch_id") or "") in am_bids:
+                out.append(BranchOptionItem(branch_id=str(b["branch_id"]), name=str(b.get("name") or "")))
+    elif _is_bm(current_user) and current_user.branch_id:
+        for b in rows:
+            if str(b.get("branch_id") or "") == str(current_user.branch_id):
+                out.append(BranchOptionItem(branch_id=str(b["branch_id"]), name=str(b.get("name") or "")))
+    out.sort(key=lambda item: item.name.lower())
+    return out
 
 
 # -----------------------------------------------------------------------------
@@ -93,7 +123,11 @@ def get_users(
             extra_fields=extra_map.get(uid),
         ))
 
-    return UserListResponse(users=items, total_count=len(items))
+    return UserListResponse(
+        users=items,
+        total_count=len(items),
+        available_branches=_get_scoped_branches(uow, current_user),
+    )
 
 
 # -----------------------------------------------------------------------------
@@ -282,24 +316,19 @@ def get_product_assignment_meta(
     """Fetch loan products and Credit Officers with current allowed products (app.py L14060–14095)."""
     _check_not_co(current_user)
 
-    # Available products
+    # Available products (DB-backed only; no hardcoded static fallback)
     try:
         res_prods = uow.client.table("loan_products").select("name").execute()
         available_products = [p["name"] for p in (res_prods.data or []) if p.get("name")]
     except Exception:
         available_products = []
 
-    if not available_products:
-        available_products = [
-            "Daily 60 Days", "Daily 120 Days", "Weekly 12W", "Weekly 24W",
-            "Monthly 3M", "Monthly 6M", "60-Day Asset", "120-Day Asset",
-            "Weekly 12W Asset", "Weekly 24W Asset", "Monthly 3M Asset",
-            "Monthly 6M Asset", "Cash and Carry"
-        ]
-
     # Scoped CO users
     all_users = UserService.list_users(current_user)
-    co_users = [u for u in all_users if u.get("role") in [ROLE_CREDIT_OFFICER, "Credit Officer", "CO", "Officer"]]
+    co_users = [
+        u for u in all_users
+        if str(u.get("role") or "").strip().lower() in ["credit officer", "co", "officer", "credit_officer"]
+    ]
 
     # Fetch extra_fields
     co_meta: List[CreditOfficerProductMeta] = []
@@ -347,12 +376,19 @@ def assign_products_to_officer(
             detail=f"Credit Officer '{target_uname}' not found."
         )
 
-    # BM Scope Check
+    # BM & AM Scope Checks
     if _is_bm(current_user) and target_user.branch_id != current_user.branch_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You can only manage Credit Officers in your own branch."
         )
+    if _is_am(current_user):
+        am_bids = {str(bid) for bid in (current_user.assigned_branch_ids or []) if bid}
+        if str(target_user.branch_id or "") not in am_bids:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Area Managers can only manage Credit Officers within their supervised branches."
+            )
 
     try:
         res_raw = uow.client.table("app_users").select("extra_fields").eq("id", target_user.id).execute()
@@ -467,8 +503,7 @@ def get_branch_closures(
 
         closures = uow.branch_closures.find_all()
         # Filter for AM and BM
-        u_role = (current_user.role or "").strip()
-        if u_role in ["Area Manager", "AM"]:
+        if _is_am(current_user):
             am_bids = set(str(bid) for bid in (current_user.assigned_branch_ids or []))
             closures = [c for c in closures if c.branch_id is None or str(c.branch_id) in am_bids]
         elif _is_bm(current_user):
@@ -485,9 +520,15 @@ def get_branch_closures(
                 branch_id=str(c.branch_id) if c.branch_id else None,
                 branch_name=b_name,
             ))
-        return BranchClosuresResponse(closures=items)
-    except Exception as e:
-        return BranchClosuresResponse(closures=[])
+        return BranchClosuresResponse(
+            closures=items,
+            available_branches=_get_scoped_branches(uow, current_user),
+        )
+    except Exception:
+        return BranchClosuresResponse(
+            closures=[],
+            available_branches=_get_scoped_branches(uow, current_user),
+        )
 
 
 @router.post("/closures", response_model=CreateBranchClosureResponse)
@@ -500,8 +541,7 @@ def create_branch_closure(
     _check_not_co(current_user)
 
     target_branch_id = payload.branch_id
-    u_role = (current_user.role or "").strip()
-    if u_role in ["Area Manager", "AM"]:
+    if _is_am(current_user):
         am_bids = set(str(bid) for bid in (current_user.assigned_branch_ids or []))
         if not target_branch_id or str(target_branch_id) not in am_bids:
             raise HTTPException(
@@ -568,6 +608,32 @@ def delete_branch_closure(
     _check_not_co(current_user)
 
     try:
+        target_closure = None
+        for c in uow.branch_closures.find_all():
+            if str(c.id or "") == str(closure_id):
+                target_closure = c
+                break
+        if not target_closure:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Closure not found or already deleted."
+            )
+
+        c_branch_id = str(target_closure.branch_id) if target_closure.branch_id else None
+        if _is_bm(current_user):
+            if not c_branch_id or c_branch_id != str(current_user.branch_id or ""):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Branch Managers can only delete closures belonging to their own branch."
+                )
+        elif _is_am(current_user):
+            am_bids = {str(bid) for bid in (current_user.assigned_branch_ids or []) if bid}
+            if not c_branch_id or c_branch_id not in am_bids:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Area Managers can only delete closures within their assigned branches."
+                )
+
         deleted = uow.branch_closures.delete(closure_id)
         if not deleted:
             raise HTTPException(
@@ -577,6 +643,8 @@ def delete_branch_closure(
         from services.business_date_service import BusinessDateService
         BusinessDateService.invalidate_operational_cache()
         return GenericActionResponse(success=True, message="Branch closure deleted successfully.")
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -593,17 +661,43 @@ def get_user_audit_logs(
     uow: SupabaseUnitOfWork = Depends(get_uow),
     current_user: CurrentUser = Depends(get_current_user),
 ):
-    """Fetch user audit logs, scoped to branch for BM (app.py L14255–14296)."""
+    """Fetch user audit logs, scoped to branch for BM and supervised area for AM."""
     _check_not_co(current_user)
 
     try:
         query = uow.client.table("user_audit_logs").select("*")
+        allowed_branch_tokens = None
         if _is_bm(current_user):
-            branch_name = current_user.branch or ""
-            if branch_name:
-                query = query.ilike("branch", f"*{branch_name}*")
+            branch_name = (current_user.branch or "").strip()
+            if not branch_name:
+                return UserAuditLogsResponse(logs=[], total_count=0)
+            query = query.ilike("branch", f"*{branch_name}*")
+        elif _is_am(current_user):
+            am_bids = {str(bid) for bid in (current_user.assigned_branch_ids or []) if bid}
+            if current_user.branch_id:
+                am_bids.add(str(current_user.branch_id))
+            if not am_bids:
+                return UserAuditLogsResponse(logs=[], total_count=0)
+            b_rows = uow.client.table("branches").select("branch_id, name").in_("branch_id", list(am_bids)).execute().data or []
+            allowed_branch_tokens = set()
+            for br in b_rows:
+                bn = str(br.get("name") or "").strip().lower()
+                if bn:
+                    allowed_branch_tokens.add(bn)
+                    allowed_branch_tokens.add(bn.replace(" branch", "").strip())
+            if not allowed_branch_tokens:
+                return UserAuditLogsResponse(logs=[], total_count=0)
+
         res = query.order("timestamp", desc=True).limit(limit).execute()
         rows = res.data or []
+        if allowed_branch_tokens is not None:
+            filtered_rows = []
+            for r in rows:
+                b_val = str(r.get("branch") or "").strip().lower()
+                b_short = b_val.replace(" branch", "").strip()
+                if b_val in allowed_branch_tokens or b_short in allowed_branch_tokens:
+                    filtered_rows.append(r)
+            rows = filtered_rows
 
         items = [
             UserAuditLogItem(
@@ -677,12 +771,24 @@ def revoke_user_sessions(
             detail="Target user not found."
         )
 
-    # Branch access enforcement for Branch Managers
+    # Branch access enforcement for Branch Managers & Area Managers
     if _is_bm(current_user):
         if target_user.branch_id != current_user.branch_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Branch Managers can only revoke sessions for staff in their assigned branch."
+            )
+    elif _is_am(current_user):
+        am_bids = {str(bid) for bid in (current_user.assigned_branch_ids or []) if bid}
+        if str(target_user.branch_id or "") not in am_bids:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Area Managers can only revoke sessions for staff within their supervised branches."
+            )
+        if str(target_user.role or "").strip().lower() in ["super admin", "admin", "area manager", "am"]:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Area Managers cannot revoke sessions for administrators or peers."
             )
 
     from auth.token_store import get_revocation_store

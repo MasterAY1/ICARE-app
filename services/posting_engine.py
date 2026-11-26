@@ -70,10 +70,11 @@ class FinancialPostingEngine:
                 return oid
             res_suffix = uow.client.table("app_users").select("id, username").ilike("username", f"*_{username}").execute()
             if res_suffix.data:
-                ogi_match = [r for r in res_suffix.data if (r.get("username") or "").startswith("OGI_")]
-                oid = ogi_match[0]["id"] if ogi_match else res_suffix.data[0]["id"]
-                cls._officer_cache[u_key] = oid
-                return oid
+                if len(res_suffix.data) == 1:
+                    oid = res_suffix.data[0]["id"]
+                    cls._officer_cache[u_key] = oid
+                    return oid
+                raise ValueError(f"Ambiguous officer suffix '{username}'; supply branch-qualified username.")
         except Exception as e:
             raise ValueError(f"Failed to resolve officer '{username}': {str(e)}")
         raise ValueError(f"Officer '{username}' not found.")

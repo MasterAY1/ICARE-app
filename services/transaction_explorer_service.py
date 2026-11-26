@@ -12,7 +12,18 @@ from services.audit_enricher_service import AuditEnricher
 class TransactionExplorerService:
 
     @staticmethod
-    def explore_transaction(uow: UnitOfWork, search_query: str, branch_id: Optional[str] = None) -> Dict[str, Any]:
+    def _apply_branch_filter(q_obj: Any, branch_id: Any) -> Any:
+        if branch_id and branch_id not in ("All", "ALL", "All Branches"):
+            if isinstance(branch_id, (list, tuple, set)):
+                bids = [str(b) for b in branch_id if b]
+                if bids:
+                    return q_obj.in_("branch_id", bids)
+            else:
+                return q_obj.eq("branch_id", branch_id)
+        return q_obj
+
+    @staticmethod
+    def explore_transaction(uow: UnitOfWork, search_query: str, branch_id: Any = None) -> Dict[str, Any]:
         """
         Universal 360-degree transaction search by Client Code / Client Name / Officer / Ref / ID.
         Searches:
@@ -40,13 +51,18 @@ class TransactionExplorerService:
         if not q:
             return result
 
+        if isinstance(branch_id, (list, tuple, set)) and not any(branch_id):
+            return result
+
         enricher = AuditEnricher(uow=uow)
         enricher.load_lookups()
 
         # 1. Search Repayments
         try:
-            q_rep = uow.client.table("repayments").select("*")
-            if branch_id: q_rep = q_rep.eq("branch_id", branch_id)
+            q_rep = TransactionExplorerService._apply_branch_filter(
+                uow.client.table("repayments").select("*"),
+                branch_id,
+            )
             res_rep = q_rep.execute()
             all_rep = enricher.enrich_repayment_records(res_rep.data or [])
             matching_rep = [
@@ -64,8 +80,10 @@ class TransactionExplorerService:
 
         # 2. Search Fees
         try:
-            q_fee = uow.client.table("fees").select("*")
-            if branch_id: q_fee = q_fee.eq("branch_id", branch_id)
+            q_fee = TransactionExplorerService._apply_branch_filter(
+                uow.client.table("fees").select("*"),
+                branch_id,
+            )
             res_fee = q_fee.execute()
             all_fees = enricher.enrich_fee_records(res_fee.data or [])
             matching_fees = [
@@ -83,8 +101,10 @@ class TransactionExplorerService:
 
         # 3. Search Treasury Transactions
         try:
-            q_tr = uow.client.table("treasury_transactions").select("*")
-            if branch_id: q_tr = q_tr.eq("branch_id", branch_id)
+            q_tr = TransactionExplorerService._apply_branch_filter(
+                uow.client.table("treasury_transactions").select("*"),
+                branch_id,
+            )
             res_tr = q_tr.execute()
             all_tr = enricher.enrich_treasury_records(res_tr.data or [])
             matching_tr = [
@@ -101,9 +121,10 @@ class TransactionExplorerService:
 
         # 4. Search Savings
         try:
-            q_sav = uow.client.table("individual_savings").select("*")
-            # individual_savings might not have branch_id directly, but if it does:
-            # if branch_id: q_sav = q_sav.eq("branch_id", branch_id)
+            q_sav = TransactionExplorerService._apply_branch_filter(
+                uow.client.table("individual_savings").select("*"),
+                branch_id,
+            )
             res_sav = q_sav.execute()
             all_sav = enricher.enrich_savings_records(res_sav.data or [])
             matching_sav = [
@@ -119,8 +140,10 @@ class TransactionExplorerService:
 
         # 5. Search Loans
         try:
-            q_ln = uow.client.table("loans").select("*")
-            if branch_id: q_ln = q_ln.eq("branch_id", branch_id)
+            q_ln = TransactionExplorerService._apply_branch_filter(
+                uow.client.table("loans").select("*"),
+                branch_id,
+            )
             res_ln = q_ln.execute()
             all_ln = enricher.enrich_loan_records(res_ln.data or [])
             matching_ln = [
@@ -138,8 +161,10 @@ class TransactionExplorerService:
 
         # 6. Search Ledger Transactions
         try:
-            q_tx = uow.client.table("financial_transactions").select("*, financial_ledger_entries(*)")
-            if branch_id: q_tx = q_tx.eq("branch_id", branch_id)
+            q_tx = TransactionExplorerService._apply_branch_filter(
+                uow.client.table("financial_transactions").select("*, financial_ledger_entries(*)"),
+                branch_id,
+            )
             res_tx = q_tx.execute()
             all_tx = enricher.enrich_ledger_records(res_tx.data or [])
             matching_tx = [
@@ -161,18 +186,33 @@ class TransactionExplorerService:
         # 7. Search User Audit Logs
         try:
             q_al = uow.client.table("user_audit_logs").select("*")
-            if branch_id: q_al = q_al.eq("branch_id", branch_id)
+            allowed_branch_tokens = set()
+            if branch_id and branch_id not in ("All", "ALL", "All Branches"):
+                bids = list(branch_id) if isinstance(branch_id, (list, tuple, set)) else [str(branch_id)]
+                for bid in bids:
+                    bname = enricher._branches_by_id.get(str(bid), "")
+                    if bname:
+                        norm = bname.strip().lower()
+                        allowed_branch_tokens.add(norm)
+                        allowed_branch_tokens.add(norm.replace(" branch", "").strip())
+                    allowed_branch_tokens.add(str(bid).strip().lower())
             res_al = q_al.execute()
             all_al = res_al.data or []
             enriched_al = []
             for al in all_al:
+                al_branch_raw = str(al.get("branch") or al.get("branch_id") or "").strip()
+                if allowed_branch_tokens:
+                    al_norm = al_branch_raw.lower()
+                    al_short = al_norm.replace(" branch", "").strip()
+                    if al_norm not in allowed_branch_tokens and al_short not in allowed_branch_tokens:
+                        continue
                 enriched_al.append({
                     "Timestamp": enricher.format_date(al.get("created_at") or al.get("timestamp")),
                     "Action": al.get("action") or "N/A",
                     "User": al.get("display_name") or enricher.resolve_officer(al.get("user_id")),
                     "Details": al.get("details") or al.get("description") or "",
                     "Entity": al.get("entity_type") or "System",
-                    "Branch": enricher.resolve_branch(al.get("branch_id")),
+                    "Branch": enricher.resolve_branch(al.get("branch") or al.get("branch_id")),
                     "_raw_record": al
                 })
             matching_al = [
@@ -221,7 +261,7 @@ class TransactionExplorerService:
             # Stage 1: Originated
             timeline.append({
                 "stage": "1. Loan Originated",
-                "status": "🟢 COMPLETED",
+                "status": "COMPLETED",
                 "timestamp": str(loan.get("created_at", ""))[:19],
                 "details": f"Loan ({p_name}) of {amt} registered for {c_name} by {o_name} at {b_name}."
             })
@@ -238,7 +278,7 @@ class TransactionExplorerService:
             # Stage 3: Disbursed
             timeline.append({
                 "stage": "3. Loan Disbursed",
-                "status": "🟢 COMPLETED" if status in ["Disbursed", "Active", "Completed", "Closed"] else "🟡 PENDING",
+                "status": "COMPLETED" if status in ["Disbursed", "Active", "Completed", "Closed"] else "PENDING",
                 "timestamp": str(loan.get("disbursement_date") or loan.get("date") or "")[:10],
                 "details": f"Principal amount {amt} disbursed."
             })
@@ -248,17 +288,35 @@ class TransactionExplorerService:
             fee_count = len(res_fees.data or [])
             timeline.append({
                 "stage": "4. Fees & Ledger Entries Posted",
-                "status": "🟢 COMPLETED" if fee_count > 0 else "⚪ N/A",
+                "status": "COMPLETED" if fee_count > 0 else "N/A",
                 "timestamp": str(loan.get("created_at", ""))[:10],
                 "details": f"{fee_count} fee entries recorded in fees ledger."
             })
 
-            # Stage 5: Projections & Audit Log
+            # Stage 5: Projections & Audit Log (Verified against live cashbook & audit records)
+            disb_date = str(loan.get("disbursement_date") or loan.get("date") or "")[:10]
+            cb_count = 0
+            al_count = 0
+            try:
+                if loan.get("branch_id") and disb_date:
+                    cb_q = uow.client.table("co_cashbooks").select("date").eq("branch_id", loan.get("branch_id")).eq("date", disb_date)
+                    if loan.get("officer_id"):
+                        cb_q = cb_q.eq("officer_id", loan.get("officer_id"))
+                    cb_count = len(cb_q.execute().data or [])
+            except Exception:
+                cb_count = 0
+            try:
+                al_res = uow.client.table("audit_logs").select("id").eq("record_id", loan_id).execute()
+                al_count = len(al_res.data or [])
+            except Exception:
+                al_count = 0
+
+            stage5_ok = cb_count > 0 or al_count > 0
             timeline.append({
-                "stage": "5. CQRS Projections & Audit Logged",
-                "status": "🟢 COMPLETED",
+                "stage": "5. Cashbook Projections & Audit Verification",
+                "status": "COMPLETED" if stage5_ok else "PENDING",
                 "timestamp": str(loan.get("updated_at", ""))[:19],
-                "details": "Master Cashbook & CO Cashbook projections updated. Immutable audit logged."
+                "details": f"{cb_count} cashbook projection(s) and {al_count} immutable audit record(s) verified."
             })
 
         except Exception:

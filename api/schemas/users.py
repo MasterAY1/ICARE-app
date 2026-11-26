@@ -26,6 +26,7 @@ class UserListItem(BaseModel):
 class UserListResponse(BaseModel):
     users: List[UserListItem]
     total_count: int
+    available_branches: List["BranchOptionItem"] = Field(default_factory=list)
 
 
 class CreateUserRequest(BaseModel):
@@ -125,6 +126,7 @@ class BranchClosureItem(BaseModel):
 
 class BranchClosuresResponse(BaseModel):
     closures: List[BranchClosureItem]
+    available_branches: List[BranchOptionItem] = Field(default_factory=list)
 
 
 class CreateBranchClosureRequest(BaseModel):

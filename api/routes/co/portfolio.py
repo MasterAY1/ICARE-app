@@ -296,7 +296,7 @@ def get_portfolio_overview(
             savings_balance=float(c.get("Savings Balance") or 0.0),
             active_loan=float(c.get("Active Loan") or 0.0),
             outstanding_balance=float(c.get("Outstanding Balance") or 0.0),
-            status=str(c.get("Status") or "Active")
+            status=str(c.get("Status") or "Unknown")
         ))
 
     return PortfolioOverviewResponse(
@@ -488,7 +488,7 @@ def get_client_dossier(
                 "active_credit": a_cred,
                 "expected_installment": float(row.get("loan_repay") or 0.0),
                 "remaining_balance": rem_bal,
-                "status": str(row.get("status") or "Active")
+                "status": str(row.get("status") or "Unknown")
             })
 
     # 4. Formatted Repayment Ledger (Streamlit L12908–12962)
@@ -517,7 +517,7 @@ def get_client_dossier(
                 "repayment_id": rid,
                 "date": str(row.get("date") or "")[:10],
                 "amount_collected": amt,
-                "status": "REVERSED" if is_rev else str(row.get("payment_status") or "PAID"),
+                "status": "REVERSED" if is_rev else str(row.get("payment_status") or "UNRECORDED"),
                 "transaction_type": str(row.get("transaction_type") or "Repayment"),
                 "notes": note_str,
                 "is_reversed": is_rev
@@ -574,8 +574,6 @@ def get_client_dossier(
         for _, row in c_perf.iterrows():
             exp_val = float(row.get("expected_amount") or row.get("Expected") or 0.0)
             paid_val = float(row.get("amount_paid") or row.get("collected_amount") or row.get("Paid") or 0.0)
-            if exp_val <= 0.0 and paid_val > 0.0:
-                exp_val = paid_val
             raw_st = str(row.get("status") or row.get("collection_status") or "").upper()
             st_badge = "PAID" if (raw_st in ["PAID", "COMPLETE"] or (exp_val > 0 and paid_val >= exp_val)) else ("PART PAYMENT" if (raw_st in ["PART_PAYMENT", "PARTIAL"] or (paid_val > 0 and paid_val < exp_val)) else "NOT PAID")
             
@@ -596,8 +594,6 @@ def get_client_dossier(
         for _, row in r_hist.iterrows():
             paid_val = float(row.get("amount_paid") or 0.0)
             exp_val = float(row.get("expected_amount") or 0.0)
-            if exp_val <= 0.0 and paid_val > 0.0:
-                exp_val = paid_val
             raw_st = str(row.get("payment_status") or "").upper()
             st_badge = "PAID" if (raw_st in ["PAID", "COMPLETE"] or (exp_val > 0 and paid_val >= exp_val)) else ("PART PAYMENT" if (raw_st in ["PART_PAYMENT", "PARTIAL"] or (paid_val > 0 and paid_val < exp_val)) else "NOT PAID")
             coll_rows.append({
@@ -617,7 +613,7 @@ def get_client_dossier(
     tot_exp = sum(r["expected"] for r in coll_rows)
     tot_paid = sum(r["collected"] for r in coll_rows)
     tot_var = max(0.0, tot_exp - tot_paid)
-    comp_pct = (tot_paid / tot_exp * 100.0) if tot_exp > 0 else (100.0 if tot_paid > 0 else 0.0)
+    comp_pct = (tot_paid / tot_exp * 100.0) if tot_exp > 0 else 0.0
 
     coll_metrics = {
         "total_expected": tot_exp,
@@ -631,7 +627,7 @@ def get_client_dossier(
     curr_status_res = uow.client.table("clients").select("status, status_id, status_changed_at, status_note, client_statuses(name, color_code, icon)").eq("client_id", cur_cid).execute()
     curr_rec = curr_status_res.data[0] if curr_status_res.data else {}
     cs_dict = curr_rec.get("client_statuses") or {}
-    raw_status_name = cs_dict.get("name") or curr_rec.get("status") or "Registered"
+    raw_status_name = cs_dict.get("name") or curr_rec.get("status") or "Unknown"
     resolved_curr_status = STATUS_UUID_TO_NAME.get(raw_status_name, raw_status_name)
 
     history_records = ClientStatusService.get_client_history(uow, str(cur_cid))

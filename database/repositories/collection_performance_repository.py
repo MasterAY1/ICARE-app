@@ -110,7 +110,7 @@ class SupabaseCollectionPerformanceRepository(BaseRepository):
         total_expected = sum(float(r.get("expected_amount", 0)) for r in records)
         total_paid = sum(float(r.get("amount_paid", 0)) for r in records)
 
-        compliance_pct = (total_paid / total_expected * 100) if total_expected > 0 else 100.0
+        compliance_pct = (total_paid / total_expected * 100) if total_expected > 0 else 0.0
 
         # Calculate consecutive missed (most recent first)
         consecutive_missed = 0

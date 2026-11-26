@@ -142,8 +142,8 @@ class TrialBalanceData {
 
   factory TrialBalanceData.fromJson(Map<String, dynamic> json) {
     return TrialBalanceData(
-      isBalanced: json['is_balanced'] as bool? ?? true,
-      status: (json['status'] ?? 'BALANCED') as String,
+      isBalanced: json['is_balanced'] as bool? ?? false,
+      status: (json['status'] ?? 'UNVERIFIED') as String,
       totalDebits: (json['total_debits'] as num? ?? 0.0).toDouble(),
       totalCredits: (json['total_credits'] as num? ?? 0.0).toDouble(),
       totalNetDebits: (json['total_net_debits'] as num? ?? 0.0).toDouble(),
@@ -312,7 +312,7 @@ class RepaymentLogRow {
       branch: (json['branch'] ?? '') as String,
       amountPaid: (json['amount_paid'] as num? ?? 0.0).toDouble(),
       expectedAmount: (json['expected_amount'] as num? ?? 0.0).toDouble(),
-      paymentStatus: (json['payment_status'] ?? 'PAID') as String,
+      paymentStatus: (json['payment_status'] ?? 'UNRECORDED') as String,
       transactionType: (json['transaction_type'] ?? 'Collection') as String,
     );
   }
@@ -422,7 +422,7 @@ class OfficerPerformanceRow {
       loanBalance: (json['loan_balance'] as num? ?? 0.0).toDouble(),
       savings: (json['savings'] as num? ?? 0.0).toDouble(),
       overdue: (json['overdue'] as num? ?? 0.0).toDouble(),
-      status: (json['status'] ?? 'Active') as String,
+      status: (json['status'] ?? 'Unknown') as String,
     );
   }
 }
@@ -504,11 +504,11 @@ class AreaBranchRow {
       expectedCollections:
           (json['expected_collections'] as num? ?? 0.0).toDouble(),
       collectionEfficiency:
-          (json['collection_efficiency'] as num? ?? 100.0).toDouble(),
+          (json['collection_efficiency'] as num? ?? 0.0).toDouble(),
       outstandingPortfolio:
           (json['outstanding_portfolio'] as num? ?? 0.0).toDouble(),
       parPercentage: (json['par_percentage'] as num? ?? 0.0).toDouble(),
-      status: (json['status'] ?? 'HEALTHY') as String,
+      status: (json['status'] ?? 'INACTIVE') as String,
     );
   }
 }
@@ -551,7 +551,7 @@ class AreaComparisonData {
       totalAreaExpected:
           (json['total_area_expected'] as num? ?? 0.0).toDouble(),
       overallEfficiency:
-          (json['overall_efficiency'] as num? ?? 100.0).toDouble(),
+          (json['overall_efficiency'] as num? ?? 0.0).toDouble(),
       totalAreaSavings: (json['total_area_savings'] as num? ?? 0.0).toDouble(),
       totalAreaPortfolio:
           (json['total_area_portfolio'] as num? ?? 0.0).toDouble(),
@@ -710,9 +710,10 @@ class MonthlyParityData {
   });
 
   factory MonthlyParityData.fromJson(Map<String, dynamic> json) {
+    final now = DateTime.now();
     return MonthlyParityData(
-      year: json['year'] as int? ?? 2026,
-      month: json['month'] as int? ?? 9,
+      year: json['year'] as int? ?? now.year,
+      month: json['month'] as int? ?? now.month,
       monthLabel: (json['month_label'] ?? '') as String,
       branchId: (json['branch_id'] ?? '') as String,
       branchName: (json['branch_name'] ?? '') as String,
@@ -997,8 +998,9 @@ class MonthlyExecutiveStatementsData {
         json['trial_balance'] as Map<String, dynamic>? ?? {});
     final rp = ReceiptsPaymentsData.fromJson(
         json['receipts_and_payments'] as Map<String, dynamic>? ?? {});
-    final yr = (json['year'] as num?)?.toInt() ?? 2026;
-    final mo = (json['month'] as num?)?.toInt() ?? 9;
+    final now = DateTime.now();
+    final yr = (json['year'] as num?)?.toInt() ?? now.year;
+    final mo = (json['month'] as num?)?.toInt() ?? now.month;
 
     DepositStatementData? ds;
     if (json['deposit_statement'] != null &&
@@ -1362,10 +1364,11 @@ class Annex1ReportData {
   });
 
   factory Annex1ReportData.fromJson(Map<String, dynamic> json) {
+    final now = DateTime.now();
     return Annex1ReportData(
       branchName: (json['branch_name'] ?? '') as String,
-      year: json['year'] as int? ?? 2026,
-      month: json['month'] as int? ?? 9,
+      year: json['year'] as int? ?? now.year,
+      month: json['month'] as int? ?? now.month,
       monthLabel: (json['month_label'] ?? '') as String,
       sundryReceipts: (json['sundry_receipts'] as List<dynamic>? ?? [])
           .map((e) => Annex1LineItem.fromJson(e as Map<String, dynamic>))
@@ -1444,12 +1447,13 @@ class MonthlyWorkflowStatusModel {
   });
 
   factory MonthlyWorkflowStatusModel.fromJson(Map<String, dynamic> json) {
+    final now = DateTime.now();
     return MonthlyWorkflowStatusModel(
       id: json['id'] as String?,
       branchId: (json['branch_id'] ?? '') as String,
       areaName: (json['area_name'] ?? '') as String,
-      year: json['year'] as int? ?? 2026,
-      month: json['month'] as int? ?? 9,
+      year: json['year'] as int? ?? now.year,
+      month: json['month'] as int? ?? now.month,
       status: (json['status'] ?? 'DRAFT') as String,
       disbursedPrincipal:
           (json['disbursed_principal'] as num? ?? 0.0).toDouble(),
@@ -1537,12 +1541,13 @@ class MonthlyWorkflowPendingBranchModel {
 
   factory MonthlyWorkflowPendingBranchModel.fromJson(
       Map<String, dynamic> json) {
+    final now = DateTime.now();
     return MonthlyWorkflowPendingBranchModel(
       branchId: (json['branch_id'] ?? '') as String,
       branchName: (json['branch_name'] ?? '') as String,
       areaName: json['area_name'] as String?,
-      year: json['year'] as int? ?? 2026,
-      month: json['month'] as int? ?? 9,
+      year: json['year'] as int? ?? now.year,
+      month: json['month'] as int? ?? now.month,
       status: (json['status'] ?? 'DRAFT') as String,
       disbursedPrincipal:
           (json['disbursed_principal'] as num? ?? 0.0).toDouble(),

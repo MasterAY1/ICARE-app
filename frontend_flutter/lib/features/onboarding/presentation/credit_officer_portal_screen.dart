@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
 import '../../../../core/theme/icare_theme_tokens.dart';
+import '../../../../core/errors/app_error_formatter.dart';
 import '../../../../core/utils/currency_formatter.dart';
 import '../../auth/presentation/login_screen.dart';
 import '../data/onboarding_api_service.dart';
@@ -168,7 +169,7 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
         setState(() => _isSaving = false);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Failed to save draft: $e', style: const TextStyle(color: Colors.white)),
+            content: Text('Failed to save draft: ${AppErrorDetails.from(e).message}', style: const TextStyle(color: Colors.white)),
             backgroundColor: const Color(0xFFDC2626),
           ),
         );
@@ -276,7 +277,7 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
         setState(() => _isSaving = false);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Submission failed: $e', style: const TextStyle(color: Colors.white)),
+            content: Text('Submission failed: ${AppErrorDetails.from(e).message}', style: const TextStyle(color: Colors.white)),
             backgroundColor: const Color(0xFFDC2626),
           ),
         );
@@ -324,7 +325,7 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
         setState(() => _isSaving = false);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Excel upload failed: $e', style: const TextStyle(color: Colors.white)),
+            content: Text('Excel upload failed: ${AppErrorDetails.from(e).message}', style: const TextStyle(color: Colors.white)),
             backgroundColor: const Color(0xFFDC2626),
           ),
         );

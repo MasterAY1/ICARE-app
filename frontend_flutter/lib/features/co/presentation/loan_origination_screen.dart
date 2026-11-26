@@ -78,11 +78,9 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
   final Map<String, bool> _uploadingState = {};
   final Map<String, String> _uploadSizeInfo = {};
 
-  // Bulk Onboarding State (app.py L3631-3792)
+  // Bulk Onboarding State
   String? _bulkExcelFileName;
-  int? _bulkParsedGroups;
-  int? _bulkParsedMembers;
-  bool _bulkImportConfirmed = false;
+  String? _bulkExcelUrl;
 
   final _guarNameCtrl = TextEditingController();
   final _guarNicknameCtrl = TextEditingController();
@@ -347,7 +345,7 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                '$itemName is a branch-specific stock item without a fixed October 2026 sheet price. Enter the Cash & Carry price (₦):',
+                '$itemName is a branch-specific stock item without a fixed catalog sheet price. Enter the Cash & Carry price (₦):',
                 style: TextStyle(fontSize: 13, color: tokens.textSecondary),
               ),
               const SizedBox(height: 12),
@@ -1370,79 +1368,45 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
 
                 _buildStreamlitFileUploader(
                   label: 'Upload Excel Template',
-                  allowedTypesText: 'Limit 200MB per file • XLSX',
+                  allowedTypesText: 'Limit 10 MB per file • XLSX',
                   selectedFileName: _bulkExcelFileName,
                   category: 'excel',
                   sizeInfo: _uploadSizeInfo['excel'],
                   onUploaded: (fName, url, info) {
                     setState(() {
                       _bulkExcelFileName = fName;
-                      _bulkParsedGroups = 12;
-                      _bulkParsedMembers = 84;
-                      _bulkImportConfirmed = false;
+                      _bulkExcelUrl = url;
                     });
                   },
                   onRemove: () {
                     setState(() {
                       _bulkExcelFileName = null;
-                      _bulkParsedGroups = null;
-                      _bulkParsedMembers = null;
-                      _bulkImportConfirmed = false;
+                      _bulkExcelUrl = null;
                     });
                   },
                 ),
 
-                if (_bulkExcelFileName != null && _bulkParsedGroups != null) ...[
+                if (_bulkExcelFileName != null) ...[
                   const SizedBox(height: 16),
                   Container(
                     width: double.infinity,
                     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                     decoration: BoxDecoration(
-                      color: tokens.successBg,
+                      color: tokens.infoBg,
                       borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: tokens.successBorder),
+                      border: Border.all(color: tokens.infoBorder),
                     ),
                     child: Row(
                       children: [
-                        Icon(Icons.check_circle_outline, color: tokens.successText, size: 18),
+                        Icon(Icons.info_outline, color: tokens.infoText, size: 18),
                         const SizedBox(width: 10),
                         Expanded(
                           child: Text(
-                            'File parsed! Found $_bulkParsedGroups Groups and $_bulkParsedMembers Members.',
-                            style: TextStyle(fontSize: 13, color: tokens.successText, fontWeight: FontWeight.w600),
+                            'Workbook "$_bulkExcelFileName" uploaded${_bulkExcelUrl != null ? " to storage" : ""}. Use Branch Onboarding Portal for server-side Excel validation and migration.',
+                            style: TextStyle(fontSize: 12.5, color: tokens.infoText, fontWeight: FontWeight.w600),
                           ),
                         ),
                       ],
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 44,
-                    child: ElevatedButton(
-                      onPressed: _bulkImportConfirmed
-                          ? null
-                          : () {
-                              setState(() => _bulkImportConfirmed = true);
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text(
-                                    'Onboarding template verified and queued for import.',
-                                    style: TextStyle(color: Colors.white),
-                                  ),
-                                  backgroundColor: Color(0xFF15803D),
-                                ),
-                              );
-                            },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF1D4ED8),
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-                      ),
-                      child: Text(
-                        _bulkImportConfirmed ? 'Template Imported' : 'Confirm and Import',
-                        style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
-                      ),
                     ),
                   ),
                 ],
@@ -3058,7 +3022,7 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                     labelText: _loanAppCategory == 'Asset' ? 'Asset Cost (₦)' : 'Requested Amount (₦)',
                     hintText: _isAssetOrCashAndCarry && _selectedAssetCart.isEmpty ? 'Select items above or enter cost' : 'e.g. 100,000',
                     helperText: _isAssetOrCashAndCarry && _selectedAssetCart.isNotEmpty
-                        ? 'Locked to selected October 2026 catalog items'
+                        ? 'Locked to selected Master Asset Catalog items'
                         : null,
                     prefixText: '₦ ',
                     border: const OutlineInputBorder(),

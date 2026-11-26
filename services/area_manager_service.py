@@ -40,10 +40,125 @@ class AreaManagerService:
             # Fallback check if user has a primary branch
             user = uow.users.find_by_id(am_user_id)
             if user and user.branch_id:
-                b_name = user.branch_name or "Assigned Branch"
-                return [{"branch_id": user.branch_id, "name": b_name}]
+                b_name = str(user.branch_name or "Assigned Branch")
+                return [{"branch_id": str(user.branch_id), "name": b_name}]
             return []
-        return assignments
+        normalized: List[Dict[str, str]] = []
+        for item in assignments:
+            if not isinstance(item, dict):
+                continue
+            bid = item.get("branch_id")
+            if not bid:
+                continue
+            entry = dict(item)
+            entry["branch_id"] = str(bid)
+            entry["name"] = str(item.get("name") or "Assigned Branch")
+            normalized.append(entry)
+        return normalized
+
+    @classmethod
+    def resolve_area_name(
+        cls,
+        uow: UnitOfWork,
+        am_user_id: Optional[str] = None,
+        branch_id: Optional[str] = None,
+    ) -> str:
+        """
+        Dynamically resolves the operational area name from persisted regional records,
+        user metadata, or branch assignments without hardcoding any fixed zone name.
+        """
+        import re
+
+        def _extract_from_user(user_obj: Any) -> Optional[str]:
+            if not user_obj:
+                return None
+            ef = getattr(user_obj, "extra_fields", None)
+            if isinstance(ef, dict):
+                area_val = str(ef.get("area_name") or "").strip()
+                if area_val:
+                    return area_val
+            for raw in (getattr(user_obj, "username", None), getattr(user_obj, "full_name", None)):
+                txt = str(raw or "").strip()
+                m = re.search(r"\barea[_\s-]*([a-z0-9]+)\b", txt, flags=re.IGNORECASE)
+                if m:
+                    return f"Area {m.group(1).title()}"
+            return None
+
+        # 1. Explicit area metadata on branch workflow/EOD tables
+        if branch_id and hasattr(uow, "client") and uow.client is not None:
+            for tbl in ("monthly_report_submissions", "area_eod_confirmations"):
+                try:
+                    res = (
+                        uow.client.table(tbl)
+                        .select("area_name")
+                        .eq("branch_id", branch_id)
+                        .order("updated_at", desc=True)
+                        .limit(5)
+                        .execute()
+                    )
+                    for row in (getattr(res, "data", None) or []):
+                        val = str(row.get("area_name") or "").strip()
+                        if val:
+                            return val
+                except Exception:
+                    pass
+
+        # 2. Assigned Area Manager user metadata
+        if am_user_id and hasattr(uow, "users"):
+            try:
+                am_user = uow.users.find_by_id(am_user_id)
+                extracted = _extract_from_user(am_user)
+                if extracted:
+                    return extracted
+            except Exception:
+                pass
+            try:
+                assigned = cls.get_assigned_branches(uow, am_user_id)
+                bids = [b.get("branch_id") for b in assigned if b.get("branch_id")]
+                if bids and hasattr(uow, "client") and uow.client is not None:
+                    for tbl in ("area_eod_confirmations", "monthly_report_submissions"):
+                        res = (
+                            uow.client.table(tbl)
+                            .select("area_name")
+                            .in_("branch_id", bids)
+                            .limit(5)
+                            .execute()
+                        )
+                        for row in (getattr(res, "data", None) or []):
+                            val = str(row.get("area_name") or "").strip()
+                            if val:
+                                return val
+            except Exception:
+                pass
+
+        # 3. Lookup supervising AM user for the branch via assignments
+        if branch_id and hasattr(uow, "client") and uow.client is not None:
+            try:
+                res_asg = (
+                    uow.client.table("user_branch_assignments")
+                    .select("user_id")
+                    .eq("branch_id", branch_id)
+                    .limit(5)
+                    .execute()
+                )
+                for row in (getattr(res_asg, "data", None) or []):
+                    uid = row.get("user_id")
+                    if uid and hasattr(uow, "users"):
+                        extracted = _extract_from_user(uow.users.find_by_id(uid))
+                        if extracted:
+                            return extracted
+            except Exception:
+                pass
+            try:
+                res_br = uow.client.table("branches").select("name").eq("branch_id", branch_id).limit(1).execute()
+                if getattr(res_br, "data", None):
+                    b_name = str(res_br.data[0].get("name") or "").strip()
+                    if b_name:
+                        return f"{b_name} Zone"
+            except Exception:
+                pass
+
+        return "Assigned Region"
 
     @classmethod
     def get_regional_summary(
@@ -61,10 +176,15 @@ class AreaManagerService:
         assigned = cls.get_assigned_branches(uow, am_user_id)
         branch_ids = [b["branch_id"] for b in assigned if b.get("branch_id")]
         branch_names = [b["name"] for b in assigned if b.get("name")]
+        resolved_area = cls.resolve_area_name(
+            uow,
+            am_user_id=am_user_id,
+            branch_id=branch_ids[0] if branch_ids else None,
+        )
 
         if not branch_ids:
             return {
-                "area_name": "Area 1",
+                "area_name": resolved_area,
                 "business_date": target_date.isoformat(),
                 "branches_count": 0,
                 "open_branches_count": 0,
@@ -192,7 +312,7 @@ class AreaManagerService:
         compliance_pct = round((total_collected_today / total_expected_today * 100), 1) if total_expected_today > 0 else 0.0
 
         return {
-            "area_name": "Area 1",
+            "area_name": resolved_area,
             "business_date": date_str,
             "branches_count": len(assigned),
             "open_branches_count": open_branches_count,
@@ -439,7 +559,7 @@ class AreaManagerService:
             cash_diff = 0.0
             if bid_s in eod_by_branch:
                 e_rec = eod_by_branch[bid_s]
-                eod_status = e_rec.get("status", "PENDING")
+                eod_status = str(e_rec.get("status") or "PENDING")
                 cash_diff = float(e_rec.get("cash_variance") or 0.0)
             elif bid_s in mc_by_branch:
                 m_rec = mc_by_branch[bid_s]
@@ -491,18 +611,18 @@ class AreaManagerService:
             net_loan_count = loans_disbursed_count - full_payments_count
 
             matrix.append({
-                "branch_id": bid,
-                "branch_name": bname,
-                "bm_name": bm_name,
+                "branch_id": str(bid),
+                "branch_name": str(bname or "Branch"),
+                "bm_name": str(bm_name or "Unassigned"),
                 "operational_status": op_status,
                 "is_closed": is_b_closed,
-                "closure_reason": closure_reason,
+                "closure_reason": str(closure_reason) if closure_reason else None,
                 "expected_collection": exp,
                 "collected": coll,
                 "outstanding_today": outstanding_today,
                 "compliance_pct": comp,
                 "vault_cash_acct_1000": vault_cash,
-                "par": b_par,
+                "par": str(b_par or "0.0%"),
                 "defaulters_count": b_defaulters,
                 "reversals_count": b_rev_cnt,
                 "eod_status": eod_status,
@@ -513,6 +633,7 @@ class AreaManagerService:
                 "full_payments_count": full_payments_count,
                 "full_payments_active_credit": full_payments_active_credit,
                 "net_loan_book_growth": net_loan_book_growth,
+                "net_active_credit_volume": net_loan_book_growth,
                 "net_loan_count": net_loan_count,
             })
 
@@ -866,18 +987,23 @@ class AreaManagerService:
             eod_variance = float(eod_record.get("cash_variance") or 0.0) if eod_record else 0.0
             eod_vault = float(eod_record.get("acct_1000_balance") or 0.0) if eod_record else mc_closing
 
+            default_eod_status = (
+                "PENDING"
+                if mc_status in ["Closed", "Verified"]
+                else "AWAITING_BM_SUBMISSION"
+            )
             pending_eods.append({
-                "branch_id": bid,
-                "branch_name": bname,
+                "branch_id": str(bid),
+                "branch_name": str(bname or "Branch"),
                 "closure_date": date_str,
-                "master_cashbook_status": mc_status,
+                "master_cashbook_status": str(mc_status or "Open"),
                 "cash_variance": eod_variance,
                 "vault_cash": eod_vault,
                 "is_confirmed": is_confirmed,
-                "status": eod_record.get("status") if eod_record else ("PENDING" if mc_status in ["Closed", "Verified"] else "AWAITING_BM_SUBMISSION"),
-                "confirmed_by": eod_record.get("confirmed_by") if eod_record else None,
-                "confirmed_at": str(eod_record.get("confirmed_at")) if eod_record else None,
-                "notes": eod_record.get("notes") if eod_record else None
+                "status": str((eod_record.get("status") if eod_record else None) or default_eod_status),
+                "confirmed_by": str(eod_record["confirmed_by"]) if (eod_record and eod_record.get("confirmed_by") is not None) else None,
+                "confirmed_at": str(eod_record["confirmed_at"]) if (eod_record and eod_record.get("confirmed_at") is not None) else None,
+                "notes": str(eod_record["notes"]) if (eod_record and eod_record.get("notes") is not None) else None,
             })
 
         # 4. Branch Treasury & Escalated Reversal Requests (BM-initiated or Treasury)
@@ -1067,8 +1193,9 @@ class AreaManagerService:
         final_notes = notes or (f"{prior_note} • Confirmed by AM {am_name}." if prior_note else f"Confirmed by AM {am_name} with Primary Vault Ledger balance of ₦{vault_cash:,.2f}.")
 
         # Upsert area_eod_confirmations
+        resolved_area = cls.resolve_area_name(uow, am_user_id=am_user_id, branch_id=branch_id)
         payload = {
-            "area_name": "Area 1",
+            "area_name": resolved_area,
             "branch_id": branch_id,
             "closure_date": date_str,
             "status": "BRANCH_CONFIRMED",
@@ -1120,9 +1247,10 @@ class AreaManagerService:
         user = uow.users.find_by_id(am_user_id)
         am_name = user.full_name or user.username if user else "Area Manager"
         date_str = closure_date.isoformat()
+        resolved_area = cls.resolve_area_name(uow, am_user_id=am_user_id, branch_id=branch_id)
 
         payload = {
-            "area_name": "Area 1",
+            "area_name": resolved_area,
             "branch_id": branch_id,
             "closure_date": date_str,
             "status": "REJECTED",
@@ -1180,7 +1308,7 @@ class AreaManagerService:
         uow.client.table("area_eod_confirmations").update({
             "status": "AREA_LOCKED",
             "confirmed_by": am_name,
-            "notes": f"Area 1 Daily Operations Locked and Sealed by AM {am_name}."
+            "notes": f"{area_name} Daily Operations Locked and Sealed by AM {am_name}."
         }).in_("branch_id", assigned_bids).eq("closure_date", date_str).execute()
 
         for bid in assigned_bids:
@@ -1350,11 +1478,12 @@ class AreaManagerService:
         # Sheet 1: Area Executive Summary
         # ----------------------------------------------------
         ws1 = wb.active
-        ws1.title = "Area 1 Executive Summary"
+        area_label = str(reg.get("area_name") or "Regional").strip()
+        ws1.title = f"{area_label} Executive Summary"[:31]
         ws1.views.sheetView[0].showGridLines = True
 
         ws1.cell(row=1, column=1, value="ICARE MICROFINANCE — REGIONAL OPERATIONS REPORT").font = title_font
-        ws1.cell(row=2, column=1, value=f"Area: Area 1 | Date: {reg['business_date']} | Supervised Branches: {', '.join(reg['assigned_branches'])}").font = bold_font
+        ws1.cell(row=2, column=1, value=f"Area: {area_label} | Date: {reg['business_date']} | Supervised Branches: {', '.join(reg['assigned_branches'])}").font = bold_font
 
         kpi_rows = [
             ("Total Supervised Branches", reg["branches_count"]),
