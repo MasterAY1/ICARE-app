@@ -510,13 +510,13 @@ def preview_loan_schedule(
     inst_principal = round(active_credit / duration, 2) if duration > 0 else 0.0
     items: List[SchedulePreviewItem] = []
     for idx, d in enumerate(dates, start=1):
-        p_val = inst_principal + (gap_fee if idx == 1 and payload.product_category != "Asset" and gap_fee > 0 else 0.0)
+        # Gap fee is auto-deducted upfront from savings at disbursement; contractual schedule sums to active_credit
         items.append(SchedulePreviewItem(
             installment_number=idx,
             due_date=d.isoformat(),
-            principal=round(p_val, 2),
+            principal=round(inst_principal, 2),
             interest=0.0,
-            total_due=round(p_val, 2),
+            total_due=round(inst_principal, 2),
         ))
 
     return SchedulePreviewResponse(

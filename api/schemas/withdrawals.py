@@ -105,7 +105,7 @@ class CreateWithdrawalRequestInput(BaseModel):
     fee_type: Optional[str] = None
     amount: float = Field(..., gt=0, description="Positive withdrawal amount")
     operational_date: Optional[str] = None
-    payout_method: Optional[str] = Field("Cash", description="Cash or Bank Transfer")
+    payout_method: Optional[str] = Field("Bank Transfer", description="Bank Transfer (or Return to Savings for LAPS)")
     remarks: Optional[str] = Field("", description="Reason/description for withdrawal")
     auto_execute: Optional[bool] = Field(False, description="Direct BM/Admin execution")
     idempotency_key: Optional[str] = Field(None, description="Optional client-supplied idempotency key")
@@ -215,7 +215,7 @@ class PendingApprovalItem(BaseModel):
     operational_date: str
     reference: str
     remarks: Optional[str] = None
-    payout_method: Optional[str] = "Cash"
+    payout_method: Optional[str] = "Bank Transfer"
 
 
 class PendingApprovalsResponse(BaseModel):

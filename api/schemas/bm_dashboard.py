@@ -21,6 +21,7 @@ class BranchCashPosition(BaseModel):
     bank_deposit: float = 0.0
     bank_withdrawal: float = 0.0
     closing_balance: float
+    bank_balance: float = 0.0
     status: str
     difference: float
 

@@ -684,11 +684,11 @@ def get_my_withdrawal_requests(
         items.append(WithdrawalRequestItem(
             id=str(r.get("id") or ""),
             savings_type=str(r.get("savings_type") or "Individual"),
-            operation_type=str(r.get("operation_type") or "Cash Withdrawal"),
+            operation_type=str(r.get("operation_type") or "Bank Transfer"),
             client_name=str(r.get("client_name") or ""),
             group_name=r.get("group_name"),
             amount=float(r.get("amount") or 0.0),
-            payout_method=r.get("payout_method") or "Cash",
+            payout_method=r.get("payout_method") or "Bank Transfer",
             reference=str(r.get("reference") or ""),
             remarks=_clean_ui_remarks(r.get("remarks")) or None,
             status=str(r.get("status") or "PENDING"),
@@ -738,15 +738,14 @@ def _extract_meta_from_payload(payload: CreateWithdrawalRequestInput) -> Dict[st
 
 
 def _resolve_payout_method(op_type: str, requested_payout: Optional[str]) -> str:
-    if op_type in {
-        "Bank Transfer",
-        "Bank Account (Transfer)",
-        "Client Bank Account (Transfer)",
-        "Group Bank Account (Transfer)",
-        "LAPS Payout (Bank Transfer)",
-    }:
-        return "Bank Transfer"
-    return requested_payout or "Cash"
+    # Option A: All direct customer savings withdrawals and LAPS payouts route strictly via Bank Transfer
+    req_low = str(requested_payout or "").strip().lower()
+    if req_low == "cash":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Direct cash payouts from savings/LAPS are disabled. Select Bank Transfer or record physical branch cash payments under Office Expenses.",
+        )
+    return "Bank Transfer"
 
 
 def _validate_offset_loan(
@@ -1142,7 +1141,7 @@ def create_withdrawal_request(
             "officer_id": officer_uuid,
             "amount": float(payload.amount),
             "operational_date": target_dt.isoformat(),
-            "payout_method": payload.payout_method or ("Return to Savings" if is_return_to_savings else eff_payout),
+            "payout_method": "Return to Savings" if is_return_to_savings else eff_payout,
             "reference": ref_code,
             "remarks": clean_note or f"{laps_op_name} for {laps_client_name}",
             "destination_id": meta_in["dest_id"] or (payload.client_id if is_return_to_savings else None),
@@ -1222,6 +1221,15 @@ def get_daily_withdrawals(
     Top KPIs, categorized tables, and filtered withdrawal requests history.
     """
     is_manager = current_user.role in WR_MANAGER_ROLES
+    is_admin = current_user.role in ("Admin", "Super Admin")
+    is_am = current_user.role in ("AM", "Area Manager")
+    allowed_bids: List[str] = []
+    if is_am:
+        try:
+            ab_res = uow.client.table("branches").select("branch_id").eq("area_manager_id", current_user.id).execute()
+            allowed_bids = [str(b["branch_id"]) for b in (ab_res.data or []) if isinstance(b, dict) and b.get("branch_id")]
+        except Exception:
+            pass
     officer_id = uow.loans._resolve_officer_id(current_user.username) or current_user.id
     if show_all:
         target_date_str = None
@@ -1746,7 +1754,7 @@ def get_pending_approvals(
             client_id=r.get("client_id"),
             client_name=r.get("client_name") or "Unknown",
             savings_type=r.get("savings_type") or "Individual",
-            operation_type=r.get("operation_type") or "Cash Withdrawal",
+            operation_type=r.get("operation_type") or "Bank Transfer",
             group_name=r.get("group_name"),
             loan_id=r.get("loan_id"),
             destination_id=r.get("destination_id"),
@@ -1758,7 +1766,7 @@ def get_pending_approvals(
             operational_date=str(r.get("operational_date") or str(r.get("created_at") or ""))[:10],
             reference=r.get("reference") or str(r.get("id"))[:8],
             remarks=_clean_ui_remarks(r.get("remarks")) or None,
-            payout_method=r.get("payout_method") or "Cash"
+            payout_method=r.get("payout_method") or "Bank Transfer"
         ))
     return PendingApprovalsResponse(requests=items)
 

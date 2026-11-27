@@ -495,12 +495,30 @@ def submit_eod_adjustments(
     if isinstance(rebuilt_cb, dict) and rebuilt_cb:
         cur_cb = rebuilt_cb
 
+    # Strict Single-Page Fee Consolidation: unattributed lump-sum EOD fee inputs are retired.
+    retired_fee_inputs = [
+        name
+        for name, val in (
+            ("App Fee", payload.app_fee),
+            ("Passbook", payload.passbook),
+            ("Misc Fee", payload.misc_fee),
+            ("Credit Form Damage", payload.credit_form_damage),
+            ("Bonus", payload.bonus),
+        )
+        if val is not None
+    ]
+    if retired_fee_inputs:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"Client fee recording ({', '.join(retired_fee_inputs)}) has moved exclusively to "
+                "Daily Collections -> Single Client Quick Entry so every fee carries client attribution "
+                "and a complete audit trail. Only Opening Balance, Office Expenses, and Bank Deposit can "
+                "be updated on Daily Cashbook."
+            ),
+        )
+
     cur_open = float(cur_cb.get("opening_balance") or 0.0)
-    cur_app_fee = float(cur_cb.get("app_fee") or 0.0) + float(cur_cb.get("credit_form") or 0.0)
-    cur_pb = float(cur_cb.get("passbook") or 0.0)
-    cur_cfd = float(cur_cb.get("credit_form_damage") or 0.0)
-    cur_bon = float(cur_cb.get("bonus") or 0.0)
-    cur_misc = _get_eod_misc_fee_tracked(uow, current_user.branch, date_str, target_co, branch_id=b_uuid)
     cur_exp = float(cur_cb.get("office_expenses") or 0.0)
     cur_bdep = float(cur_cb.get("bank_deposit") or 0.0)
 
@@ -508,11 +526,6 @@ def submit_eod_adjustments(
     global_opening_val = float(payload.opening_balance) if payload.opening_balance is not None else cur_open
     global_expenses_val = float(payload.office_expenses) if payload.office_expenses is not None else cur_exp
     global_bank_dep_val = float(payload.bank_deposit) if payload.bank_deposit is not None else cur_bdep
-    global_app_fee_val = float(payload.app_fee) if payload.app_fee is not None else cur_app_fee
-    global_passbook_val = float(payload.passbook) if payload.passbook is not None else cur_pb
-    global_misc_fee_val = float(payload.misc_fee) if payload.misc_fee is not None else cur_misc
-    global_cfd_val = float(payload.credit_form_damage) if payload.credit_form_damage is not None else cur_cfd
-    global_bonus_val = float(payload.bonus) if payload.bonus is not None else cur_bon
 
     opening_changed = payload.opening_balance is not None and abs(global_opening_val - cur_open) > 0.001
 
@@ -561,47 +574,7 @@ def submit_eod_adjustments(
         FinancialPostingEngine.post_event(uow, ev)
         adjusted_fields.append(f"{name}={new_val:,.2f}")
 
-    # 3. Post Delta Adjustments for each fee/expense/deposit (app.py L10978-10984):
-    _post_adjustment(global_app_fee_val - cur_app_fee, "FeeCharged", "FeeReversed", "Fee", "App Fee", cur_app_fee, global_app_fee_val)
-    _post_adjustment(global_passbook_val - cur_pb, "FeeCharged", "FeeReversed", "Fee", "Passbook", cur_pb, global_passbook_val)
-    _post_adjustment(global_cfd_val - cur_cfd, "FeeCharged", "FeeReversed", "Fee", "Cr Form Damage", cur_cfd, global_cfd_val)
-    _post_adjustment(global_bonus_val - cur_bon, "FeeCharged", "FeeReversed", "Fee", "Bonus", cur_bon, global_bonus_val)
-
-    # Misc Fee routes directly to Branch Misc Savings (Account 2020) without double-counting into CO left_total
-    d_misc = global_misc_fee_val - cur_misc
-    managing_id = ""
-    if d_misc > 0.001:
-        managing_id, _ = SavingsService.get_branch_misc_savings_officer(uow, current_user.branch)
-        SavingsService.post_misc_savings(
-            uow=uow,
-            client_id="BRANCH_MISC",
-            client_name=f"Branch Misc - {current_user.branch}",
-            branch=current_user.branch,
-            officer=target_co,
-            deposit_amount=d_misc,
-            withdrawal_amount=0.0,
-            reference=f"EOD-MISC-{date_str}-{uuid.uuid4().hex[:6].upper()}",
-            remarks=f"[EOD_MISC_FEE:{target_co}] EOD Misc Fee Deposit (Added ₦{d_misc:,.2f}, Total: ₦{global_misc_fee_val:,.2f})",
-            posting_date=target_date,
-        )
-        adjusted_fields.append(f"Misc Fee={global_misc_fee_val:,.2f}")
-    elif d_misc < -0.001:
-        amt_rev = abs(d_misc)
-        managing_id, _ = SavingsService.get_branch_misc_savings_officer(uow, current_user.branch)
-        SavingsService.post_misc_savings(
-            uow=uow,
-            client_id="BRANCH_MISC",
-            client_name=f"Branch Misc - {current_user.branch}",
-            branch=current_user.branch,
-            officer=target_co,
-            deposit_amount=0.0,
-            withdrawal_amount=amt_rev,
-            reference=f"EOD-MISC-REV-{date_str}-{uuid.uuid4().hex[:6].upper()}",
-            remarks=f"[EOD_MISC_FEE:{target_co}] [EOD_REVERSAL] EOD Misc Fee Reduction (Reduced ₦{amt_rev:,.2f}, Adjusted from ₦{cur_misc:,.2f} to ₦{global_misc_fee_val:,.2f})",
-            posting_date=target_date,
-        )
-        adjusted_fields.append(f"Misc Fee={global_misc_fee_val:,.2f}")
-
+    # 3. Post Delta Adjustments for EOD Operational Cash Movements (Expenses & Bank Deposits):
     _post_adjustment(global_expenses_val - cur_exp, "ExpenseRecorded", "ExpenseReversed", "Expense", "Expense", cur_exp, global_expenses_val)
     _post_adjustment(global_bank_dep_val - cur_bdep, "BankDeposited", "BankDepositReversed", "Treasury", "Bank Deposit", cur_bdep, global_bank_dep_val)
 
@@ -615,8 +588,6 @@ def submit_eod_adjustments(
             MasterCashbookProjectionBuilder.rebuild_master_projection(uow, b_uuid, target_date)
         else:
             uow.cashbook.rebuild_projection(b_uuid, target_date, officer_id=officer_uuid)
-        if managing_id and str(managing_id) != str(officer_uuid):
-            uow.cashbook.rebuild_projection(b_uuid, target_date, officer_id=str(managing_id))
 
     if adjusted_fields:
         try:
@@ -634,7 +605,7 @@ def submit_eod_adjustments(
     return EodAdjustmentsResponse(
         success=True,
         date=date_str,
-        message="End of Day Outflows & Fees Updated Successfully."
+        message="End of Day Opening Balance & Outflows Updated Successfully."
     )
 
 

@@ -114,6 +114,7 @@ class MasterCashbookDailyResponse(BaseModel):
     total_inflows: float
     total_outflows: float
     closing_balance: float
+    bank_balance: float = 0.0
     tally: Optional[BranchReconciliationTally] = None
     pending_reversals: List[PendingReversalItem] = []
     treasury_transactions: List[TreasuryTransactionOption] = []
@@ -130,6 +131,8 @@ class MasterCashbookManualInputsRequest(BaseModel):
     fund_to_other_area: float = 0.0
     fund_to_asset_program: float = 0.0
     staff_salaries: float = 0.0
+    office_expenses: Optional[float] = None
+    bank_deposit: Optional[float] = None
     adjustment_in: float = 0.0
     adjustment_out: float = 0.0
     adjustment_reason: Optional[str] = None

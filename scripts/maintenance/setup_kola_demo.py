@@ -767,13 +767,13 @@ def main() -> None:
 
         # --- KOL-04-001 (Monthly 3M, ₦50,000/mo, disb 2026-10-27 -> Month 1 due 2026-11-27 Friday) ---
 
-        # Treasury: Bank Deposits & Office Expense (keep vault cash positive & realistic)
+        # Treasury: Bank Deposits, Office Cash Expense, Payroll & HO Transfer Out (keep vault cash positive & realistic)
         add_action(
             date(2026, 11, 20),
             lambda d: TreasuryService.post_treasury_transaction(
                 uow,
                 tx_type="BANK_DEPOSIT",
-                amount=350000.0,
+                amount=150000.0,
                 branch=KOLA_BRANCH_NAME,
                 officer=BM_USERNAME,
                 reference="BNK-KOL-001",
@@ -795,11 +795,37 @@ def main() -> None:
             ),
         )
         add_action(
+            date(2026, 11, 24),
+            lambda d: TreasuryService.post_treasury_transaction(
+                uow,
+                tx_type="SALARY",
+                amount=45000.0,
+                branch=KOLA_BRANCH_NAME,
+                officer=BM_USERNAME,
+                reference="SAL-KOL-001",
+                remarks="November staff allowance paid from branch bank account",
+                posting_date=d,
+            ),
+        )
+        add_action(
+            date(2026, 11, 24),
+            lambda d: TreasuryService.post_treasury_transaction(
+                uow,
+                tx_type="HO_TRANSFER_OUT",
+                amount=100000.0,
+                branch=KOLA_BRANCH_NAME,
+                officer=BM_USERNAME,
+                reference="HO-KOL-OUT-001",
+                remarks="Surplus corporate reserve remitted to Head Office bank account",
+                posting_date=d,
+            ),
+        )
+        add_action(
             date(2026, 11, 25),
             lambda d: TreasuryService.post_treasury_transaction(
                 uow,
                 tx_type="BANK_DEPOSIT",
-                amount=450000.0,
+                amount=150000.0,
                 branch=KOLA_BRANCH_NAME,
                 officer=BM_USERNAME,
                 reference="BNK-KOL-002",
@@ -840,7 +866,7 @@ def main() -> None:
         # Recompute true Account 1000 balance across all Kola ledger entries
         gl_rows = (
             uow.client.table("financial_ledger_entries")
-            .select("side, amount")
+            .select("side, amount, created_at")
             .eq("branch_id", KOLA_BRANCH_ID)
             .eq("account_code", "1000")
             .execute()
@@ -854,26 +880,44 @@ def main() -> None:
         )
 
         # Update earlier area_eod_confirmations as AREA_LOCKED by AM_Area_1, keep 2026-11-25 PENDING for live AM demo!
-        mb_25_res = (
+        mb_rows = (
             uow.client.table("master_cashbook")
-            .select("closing_balance")
+            .select("date, closing_balance")
             .eq("branch_id", KOLA_BRANCH_ID)
-            .eq("date", "2026-11-25")
             .execute()
             .data
             or []
         )
-        mb_25_close = float(mb_25_res[0]["closing_balance"]) if mb_25_res else acct_1000_bal
+        mb_close_by_date = {
+            str(r["date"]): float(r.get("closing_balance") or 0.0)
+            for r in mb_rows
+            if r.get("date")
+        }
+        mb_25_close = mb_close_by_date.get("2026-11-25", acct_1000_bal)
         for d_dt in sorted_days:
+            d_iso = d_dt.isoformat()
+            cutoff_iso = f"{d_iso}T23:59:59+00:00"
+            day_gl_bal = round(
+                sum(
+                    float(r["amount"]) if r.get("side") == "Debit" else -float(r["amount"])
+                    for r in gl_rows
+                    if str(r.get("created_at") or "") <= cutoff_iso
+                ),
+                2,
+            )
+            day_mb_close = mb_close_by_date.get(d_iso, day_gl_bal)
+            day_var = round(day_mb_close - day_gl_bal, 2)
             if d_dt < date(2026, 11, 25):
                 uow.client.table("area_eod_confirmations").update(
                     {
                         "status": "AREA_LOCKED",
                         "confirmed_by": "Mrs. Shobande",
-                        "confirmed_at": f"{d_dt.isoformat()}T18:30:00+00:00",
-                        "notes": f"Kola Zone Daily Operations Locked and Sealed by AM Mrs. Shobande ({d_dt.isoformat()}).",
+                        "confirmed_at": f"{d_iso}T18:30:00+00:00",
+                        "acct_1000_balance": day_gl_bal,
+                        "cash_variance": day_var,
+                        "notes": f"Kola Zone Daily Operations Locked and Sealed by AM Mrs. Shobande ({d_iso}).",
                     }
-                ).eq("branch_id", KOLA_BRANCH_ID).eq("closure_date", d_dt.isoformat()).execute()
+                ).eq("branch_id", KOLA_BRANCH_ID).eq("closure_date", d_iso).execute()
             else:
                 uow.client.table("area_eod_confirmations").update(
                     {
@@ -884,20 +928,20 @@ def main() -> None:
                         "cash_variance": round(mb_25_close - acct_1000_bal, 2),
                         "notes": f"Branch EOD closed. Vault GL balance: ₦{acct_1000_bal:,.2f} — awaiting Area Manager sign-off.",
                     }
-                ).eq("branch_id", KOLA_BRANCH_ID).eq("closure_date", d_dt.isoformat()).execute()
+                ).eq("branch_id", KOLA_BRANCH_ID).eq("closure_date", d_iso).execute()
 
         # Open Friday 2026-11-27 cashbooks + business_date cleanly preserving projection carry-forward
         BusinessDateService.set_business_date(uow, KOLA_BRANCH_ID, PRESENTATION_DATE)
         CoCashbookProjectionBuilder.rebuild_co_projection(uow, KOLA_BRANCH_ID, CO1_ID, PRESENTATION_DATE)
         MasterCashbookProjectionBuilder.rebuild_master_projection(uow, KOLA_BRANCH_ID, PRESENTATION_DATE)
 
-        # Pending Individual Withdrawal Request for Mrs. Chinyere Okafor (ready for BM 4-Eyes Approval)
+        # Pending Individual Withdrawal Request for Mrs. Chinyere Okafor (ready for BM 4-Eyes Bank Transfer Approval)
         chinyere = clients["KOL-02-001"]
         uow.client.table("withdrawal_requests").upsert(
             {
                 "id": det_id("wr_pending_chinyere"),
                 "savings_type": "Individual",
-                "operation_type": "Withdrawal",
+                "operation_type": "Client Bank Account (Transfer)",
                 "client_id": chinyere["client_id"],
                 "client_name": chinyere["name"],
                 "group_name": chinyere["group_name"],
@@ -908,8 +952,8 @@ def main() -> None:
                 "requested_by": CO1_USERNAME,
                 "amount": 5000.0,
                 "reference": "WTH-KOL-001",
-                "remarks": "School fees partial personal savings withdrawal",
-                "payout_method": "Cash",
+                "remarks": "School fees partial personal savings bank withdrawal",
+                "payout_method": "Bank Transfer",
                 "status": "PENDING",
                 "operational_date": PRESENTATION_DATE.isoformat(),
                 "idempotency_key": det_id("idem_wr_pending_chinyere"),
@@ -921,7 +965,7 @@ def main() -> None:
         print("[6/6] Running Integrity & Reconciliation Verification...")
         all_gl = (
             uow.client.table("financial_ledger_entries")
-            .select("side, amount")
+            .select("account_code, side, amount")
             .eq("branch_id", KOLA_BRANCH_ID)
             .execute()
             .data
@@ -930,6 +974,65 @@ def main() -> None:
         total_dr = round(sum(float(r["amount"]) for r in all_gl if r.get("side") == "Debit"), 2)
         total_cr = round(sum(float(r["amount"]) for r in all_gl if r.get("side") == "Credit"), 2)
         assert abs(total_dr - total_cr) < 0.01, f"Ledger unbalanced: DR={total_dr}, CR={total_cr}"
+
+        acct_1050_bal = round(
+            sum(float(r["amount"]) for r in all_gl if r.get("account_code") == "1050" and r.get("side") == "Debit")
+            - sum(float(r["amount"]) for r in all_gl if r.get("account_code") == "1050" and r.get("side") == "Credit"),
+            2,
+        )
+        acct_1200_bal = round(
+            sum(float(r["amount"]) for r in all_gl if r.get("account_code") == "1200" and r.get("side") == "Debit")
+            - sum(float(r["amount"]) for r in all_gl if r.get("account_code") == "1200" and r.get("side") == "Credit"),
+            2,
+        )
+        kola_loans = (
+            uow.client.table("loans")
+            .select("loan_id, active_credit, status")
+            .eq("branch_id", KOLA_BRANCH_ID)
+            .neq("status", "Pending")
+            .neq("status", "Rejected")
+            .execute()
+            .data
+            or []
+        )
+        kola_repayments = (
+            uow.client.table("repayments")
+            .select("loan_id, amount_paid")
+            .eq("branch_id", KOLA_BRANCH_ID)
+            .execute()
+            .data
+            or []
+        )
+        repaid_by_loan: Dict[str, float] = {}
+        for rep in kola_repayments:
+            lid = str(rep.get("loan_id") or "")
+            if lid:
+                repaid_by_loan[lid] = round(repaid_by_loan.get(lid, 0.0) + float(rep.get("amount_paid") or 0.0), 2)
+        loan_book_outstanding = round(
+            sum(
+                max(0.0, float(l.get("active_credit") or 0) - repaid_by_loan.get(str(l.get("loan_id") or ""), 0.0))
+                for l in kola_loans
+            ),
+            2,
+        )
+        assert abs(acct_1200_bal - loan_book_outstanding) < 0.01, (
+            f"Account 1200 mismatch: GL={acct_1200_bal}, Operational={loan_book_outstanding}"
+        )
+        assert abs(mb_25_close - acct_1000_bal) < 0.01, (
+            f"Master Cashbook 2026-11-25 closing ({mb_25_close}) != Account 1000 ({acct_1000_bal})"
+        )
+        assert acct_1000_bal > 0, f"Expected realistic positive Vault Cash for Kola, got {acct_1000_bal}"
+
+        bm_co_rows = (
+            uow.client.table("co_cashbooks")
+            .select("id")
+            .eq("branch_id", KOLA_BRANCH_ID)
+            .eq("officer_id", BM_ID)
+            .execute()
+            .data
+            or []
+        )
+        assert len(bm_co_rows) == 0, f"Found bogus BM rows in co_cashbooks: {bm_co_rows}"
 
         recon_last = DailyReconciliationService.reconcile_branch_day(uow, KOLA_BRANCH_ID, date(2026, 11, 25))
         after_ogijo = _snapshot_ogijo(uow)
@@ -940,6 +1043,8 @@ def main() -> None:
         print(f"Credentials -> CO: {CO1_USERNAME} / {DEMO_PASSWORD} | BM: {BM_USERNAME} / {DEMO_PASSWORD}")
         print(f"Double-Entry Ledger: DR=₦{total_dr:,.2f} == CR=₦{total_cr:,.2f}")
         print(f"Account 1000 Vault Cash Carry-Forward: ₦{acct_1000_bal:,.2f}")
+        print(f"Account 1050 Bank Reserve Carry-Forward: ₦{acct_1050_bal:,.2f}")
+        print(f"Account 1200 Loan Portfolio Parity: GL=₦{acct_1200_bal:,.2f} == Operational=₦{loan_book_outstanding:,.2f}")
         print(f"2026-11-25 3-Way Recon: GL Net=₦{recon_last['gl_net_flow']:,.2f}, MB Net=₦{recon_last['master_cashbook_net_flow']:,.2f}")
         print(f"Ogijo Unchanged Verified: {after_ogijo}")
 

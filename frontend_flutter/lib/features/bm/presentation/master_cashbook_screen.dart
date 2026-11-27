@@ -93,9 +93,13 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
   final TextEditingController _xferAreaCtrl = TextEditingController();
   final TextEditingController _fundToAssetCtrl = TextEditingController();
   final TextEditingController _salariesCtrl = TextEditingController();
+  final TextEditingController _officeExpCtrl = TextEditingController();
+  final TextEditingController _bankDepCtrl = TextEditingController();
   final TextEditingController _adjInCtrl = TextEditingController();
   final TextEditingController _adjOutCtrl = TextEditingController();
   final TextEditingController _adjReasonCtrl = TextEditingController();
+  String _loadedOfficeExpStr = '';
+  String _loadedBankDepStr = '';
 
   // Tab 1 Reversal Flagging
   String? _selectedTreasuryTxId;
@@ -166,6 +170,8 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
     _xferAreaCtrl.dispose();
     _fundToAssetCtrl.dispose();
     _salariesCtrl.dispose();
+    _officeExpCtrl.dispose();
+    _bankDepCtrl.dispose();
     _adjInCtrl.dispose();
     _adjOutCtrl.dispose();
     _adjReasonCtrl.dispose();
@@ -231,6 +237,10 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
     _xferAreaCtrl.text = out.fundToOtherArea > 0 ? out.fundToOtherArea.toStringAsFixed(0) : '';
     _fundToAssetCtrl.text = out.fundToAssetProgram > 0 ? out.fundToAssetProgram.toStringAsFixed(0) : '';
     _salariesCtrl.text = out.staffSalaries > 0 ? out.staffSalaries.toStringAsFixed(0) : '';
+    _officeExpCtrl.text = out.officeExpenses > 0 ? out.officeExpenses.toStringAsFixed(0) : '';
+    _bankDepCtrl.text = out.bankDeposit > 0 ? out.bankDeposit.toStringAsFixed(0) : '';
+    _loadedOfficeExpStr = _officeExpCtrl.text.trim();
+    _loadedBankDepStr = _bankDepCtrl.text.trim();
 
     _adjInCtrl.text = inf.adjustmentIn > 0 ? inf.adjustmentIn.toStringAsFixed(0) : '';
     _adjOutCtrl.text = out.adjustmentOut > 0 ? out.adjustmentOut.toStringAsFixed(0) : '';
@@ -254,7 +264,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
     setState(() => _isSubmittingManual = true);
     try {
       final api = ref.read(masterCashbookApiServiceProvider);
-      final payload = {
+      final payload = <String, dynamic>{
         'date': _formatDate(_selectedDateTab1),
         'funds_received_ho': double.tryParse(_fundsHoCtrl.text.trim()) ?? 0.0,
         'funds_received_other_branch': double.tryParse(_fundsBranchCtrl.text.trim()) ?? 0.0,
@@ -268,6 +278,12 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
         'adjustment_out': double.tryParse(_adjOutCtrl.text.trim()) ?? 0.0,
         'adjustment_reason': _adjReasonCtrl.text.trim(),
       };
+      if (_officeExpCtrl.text.trim() != _loadedOfficeExpStr) {
+        payload['office_expenses'] = double.tryParse(_officeExpCtrl.text.trim()) ?? 0.0;
+      }
+      if (_bankDepCtrl.text.trim() != _loadedBankDepStr) {
+        payload['bank_deposit'] = double.tryParse(_bankDepCtrl.text.trim()) ?? 0.0;
+      }
 
       final res = await api.saveManualEntries(payload);
       _showBanner(
@@ -1924,14 +1940,25 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
   Widget _buildTAccountBalancingBar(MasterCashbookDailyData data) {
     final tokens = IcareSurfaceTokens.of(context);
     final closing = data.closingBalance;
-    final isPos = closing >= 0;
+    final isZero = closing.abs() < 0.01;
+    final isExcessBanked = closing <= -0.01;
+    final statusTitle = isZero
+        ? 'VAULT FULLY REMITTED & BALANCED'
+        : (isExcessBanked ? 'EXCESS BANKED (COLLECTION SURPLUS)' : 'UNBANKED CASH IN VAULT');
+    final bgColor = isZero ? tokens.successBg : (isExcessBanked ? tokens.warningBg : tokens.infoBg);
+    final borderColor = isZero ? tokens.successBorder : (isExcessBanked ? tokens.warningBorder : tokens.infoBorder);
+    final textColor = isZero ? tokens.successText : (isExcessBanked ? tokens.warningText : tokens.infoText);
+    final dotColor = isZero ? tokens.successDot : (isExcessBanked ? tokens.warningDot : tokens.infoDot);
+    final statusIcon = isZero
+        ? Icons.check_circle_outline
+        : (isExcessBanked ? Icons.trending_up_rounded : Icons.account_balance_wallet_outlined);
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
-        color: isPos ? tokens.successBg : tokens.dangerBg,
+        color: bgColor,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: isPos ? tokens.successBorder : tokens.dangerBorder),
+        border: Border.all(color: borderColor),
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -1940,9 +1967,9 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
             child: Row(
               children: [
                 Icon(
-                  isPos ? Icons.check_circle_outline : Icons.warning_amber_rounded,
+                  statusIcon,
                   size: 20,
-                  color: isPos ? tokens.successDot : tokens.dangerDot,
+                  color: dotColor,
                 ),
                 const SizedBox(width: 10),
                 Flexible(
@@ -1950,11 +1977,11 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        isPos ? 'VAULT POSITION BALANCED' : 'VAULT DEFICIT DETECTED',
+                        statusTitle,
                         style: TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w700,
-                          color: isPos ? tokens.successText : tokens.dangerText,
+                          color: textColor,
                           letterSpacing: 0.4,
                         ),
                       ),
@@ -1962,7 +1989,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                         'Opening (${_formatCurrency(data.inflows.openingBalance)}) + Receipts (${_formatCurrency(data.totalInflows - data.inflows.openingBalance)}) - Outflows (${_formatCurrency(data.totalOutflows)})',
                         style: TextStyle(
                           fontSize: 11.5,
-                          color: isPos ? tokens.successText : tokens.dangerText,
+                          color: textColor,
                         ),
                       ),
                     ],
@@ -1971,17 +1998,26 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
               ],
             ),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: 16),
           Column(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              Text('Closing Balance', style: TextStyle(fontSize: 11, color: tokens.textMuted, fontWeight: FontWeight.w500)),
+              Text('Closing Vault Balance', style: TextStyle(fontSize: 11, color: tokens.textMuted, fontWeight: FontWeight.w500)),
               Text(
                 _formatCurrency(closing),
                 style: bmTabularStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w800,
-                  color: isPos ? tokens.successText : tokens.dangerText,
+                  color: textColor,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                'Branch Bank Balance: ${_formatCurrency(data.bankBalance)}',
+                style: bmTabularStyle(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w700,
+                  color: data.bankBalance >= 0 ? tokens.textSecondary : tokens.dangerText,
                 ),
               ),
             ],
@@ -2131,7 +2167,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
           ),
           const SizedBox(height: 18),
 
-          // Card 1: Vault Funding Received (Inflows)
+          // Card 1: Bank Funding Received (HO / Branch / Area)
           Container(
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
@@ -2147,7 +2183,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                     Icon(Icons.south_west_rounded, size: 15, color: tokens.successDot),
                     const SizedBox(width: 6),
                     Expanded(
-                      child: Text('Vault Funding Received (Inflows)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: tokens.successText)),
+                      child: Text('Bank Funding Received (HO / Branch / Area)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: tokens.successText)),
                     ),
                   ],
                 ),
@@ -2174,7 +2210,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
           ),
           const SizedBox(height: 14),
 
-          // Card 2: Corporate Transfers & Salaries (Outflows)
+          // Card 2: Bank Transfers & Payroll Outflows
           Container(
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
@@ -2190,7 +2226,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                     Icon(Icons.north_east_rounded, size: 15, color: tokens.dangerDot),
                     const SizedBox(width: 6),
                     Expanded(
-                      child: Text('Corporate Transfers & Outflows', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: tokens.dangerText)),
+                      child: Text('Bank Transfers & Payroll Outflows', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: tokens.dangerText)),
                     ),
                   ],
                 ),
@@ -2223,6 +2259,53 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                       Expanded(child: _buildNumberInputField('Staff Salaries', _salariesCtrl)),
                       const SizedBox(width: 12),
                       const Expanded(child: SizedBox()),
+                    ],
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
+
+          // Card 2b: Branch Vault Sweeps & Office Cash Expenses
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: tokens.infoBg,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: tokens.infoBorder),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.account_balance_outlined, size: 15, color: tokens.infoDot),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        'Branch Vault Sweeps & Office Cash Expenses',
+                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: tokens.infoText),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Bank Withdrawals are auto-calculated from bank disbursements and transfers. Edit below only for branch-level cash expenses or cash sweeps deposited to bank.',
+                  style: TextStyle(fontSize: 11, color: tokens.textMuted),
+                ),
+                const SizedBox(height: 12),
+                if (isMobile) ...[
+                  _buildNumberInputField('Office / Cash Expenses (₦)', _officeExpCtrl),
+                  const SizedBox(height: 10),
+                  _buildNumberInputField('Bank Deposit - Vault to Bank (₦)', _bankDepCtrl),
+                ] else ...[
+                  Row(
+                    children: [
+                      Expanded(child: _buildNumberInputField('Office / Cash Expenses (₦)', _officeExpCtrl)),
+                      const SizedBox(width: 12),
+                      Expanded(child: _buildNumberInputField('Bank Deposit - Vault to Bank (₦)', _bankDepCtrl)),
                     ],
                   ),
                 ],
@@ -2312,7 +2395,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
             },
           ),
           const SizedBox(height: 14),
-          _buildClosingBalanceBanner(data.closingBalance),
+          _buildClosingBalanceBanner(data.closingBalance, data.bankBalance),
           const SizedBox(height: 16),
 
           SizedBox(
@@ -2341,12 +2424,16 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
     );
   }
 
-  Widget _buildClosingBalanceBanner(double closing) {
+  Widget _buildClosingBalanceBanner(double closing, double bankBalance) {
     final tokens = IcareSurfaceTokens.of(context);
-    final isPos = closing >= 0;
-    final color = isPos ? tokens.successText : tokens.dangerText;
-    final bg = isPos ? tokens.successBg : tokens.dangerBg;
-    final border = isPos ? tokens.successBorder : tokens.dangerBorder;
+    final isZero = closing.abs() < 0.01;
+    final isExcess = closing <= -0.01;
+    final color = isZero ? tokens.successText : (isExcess ? tokens.warningText : tokens.infoText);
+    final bg = isZero ? tokens.successBg : (isExcess ? tokens.warningBg : tokens.infoBg);
+    final border = isZero ? tokens.successBorder : (isExcess ? tokens.warningBorder : tokens.infoBorder);
+    final labelText = isZero
+        ? 'Closing Vault Balance (Fully Remitted)'
+        : (isExcess ? 'Closing Vault Balance (Excess Banked)' : 'Closing Vault Balance (Unbanked Cash)');
 
     return Container(
       width: double.infinity,
@@ -2363,16 +2450,26 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
             child: Row(
               children: [
                 Icon(
-                  isPos ? Icons.account_balance_wallet_outlined : Icons.warning_amber_rounded,
+                  isExcess ? Icons.trending_up_rounded : Icons.account_balance_wallet_outlined,
                   size: 18,
                   color: color,
                 ),
                 const SizedBox(width: 8),
                 Flexible(
-                  child: Text(
-                    'Closing Vault Balance',
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: color),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        labelText,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: color),
+                      ),
+                      Text(
+                        'Branch Bank Position: ${_formatCurrency(bankBalance)}',
+                        overflow: TextOverflow.ellipsis,
+                        style: bmTabularStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: tokens.textSecondary),
+                      ),
+                    ],
                   ),
                 ),
               ],

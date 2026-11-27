@@ -39,12 +39,11 @@ class WithdrawalClassificationEngine:
             TransactionClassification.INDIVIDUAL_SAVINGS_WITHDRAWAL,
             TransactionClassification.GROUP_SAVINGS_WITHDRAWAL,
         ):
-            # Normal Customer withdrawal (physical cash unless is_cash_paid=False for Bank Transfer)
-            effective_cash = True if is_cash_paid is None else bool(is_cash_paid)
+            # Option A: Direct customer withdrawals settle strictly via Bank Transfer (1050)
             result["product_withdrawal"] = amount
-            result["cash_withdrawal"] = amount if effective_cash else 0.0
-            result["bank_withdrawal"] = amount if effective_cash else 0.0
-            result["affects_cash_vault"] = effective_cash
+            result["cash_withdrawal"] = 0.0
+            result["bank_withdrawal"] = amount
+            result["affects_cash_vault"] = False
 
         elif classification == TransactionClassification.LOAN_OFFSET:
             # Savings used to offset outstanding loan (ZERO physical cash movement)
@@ -61,19 +60,18 @@ class WithdrawalClassificationEngine:
             result["affects_cash_vault"] = False
 
         elif classification == TransactionClassification.LAPS_PAYOUT:
-            # LAPS payout (cash movement ONLY when is_cash_paid=True)
+            # Option A: Direct LAPS payout settles strictly via Bank Transfer (1050)
             result["product_withdrawal"] = amount
-            result["cash_withdrawal"] = amount if is_cash_paid else 0.0
-            result["bank_withdrawal"] = amount if is_cash_paid else 0.0
-            result["affects_cash_vault"] = bool(is_cash_paid)
+            result["cash_withdrawal"] = 0.0
+            result["bank_withdrawal"] = amount
+            result["affects_cash_vault"] = False
 
         else:
-            # Default fallback for unclassified normal withdrawals
-            effective_cash = True if is_cash_paid is None else bool(is_cash_paid)
+            # Default fallback routes direct payout via Bank Transfer (1050)
             result["product_withdrawal"] = amount
-            result["cash_withdrawal"] = amount if effective_cash else 0.0
-            result["bank_withdrawal"] = amount if effective_cash else 0.0
-            result["affects_cash_vault"] = effective_cash
+            result["cash_withdrawal"] = 0.0
+            result["bank_withdrawal"] = amount
+            result["affects_cash_vault"] = False
 
         return result
 

@@ -97,6 +97,7 @@ class TestPostingRulesLedger(unittest.TestCase):
         self.assertNotEqual(credit_entry.account_code, "1000")
 
     def test_laps_paid_out_cash_true_touches_vault_cash(self):
+        # Option A: LapsPaidOut routes strictly through Bank Transfer (1050) even if legacy cash_paid=True
         event = DomainEvent(
             event_id="evt-payout-cash",
             aggregate_id="agg-03",
@@ -119,7 +120,7 @@ class TestPostingRulesLedger(unittest.TestCase):
         credit_entry = [e for e in entries if e.side == "Credit"][0]
 
         self.assertEqual(debit_entry.account_code, "2030")   # LAPS Savings
-        self.assertEqual(credit_entry.account_code, "1000")  # Vault Cash (touches CO cash)
+        self.assertEqual(credit_entry.account_code, "1050")  # Bank Transfer (Option A)
 
     def test_laps_paid_out_cash_false_bypasses_vault_cash(self):
         event = DomainEvent(

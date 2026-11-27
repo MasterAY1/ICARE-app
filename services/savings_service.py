@@ -224,13 +224,14 @@ class SavingsService:
         posting_date: Optional[Any] = None,
         savings_id: Optional[str] = None,
         idempotency_key: Optional[str] = None,
-        cash_paid: bool = True,
-        payout_method: str = "Cash",
+        cash_paid: bool = False,
+        payout_method: str = "Bank Transfer",
         actor_username: Optional[str] = None,
         actor_role: Optional[str] = None,
         extra_operations: Optional[List[dict]] = None,
         defer_operations: Optional[List[dict]] = None,
         allow_closed_date: bool = False,
+        skip_ledger_posting: bool = False,
     ):
         if deposit_amount == 0 and withdrawal_amount == 0:
             return
@@ -244,8 +245,9 @@ class SavingsService:
             if not is_open:
                 raise ValueError(f"Operational Restriction: Cannot post savings. {reason}.")
 
-        effective_cash_paid = bool(cash_paid) and ("bank" not in str(payout_method or "").lower())
-        effective_payout = payout_method if not effective_cash_paid else (payout_method or "Cash")
+        # Option A: Direct savings withdrawals always pay via Bank Transfer (1050) unless non-cash UPF auto-deduction
+        effective_cash_paid = False
+        effective_payout = "AUTOMATIC_DEDUCTION" if skip_ledger_posting else "Bank Transfer"
 
         # Check Account Cancellation Invariant (Zero balance on Member Savings withdrawal)
         is_account_cancellation = False
@@ -366,8 +368,9 @@ class SavingsService:
             }
         })
 
-        tx_id, post_op = FinancialPostingEngine.post_event(uow, event, defer_commit=True)
-        operations.append(post_op)
+        if not skip_ledger_posting:
+            tx_id, post_op = FinancialPostingEngine.post_event(uow, event, defer_commit=True)
+            operations.append(post_op)
         if extra_operations:
             operations.extend(extra_operations)
 
@@ -393,8 +396,8 @@ class SavingsService:
         group_id: Optional[str] = None,
         group_savings_id: Optional[str] = None,
         idempotency_key: Optional[str] = None,
-        cash_paid: bool = True,
-        payout_method: str = "Cash",
+        cash_paid: bool = False,
+        payout_method: str = "Bank Transfer",
         actor_username: Optional[str] = None,
         actor_role: Optional[str] = None,
         extra_operations: Optional[List[dict]] = None,
@@ -413,8 +416,8 @@ class SavingsService:
             if not is_open:
                 raise ValueError(f"Operational Restriction: Cannot post group savings. {reason}.")
 
-        effective_cash_paid = bool(cash_paid) and ("bank" not in str(payout_method or "").lower())
-        effective_payout = payout_method if not effective_cash_paid else (payout_method or "Cash")
+        effective_cash_paid = False
+        effective_payout = "Bank Transfer"
 
         resolved_gid = group_id
         if not SavingsService._is_valid_non_zero_uuid(resolved_gid) and hasattr(uow, "group_savings") and hasattr(uow.group_savings, "_resolve_group_id"):
@@ -618,8 +621,8 @@ class SavingsService:
         posting_date: Optional[Any] = None,
         misc_savings_id: Optional[str] = None,
         idempotency_key: Optional[str] = None,
-        cash_paid: bool = True,
-        payout_method: str = "Cash",
+        cash_paid: bool = False,
+        payout_method: str = "Bank Transfer",
         actor_username: Optional[str] = None,
         actor_role: Optional[str] = None,
         extra_operations: Optional[List[dict]] = None,
@@ -637,8 +640,8 @@ class SavingsService:
             if not is_open:
                 raise ValueError(f"Operational Restriction: Cannot post misc savings. {reason}.")
 
-        effective_cash_paid = bool(cash_paid) and ("bank" not in str(payout_method or "").lower())
-        effective_payout = payout_method if not effective_cash_paid else (payout_method or "Cash")
+        effective_cash_paid = False
+        effective_payout = "Bank Transfer"
 
         managing_id, managing_name = SavingsService.get_branch_misc_savings_officer(uow, branch)
         collecting_officer = officer or "Unknown Officer"
@@ -787,8 +790,8 @@ class SavingsService:
         posting_date: Optional[Any] = None,
         laps_savings_id: Optional[str] = None,
         idempotency_key: Optional[str] = None,
-        cash_paid: bool = True,
-        payout_method: str = "Cash",
+        cash_paid: bool = False,
+        payout_method: str = "Bank Transfer",
         actor_username: Optional[str] = None,
         actor_role: Optional[str] = None,
         extra_operations: Optional[List[dict]] = None,
@@ -804,8 +807,8 @@ class SavingsService:
         if not is_open:
             raise ValueError(f"Operational Restriction: Cannot post LAPS savings. {reason}.")
 
-        effective_cash_paid = bool(cash_paid) and ("bank" not in str(payout_method or "").lower())
-        effective_payout = payout_method if not effective_cash_paid else (payout_method or "Cash")
+        effective_cash_paid = False
+        effective_payout = "Bank Transfer"
         effective_officer = SavingsService._resolve_assigned_co_username(uow, officer, client_id=client_id)
 
         entity = LapsSavings(
@@ -1935,7 +1938,7 @@ class SavingsService:
         branch: str,
         officer: str,
         amount: float,
-        cash_paid: bool = True,
+        cash_paid: bool = False,
         reference: str = None,
         remarks: str = None,
         posting_date: Optional[Any] = None,
@@ -1948,7 +1951,7 @@ class SavingsService:
         """
         Executes LAPS payout to client atomically:
         - Decreases LAPS balance in laps_savings (withdrawal_amount = amount)
-        - Emits LapsPaidOut domain event (Account 1000 if cash_paid=True, else Account 1050)
+        - Option A: Routes direct LAPS payouts exclusively via Bank Transfer (Account 1050)
         - Commits atomically via atomic_execute_operations RPC
         """
         if amount <= 0:
@@ -1962,9 +1965,10 @@ class SavingsService:
             raise ValueError(f"Operational Restriction: Cannot pay out LAPS. {reason}.")
 
         effective_officer = SavingsService._resolve_assigned_co_username(uow, officer, client_id=client_id)
+        effective_cash_paid = False
 
         cls_info = WithdrawalClassificationEngine.classify_withdrawal(
-            TransactionClassification.LAPS_PAYOUT, amount, is_cash_paid=cash_paid
+            TransactionClassification.LAPS_PAYOUT, amount, is_cash_paid=effective_cash_paid
         )
 
         laps_entity = LapsSavings(
@@ -1976,7 +1980,7 @@ class SavingsService:
             deposit_amount=0.0,
             withdrawal_amount=amount,
             reference=reference,
-            remarks=remarks or f"LAPS payout ({'Cash' if cash_paid else 'Bank Transfer'}) for client {client_name}",
+            remarks=remarks or f"LAPS payout (Bank Transfer) for client {client_name}",
             date=p_dt,
         )
         laps_rec = SavingsService._build_savings_db_record(uow, "laps_savings", laps_entity, "laps_savings")
@@ -2003,7 +2007,7 @@ class SavingsService:
                     "action": "LAPS Payout",
                     "description": (
                         f"Actor: {actor_uname} ({resolved_role}). Officer: {effective_officer}. "
-                        f"Client: {client_name}. Amount: {amount}. CashPaid: {cash_paid}."
+                        f"Client: {client_name}. Amount: {amount}. CashPaid: {effective_cash_paid}."
                     ),
                     "table_name": "laps_savings",
                     "record_id": rec_uuid,
@@ -2022,8 +2026,8 @@ class SavingsService:
                 previous_value=None,
                 new_value={
                     "amount": amount,
-                    "cash_paid": cash_paid,
-                    "payout_method": "Cash" if cash_paid else "Bank",
+                    "cash_paid": effective_cash_paid,
+                    "payout_method": "Bank Transfer",
                     "reference": reference,
                 },
             ),
@@ -2039,11 +2043,11 @@ class SavingsService:
                 "amount": amount,
                 "branch": branch,
                 "officer": effective_officer,
-                "cash_paid": cash_paid,
-                "payout_method": "Cash" if cash_paid else "Bank",
+                "cash_paid": effective_cash_paid,
+                "payout_method": "Bank Transfer",
                 "reference": reference or laps_entity.id,
                 "classification": TransactionClassification.LAPS_PAYOUT.value,
-                "narration": remarks or f"LAPS payout of {amount:,.2f} ({'Cash' if cash_paid else 'Bank'}) for client {client_name}",
+                "narration": remarks or f"LAPS payout of {amount:,.2f} (Bank Transfer) for client {client_name}",
                 "date": p_dt.isoformat() if hasattr(p_dt, "isoformat") else str(p_dt),
             },
         )
@@ -2074,7 +2078,7 @@ class SavingsService:
             "event_id": event.event_id,
             "amount": amount,
             "laps_savings_id": laps_entity.id,
-            "cash_paid": cash_paid,
+            "cash_paid": effective_cash_paid,
             "affects_cash_vault": cls_info["affects_cash_vault"],
         }
 
@@ -2322,14 +2326,13 @@ class SavingsService:
             except Exception:
                 pass
 
-        is_bank_op = wr_op in {
-            "Bank Transfer",
-            "Bank Account (Transfer)",
-            "Client Bank Account (Transfer)",
-            "Group Bank Account (Transfer)",
-            "LAPS Payout (Bank Transfer)",
-        } or "bank" in wr_payout.lower()
-        cash_paid = not is_bank_op
+        is_return_to_savings = str(wr_op).strip().lower() in {
+            "return to savings",
+            "return to client savings",
+            "laps return to customer savings",
+        } or str(wr_payout).strip().lower() == "return to savings"
+        # Option A: All direct payouts settle exclusively via Bank Transfer (1050)
+        cash_paid = False
 
         return {
             "fee_type": fee_type or "misc_fees",
@@ -2338,7 +2341,7 @@ class SavingsService:
             "dest_type": dest_type,
             "loan_id": loan_id,
             "cash_paid": cash_paid,
-            "payout_method": "Bank" if not cash_paid else (wr_payout or "Cash"),
+            "payout_method": "Return to Savings" if is_return_to_savings else "Bank Transfer",
         }
 
     @staticmethod
@@ -2856,30 +2859,59 @@ class SavingsService:
                 "Cannot reverse LAPS Return to Customer Savings operation via simple savings reversal."
             )
 
-        # Detect cash vs bank payout when reversing a withdrawal
-        cash_paid = True
-        payout_method = "Cash"
+        # Detect cash vs bank payout when reversing a withdrawal (default Bank Transfer under Option A,
+        # while honoring original ledger account 1000 for pre-cutover cash withdrawals).
+        cash_paid = False
+        payout_method = "Bank Transfer"
+        original_cash_account = "1050"
         if wd_amt > 0:
             determined = False
-            for es_row in matched_es:
-                es_pl = es_row.get("payload") or {}
-                if isinstance(es_pl, dict) and ("cash_paid" in es_pl or "payout_method" in es_pl):
-                    if es_pl.get("cash_paid") is False or "bank" in str(es_pl.get("payout_method") or "").lower():
-                        cash_paid = False
-                        payout_method = "Bank"
-                    determined = True
-                    break
+            try:
+                lookup_ref = orig_ref_val or str(original_savings_id)
+                res_ft = (
+                    uow.client.table("financial_transactions")
+                    .select("transaction_id, financial_ledger_entries(account_code)")
+                    .eq("reference", lookup_ref)
+                    .execute()
+                )
+                for tx_r in (getattr(res_ft, "data", None) or []):
+                    for leg in (tx_r.get("financial_ledger_entries") or []):
+                        acc_c = str(leg.get("account_code") or "").strip()
+                        if acc_c == "1000":
+                            cash_paid = True
+                            payout_method = "Cash"
+                            original_cash_account = "1000"
+                            determined = True
+                            break
+                        if acc_c == "1050":
+                            cash_paid = False
+                            payout_method = "Bank Transfer"
+                            original_cash_account = "1050"
+                            determined = True
+                            break
+                    if determined:
+                        break
+            except Exception:
+                pass
+            if not determined:
+                for es_row in matched_es:
+                    es_pl = es_row.get("payload") or {}
+                    if isinstance(es_pl, dict) and ("cash_paid" in es_pl or "payout_method" in es_pl):
+                        if es_pl.get("cash_paid") is True and "bank" not in str(es_pl.get("payout_method") or "").lower():
+                            cash_paid = True
+                            payout_method = "Cash"
+                            original_cash_account = "1000"
+                        determined = True
+                        break
             if not determined:
                 for wr_row in matched_wrs:
                     pm = str(wr_row.get("payout_method") or wr_row.get("operation_type") or "").lower()
-                    if "bank" in pm:
-                        cash_paid = False
-                        payout_method = "Bank"
+                    if "cash" in pm and "bank" not in pm:
+                        cash_paid = True
+                        payout_method = "Cash"
+                        original_cash_account = "1000"
                         determined = True
                         break
-            if not determined and "bank" in str(orig.get("remarks") or "").lower() and "cash" not in str(orig.get("remarks") or "").lower():
-                cash_paid = False
-                payout_method = "Bank"
 
         # 1. Operational data: Compensating negative record
         new_id = str(uuid.uuid4())
@@ -2962,6 +2994,7 @@ class SavingsService:
             "date": rev_dt_str,
             "cash_paid": cash_paid,
             "payout_method": payout_method,
+            "original_cash_account": original_cash_account,
             "is_laps": table_name == "laps_savings",
         }
 

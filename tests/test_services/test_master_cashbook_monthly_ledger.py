@@ -471,8 +471,8 @@ class TestMasterCashbookMonthlyLedger(unittest.TestCase):
             rpc_args = mock_uow.client.rpc.call_args[0][1]["p_operations"]
             tx_record = rpc_args[0]["record"]
             ev_record = rpc_args[1]["record"]
-            self.assertEqual(tx_record["transaction_type"], "INTER_AREA_OUT")
-            self.assertEqual(ev_record["event_type"], "CashTransferred_HO_Out")
+            self.assertEqual(tx_record["transaction_type"], "INTER_AREA_IN")
+            self.assertEqual(ev_record["event_type"], "CashTransferred_HO_In_Reversed")
 
     def test_report_service_asset_program_split_and_no_cash_and_carry_double_count(self):
         """Verify ReportService separates Asset receipt (loan_received_asset) vs payment (fund_to_asset_program) and excludes misc_fees from cash_and_carry"""

@@ -3,17 +3,18 @@
 ## BR-RECON-001: Independent Source Verification
 - **Rule ID:** BR-RECON-001
 - **Name:** Independent Source Verification
-- **Description:** The 6-way reconciliation must query 6 independent data sources.
+- **Description:** The 6-way reconciliation must query 6 independent data sources for Physical Vault Cash (`Account 1000` Net) while Bank Cash (`Account 1050` Net) is surfaced alongside Master Cashbook & BM Dashboard.
 - **Required Behavior:**
-  1. General Ledger Total: Query `financial_ledger_entries` for Account 1000, calculate NET (debits - credits).
-  2. Audit Views Total: Query operational audit trails independently.
-  3. CO Cashbooks Total: Sum `co_cashbooks.closing_balance` for the branch.
+  1. General Ledger Total: Query `financial_ledger_entries` for Account `1000`, calculate NET (`debits - credits`). Bank balance (`Account 1050` Net) is queried separately for treasury oversight.
+  2. Audit Views Total: Query operational audit trails independently (including `FeeOffsetFromSavings`, `GapFeeOffsetFromSavings`, and `LapsPaidOutReversed` where applicable).
+  3. CO Cashbooks Total: Sum `co_cashbooks.closing_balance` strictly across Credit Officer roles for the branch (allowing honest negative closing balances to persist).
   4. Master Cashbook Total: Read `master_cashbook.closing_balance` for the branch.
   5. Dashboard Total: Calculate the same metric that the dashboard displays, using the dashboard's actual source.
   6. Reports Total: Calculate the same metric that reports display, using the reports' actual source.
 - **Prohibited Behavior:**
   - Assigning one source's value to another (e.g., `dashboard_total = master_cashbook_total`).
   - Only counting debits in the Ledger check (ignoring credits).
+  - Including Branch Manager synthetic keys inside `co_cashbooks`.
   - Silently forcing reconciliation to pass.
 - **Related Entities:** financial_ledger_entries, co_cashbooks, master_cashbook, dashboard, reports
 - **Status:** CONFIRMED

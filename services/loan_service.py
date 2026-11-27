@@ -196,10 +196,15 @@ class LoanService:
             )
             add_event(event_disbursed)
 
-            # 6. Domain Event 2: Upfront Revenue (Finance loans only - Asset margin is baked into total_cost)
+            # 6. Domain Event 2: Non-cash Upfront Fee & Gap Fee Settlements from Savings (Finance loans)
             if not is_asset_loan:
-                markup_val = setup.get("markup", 0.0)
-                cont_val = setup.get("contingency", 0.0)
+                markup_val = float(setup.get("markup", 0.0) or 0.0)
+                cont_val = float(setup.get("contingency", 0.0) or 0.0)
+                gap_fee = float(loan.gap_fee or extra.get("gap_fee") or 0.0)
+                upfront_interest = float(extra.get("upfront_interest") or (markup_val + cont_val) or 0.0)
+                total_upfront = float(extra.get("total_upfront_required") or 0.0)
+                if total_upfront <= 0 and (upfront_interest > 0 or gap_fee > 0):
+                    total_upfront = upfront_interest + gap_fee
 
                 if markup_val > 0:
                     rate = setup.get("rate", 0.12)
@@ -211,7 +216,7 @@ class LoanService:
                         event_id=str(uuid.uuid4()),
                         aggregate_id=loan.id,
                         aggregate_type="Loan",
-                        event_type="FeeCharged",
+                        event_type="FeeOffsetFromSavings",
                         payload={
                             "branch": loan.branch,
                             "branch_id": b_uuid_resolved,
@@ -223,7 +228,10 @@ class LoanService:
                             "amount": markup_val,
                             "date": b_date.isoformat(),
                             "reference": ref_id,
+                            "fee_type": markup_class,
+                            "product_type": loan.product_type,
                             "classification": markup_class,
+                            "cash_paid": False,
                             "narration": f"Upfront Markup Charged ({'20%' if is_20_pct else '11%'}) ({loan.product_type}) for client {loan.client_name}"
                         }
                     )
@@ -249,7 +257,7 @@ class LoanService:
                         event_id=str(uuid.uuid4()),
                         aggregate_id=loan.id,
                         aggregate_type="Loan",
-                        event_type="FeeCharged",
+                        event_type="FeeOffsetFromSavings",
                         payload={
                             "branch": loan.branch,
                             "branch_id": b_uuid_resolved,
@@ -261,7 +269,10 @@ class LoanService:
                             "amount": cont_val,
                             "date": b_date.isoformat(),
                             "reference": ref_id,
+                            "fee_type": "CONTINGENCY",
+                            "product_type": loan.product_type,
                             "classification": TransactionClassification.CONTINGENCY.value,
+                            "cash_paid": False,
                             "narration": f"Upfront Contingency Fee Charged for client {loan.client_name}"
                         }
                     )
@@ -282,13 +293,35 @@ class LoanService:
                         }
                     })
 
-                # 7a-Finance: Auto-deduct Upfront Fees / Gap Fee from Individual Savings atomically
-                total_upfront = float(extra.get("total_upfront_required") or 0.0)
-                upfront_interest = float(extra.get("upfront_interest") or 0.0)
-                gap_fee = float(loan.gap_fee or extra.get("gap_fee") or 0.0)
-                if total_upfront <= 0 and (upfront_interest > 0 or gap_fee > 0):
-                    total_upfront = upfront_interest + gap_fee
+                if gap_fee > 0:
+                    # Gap fee settles from savings directly against Loan Portfolio (CR 1200) -> 1200 net equals active_credit
+                    event_gap = DomainEvent(
+                        event_id=str(uuid.uuid4()),
+                        aggregate_id=loan.id,
+                        aggregate_type="Loan",
+                        event_type="GapFeeOffsetFromSavings",
+                        payload={
+                            "branch": loan.branch,
+                            "branch_id": b_uuid_resolved,
+                            "officer": loan.credit_officer,
+                            "officer_id": user_id,
+                            "client_id": c_uuid_valid,
+                            "loan_id": loan.id,
+                            "client_name": str(loan.client_name or ""),
+                            "amount": gap_fee,
+                            "date": b_date.isoformat(),
+                            "reference": f"GAP-{loan.id[:8]}",
+                            "product_type": loan.product_type,
+                            "repayment_cycle": setup.get("freq", "Daily"),
+                            "duration": setup.get("duration", loan.duration or 60),
+                            "classification": "AUTOMATIC_DEDUCTION",
+                            "cash_paid": False,
+                            "narration": f"Auto-deducted Upfront Gap Fee offset for Loan {loan.id[:8]}"
+                        }
+                    )
+                    add_event(event_gap)
 
+                # 7a-Finance: Record single operational UPF-* deduction in individual_savings without redundant CR 1000 GL posting
                 if total_upfront > 0:
                     from services.savings_service import SavingsService
                     SavingsService.post_individual_savings(
@@ -302,7 +335,10 @@ class LoanService:
                         reference=f"UPF-{loan.id[:8]}",
                         remarks=f"Auto-deducted Upfront Fees (Interest: {upfront_interest:,.2f}, Gap: {gap_fee:,.2f}) for Loan {loan.id[:8]}",
                         posting_date=b_date,
+                        cash_paid=False,
+                        payout_method="AUTOMATIC_DEDUCTION",
                         defer_operations=operations,
+                        skip_ledger_posting=True,
                     )
             else:
                 # 7a-Asset: Cash Downpayment -> AssetSoldCash (DR 1000 / CR 3200); Savings Downpayment -> LoanOffsetFromSavings without duplicate repayment row

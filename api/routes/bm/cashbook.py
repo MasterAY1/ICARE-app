@@ -258,9 +258,9 @@ def get_daily_master_cashbook(
     auto_disb_24w = _cb_val("disb_24w") or auto_disb_24w
     auto_disb_mth = _cb_val("disb_mth") or auto_disb_mth
 
-    # 6. Opening Balance Resolution
+    # 6. Opening Balance Resolution (preserve negative carry-forward unless projection had no prior lookup)
     auto_opening = _cb_val("opening_balance")
-    if auto_opening == 0.0:
+    if auto_opening == 0.0 and not cb_dict:
         prev_date = (target_date - timedelta(days=1)).isoformat()
         try:
             prev_entry = uow.cashbook.find_by_date_and_branch(prev_date, target_branch)
@@ -456,6 +456,23 @@ def get_daily_master_cashbook(
         adjustment_out=auto_adj_out
     )
 
+    # Compute live Branch Bank Balance (Account 1050 Net up to iso_date)
+    bank_balance_val = 0.0
+    try:
+        res_bank = uow.client.table("financial_ledger_entries") \
+            .select("amount, side, financial_transactions!inner(posting_date)") \
+            .eq("branch_id", branch_id) \
+            .eq("account_code", "1050") \
+            .lte("financial_transactions.posting_date", iso_date) \
+            .execute()
+        for r_b in (res_bank.data or []):
+            amt_b = float(r_b.get("amount") or 0.0)
+            s_b = str(r_b.get("side") or "").strip().lower()
+            bank_balance_val += amt_b if s_b == "debit" else -amt_b
+        bank_balance_val = round(bank_balance_val, 2)
+    except Exception:
+        bank_balance_val = 0.0
+
     return MasterCashbookDailyResponse(
         date=iso_date,
         branch=target_branch,
@@ -466,6 +483,7 @@ def get_daily_master_cashbook(
         total_inflows=total_inflows,
         total_outflows=total_outflows,
         closing_balance=closing_balance,
+        bank_balance=bank_balance_val,
         tally=tally_model,
         pending_reversals=pending_reversals,
         treasury_transactions=treasury_tx_options,
@@ -546,7 +564,7 @@ def save_master_cashbook_manual_entries(
                 return True
             return False
 
-        posted_any = any([
+        delta_ops = [
             _apply_treasury_delta(payload.funds_received_ho, "funds_received_ho", "HO_TRANSFER_IN", "CashTransferred_HO_In_Reversed", "HO Funding"),
             _apply_treasury_delta(payload.funds_received_other_branch, "funds_received_other_branch", "INTER_BRANCH_IN", "CashTransferred_HO_In_Reversed", "Branch Funding"),
             _apply_treasury_delta(payload.funds_received_other_area, "funds_received_other_area", "INTER_AREA_IN", "CashTransferred_HO_In_Reversed", "Area Funding"),
@@ -555,7 +573,12 @@ def save_master_cashbook_manual_entries(
             _apply_treasury_delta(payload.fund_to_other_area, "fund_to_other_area", "INTER_AREA_OUT", "CashTransferred_HO_Out_Reversed", "Transfer to Area"),
             _apply_treasury_delta(payload.fund_to_asset_program, "fund_to_asset_program", "ASSET_PROGRAM", "CashTransferred_HO_Out_Reversed", "Fund to Asset Program"),
             _apply_treasury_delta(payload.staff_salaries, "staff_salaries", "SALARY", "SalaryReversed", "Salary Payment"),
-        ])
+        ]
+        if payload.office_expenses is not None:
+            delta_ops.append(_apply_treasury_delta(payload.office_expenses, "office_expenses", "OFFICE_EXPENSE", "ExpenseReversed", "Office Cash Expenses"))
+        if payload.bank_deposit is not None:
+            delta_ops.append(_apply_treasury_delta(payload.bank_deposit, "bank_deposit", "BANK_DEPOSIT", "BankDepositReversed", "Vault Cash Banked to Bank"))
+        posted_any = any(delta_ops)
 
         # Unconditionally save Adjustment In/Out & Reason so clearing down to 0.0 is always persisted
         uow.client.table("master_cashbook").upsert({

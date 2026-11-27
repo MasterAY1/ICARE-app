@@ -324,6 +324,7 @@ class MasterCashbookDailyData {
   final double totalInflows;
   final double totalOutflows;
   final double closingBalance;
+  final double bankBalance;
   final MasterReconciliationTallyData? tally;
   final List<MasterPendingReversalData> pendingReversals;
   final List<MasterTreasuryTransactionData> treasuryTransactions;
@@ -339,6 +340,7 @@ class MasterCashbookDailyData {
     required this.totalInflows,
     required this.totalOutflows,
     required this.closingBalance,
+    this.bankBalance = 0.0,
     this.tally,
     this.pendingReversals = const [],
     this.treasuryTransactions = const [],
@@ -357,6 +359,7 @@ class MasterCashbookDailyData {
       totalInflows: toD(json['total_inflows']),
       totalOutflows: toD(json['total_outflows']),
       closingBalance: toD(json['closing_balance']),
+      bankBalance: toD(json['bank_balance']),
       tally: json['tally'] != null ? MasterReconciliationTallyData.fromJson(json['tally']) : null,
       pendingReversals: (json['pending_reversals'] as List<dynamic>?)
               ?.map((e) => MasterPendingReversalData.fromJson(e as Map<String, dynamic>))

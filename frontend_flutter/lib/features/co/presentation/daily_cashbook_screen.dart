@@ -13,7 +13,7 @@ import 'widgets/co_cashbook_charts.dart';
 import 'widgets/co_shared_widgets.dart';
 import '../data/datasources/co_api_service.dart';
 import '../../shared/presentation/co_app_scaffold.dart';
-import 'package:frontend_flutter/core/theme/icare_motion.dart';
+import 'providers/co_collections_navigation_provider.dart';
 
 /// Riverpod family provider using composite String key "$dateStr||$officer" to guarantee value equality and eliminate infinite refetches
 final coCashbookDataProvider = FutureProvider.family<Map<String, dynamic>, String>((ref, key) async {
@@ -52,20 +52,15 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
   final Map<String, String> _initialEodTexts = {};
 
   // Mobile Operational Hub Navigation
-  int _mobileCashbookTab = 0; // 0: T-Ledger, 1: EOD Outflows & Fees, 2: Field Tally, 3: Reversals
+  int _mobileCashbookTab = 0; // 0: T-Ledger, 1: EOD Controls, 2: Field Tally, 3: Reversals
   int _mobileNotPaidLimit = 10;
   int _mobileLedgerSubTab = 0; // 0: Inflows (Debit), 1: Outflows (Credit)
   bool _mobileShowAllLedgerItems = false;
 
-  // EOD Form Controllers
+  // EOD Form Controllers (Opening Balance, Office Expenses, Bank Deposited)
   final TextEditingController _openingCtrl = TextEditingController();
   final TextEditingController _expensesCtrl = TextEditingController();
   final TextEditingController _bankDepCtrl = TextEditingController();
-  final TextEditingController _appFeeCtrl = TextEditingController();
-  final TextEditingController _passbookCtrl = TextEditingController();
-  final TextEditingController _miscFeeCtrl = TextEditingController();
-  final TextEditingController _cfdCtrl = TextEditingController();
-  final TextEditingController _bonusCtrl = TextEditingController();
 
   // Reversal Hub Controllers
   String? _selectedRevOptionId;
@@ -86,11 +81,6 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
     _openingCtrl.dispose();
     _expensesCtrl.dispose();
     _bankDepCtrl.dispose();
-    _appFeeCtrl.dispose();
-    _passbookCtrl.dispose();
-    _miscFeeCtrl.dispose();
-    _cfdCtrl.dispose();
-    _bonusCtrl.dispose();
     _revReasonCtrl.dispose();
     super.dispose();
   }
@@ -113,30 +103,15 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
     final op = (inflows['opening_balance'] ?? 0.0) as num;
     final exp = (outflows['office_expenses'] ?? 0.0) as num;
     final bdep = (outflows['bank_deposit'] ?? 0.0) as num;
-    final app = (inflows['app_fee'] ?? 0.0) as num;
-    final pb = (inflows['passbook'] ?? 0.0) as num;
-    final misc = (inflows['eod_misc_fee'] ?? inflows['misc_fees'] ?? 0.0) as num;
-    final cfd = (inflows['credit_form_damage'] ?? 0.0) as num;
-    final bon = (inflows['bonus'] ?? 0.0) as num;
 
     _openingCtrl.text = _formatInputNum(op);
     _expensesCtrl.text = _formatInputNum(exp);
     _bankDepCtrl.text = _formatInputNum(bdep);
-    _appFeeCtrl.text = _formatInputNum(app);
-    _passbookCtrl.text = _formatInputNum(pb);
-    _miscFeeCtrl.text = _formatInputNum(misc);
-    _cfdCtrl.text = _formatInputNum(cfd);
-    _bonusCtrl.text = _formatInputNum(bon);
 
     _initialEodTexts
       ..['opening_balance'] = _openingCtrl.text
       ..['office_expenses'] = _expensesCtrl.text
-      ..['bank_deposit'] = _bankDepCtrl.text
-      ..['app_fee'] = _appFeeCtrl.text
-      ..['passbook'] = _passbookCtrl.text
-      ..['misc_fee'] = _miscFeeCtrl.text
-      ..['credit_form_damage'] = _cfdCtrl.text
-      ..['bonus'] = _bonusCtrl.text;
+      ..['bank_deposit'] = _bankDepCtrl.text;
   }
 
   void _syncReversalDefaults(List<Map<String, dynamic>> reversalOptions) {
@@ -188,7 +163,7 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    'No client fees recorded for this date yet. Use "Record Client Fee" to attribute a fee directly to a client.',
+                    'No client fees recorded for this date yet. Tap "Record Client Fee" to open Single Client Quick Entry.',
                     style: TextStyle(fontSize: 11.5, color: tokens.textMuted),
                   ),
                 ),
@@ -280,283 +255,10 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
     );
   }
 
-  void _showRecordClientFeeModal(BuildContext context, bool isOpen, String openReason) {
-    if (!isOpen) {
-      _showBanner('Cannot record fees today ($openReason).', 'danger', Icons.error_outline);
-      return;
-    }
-
-    final api = ref.read(coApiServiceProvider);
-    List<dynamic> clientsList = [];
-    bool isLoadingClients = true;
-
-    showIcareDialog(
-      context: context,
-      builder: (dialogCtx) {
-        String selectedFeeType = 'Credit Form / App Fee';
-        Map<String, dynamic>? selectedClient;
-        final amountCtrl = TextEditingController();
-        final remarksCtrl = TextEditingController();
-        bool isSubmittingFee = false;
-        String? localError;
-
-        return StatefulBuilder(
-          builder: (ctx, setModalState) {
-            final tokens = IcareSurfaceTokens.of(ctx);
-            if (isLoadingClients && clientsList.isEmpty) {
-              api.getSingleClientOptions().then((res) {
-                if (ctx.mounted) {
-                  setModalState(() {
-                    clientsList = (res['clients'] as List<dynamic>?) ?? [];
-                    isLoadingClients = false;
-                  });
-                }
-              }).catchError((err) {
-                if (ctx.mounted) {
-                  setModalState(() {
-                    isLoadingClients = false;
-                    localError = 'Failed to load branch clients: ${AppErrorDetails.from(err).message}';
-                  });
-                }
-              });
-            }
-
-            final isMobile = MediaQuery.of(ctx).size.width < 600;
-            InputDecoration modalInputDec({String? prefixText, String? hintText}) {
-              return InputDecoration(
-                prefixText: prefixText,
-                prefixStyle: TextStyle(color: tokens.textSecondary, fontWeight: FontWeight.w600),
-                hintText: hintText,
-                hintStyle: TextStyle(fontSize: 13, color: tokens.textMuted),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                filled: true,
-                fillColor: tokens.surfaceSubtle,
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: tokens.borderStrong)),
-                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: tokens.borderStrong)),
-                focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: tokens.brandPrimary, width: 1.5)),
-              );
-            }
-
-            return Dialog(
-              backgroundColor: Colors.transparent,
-              elevation: 0,
-              insetPadding: EdgeInsets.symmetric(horizontal: isMobile ? 12 : 24, vertical: 16),
-              child: ConstrainedBox(
-                constraints: BoxConstraints(maxWidth: isMobile ? double.infinity : 540),
-                child: Container(
-                  padding: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(
-                    color: tokens.surfaceElevated,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: tokens.borderSubtle),
-                    boxShadow: const [
-                      BoxShadow(color: Color(0x260F172A), blurRadius: 24, offset: Offset(0, 8)),
-                    ],
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color: tokens.successBg,
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: Icon(Icons.receipt_long_outlined, size: 20, color: tokens.successText),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text('Record Client Fee', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: tokens.textPrimary)),
-                                const SizedBox(height: 2),
-                                Text('Attributed revenue fee linked directly to the client.', style: TextStyle(fontSize: 12, color: tokens.textMuted)),
-                              ],
-                            ),
-                          ),
-                          IconButton(
-                            icon: Icon(Icons.close, size: 20, color: tokens.textMuted),
-                            onPressed: () => Navigator.of(ctx).pop(),
-                          ),
-                        ],
-                      ),
-                      Divider(height: 24, color: tokens.borderSubtle),
-
-                      if (localError != null)
-                        Container(
-                          padding: const EdgeInsets.all(10),
-                          margin: const EdgeInsets.only(bottom: 12),
-                          decoration: BoxDecoration(
-                            color: tokens.dangerBg,
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: tokens.dangerBorder),
-                          ),
-                          child: Text(localError!, style: TextStyle(fontSize: 12, color: tokens.dangerText)),
-                        ),
-
-                      Text('Select Client', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: tokens.textSecondary)),
-                      const SizedBox(height: 6),
-                      if (isLoadingClients)
-                        const SizedBox(
-                          height: 48,
-                          child: Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))),
-                        )
-                      else
-                        DropdownButtonFormField<Map<String, dynamic>>(
-                          isExpanded: true,
-                          value: selectedClient,
-                          dropdownColor: tokens.surfaceElevated,
-                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: tokens.textPrimary),
-                          hint: Text('Search / Select Client', style: TextStyle(fontSize: 13, color: tokens.textMuted)),
-                          decoration: modalInputDec(),
-                          items: clientsList.map((c) {
-                            final m = c as Map<String, dynamic>;
-                            final name = m['client_name'] ?? 'Unknown';
-                            final code = m['client_code'] ?? '';
-                            final grp = m['group_name'] ?? '';
-                            return DropdownMenuItem<Map<String, dynamic>>(
-                              value: m,
-                              child: Text(
-                                '$code — $name ($grp)',
-                                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: tokens.textPrimary),
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            );
-                          }).toList(),
-                          onChanged: (val) => setModalState(() => selectedClient = val),
-                        ),
-                      const SizedBox(height: 14),
-
-                      Text('Fee Category', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: tokens.textSecondary)),
-                      const SizedBox(height: 6),
-                      DropdownButtonFormField<String>(
-                        value: selectedFeeType,
-                        dropdownColor: tokens.surfaceElevated,
-                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: tokens.textPrimary),
-                        decoration: modalInputDec(),
-                        items: [
-                          DropdownMenuItem(value: 'Credit Form / App Fee', child: Text('Credit Form / App Fee (Processing)', style: TextStyle(color: tokens.textPrimary))),
-                          DropdownMenuItem(value: 'Pass Book', child: Text('Pass Book', style: TextStyle(color: tokens.textPrimary))),
-                          DropdownMenuItem(value: 'Misc Fee', child: Text('Misc Fee (Misc Savings)', style: TextStyle(color: tokens.textPrimary))),
-                          DropdownMenuItem(value: 'Credit Form Damage', child: Text('Credit Form Damage (Damage Fee)', style: TextStyle(color: tokens.textPrimary))),
-                          DropdownMenuItem(value: 'Bonus', child: Text('Bonus', style: TextStyle(color: tokens.textPrimary))),
-                        ],
-                        onChanged: (v) {
-                          if (v != null) setModalState(() => selectedFeeType = v);
-                        },
-                      ),
-                      const SizedBox(height: 14),
-
-                      Text('Fee Amount (₦)', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: tokens.textSecondary)),
-                      const SizedBox(height: 6),
-                      TextField(
-                        controller: amountCtrl,
-                        keyboardType: TextInputType.number,
-                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: tokens.textPrimary),
-                        decoration: modalInputDec(prefixText: '₦ ', hintText: 'e.g. 500'),
-                      ),
-                      const SizedBox(height: 14),
-
-                      Text('Transaction Remarks / Reference (Optional)', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: tokens.textSecondary)),
-                      const SizedBox(height: 6),
-                      TextField(
-                        controller: remarksCtrl,
-                        style: TextStyle(fontSize: 13, color: tokens.textPrimary),
-                        decoration: modalInputDec(hintText: 'e.g. Passbook issuance during evening collection'),
-                      ),
-                      const SizedBox(height: 20),
-
-                      Row(
-                        children: [
-                          Expanded(
-                            child: OutlinedButton(
-                              onPressed: isSubmittingFee ? null : () => Navigator.of(ctx).pop(),
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: tokens.textSecondary,
-                                side: BorderSide(color: tokens.borderStrong),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                                padding: const EdgeInsets.symmetric(vertical: 12),
-                              ),
-                              child: const Text('Cancel'),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            flex: 2,
-                            child: ElevatedButton.icon(
-                              onPressed: isSubmittingFee
-                                  ? null
-                                  : () async {
-                                      if (selectedClient == null) {
-                                        setModalState(() => localError = 'Please select a client.');
-                                        return;
-                                      }
-                                      final amt = double.tryParse(amountCtrl.text.replaceAll(',', '').trim()) ?? 0.0;
-                                      if (amt <= 0) {
-                                        setModalState(() => localError = 'Please enter a fee amount greater than ₦0.');
-                                        return;
-                                      }
-
-                                      setModalState(() {
-                                        isSubmittingFee = true;
-                                        localError = null;
-                                      });
-
-                                      try {
-                                        final feePayload = {
-                                          'client_id': selectedClient!['client_id'],
-                                          'fee_type': selectedFeeType,
-                                          'amount': amt,
-                                          'date': _dateStr,
-                                          if (_selectedOfficer != null && _selectedOfficer!.isNotEmpty) 'officer': _selectedOfficer,
-                                          if (remarksCtrl.text.trim().isNotEmpty) 'remarks': remarksCtrl.text.trim(),
-                                        };
-                                        final feeRes = await api.recordClientFee(feePayload);
-                                        if (ctx.mounted) Navigator.of(ctx).pop();
-                                        _showBanner(
-                                          feeRes['message'] ?? 'Fee recorded successfully.',
-                                          'success',
-                                          Icons.check_circle_outline,
-                                        );
-                                        _lastLoadedKey = null;
-                                        ref.invalidate(coCashbookDataProvider(_currentKey));
-                                        ref.invalidate(clientFeesProvider(_currentKey));
-                                      } catch (e) {
-                                        if (ctx.mounted) {
-                                          setModalState(() {
-                                            isSubmittingFee = false;
-                                            localError = AppErrorDetails.from(e).message;
-                                          });
-                                        }
-                                      }
-                                    },
-                              icon: isSubmittingFee
-                                  ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                                  : const Icon(Icons.check, size: 16),
-                              label: Text(isSubmittingFee ? 'Recording...' : 'Post Client Fee'),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: tokens.brandPrimaryDark,
-                                foregroundColor: Colors.white,
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                                padding: const EdgeInsets.symmetric(vertical: 12),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            );
-          },
-        );
-      },
-    );
+  void _routeToSingleClientFeeCollection() {
+    ref.read(collectionsTabProvider.notifier).state = 0;
+    ref.read(collectionsModeProvider.notifier).state = 'Single Client Quick Entry';
+    ref.read(activeCoPageProvider.notifier).state = 'Collections';
   }
 
   Future<void> _handleSaveEod(bool isOpen, String openReason) async {
@@ -580,11 +282,6 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
     final opVal = changedAmount('opening_balance', _openingCtrl);
     final expVal = changedAmount('office_expenses', _expensesCtrl);
     final bdepVal = changedAmount('bank_deposit', _bankDepCtrl);
-    final appVal = changedAmount('app_fee', _appFeeCtrl);
-    final pbVal = changedAmount('passbook', _passbookCtrl);
-    final miscVal = changedAmount('misc_fee', _miscFeeCtrl);
-    final cfdVal = changedAmount('credit_form_damage', _cfdCtrl);
-    final bonVal = changedAmount('bonus', _bonusCtrl);
 
     setState(() => _isSubmittingEod = true);
     try {
@@ -595,16 +292,11 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
         if (opVal != null) 'opening_balance': opVal,
         if (expVal != null) 'office_expenses': expVal,
         if (bdepVal != null) 'bank_deposit': bdepVal,
-        if (appVal != null) 'app_fee': appVal,
-        if (pbVal != null) 'passbook': pbVal,
-        if (miscVal != null) 'misc_fee': miscVal,
-        if (cfdVal != null) 'credit_form_damage': cfdVal,
-        if (bonVal != null) 'bonus': bonVal,
       };
 
       final res = await api.submitEodAdjustments(payload);
       _showBanner(
-        res['message'] ?? 'End of Day Outflows & Fees Updated Successfully.',
+        res['message'] ?? 'End of Day Opening Balance & Outflows Updated Successfully.',
         'success',
         Icons.check_circle_outline,
       );
@@ -1904,6 +1596,66 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
     );
   }
 
+  Widget _buildClientFeesHeaderAndNote(IcareSurfaceTokens tokens, {bool isCompact = false}) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Wrap(
+          spacing: isCompact ? 8 : 10,
+          runSpacing: 8,
+          alignment: WrapAlignment.spaceBetween,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            Text(
+              'Client Fees (Recorded in Single Collection)',
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: tokens.textSecondary),
+            ),
+            ElevatedButton.icon(
+              onPressed: _routeToSingleClientFeeCollection,
+              icon: const Icon(Icons.person_add_alt_1_outlined, size: 14),
+              label: Text(
+                'Record Client Fee',
+                style: TextStyle(fontSize: isCompact ? 11.5 : 12, fontWeight: FontWeight.w700),
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: tokens.brandPrimaryDark,
+                foregroundColor: Colors.white,
+                disabledBackgroundColor: tokens.surfaceSubtle,
+                disabledForegroundColor: tokens.textMuted,
+                padding: EdgeInsets.symmetric(horizontal: isCompact ? 10 : 12, vertical: isCompact ? 6 : 8),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                elevation: 0,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            color: tokens.surfaceSubtle,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: tokens.borderSubtle),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(Icons.route_outlined, size: 16, color: tokens.brandPrimary),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'All 5 client fee types (Credit Form / App Fee, Pass Book, Misc Fee, Credit Form Damage, Bonus) are recorded on Daily Collections -> Single Client Quick Entry for full client attribution and audit tracking.',
+                  style: TextStyle(fontSize: 11.5, color: tokens.textSecondary, height: 1.35),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildEodForm(bool isOpen, String openReason, {bool isMobile = false}) {
     final tokens = IcareSurfaceTokens.of(context);
     return Material(
@@ -1926,7 +1678,7 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  'End of Day Outflows & Fees',
+                  'End of Day Balance & Outflows',
                   style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w700, color: tokens.textPrimary),
                 ),
               ),
@@ -1935,7 +1687,7 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
           subtitle: Padding(
             padding: const EdgeInsets.only(top: 2),
             child: Text(
-              'Record branch expenses, bank deposits, and fee collections.',
+              'Record Opening Balance, Office Expenses, and Bank Deposits. Client fees are managed in Daily Collections.',
               style: TextStyle(fontSize: 12, color: tokens.textMuted),
             ),
           ),
@@ -1961,57 +1713,7 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
                             const SizedBox(height: 12),
                             _buildNumberField('Bank Deposited', _bankDepCtrl, step: 500),
                             const SizedBox(height: 16),
-                            Wrap(
-                              spacing: 8,
-                              runSpacing: 8,
-                              alignment: WrapAlignment.spaceBetween,
-                              crossAxisAlignment: WrapCrossAlignment.center,
-                              children: [
-                                Text(
-                                  'Additional Collections & Fees',
-                                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: tokens.textSecondary),
-                                ),
-                                ElevatedButton.icon(
-                                  onPressed: isOpen ? () => _showRecordClientFeeModal(context, isOpen, openReason) : null,
-                                  icon: const Icon(Icons.person_add_alt_1_outlined, size: 14),
-                                  label: const Text('Record Client Fee', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700)),
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: tokens.brandPrimaryDark,
-                                    foregroundColor: Colors.white,
-                                    disabledBackgroundColor: tokens.surfaceSubtle,
-                                    disabledForegroundColor: tokens.textMuted,
-                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-                                    elevation: 0,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 10),
-                            _buildNumberField(
-                              'Credit Form / App Fee',
-                              _appFeeCtrl,
-                              help: 'Unified Processing Fee and Credit Form fee',
-                              step: 500,
-                            ),
-                            const SizedBox(height: 12),
-                            _buildNumberField('Pass Book', _passbookCtrl, step: 500),
-                            const SizedBox(height: 12),
-                            _buildNumberField(
-                              'Misc Fee',
-                              _miscFeeCtrl,
-                              help: 'Routed directly to Misc Savings pool',
-                              step: 500,
-                            ),
-                            const SizedBox(height: 12),
-                            _buildNumberField(
-                              'Cr Form Dmg',
-                              _cfdCtrl,
-                              help: 'Fee for damaged credit forms',
-                              step: 100,
-                            ),
-                            const SizedBox(height: 12),
-                            _buildNumberField('Bonus', _bonusCtrl, step: 500),
+                            _buildClientFeesHeaderAndNote(tokens, isCompact: true),
                           ],
                         );
                       }
@@ -2035,82 +1737,7 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
                             ],
                           ),
                           const SizedBox(height: 16),
-
-                          // Additional Collections Subheading (app.py L10887)
-                          Wrap(
-                            spacing: 10,
-                            runSpacing: 8,
-                            alignment: WrapAlignment.spaceBetween,
-                            crossAxisAlignment: WrapCrossAlignment.center,
-                            children: [
-                              Text(
-                                'Additional Collections & Fees',
-                                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: tokens.textSecondary),
-                              ),
-                              ElevatedButton.icon(
-                                onPressed: isOpen ? () => _showRecordClientFeeModal(context, isOpen, openReason) : null,
-                                icon: const Icon(Icons.person_add_alt_1_outlined, size: 14),
-                                label: const Text('Record Client Fee', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: tokens.brandPrimaryDark,
-                                  foregroundColor: Colors.white,
-                                  disabledBackgroundColor: tokens.surfaceSubtle,
-                                  disabledForegroundColor: tokens.textMuted,
-                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-                                  elevation: 0,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 10),
-
-                          // Row 2: Credit Form / App Fee, Pass Book, Misc Fee
-                          Row(
-                            children: [
-                              Expanded(
-                                child: _buildNumberField(
-                                  'Credit Form / App Fee',
-                                  _appFeeCtrl,
-                                  help: 'Unified Processing Fee and Credit Form fee',
-                                  step: 500,
-                                ),
-                              ),
-                              const SizedBox(width: 14),
-                              Expanded(
-                                child: _buildNumberField('Pass Book', _passbookCtrl, step: 500),
-                              ),
-                              const SizedBox(width: 14),
-                              Expanded(
-                                child: _buildNumberField(
-                                  'Misc Fee',
-                                  _miscFeeCtrl,
-                                  help: 'Routed directly to Misc Savings pool',
-                                  step: 500,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 12),
-
-                          // Row 3: Cr Form Dmg, Bonus
-                          Row(
-                            children: [
-                              Expanded(
-                                child: _buildNumberField(
-                                  'Cr Form Dmg',
-                                  _cfdCtrl,
-                                  help: 'Fee for damaged credit forms',
-                                  step: 100,
-                                ),
-                              ),
-                              const SizedBox(width: 14),
-                              Expanded(
-                                child: _buildNumberField('Bonus', _bonusCtrl, step: 500),
-                              ),
-                              const Expanded(child: SizedBox()), // spacer to match 3 columns
-                            ],
-                          ),
+                          _buildClientFeesHeaderAndNote(tokens, isCompact: false),
                         ],
                       );
                     },
@@ -2119,7 +1746,7 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
                   _buildClientFeesList(),
                   const SizedBox(height: 18),
 
-                  // Submit Action Button (app.py L10898)
+                  // Submit Action Button
                   SizedBox(
                     width: double.infinity,
                     height: 44,
@@ -2133,7 +1760,7 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
                             )
                           : const Icon(Icons.save_outlined, size: 18),
                       label: Text(
-                        _isSubmittingEod ? 'Saving & Posting to Ledger...' : 'Save End of Day Outflows & Fees',
+                        _isSubmittingEod ? 'Saving & Posting to Ledger...' : 'Save Opening Balance & Outflows',
                         style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700),
                       ),
                       style: ElevatedButton.styleFrom(

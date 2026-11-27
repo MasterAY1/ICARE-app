@@ -120,10 +120,12 @@ class _AuditFeesTabState extends ConsumerState<AuditFeesTab> {
                   items: const [
                     'ALL',
                     'PROCESSING_FEE',
+                    'CREDIT_FORM',
                     'MARKUP_11',
                     'MARKUP_20',
                     'CONTINGENCY',
                     'PASSBOOK',
+                    'MISC_FEE',
                     'CREDIT_FORM_DAMAGE',
                     'BONUS',
                   ],
@@ -185,6 +187,7 @@ class _AuditFeesTabState extends ConsumerState<AuditFeesTab> {
               'Officer',
               'Branch',
               'Reference',
+              'Remarks',
               'Status',
             ];
             return Column(
@@ -583,19 +586,35 @@ class _AuditSavingsTabState extends ConsumerState<AuditSavingsTab> {
           ),
           data: (data) {
             final m = data.metrics;
-            const cols = [
-              'Date',
-              'Client Code',
-              'Client Name',
-              'Ledger',
-              'Deposit',
-              'Withdrawal',
-              'Available Balance',
-              'Officer',
-              'Branch',
-              'Remarks',
-              'Status',
-            ];
+            final isMiscFilter = _subLedger == 'Misc Savings';
+            final cols = isMiscFilter
+                ? const [
+                    'Date',
+                    'Client Code',
+                    'Client Name',
+                    'Ledger',
+                    'Deposit',
+                    'Withdrawal',
+                    'Available Balance',
+                    'Collecting Officer',
+                    'Managing Officer',
+                    'Branch',
+                    'Remarks',
+                    'Status',
+                  ]
+                : const [
+                    'Date',
+                    'Client Code',
+                    'Client Name',
+                    'Ledger',
+                    'Deposit',
+                    'Withdrawal',
+                    'Available Balance',
+                    'Officer',
+                    'Branch',
+                    'Remarks',
+                    'Status',
+                  ];
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [

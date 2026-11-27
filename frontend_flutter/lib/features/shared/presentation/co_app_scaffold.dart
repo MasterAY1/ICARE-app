@@ -2325,7 +2325,7 @@ class _SyncDialogState extends ConsumerState<_SyncDialog> {
             ),
             const SizedBox(height: 4),
             Text(
-              'Queued transactions will post atomically to primary vault cash and the double-entry financial ledger.',
+              'Queued transactions will post securely to primary vault cash and the central financial ledger.',
               style: TextStyle(fontSize: 11.5, color: tokens.textMuted),
             ),
             if (pendingCount > 0) ...[
@@ -2366,7 +2366,11 @@ class _SyncDialogState extends ConsumerState<_SyncDialog> {
                 tokens: tokens,
               ),
             ],
-            if (_statusMsg != null) ...[
+            if (_statusMsg != null &&
+                !(pendingCount == 0 &&
+                    !_isSyncing &&
+                    !syncMgr.isSyncing &&
+                    _statusMsg!.toLowerCase().contains('already in progress'))) ...[
               const SizedBox(height: 12),
               Container(
                 padding: const EdgeInsets.all(10),

@@ -108,7 +108,7 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
   // Tab 1: Individual State
   String _indGroupFilter = 'All Groups';
   String? _indSelectedClientId;
-  String _indDestOp = 'Cash Withdrawal';
+  String _indDestOp = 'Client Bank Account (Transfer)';
   String? _indSelectedLoanId;
   String _indFeeType = 'credit_form_damage';
   String _indTransferTargetCat = 'IndividualSavings';
@@ -119,7 +119,7 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
 
   // Tab 2: Group State
   String? _grpSelectedGroupId;
-  String _grpDestOp = 'Cash Withdrawal';
+  String _grpDestOp = 'Group Bank Account (Transfer)';
   String? _grpSelectedMemberId;
   String? _grpSelectedLoanId;
   String _grpFeeType = 'credit_form_damage';
@@ -132,14 +132,14 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
   bool _grpAutoExec = false;
 
   // Tab 3: Misc State
-  String _miscPayoutMethod = 'Cash';
+  String _miscPayoutMethod = 'Bank Transfer';
   final _miscAmountCtrl = TextEditingController();
   final _miscRemarksCtrl = TextEditingController();
   bool _miscAutoExec = true;
 
   // Tab 4: LAPS State
   String? _selectedLapsClientId;
-  String _lapsPayoutMethod = 'Cash';
+  String _lapsPayoutMethod = 'Bank Transfer';
   final _lapsAmountCtrl = TextEditingController();
   final _lapsRemarksCtrl = TextEditingController();
   bool _lapsAutoExec = false;
@@ -204,12 +204,6 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
 
   static const List<Map<String, dynamic>> _indDestOptions = [
     {
-      'value': 'Cash Withdrawal',
-      'title': 'Cash Withdrawal',
-      'subtitle': 'Physical cash withdrawal paid from branch vault cash',
-      'icon': Icons.payments_outlined,
-    },
-    {
       'value': 'Client Bank Account (Transfer)',
       'title': 'Client Bank Account (Transfer)',
       'subtitle': 'Direct electronic wire to client\'s registered bank account',
@@ -242,12 +236,6 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
   ];
 
   static const List<Map<String, dynamic>> _grpDestOptions = [
-    {
-      'value': 'Cash Withdrawal',
-      'title': 'Cash Withdrawal',
-      'subtitle': 'Physical cash withdrawal paid from branch vault cash',
-      'icon': Icons.payments_outlined,
-    },
     {
       'value': 'Group Bank Account (Transfer)',
       'title': 'Group Bank Account (Transfer)',
@@ -462,7 +450,7 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
       'fee_type': _indDestOp == 'Fee Payment from Savings' ? _indFeeType : null,
       'amount': amt,
       'operational_date': dateStr,
-      'payout_method': _indDestOp == 'Client Bank Account (Transfer)' ? 'Bank Transfer' : 'Cash',
+      'payout_method': 'Bank Transfer',
       'remarks': _indRemarksCtrl.text.trim(),
       'auto_execute': autoExec,
       'idempotency_key': _getAttemptIdemKey('ind'),
@@ -604,7 +592,7 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
       'fee_type': _grpDestOp.contains('Fee Payment') ? _grpFeeType : null,
       'amount': amt,
       'operational_date': dateStr,
-      'payout_method': _grpDestOp == 'Group Bank Account (Transfer)' ? 'Bank Transfer' : 'Cash',
+      'payout_method': 'Bank Transfer',
       'remarks': _grpRemarksCtrl.text.trim(),
       'auto_execute': autoExec,
       'idempotency_key': _getAttemptIdemKey('grp'),
@@ -639,7 +627,7 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
 
     final opDate = ref.read(withdrawalOpDateProvider);
     final dateStr = DateFormat('yyyy-MM-dd').format(opDate);
-    final opType = _miscPayoutMethod == 'Bank Transfer' ? 'Bank Transfer' : 'Cash Withdrawal';
+    const opType = 'Bank Transfer';
     final autoExec = (_isManager && ref.read(isOnlineProvider)) ? _miscAutoExec : false;
 
     final payload = <String, dynamic>{
@@ -647,7 +635,7 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
       'operation_type': opType,
       'amount': amt,
       'operational_date': dateStr,
-      'payout_method': _miscPayoutMethod,
+      'payout_method': 'Bank Transfer',
       'remarks': _miscRemarksCtrl.text.trim(),
       'auto_execute': autoExec,
       'idempotency_key': _getAttemptIdemKey('misc'),
@@ -790,8 +778,8 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                 const SizedBox(height: 2),
                 Text(
                   isManager
-                      ? 'Approvals, rejections, and immediate cash payouts require a live connection. Offline submissions are queued strictly as unapproved review requests.'
-                      : 'Withdrawal requests entered offline will be queued safely on this device and sent for Manager approval once your connection returns. Do not disburse cash yet.',
+                      ? 'Approvals, rejections, and immediate bank payouts require a live connection. Offline submissions are queued strictly as unapproved review requests.'
+                      : 'Withdrawal requests entered offline will be queued safely on this device and sent for Manager approval once your connection returns. Do not execute payout yet.',
                   style: TextStyle(fontSize: 11.5, color: tokens.textSecondary, height: 1.35),
                 ),
               ],
@@ -1949,12 +1937,13 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
                 style: TextStyle(fontSize: 13, color: tokens.textPrimary),
                 decoration: const InputDecoration(
                   labelText: 'Payout Settlement Method',
+                  helperText: 'All direct savings payouts settle via Bank Transfer. Physical branch cash outlays are recorded as Office Expenses.',
+                  helperMaxLines: 2,
                   isDense: true,
                   border: OutlineInputBorder(),
                   contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                 ),
                 items: const [
-                  DropdownMenuItem(value: 'Cash', child: Text('Physical Vault Cash Payout')),
                   DropdownMenuItem(value: 'Bank Transfer', child: Text('Direct Bank Transfer Payout')),
                 ],
                 onChanged: (val) {
@@ -2123,11 +2112,6 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
               builder: (context, constraints) {
                 final isNarrow = constraints.maxWidth < 640;
                 final options = [
-                  {
-                    'id': 'Cash',
-                    'title': 'Cash Payout',
-                    'subtitle': 'Physical cash disbursement from vault cash',
-                  },
                   {
                     'id': 'Bank Transfer',
                     'title': 'Bank Wire',

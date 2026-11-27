@@ -90,6 +90,8 @@ class SingleClientSubmitInput(BaseModel):
     app_fee: float = 0.0
     passbook_fee: float = 0.0
     misc_fee: float = 0.0
+    credit_form_damage: float = 0.0
+    bonus: float = 0.0
     note: Optional[str] = "Single Client Collection"
     date: Optional[str] = None
     mark_not_paid: bool = False
@@ -169,6 +171,21 @@ class EodSummaryData(BaseModel):
     bonus: float = 0.0
 
 
+class FeeHistoryRow(BaseModel):
+    id: Optional[str] = None
+    posting_date: str
+    client_id: Optional[str] = None
+    client_name: str
+    client_code: Optional[str] = None
+    fee_type: str
+    fee_label: Optional[str] = None
+    amount: float
+    collecting_officer: Optional[str] = None
+    managing_officer: Optional[str] = None
+    remarks: Optional[str] = None
+    reference: Optional[str] = None
+
+
 class CollectionsHistoryResponse(BaseModel):
     date: str
     total_repayments: float
@@ -176,10 +193,12 @@ class CollectionsHistoryResponse(BaseModel):
     not_paid_repayments_count: int
     total_savings: float
     savings_deposits_count: int
+    total_fees: float = 0.0
     grand_total_cash: float
     groups: List[GroupSummaryRow] = []
     repayments: List[RepaymentHistoryRow] = []
     savings: List[SavingsHistoryRow] = []
+    fees: List[FeeHistoryRow] = []
     reversed_records: List[ReversedAuditRow] = []
     eod_summary: Optional[EodSummaryData] = None
     eod_log: List[Dict[str, Any]] = []

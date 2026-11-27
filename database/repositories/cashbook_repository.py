@@ -107,15 +107,22 @@ class SupabaseCashbookRepository(BaseRepository[CashbookEntry], CashbookReposito
         from services.co_cashbook_projection_builder import CoCashbookProjectionBuilder
         from services.master_cashbook_projection_builder import MasterCashbookProjectionBuilder
 
-        # 1. Resolve officer IDs for the branch
+        # 1. Resolve Credit Officer IDs for the branch (exclude BM/AM/Admin so they never get CO cashbook rows)
         officers = []
         if officer_id:
             officers.append(officer_id)
         else:
             try:
-                res_u = uow.client.table("app_users").select("id").eq("branch_id", branch_id).execute()
+                res_u = uow.client.table("app_users").select("id, role, username").eq("branch_id", branch_id).execute()
                 if res_u.data:
-                    officers = [u["id"] for u in res_u.data if u.get("id")]
+                    officers = [
+                        u["id"] for u in res_u.data
+                        if u.get("id") and (
+                            "co" in str(u.get("role") or "").lower()
+                            or "credit" in str(u.get("role") or "").lower()
+                            or str(u.get("username") or "").lower().startswith("co")
+                        )
+                    ]
             except Exception:
                 pass
 

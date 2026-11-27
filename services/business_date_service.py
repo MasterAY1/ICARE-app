@@ -277,7 +277,22 @@ class BusinessDateService:
                         stored_date = date.fromisoformat(defaults["business_date"])
                         # If stored date is valid and within a reasonable operational cycle (past 30 days to next 7 days), return it
                         if (today - timedelta(days=30)) <= stored_date <= (today + timedelta(days=7)):
-                            return stored_date
+                            if stored_date <= today:
+                                return stored_date
+                            # Prevent unclosed future-date drift when today or an intermediate working day is still open
+                            closures = BusinessDateService.get_branch_closures(uow, branch_name_or_id) if uow else []
+                            all_intermediate_closed = True
+                            check_d = today
+                            while check_d < stored_date:
+                                is_work, _ = BusinessDateService.is_working_day(check_d, custom_closures=closures)
+                                if is_work:
+                                    is_open, _ = BusinessDateService.is_operational_open(uow, branch_name_or_id, check_d)
+                                    if is_open:
+                                        all_intermediate_closed = False
+                                        break
+                                check_d += timedelta(days=1)
+                            if all_intermediate_closed:
+                                return stored_date
             except Exception:
                 pass
 
@@ -363,6 +378,9 @@ class BusinessDateService:
                 "date": next_date_str,
                 "branch_id": branch_id,
                 "opening_balance": closing_bal,
+                "total_inflows": closing_bal,
+                "total_outflows": 0.0,
+                "closing_balance": closing_bal,
                 "status": "Open",
                 "version": 1
             }, on_conflict="date,branch_id").execute()

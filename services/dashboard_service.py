@@ -987,6 +987,20 @@ class DashboardService:
                     c_out = float(mb.get("total_outflows") or 0.0)
                     cl_bal = float(mb.get("closing_balance") or 0.0)
                     diff = abs(round(op_bal + today_in - c_out - cl_bal, 2))
+                    bank_bal = 0.0
+                    try:
+                        res_bk = uow.client.table("financial_ledger_entries") \
+                            .select("amount, side, financial_transactions!inner(posting_date)") \
+                            .eq("branch_id", branch_id) \
+                            .eq("account_code", "1050") \
+                            .lte("financial_transactions.posting_date", p_date_str) \
+                            .execute()
+                        for r_b in (res_bk.data or []):
+                            amt_b = float(r_b.get("amount") or 0.0)
+                            bank_bal += amt_b if str(r_b.get("side") or "").strip().lower() == "debit" else -amt_b
+                        bank_bal = round(bank_bal, 2)
+                    except Exception:
+                        bank_bal = 0.0
                     return {
                         "opening_balance": op_bal,
                         "cash_in": today_in,
@@ -994,6 +1008,7 @@ class DashboardService:
                         "bank_deposit": float(mb.get("bank_deposit") or 0.0),
                         "bank_withdrawal": float(mb.get("bank_withdrawal") or 0.0),
                         "closing_balance": cl_bal,
+                        "bank_balance": bank_bal,
                         "status": "Balanced" if diff == 0.0 else "Unbalanced",
                         "difference": diff
                     }

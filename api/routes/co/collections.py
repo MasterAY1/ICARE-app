@@ -23,6 +23,7 @@ from api.schemas.collections import (
     GroupSummaryRow,
     RepaymentHistoryRow,
     SavingsHistoryRow,
+    FeeHistoryRow,
     ReversedAuditRow,
     EodSummaryData,
     ReversalCandidatesResponse,
@@ -776,11 +777,13 @@ def submit_single_client(
             else: rep_60d = rep_amt
 
         records_to_insert = []
-        if is_not_paid or payload.savings_deposit > 0 or rep_amt > 0 or payload.app_fee > 0 or payload.passbook_fee > 0 or payload.misc_fee > 0:
+        if is_not_paid or payload.savings_deposit > 0 or rep_amt > 0 or payload.app_fee > 0 or payload.passbook_fee > 0 or payload.misc_fee > 0 or payload.credit_form_damage > 0 or payload.bonus > 0:
             records_to_insert.append({
                 "batch_id": sc_batch_id,
                 "tx_id": str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{sc_batch_id}_{payload.client_id}_rep")),
                 "savings_tx_id": str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{sc_batch_id}_{payload.client_id}_sav")),
+                "misc_tx_id": str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{sc_batch_id}_{payload.client_id}_misc")),
+                "fee_reference": sc_batch_id,
                 "Date": date_str,
                 "Client ID": payload.client_id,
                 "Client Name": payload.client_name,
@@ -806,10 +809,14 @@ def submit_single_client(
                 "App Fee": payload.app_fee,
                 "Pass Book Bonus": payload.passbook_fee,
                 "Misc Fees": payload.misc_fee,
+                "Credit Form Damage": payload.credit_form_damage,
+                "Bonus": payload.bonus,
                 "Payment Status": p_status,
                 "Expected Amount": expected_amt,
                 "Overdue Amount": overdue_val,
-                "mark_not_paid": is_not_paid
+                "mark_not_paid": is_not_paid,
+                "actor_username": current_user.username,
+                "actor_role": current_user.role,
             })
 
         if payload.group_savings_deposit > 0 and payload.group_name and payload.group_name != "Ungrouped":
@@ -842,7 +849,24 @@ def submit_single_client(
             receipt = save_repayments(records_to_insert, batch_id=sc_batch_id, allow_closed_date=allow_closed)
         except TypeError:
             receipt = save_repayments(records_to_insert, batch_id=sc_batch_id)
-        sc_fees = float(payload.app_fee or 0.0) + float(payload.passbook_fee or 0.0) + float(payload.misc_fee or 0.0)
+        sc_fees = (
+            float(payload.app_fee or 0.0)
+            + float(payload.passbook_fee or 0.0)
+            + float(payload.misc_fee or 0.0)
+            + float(payload.credit_form_damage or 0.0)
+            + float(payload.bonus or 0.0)
+        )
+        fee_breakdown = [
+            {"fee_type": f_t, "label": f_lbl, "amount": float(f_amt)}
+            for f_t, f_lbl, f_amt in (
+                ("PROCESSING_FEE", "Credit Form / App Fee", payload.app_fee or 0.0),
+                ("PASSBOOK", "Pass Book", payload.passbook_fee or 0.0),
+                ("MISC_FEE", "Misc Fee", payload.misc_fee or 0.0),
+                ("CREDIT_FORM_DAMAGE", "Credit Form Damage", payload.credit_form_damage or 0.0),
+                ("BONUS", "Bonus", payload.bonus or 0.0),
+            )
+            if float(f_amt) > 0.0
+        ]
         if receipt:
             receipt["batch_id"] = sc_batch_id
             receipt["idempotency_key"] = payload.idempotency_key
@@ -855,6 +879,7 @@ def submit_single_client(
             tot_sav_sc = float(receipt.get("total_savings", 0.0) or 0.0)
             tot_fees_sc = float(receipt.get("total_fees", sc_fees) or sc_fees)
             receipt["total_fees"] = tot_fees_sc
+            receipt["fees_breakdown"] = fee_breakdown
             receipt["total_cash"] = float(receipt.get("total_cash") or 0.0)
             if receipt["total_cash"] < (tot_rep_sc + tot_sav_sc + tot_fees_sc):
                 receipt["total_cash"] = tot_rep_sc + tot_sav_sc + tot_fees_sc
@@ -1011,18 +1036,27 @@ def submit_batch_collections(
             exp_amt = float(item.expected_amount or 0)
             is_marked_not_paid = bool(item.mark_not_paid)
 
-            cls_res = RepaymentService.classify_repayment(
-                amount_paid=0.0 if is_marked_not_paid else rep,
-                total_due_today=exp_amt,
-                current_installment=exp_amt,
-                has_overdue=False
-            )
-            p_status = "NOT_PAID" if is_marked_not_paid else cls_res["status"]
-            overdue_val = exp_amt if is_marked_not_paid else cls_res["overdue_shortfall"]
-
             if sav == 0 and sav_wd == 0 and rep == 0 and app == 0 and pb == 0 and misc == 0 and asset_cr == 0 and cc == 0 and cfd == 0 and bon == 0:
                 if not is_marked_not_paid:
                     continue
+
+            if is_marked_not_paid or rep > 0:
+                cls_res = RepaymentService.classify_repayment(
+                    amount_paid=0.0 if is_marked_not_paid else rep,
+                    total_due_today=exp_amt,
+                    current_installment=exp_amt,
+                    has_overdue=False
+                )
+                p_status = "NOT_PAID" if is_marked_not_paid else cls_res["status"]
+                overdue_val = exp_amt if is_marked_not_paid else cls_res["overdue_shortfall"]
+                tx_type = "Loan"
+                row_note = f"Daily Collection - {payload.group_name}" if not is_marked_not_paid else "Marked NOT PAID (₦0 Collection)"
+            else:
+                # Savings-only, Fee-only, or Asset Cash entries do not record an unpaid loan mark
+                p_status = "PAID"
+                overdue_val = 0.0
+                tx_type = "Individual Savings Deposit"
+                row_note = f"Daily Collection - {payload.group_name}"
 
             prod_low = str(item.loan_product or "60 day").lower()
             rep_12w = rep_24w = rep_60d = rep_120d = rep_mth = 0
@@ -1042,8 +1076,8 @@ def submit_batch_collections(
                 "Officer": target_officer_username,
                 "Branch": target_branch_name,
                 "Amount Paid": rep,
-                "Transaction Type": "Loan",
-                "Note": f"Daily Collection - {payload.group_name}" if not is_marked_not_paid else "Marked NOT PAID (₦0 Collection)",
+                "Transaction Type": tx_type,
+                "Note": row_note,
                 "Savings Amount": sav,
                 "Withdrawal Amount": sav_wd,
                 "Loan Repayment Amount": rep,
@@ -1655,6 +1689,89 @@ def get_collections_history(
     except Exception:
         pass
 
+    # Itemized Client Fees Audit for selected date (all 5 Single-Collection fees + loan fees)
+    fee_rows: List[FeeHistoryRow] = []
+    tot_fees_amt = 0.0
+    try:
+        q_fees = uow.client.table("fees").select(
+            "id, posting_date, client_id, officer_id, fee_type, amount, remarks, reference, created_at, clients(name, client_code)"
+        ).eq("posting_date", hist_date_str)
+        if not is_manager:
+            officer_id_f = uow.loans._resolve_officer_id(current_user.username) or current_user.id
+            q_fees = q_fees.eq("officer_id", officer_id_f)
+        else:
+            if current_user.role in ["AM", "Area Manager"]:
+                assigned_bids_f = getattr(current_user, "assigned_branch_ids", [current_user.branch_id])
+                if assigned_bids_f:
+                    q_fees = q_fees.in_("branch_id", assigned_bids_f)
+            elif current_user.branch_id:
+                q_fees = q_fees.eq("branch_id", current_user.branch_id)
+            if officer and officer != "All Officers":
+                t_uid_f = uow.loans._resolve_officer_id(officer)
+                if t_uid_f:
+                    q_fees = q_fees.eq("officer_id", t_uid_f)
+
+        fees_res = q_fees.order("created_at", desc=True).limit(500).execute()
+        missing_fcids = {
+            str(f.get("client_id"))
+            for f in (fees_res.data or [])
+            if f.get("client_id") and not f.get("clients")
+        }
+        fee_client_lookup = {}
+        if missing_fcids:
+            try:
+                fc_res = uow.client.table("clients").select("client_id, name, client_code").in_("client_id", list(missing_fcids)).execute()
+                fee_client_lookup = {str(c.get("client_id")): c for c in (fc_res.data or []) if c.get("client_id")}
+            except Exception:
+                pass
+
+        fee_label_map = {
+            "PROCESSING_FEE": "Credit Form / App Fee",
+            "CREDIT_FORM": "Credit Form",
+            "APP_FEE": "App Fee",
+            "PASSBOOK": "Pass Book",
+            "MISC_FEE": "Misc Fee (Misc Savings)",
+            "CREDIT_FORM_DAMAGE": "Credit Form Damage",
+            "BONUS": "Bonus",
+        }
+        import re as _re
+        for f in (fees_res.data or []):
+            c_obj = f.get("clients") if isinstance(f.get("clients"), dict) else fee_client_lookup.get(str(f.get("client_id") or ""), {})
+            c_nm = str((c_obj or {}).get("name") or "Client")
+            c_cd = (c_obj or {}).get("client_code")
+            f_type = str(f.get("fee_type") or "FEE").upper()
+            f_lbl = fee_label_map.get(f_type, f_type.replace("_", " ").title())
+            f_amt = float(f.get("amount") or 0.0)
+            col_off = hist_user_cache.get(f.get("officer_id"), current_user.username)
+            rem_str = str(f.get("remarks") or "")
+            mgr_off = None
+            if f_type == "MISC_FEE":
+                m_cust = _re.search(r"Custody:\s*([^|\)]+)", rem_str)
+                if m_cust:
+                    mgr_off = m_cust.group(1).strip()
+            ref_str = str(f.get("reference") or f.get("id") or "")
+            if search_term:
+                hay = f"{c_nm} {c_cd or ''} {f_type} {f_lbl} {col_off} {rem_str} {ref_str}".lower()
+                if search_term not in hay:
+                    continue
+            tot_fees_amt += f_amt
+            fee_rows.append(FeeHistoryRow(
+                id=str(f.get("id")) if f.get("id") else None,
+                posting_date=str(f.get("posting_date") or hist_date_str),
+                client_id=str(f.get("client_id")) if f.get("client_id") else None,
+                client_name=c_nm,
+                client_code=c_cd,
+                fee_type=f_type,
+                fee_label=f_lbl,
+                amount=f_amt,
+                collecting_officer=col_off,
+                managing_officer=mgr_off,
+                remarks=rem_str,
+                reference=ref_str,
+            ))
+    except Exception:
+        pass
+
     tot_reps_amt = sum(float(r.get("amount_paid") or 0.0) for r in clean_reps)
     tot_sav_amt = sum(float(s.get("deposit_amount") or 0.0) for s in clean_sav) + sum(float(g.get("deposit_amount") or 0.0) for g in clean_gsav)
     paid_cnt = sum(1 for r in clean_reps if float(r.get("amount_paid") or 0.0) > 0)
@@ -1667,10 +1784,12 @@ def get_collections_history(
         not_paid_repayments_count=not_paid_cnt,
         total_savings=tot_sav_amt,
         savings_deposits_count=len(clean_sav) + len(clean_gsav),
+        total_fees=tot_fees_amt,
         grand_total_cash=tot_reps_amt + tot_sav_amt,
         groups=group_rows,
         repayments=repayment_rows,
         savings=savings_rows,
+        fees=fee_rows,
         reversed_records=reversed_rows,
         eod_summary=eod_data,
         eod_log=eod_log,

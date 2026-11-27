@@ -187,14 +187,15 @@ class TestWithdrawalExecutionAndReversal022(unittest.TestCase):
             extra_operations=extra,
         ))
         self.assertEqual(res_cash["executed_table"], "individual_savings")
-        self.assertTrue(res_cash["cash_paid"])
+        # Option A enforces Bank Transfer routing (CR 1050) even on legacy Cash Withdrawal requests
+        self.assertFalse(res_cash["cash_paid"])
         ops = self._last_rpc_ops(uow)
         wr_upd = [o for o in ops if o.get("table") == "withdrawal_requests"][0]["record"]
         self.assertEqual(wr_upd["executed_table"], "individual_savings")
         self.assertEqual(wr_upd["executed_record_id"], res_cash["executed_record_id"])
         fin = [o for o in ops if o.get("type") == "post_financial_transaction"][0]
         cr_codes = [e["account_code"] for e in fin["record"]["entries_payload"] if e["side"] == "Credit"]
-        self.assertIn("1000", cr_codes)
+        self.assertEqual(cr_codes, ["1050"])
 
         # Bank Transfer -> CR 1050, cash_paid=False
         uow_bank = _make_uow()
@@ -667,8 +668,9 @@ class TestWithdrawalApi022(unittest.TestCase):
             TransactionClassification.CUSTOMER_CASH_WITHDRAWAL, 10000.0, is_cash_paid=None
         )
         self.assertEqual(cls_default["product_withdrawal"], 10000.0)
-        self.assertEqual(cls_default["cash_withdrawal"], 10000.0)
-        self.assertTrue(cls_default["affects_cash_vault"])
+        self.assertEqual(cls_default["cash_withdrawal"], 0.0)
+        self.assertEqual(cls_default["bank_withdrawal"], 10000.0)
+        self.assertFalse(cls_default["affects_cash_vault"])
 
     def test_execute_approved_withdrawal_all_6_non_direct_branches_and_atomic_effects(self):
         from services.client_status_service import ClientStatusService

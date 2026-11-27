@@ -272,11 +272,13 @@ class TestCashbookProjections020(unittest.TestCase):
             ("ExpenseReversed", "1000", "4000"),
             ("BankDepositReversed", "1000", "1050"),
             ("BankWithdrawalReversed", "1050", "1000"),
-            ("SalaryReversed", "1000", "4100"),
+            ("SalaryReversed", "1050", "4100"),
             ("SavingsDepositReversed", "2000", "1000"),
-            ("SavingsWithdrawalReversed", "1000", "2000"),
-            ("CashTransferred_HO_In_Reversed", "3100", "1000"),
-            ("CashTransferred_HO_Out_Reversed", "1000", "3100"),
+            ("SavingsWithdrawalReversed", "1050", "2000"),
+            ("CashTransferred_HO_In_Reversed", "3100", "1050"),
+            ("CashTransferred_HO_Out_Reversed", "1050", "3100"),
+            ("VaultAdjusted_In_Reversed", "3100", "1000"),
+            ("LapsPaidOutReversed", "1050", "2030"),
         ]
 
         branch_uuid = "11111111-1111-1111-1111-111111111111"
@@ -320,13 +322,20 @@ class TestCashbookProjections020(unittest.TestCase):
         self.assertEqual(co_zero["opening_balance"], 0.0)
 
     def test_eod_misc_fee_routes_via_savings_service_and_supports_reversal_and_zeroing(self):
+        from fastapi import HTTPException
+        from api.routes.co.cashbook import RecordClientFeeInput, record_client_fee
+
         mock_uow = MagicMock()
         mock_uow.cashbook._resolve_branch_id.return_value = "br-1"
         mock_uow.loans._resolve_officer_id.return_value = "off-01"
         mock_uow.client.table.side_effect = lambda name: (
             _ChainTableMock([{"id": "off-01", "username": "co1", "full_name": "CO One"}])
             if name == "app_users"
-            else _ChainTableMock([])
+            else (
+                _ChainTableMock([{"client_id": "cli-01", "name": "Jane Doe", "client_code": "CLI-01", "branch_id": "br-1"}])
+                if name == "clients"
+                else _ChainTableMock([])
+            )
         )
         user = CurrentUser(
             id="co-id-1",
@@ -337,55 +346,29 @@ class TestCashbookProjections020(unittest.TestCase):
             full_name="CO One",
         )
 
-        # Case 1: Increase misc_fee (0 -> 5000) & zero opening_balance (manual_opening_balance=0.0)
+        # Case 1: Lump-sum unattributed fees in EOD cashbook are rejected (Single Client Consolidation)
         with patch("api.routes.co.cashbook.BusinessDateService.is_operational_open", return_value=(True, "Open")), \
-             patch("api.routes.co.cashbook._get_eod_misc_fee_tracked", return_value=0.0), \
              patch("services.co_cashbook_projection_builder.CoCashbookProjectionBuilder.rebuild_co_projection", return_value={
                  "opening_balance": 10000.0,
                  "office_expenses": 0.0,
                  "bank_deposit": 0.0,
-                 "app_fee": 0.0,
-                 "passbook": 0.0,
-                 "credit_form_damage": 0.0,
-                 "bonus": 0.0,
-                 "misc_fees": 0.0,
-             }) as mock_rebuild, \
-             patch("services.master_cashbook_projection_builder.MasterCashbookProjectionBuilder.rebuild_master_projection"), \
-             patch("services.savings_service.SavingsService.get_branch_misc_savings_officer", return_value=("mgr-01", "mgr_co")), \
-             patch("services.savings_service.SavingsService.post_misc_savings") as mock_post_misc, \
-             patch("services.posting_engine.FinancialPostingEngine.post_event") as mock_post_event:
+             }):
+            with self.assertRaises(HTTPException) as ctx:
+                submit_eod_adjustments(
+                    payload=EodAdjustmentsInput(date="2026-10-15", officer="co1", misc_fee=5000.0),
+                    current_user=user,
+                    uow=mock_uow,
+                )
+            self.assertEqual(ctx.exception.status_code, 400)
 
-            payload = EodAdjustmentsInput(
-                date="2026-10-15",
-                officer="co1",
-                opening_balance=0.0,
-                misc_fee=5000.0,
-            )
-            submit_eod_adjustments(payload=payload, current_user=user, uow=mock_uow)
-
-            mock_post_misc.assert_called_once()
-            _, kwargs = mock_post_misc.call_args
-            self.assertEqual(kwargs.get("deposit_amount"), 5000.0)
-            mock_post_event.assert_not_called()
-            # rebuild called twice (initial + after adjustment); last call must forward manual_opening_balance=0.0
-            self.assertEqual(mock_rebuild.call_args_list[-1].kwargs.get("manual_opening_balance"), 0.0)
-
-        # Case 2: Decrease misc_fee (5000 -> 2000), app_fee (2000 -> 0), expenses (1000 -> 0), bank_deposit (3000 -> 0)
+        # Case 2: Opening balance zeroing + expense & bank deposit downward reversals still work on EOD cashbook
         with patch("api.routes.co.cashbook.BusinessDateService.is_operational_open", return_value=(True, "Open")), \
-             patch("api.routes.co.cashbook._get_eod_misc_fee_tracked", return_value=5000.0), \
              patch("services.co_cashbook_projection_builder.CoCashbookProjectionBuilder.rebuild_co_projection", return_value={
                  "opening_balance": 10000.0,
                  "office_expenses": 1000.0,
                  "bank_deposit": 3000.0,
-                 "app_fee": 2000.0,
-                 "passbook": 0.0,
-                 "credit_form_damage": 0.0,
-                 "bonus": 0.0,
-                 "misc_fees": 5000.0,
-             }), \
+             }) as mock_rebuild, \
              patch("services.master_cashbook_projection_builder.MasterCashbookProjectionBuilder.rebuild_master_projection"), \
-             patch("services.savings_service.SavingsService.get_branch_misc_savings_officer", return_value=("mgr-01", "mgr_co")), \
-             patch("services.savings_service.SavingsService.post_misc_savings") as mock_post_misc_down, \
              patch("services.posting_engine.FinancialPostingEngine.post_event") as mock_post_event_down:
 
             payload_down = EodAdjustmentsInput(
@@ -394,19 +377,31 @@ class TestCashbookProjections020(unittest.TestCase):
                 opening_balance=0.0,
                 office_expenses=0.0,
                 bank_deposit=0.0,
-                app_fee=0.0,
-                misc_fee=2000.0,
             )
             submit_eod_adjustments(payload=payload_down, current_user=user, uow=mock_uow)
 
             emitted = {call.args[1].event_type: call.args[1].payload["amount"] for call in mock_post_event_down.call_args_list}
             self.assertEqual(emitted.get("ExpenseReversed"), 1000.0)
             self.assertEqual(emitted.get("BankDepositReversed"), 3000.0)
-            self.assertEqual(emitted.get("FeeReversed"), 2000.0)
-            self.assertTrue(
-                mock_post_misc_down.called or (emitted.get("SavingsDepositReversed") == 3000.0),
-                "Downward misc_fee adjustment must reverse via SavingsService or SavingsDepositReversed",
+            self.assertEqual(mock_rebuild.call_args_list[-1].kwargs.get("manual_opening_balance"), 0.0)
+
+        # Case 3: Client-attributed Misc Fee routes via SavingsService (no FeeCharged) & audits
+        with patch("api.routes.co.cashbook.BusinessDateService.is_operational_open", return_value=(True, "Open")), \
+             patch("services.savings_service.SavingsService.post_misc_savings") as mock_post_misc, \
+             patch("services.posting_engine.FinancialPostingEngine.post_event") as mock_post_event_misc, \
+             patch("services.co_cashbook_projection_builder.CoCashbookProjectionBuilder.rebuild_co_projection"):
+            record_client_fee(
+                payload=RecordClientFeeInput(
+                    date="2026-10-15",
+                    client_id="cli-01",
+                    fee_type="Misc Fee",
+                    amount=5000.0,
+                ),
+                current_user=user,
+                uow=mock_uow,
             )
+            mock_post_misc.assert_called_once()
+            mock_post_event_misc.assert_not_called()
 
     def test_bm_manual_entries_support_downward_reversal_and_zeroing(self):
         mb_tbl = _ChainTableMock([])

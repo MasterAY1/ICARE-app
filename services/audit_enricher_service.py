@@ -326,6 +326,7 @@ class AuditEnricher:
                 "Officer": self.resolve_officer(r.get("officer_id")),
                 "Branch": self.resolve_branch(r.get("branch_id"), officer_id=r.get("officer_id"), client_id=r.get("client_id")),
                 "Reference": self.clean_reference(r.get("reference") or r.get("id"), prefix="FEE"),
+                "Remarks": str(r.get("remarks") or ""),
                 "Status": self.format_status_badge("PAID"),
                 "_raw_record": r
             }
@@ -512,13 +513,28 @@ class AuditEnricher:
             else:
                 status_str = "ACTIVE"
 
+            officer_disp = self.resolve_officer(r.get("officer_id"))
+            collecting_off_disp = officer_disp
+            managing_off_disp = officer_disp
+            if ledger_type == "Misc Savings":
+                m_col = re.search(r"Collected by\s+([^\|\(\n]+)", raw_rem, re.IGNORECASE)
+                if m_col:
+                    col_raw = m_col.group(1).strip()
+                    collecting_off_disp = self.resolve_officer(col_raw) or col_raw
+                m_mgr = re.search(r"Managed by\s+([^\)\|\n]+)", raw_rem, re.IGNORECASE)
+                if m_mgr and not managing_off_disp:
+                    mgr_raw = m_mgr.group(1).strip()
+                    managing_off_disp = self.resolve_officer(mgr_raw) or mgr_raw
+
             row = {
                 "Date": self.format_date(r.get("posting_date") or r.get("created_at")),
                 "Ledger": ledger_type,
                 "Client Code": code_disp,
                 "Client Name": name_disp,
                 "Remarks": clean_rem or ("Deposit" if dep > 0 else "Withdrawal"),
-                "Officer": self.resolve_officer(r.get("officer_id")),
+                "Officer": officer_disp,
+                "Collecting Officer": collecting_off_disp,
+                "Managing Officer": managing_off_disp,
                 "Branch": self.resolve_branch(r.get("branch_id"), officer_id=r.get("officer_id"), client_id=r.get("client_id")),
                 "Deposit": self.format_currency(dep),
                 "Withdrawal": self.format_currency(wth),

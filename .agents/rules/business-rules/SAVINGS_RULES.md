@@ -45,17 +45,18 @@
 - **Status:** CONFIRMED
 - **Implementation Location:** `services/portfolio_service.py` (`group_df` aggregation)
 
-## BR-SAV-004: Savings Operations Physical Cash Principle
+## BR-SAV-004: Savings Operations Physical Cash & Bank Routing Principle
 - **Rule ID:** BR-SAV-004
-- **Name:** Savings Physical Cash Alignment
+- **Name:** Savings Bank Payout & Internal Settlement Alignment
 - **Required Behavior:**
-  - `SavingsDeposited`: Physical cash received (Debits Account 1000).
-  - `SavingsWithdrawn`: Physical cash paid out (Credits Account 1000).
-  - `LoanOffsetFromSavings`: Internal non-cash operation; reduces savings and reduces loan outstanding, MUST NOT affect Account 1000.
-  - `LapsTransferred`: Internal non-cash sweep from savings to LAPS, MUST NOT affect Account 1000.
-  - `LapsPaidOut`: Credits Account 1000 only when `cash_paid=True`.
+  - `SavingsDeposited`: Physical field cash received (`DR Account 1000 / CR Account 2000`).
+  - `SavingsWithdrawn` (Direct Withdrawal): Routed exclusively via Bank Transfer (`cash_paid=False`, `payout_method="Bank Transfer"`, `DR Account 2000 / CR Account 1050`). Direct Vault cash withdrawals are disabled.
+  - `LapsPaidOut` (Direct Claim Payout): Routed exclusively via Bank Transfer (`cash_paid=False`, `DR Account 2030 / CR Account 1050`).
+  - `FeeOffsetFromSavings` & `GapFeeOffsetFromSavings`: Internal non-cash settlement of upfront loan interest (`DR 2000 / CR 3000`) and gap fee (`DR 2000 / CR 1200`) from savings during Finance loan disbursement; MUST NOT touch `Account 1000` or `Account 1050`.
+  - `LoanOffsetFromSavings` & `LapsTransferred`: Internal non-cash operations; MUST NOT affect `Account 1000` or `Account 1050`.
+  - Reversals inspect `original_cash_account` on the linked `financial_ledger_entries` so pre-cutover cash reversals credit/debit `1000` and bank payouts reverse `1050` symmetrically.
 - **Status:** CONFIRMED
-- **Implementation Location:** `services/posting_engine.py`, `services/savings_service.py`
+- **Implementation Location:** `services/posting_engine.py`, `services/savings_service.py`, `api/routes/co/withdrawals.py`
 
 ## BR-SAV-005: Misc Savings Collecting Officer vs Managing Officer Audit Trace
 - **Rule ID:** BR-SAV-005

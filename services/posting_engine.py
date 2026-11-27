@@ -112,12 +112,17 @@ class FinancialPostingEngine:
                     "ExpenseReversed": ("1000", "4000"),
                     "BankDepositReversed": ("1000", "1050"),
                     "BankWithdrawalReversed": ("1050", "1000"),
-                    "SalaryReversed": ("1000", "4100"),
+                    "SalaryReversed": ("1050", "4100"),
                     "SavingsDepositReversed": ("2000", "1000"),
                     "SavingsReversed": ("2000", "1000"),
-                    "SavingsWithdrawalReversed": ("1000", "2000"),
-                    "CashTransferred_HO_In_Reversed": ("3100", "1000"),
-                    "CashTransferred_HO_Out_Reversed": ("1000", "3100"),
+                    "SavingsWithdrawalReversed": ("1050", "2000"),
+                    "CashTransferred_HO_In_Reversed": ("3100", "1050"),
+                    "CashTransferred_HO_Out_Reversed": ("1050", "3100"),
+                    "FeeOffsetFromSavings": ("2000", "3000"),
+                    "GapFeeOffsetFromSavings": ("2000", "1200"),
+                    "VaultAdjusted_In": ("1000", "3100"),
+                    "VaultAdjusted_In_Reversed": ("3100", "1000"),
+                    "LapsPaidOutReversed": ("1050", "2030"),
                 }
                 pair = _synthetic_rules.get(event.event_type)
                 if pair:
@@ -168,21 +173,35 @@ class FinancialPostingEngine:
 
             debit_acc = rule.debit_account
             credit_acc = rule.credit_account
-            is_bank_payout = (payload.get("cash_paid") is False) or ("bank" in str(payload.get("payout_method") or "").lower())
-            if event.event_type == "LapsPaidOut" and is_bank_payout:
-                credit_acc = "1050"  # Bank account for non-cash payout
-            elif event.event_type == "SavingsWithdrawn" and is_bank_payout:
-                credit_acc = "1050"  # Bank transfer withdrawal credits Bank (1050) instead of Vault Cash (1000)
+            payout_lower = str(payload.get("payout_method") or "").lower()
+            is_explicit_legacy_cash = (payload.get("cash_paid") is True) and ("bank" not in payout_lower)
+            orig_acc = str(payload.get("original_cash_account") or "").strip()
+
+            if event.event_type == "LoanDisbursed":
+                prod_cat = str(payload.get("product_category") or "").lower()
+                if "asset" in prod_cat:
+                    credit_acc = "1300"  # Asset inventory delivery (non-cash, non-bank)
+                elif is_explicit_legacy_cash:
+                    credit_acc = "1000"
+                else:
+                    credit_acc = "1050"  # Bank pays Finance loan principal
+            elif event.event_type in ("LapsPaidOut", "SavingsWithdrawn"):
+                credit_acc = "1050"  # Option A: Direct Savings & LAPS payouts route strictly via Bank Transfer
             elif event.event_type == "SavingsWithdrawalReversed":
-                if is_bank_payout:
-                    debit_acc = "1050"  # Bank withdrawal reversal debits Bank (1050) instead of Vault Cash (1000)
+                debit_acc = "1000" if orig_acc == "1000" else "1050"
                 if payload.get("is_laps"):
                     credit_acc = "2030"  # LAPS payout reversal restores LAPS liability (2030)
+            elif event.event_type == "LapsPaidOutReversed":
+                debit_acc = "1000" if orig_acc == "1000" else "1050"
+            elif event.event_type in ("CashTransferred_HO_Out_Reversed", "SalaryReversed"):
+                debit_acc = "1000" if orig_acc == "1000" else "1050"
+            elif event.event_type == "CashTransferred_HO_In_Reversed":
+                credit_acc = "1000" if orig_acc == "1000" else "1050"
             elif event.event_type == "SavingsReversed" and payload.get("is_laps"):
                 debit_acc = "2030"
             elif event.event_type == "LapsRestoredToSavings":
                 debit_acc = "2030"
-                credit_acc = "2000" 
+                credit_acc = "2000"
             if event.event_type == "FeeOffsetFromSavings" and str(payload.get("fee_type", "")).lower() == "other":
                 credit_acc = "1000"  # Vault cash: clears prior recorded collection cash shortage without fee income
 

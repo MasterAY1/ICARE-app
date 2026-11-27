@@ -29,11 +29,12 @@ class TestE2EWithdrawalReconciliation(unittest.TestCase):
         self.mock_uow.client.table().select().eq().eq().eq().execute().data = []
 
     def test_classification_engine_cash_vs_non_cash(self):
-        """Verify Classification Engine correctly sets affects_cash_vault for all transaction types."""
+        """Verify Option A classification routes direct withdrawals & LAPS payouts through Bank (non-vault)."""
         res_cash = WithdrawalClassificationEngine.classify_withdrawal(
             TransactionClassification.CUSTOMER_CASH_WITHDRAWAL, amount=5000.0
         )
-        self.assertTrue(res_cash["affects_cash_vault"])
+        self.assertFalse(res_cash["affects_cash_vault"])
+        self.assertEqual(res_cash["bank_withdrawal"], 5000.0)
         self.assertEqual(res_cash["product_withdrawal"], 5000.0)
 
         res_offset = WithdrawalClassificationEngine.classify_withdrawal(
@@ -51,12 +52,14 @@ class TestE2EWithdrawalReconciliation(unittest.TestCase):
         res_laps_payout_cash = WithdrawalClassificationEngine.classify_withdrawal(
             TransactionClassification.LAPS_PAYOUT, amount=15000.0, is_cash_paid=True
         )
-        self.assertTrue(res_laps_payout_cash["affects_cash_vault"])
+        self.assertFalse(res_laps_payout_cash["affects_cash_vault"])
+        self.assertEqual(res_laps_payout_cash["bank_withdrawal"], 15000.0)
 
         res_laps_payout_bank = WithdrawalClassificationEngine.classify_withdrawal(
             TransactionClassification.LAPS_PAYOUT, amount=15000.0, is_cash_paid=False
         )
         self.assertFalse(res_laps_payout_bank["affects_cash_vault"])
+        self.assertEqual(res_laps_payout_bank["bank_withdrawal"], 15000.0)
 
     def test_e2e_customer_cash_withdrawal(self):
         """Test Customer Cash Withdrawal: Physical vault cash MUST decrease."""

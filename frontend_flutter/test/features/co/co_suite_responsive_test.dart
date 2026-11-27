@@ -975,8 +975,8 @@ void main() {
         themeMode: ThemeMode.light,
         failClientFees: true,
       );
-      await tester.ensureVisible(find.text('End of Day Outflows & Fees'));
-      await tester.tap(find.text('End of Day Outflows & Fees'));
+      await tester.ensureVisible(find.text('End of Day Balance & Outflows'));
+      await tester.tap(find.text('End of Day Balance & Outflows'));
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
       expect(find.byType(CoInlineErrorCard), findsOneWidget);

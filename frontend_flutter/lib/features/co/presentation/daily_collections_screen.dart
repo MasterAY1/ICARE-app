@@ -49,15 +49,14 @@ import 'daily_cashbook_screen.dart';
 
 import 'portfolio_overview_screen.dart';
 
+import 'providers/co_collections_navigation_provider.dart';
+export 'providers/co_collections_navigation_provider.dart';
+
 // ==========================================
 
 // STATE PROVIDERS
 
 // ==========================================
-
-final collectionsTabProvider = StateProvider<int>((ref) => 0); // 0=Record, 1=History, 2=Reversals
-
-final collectionsModeProvider = StateProvider<String>((ref) => 'Group Collection Sheet'); // or 'Single Client Quick Entry'
 
 final collectionsSelectedGroupProvider = StateProvider<String?>((ref) => null);
 
@@ -302,6 +301,10 @@ class _DailyCollectionsScreenState extends ConsumerState<DailyCollectionsScreen>
 
   final TextEditingController _scMiscFeeCtrl = TextEditingController();
 
+  final TextEditingController _scCfdFeeCtrl = TextEditingController();
+
+  final TextEditingController _scBonusFeeCtrl = TextEditingController();
+
   final TextEditingController _scNoteCtrl = TextEditingController(text: 'Single Client Collection');
 
   bool _scMarkNotPaid = false;
@@ -397,6 +400,10 @@ class _DailyCollectionsScreenState extends ConsumerState<DailyCollectionsScreen>
     _scPbFeeCtrl.dispose();
 
     _scMiscFeeCtrl.dispose();
+
+    _scCfdFeeCtrl.dispose();
+
+    _scBonusFeeCtrl.dispose();
 
     _scNoteCtrl.dispose();
 
@@ -801,6 +808,10 @@ class _DailyCollectionsScreenState extends ConsumerState<DailyCollectionsScreen>
 
     final miscVal = _scMarkNotPaid ? 0.0 : (double.tryParse(_scMiscFeeCtrl.text.replaceAll(',', '').trim()) ?? 0.0);
 
+    final cfdVal = _scMarkNotPaid ? 0.0 : (double.tryParse(_scCfdFeeCtrl.text.replaceAll(',', '').trim()) ?? 0.0);
+
+    final bonVal = _scMarkNotPaid ? 0.0 : (double.tryParse(_scBonusFeeCtrl.text.replaceAll(',', '').trim()) ?? 0.0);
+
     final hasSelectedLoan = _scSelectedLoanId != null && _scSelectedLoanId!.trim().isNotEmpty;
 
     if (!hasSelectedLoan && (repVal > 0 || _scMarkNotPaid)) {
@@ -811,7 +822,7 @@ class _DailyCollectionsScreenState extends ConsumerState<DailyCollectionsScreen>
 
     }
 
-    if (!_scMarkNotPaid && savVal == 0 && grpSavVal == 0 && repVal == 0 && appVal == 0 && pbVal == 0 && miscVal == 0) {
+    if (!_scMarkNotPaid && savVal == 0 && grpSavVal == 0 && repVal == 0 && appVal == 0 && pbVal == 0 && miscVal == 0 && cfdVal == 0 && bonVal == 0) {
 
       _showNotification('Please enter a Personal Savings Deposit, Group Savings Deposit, Loan Repayment, or Fee amount greater than ₦0.', isSuccess: false);
 
@@ -840,6 +851,10 @@ class _DailyCollectionsScreenState extends ConsumerState<DailyCollectionsScreen>
       pbVal: pbVal,
 
       miscVal: miscVal,
+
+      cfdVal: cfdVal,
+
+      bonVal: bonVal,
 
       isNotPaid: _scMarkNotPaid,
 
@@ -872,6 +887,10 @@ class _DailyCollectionsScreenState extends ConsumerState<DailyCollectionsScreen>
     required double pbVal,
 
     required double miscVal,
+
+    required double cfdVal,
+
+    required double bonVal,
 
     required bool isNotPaid,
 
@@ -911,6 +930,10 @@ class _DailyCollectionsScreenState extends ConsumerState<DailyCollectionsScreen>
 
       miscVal: miscVal,
 
+      cfdVal: cfdVal,
+
+      bonVal: bonVal,
+
       isNotPaid: isNotPaid,
 
       note: note,
@@ -935,11 +958,13 @@ class _DailyCollectionsScreenState extends ConsumerState<DailyCollectionsScreen>
           'loan_repayment': repVal,
           'app_fee': appVal,
           'passbook_fee': pbVal,
-              'misc_fee': miscVal,
-              'note': note,
-              'mark_not_paid': isNotPaid,
-              'expected_amount': expRep,
-            };
+          'misc_fee': miscVal,
+          'credit_form_damage': cfdVal,
+          'bonus': bonVal,
+          'note': note,
+          'mark_not_paid': isNotPaid,
+          'expected_amount': expRep,
+        };
 
             final singleClientName = clientObj['client_name']?.toString() ?? 'Client';
             final singleKey = payload['idempotency_key']?.toString() ?? syncMgr.generateIdempotencyKey('SC_$singleClientName');
@@ -1008,6 +1033,10 @@ class _DailyCollectionsScreenState extends ConsumerState<DailyCollectionsScreen>
 
               _scMiscFeeCtrl.clear();
 
+              _scCfdFeeCtrl.clear();
+
+              _scBonusFeeCtrl.clear();
+
               _scNoteCtrl.clear();
 
               _scMarkNotPaid = false;
@@ -1037,6 +1066,10 @@ class _DailyCollectionsScreenState extends ConsumerState<DailyCollectionsScreen>
               _scPbFeeCtrl.clear();
 
               _scMiscFeeCtrl.clear();
+
+              _scCfdFeeCtrl.clear();
+
+              _scBonusFeeCtrl.clear();
 
               _scNoteCtrl.clear();
 
@@ -3836,12 +3869,16 @@ Status: CONFIRMED & POSTED TO LEDGER''';
           return true;
         }).toList();
 
-        final dynamic selClient = filteredClients.isNotEmpty
-            ? filteredClients.firstWhere(
-                (c) => c['client_id']?.toString() == _scSelectedClientId,
-                orElse: () => filteredClients.first,
-              )
-            : null;
+        Map<String, dynamic>? selClient;
+        if (filteredClients.isNotEmpty) {
+          final matchIdx = filteredClients.indexWhere(
+            (c) => (c is Map ? c['client_id']?.toString() : null) == _scSelectedClientId,
+          );
+          final picked = matchIdx >= 0 ? filteredClients[matchIdx] : filteredClients.first;
+          if (picked is Map) {
+            selClient = Map<String, dynamic>.from(picked);
+          }
+        }
         if (selClient != null) {
           _scSelectedClientId = selClient['client_id']?.toString();
         } else {
@@ -3856,10 +3893,10 @@ Status: CONFIRMED & POSTED TO LEDGER''';
 
         Map<String, dynamic>? activeLoan;
         if (loans.isNotEmpty) {
-          final found = loans.firstWhere(
-            (l) => l['loan_id']?.toString() == _scSelectedLoanId,
-            orElse: () => loans.first,
+          final loanIdx = loans.indexWhere(
+            (l) => (l is Map ? l['loan_id']?.toString() : null) == _scSelectedLoanId,
           );
+          final found = loanIdx >= 0 ? loans[loanIdx] : loans.first;
           if (found is Map) {
             activeLoan = Map<String, dynamic>.from(found);
             _scSelectedLoanId = activeLoan['loan_id']?.toString();
@@ -4219,23 +4256,25 @@ Status: CONFIRMED & POSTED TO LEDGER''';
                       children: [
                         Row(
                           children: [
-                            Text(
-                              scIsRecordedToday
-                                  ? (scTodayStat == 'NOT_PAID'
-                                      ? 'MARKED UNPAID TODAY ($dateStr)'
-                                      : 'RECORDED TODAY ($dateStr)')
-                                  : 'NOT YET RECORDED TODAY ($dateStr)',
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w800,
-                                color: scIsRecordedToday
-                                    ? (scTodayStat == 'NOT_PAID' ? tokens.warningText : tokens.successText)
-                                    : tokens.textSecondary,
-                                letterSpacing: 0.3,
+                            Expanded(
+                              child: Text(
+                                scIsRecordedToday
+                                    ? (scTodayStat == 'NOT_PAID'
+                                        ? 'MARKED UNPAID TODAY ($dateStr)'
+                                        : 'RECORDED TODAY ($dateStr)')
+                                    : 'NOT YET RECORDED TODAY ($dateStr)',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w800,
+                                  color: scIsRecordedToday
+                                      ? (scTodayStat == 'NOT_PAID' ? tokens.warningText : tokens.successText)
+                                      : tokens.textSecondary,
+                                  letterSpacing: 0.3,
+                                ),
                               ),
                             ),
-                            const Spacer(),
-                            if (scIsRecordedToday && scTodayStat != 'NOT_PAID')
+                            if (scIsRecordedToday && scTodayStat != 'NOT_PAID') ...[
+                              const SizedBox(width: 8),
                               Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                 decoration: BoxDecoration(
@@ -4247,6 +4286,7 @@ Status: CONFIRMED & POSTED TO LEDGER''';
                                   style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Colors.white),
                                 ),
                               ),
+                            ],
                           ],
                         ),
                         const SizedBox(height: 3),
@@ -4486,23 +4526,46 @@ Status: CONFIRMED & POSTED TO LEDGER''';
 
                   const SizedBox(height: 16),
 
-                  // Additional Fees Expander (app.py L5367)
-                  Material(
-                    color: Colors.transparent,
-                    child: Theme(
-                      data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-                      child: ExpansionTile(
-                        iconColor: tokens.textMuted,
-                        collapsedIconColor: tokens.textMuted,
-                        title: Text('Additional Fees (Optional)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: tokens.textPrimary)),
-                        children: [
+                  // Client Fees (All 5 fee types visible directly on Single Client Collection for 100% client attribution)
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: tokens.surfaceSubtle.withValues(alpha: 0.55),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: tokens.borderSubtle),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(Icons.receipt_long_outlined, size: 16, color: tokens.brandPrimary),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'Client Fees (Optional — Attributed & Audited)',
+                                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: tokens.textPrimary),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Record App Fee, Pass Book, Misc Fee (Misc Savings pool), Credit Form Damage, or Bonus directly for this client—standalone or alongside savings/repayment.',
+                          style: TextStyle(fontSize: 11.5, color: tokens.textMuted),
+                        ),
+                        const SizedBox(height: 12),
                         LayoutBuilder(
                           builder: (context, constraints) {
-                            InputDecoration feeDeco(String label) => InputDecoration(
+                            InputDecoration feeDeco(String label, {String? helper}) => InputDecoration(
                                   filled: true,
                                   fillColor: tokens.surfaceSubtle,
                                   labelText: label,
                                   labelStyle: TextStyle(color: tokens.textMuted),
+                                  helperText: helper,
+                                  helperMaxLines: 2,
+                                  helperStyle: TextStyle(fontSize: 10.5, color: tokens.textMuted),
                                   prefixText: '₦ ',
                                   prefixStyle: TextStyle(color: tokens.textSecondary),
                                   hintText: '0',
@@ -4511,70 +4574,84 @@ Status: CONFIRMED & POSTED TO LEDGER''';
                                   enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: tokens.borderStrong)),
                                 );
 
+                            final appField = TextField(
+                              controller: _scAppFeeCtrl,
+                              keyboardType: TextInputType.number,
+                              style: TextStyle(color: tokens.textPrimary),
+                              decoration: feeDeco('Credit Form / App Fee (₦)'),
+                            );
+                            final pbField = TextField(
+                              controller: _scPbFeeCtrl,
+                              keyboardType: TextInputType.number,
+                              style: TextStyle(color: tokens.textPrimary),
+                              decoration: feeDeco('Pass Book (₦)'),
+                            );
+                            final miscField = TextField(
+                              controller: _scMiscFeeCtrl,
+                              keyboardType: TextInputType.number,
+                              style: TextStyle(color: tokens.textPrimary),
+                              decoration: feeDeco('Misc Fee (₦)', helper: 'Routed to branch Misc Savings custody'),
+                            );
+                            final cfdField = TextField(
+                              controller: _scCfdFeeCtrl,
+                              keyboardType: TextInputType.number,
+                              style: TextStyle(color: tokens.textPrimary),
+                              decoration: feeDeco('Credit Form Damage (₦)'),
+                            );
+                            final bonusField = TextField(
+                              controller: _scBonusFeeCtrl,
+                              keyboardType: TextInputType.number,
+                              style: TextStyle(color: tokens.textPrimary),
+                              decoration: feeDeco('Bonus (₦)'),
+                            );
+
                             if (constraints.maxWidth < 600) {
                               return Column(
                                 children: [
-                                  TextField(
-                                    controller: _scAppFeeCtrl,
-                                    keyboardType: TextInputType.number,
-                                    style: TextStyle(color: tokens.textPrimary),
-                                    decoration: feeDeco('App Fee (₦)'),
-                                  ),
+                                  appField,
                                   const SizedBox(height: 12),
-                                  TextField(
-                                    controller: _scPbFeeCtrl,
-                                    keyboardType: TextInputType.number,
-                                    style: TextStyle(color: tokens.textPrimary),
-                                    decoration: feeDeco('Pass Book (₦)'),
-                                  ),
+                                  pbField,
                                   const SizedBox(height: 12),
-                                  TextField(
-                                    controller: _scMiscFeeCtrl,
-                                    keyboardType: TextInputType.number,
-                                    style: TextStyle(color: tokens.textPrimary),
-                                    decoration: feeDeco('Misc Fee (₦)'),
-                                  ),
+                                  miscField,
+                                  const SizedBox(height: 12),
+                                  cfdField,
+                                  const SizedBox(height: 12),
+                                  bonusField,
                                 ],
                               );
                             }
 
-                            return Row(
+                            return Column(
                               children: [
-                                Expanded(
-                                  child: TextField(
-                                    controller: _scAppFeeCtrl,
-                                    keyboardType: TextInputType.number,
-                                    style: TextStyle(color: tokens.textPrimary),
-                                    decoration: feeDeco('App Fee (₦)'),
-                                  ),
+                                Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Expanded(child: appField),
+                                    const SizedBox(width: 12),
+                                    Expanded(child: pbField),
+                                    const SizedBox(width: 12),
+                                    Expanded(child: miscField),
+                                  ],
                                 ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: TextField(
-                                    controller: _scPbFeeCtrl,
-                                    keyboardType: TextInputType.number,
-                                    style: TextStyle(color: tokens.textPrimary),
-                                    decoration: feeDeco('Pass Book (₦)'),
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: TextField(
-                                    controller: _scMiscFeeCtrl,
-                                    keyboardType: TextInputType.number,
-                                    style: TextStyle(color: tokens.textPrimary),
-                                    decoration: feeDeco('Misc Fee (₦)'),
-                                  ),
+                                const SizedBox(height: 12),
+                                Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Expanded(child: cfdField),
+                                    const SizedBox(width: 12),
+                                    Expanded(child: bonusField),
+                                    const Expanded(child: SizedBox()),
+                                  ],
                                 ),
                               ],
                             );
                           },
                         ),
-                        const SizedBox(height: 12),
                       ],
                     ),
                   ),
-                  ),
+
+                  const SizedBox(height: 14),
 
                   // Transaction Note Input
                   TextField(
@@ -4598,7 +4675,14 @@ Status: CONFIRMED & POSTED TO LEDGER''';
                     height: 46,
 
                     child: ElevatedButton(
-                      onPressed: _isSubmitting ? null : () => _submitSingleClient(selClient, dateStr, expRep),
+                      onPressed: _isSubmitting
+                          ? null
+                          : () {
+                              final clientObj = selClient;
+                              if (clientObj != null) {
+                                _submitSingleClient(clientObj, dateStr, expRep);
+                              }
+                            },
                       style: ElevatedButton.styleFrom(
                         backgroundColor: tokens.brandPrimaryDark,
                         foregroundColor: Colors.white,
@@ -5012,10 +5096,12 @@ Status: CONFIRMED & POSTED TO LEDGER''';
             final notPaidCnt = hData['not_paid_repayments_count'] ?? 0;
             final totSav = (hData['total_savings'] as num?)?.toDouble() ?? 0.0;
             final savCnt = hData['savings_deposits_count'] ?? 0;
+            final totFees = (hData['total_fees'] as num?)?.toDouble() ?? 0.0;
             final grandTotal = (hData['grand_total_cash'] as num?)?.toDouble() ?? 0.0;
             final groups = (hData['groups'] as List<dynamic>?) ?? [];
             final repayments = (hData['repayments'] as List<dynamic>?) ?? [];
             final savings = (hData['savings'] as List<dynamic>?) ?? [];
+            final fees = (hData['fees'] as List<dynamic>?) ?? [];
             final reversals = (hData['reversed_records'] as List<dynamic>?) ?? [];
             final eodSummary = hData['eod_summary'] as Map<String, dynamic>? ?? {};
             final eodLog = (hData['eod_log'] as List<dynamic>?) ?? [];
@@ -5023,13 +5109,14 @@ Status: CONFIRMED & POSTED TO LEDGER''';
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Top 4 Metric Summary Cards (Unified summary - eliminates duplicate metrics)
+                // Top 5 Metric Summary Cards (Unified summary incl. Client Fees)
                 LayoutBuilder(
                   builder: (context, constraints) {
                     final k1 = _buildHistoryKpiCard('Total Repayments', CurrencyFormatter.formatNaira(totReps), '$paidCnt Paid • $notPaidCnt Arrears', accentColor: tokens.brandPrimary, icon: Icons.assignment_turned_in_outlined);
                     final k2 = _buildHistoryKpiCard('Total Savings', CurrencyFormatter.formatNaira(totSav), '$savCnt Deposits', accentColor: tokens.infoDot, icon: Icons.savings_outlined);
+                    final kFees = _buildHistoryKpiCard('Total Client Fees', CurrencyFormatter.formatNaira(totFees), '${fees.length} ${fees.length == 1 ? 'Fee Entry' : 'Fee Entries'}', accentColor: tokens.warningDot, icon: Icons.receipt_long_outlined);
                     final k3 = _buildHistoryKpiCard('Grand Total Inflow', CurrencyFormatter.formatNaira(grandTotal), 'Total Cash Collected', isGrand: true, accentColor: tokens.brandPrimary, icon: Icons.payments_outlined);
-                    final k4 = _buildHistoryKpiCard('Active Groups', '${groups.length} ${groups.length == 1 ? 'Group' : 'Groups'}', '${repayments.length + savings.length} Total Txns', accentColor: tokens.brandAccent, icon: Icons.groups_outlined);
+                    final k4 = _buildHistoryKpiCard('Active Groups', '${groups.length} ${groups.length == 1 ? 'Group' : 'Groups'}', '${repayments.length + savings.length + fees.length} Total Txns', accentColor: tokens.brandAccent, icon: Icons.groups_outlined);
                     if (constraints.maxWidth < 600) {
                       return Column(
                         children: [
@@ -5048,12 +5135,14 @@ Status: CONFIRMED & POSTED TO LEDGER''';
                             child: Row(
                               crossAxisAlignment: CrossAxisAlignment.stretch,
                               children: [
-                                Expanded(child: k3),
+                                Expanded(child: kFees),
                                 const SizedBox(width: 10),
                                 Expanded(child: k4),
                               ],
                             ),
                           ),
+                          const SizedBox(height: 10),
+                          k3,
                         ],
                       );
                     } else if (constraints.maxWidth < 900) {
@@ -5074,12 +5163,14 @@ Status: CONFIRMED & POSTED TO LEDGER''';
                             child: Row(
                               crossAxisAlignment: CrossAxisAlignment.stretch,
                               children: [
-                                Expanded(child: k3),
+                                Expanded(child: kFees),
                                 const SizedBox(width: 12),
                                 Expanded(child: k4),
                               ],
                             ),
                           ),
+                          const SizedBox(height: 12),
+                          k3,
                         ],
                       );
                     }
@@ -5091,9 +5182,11 @@ Status: CONFIRMED & POSTED TO LEDGER''';
                           const SizedBox(width: 12),
                           Expanded(child: k2),
                           const SizedBox(width: 12),
-                          Expanded(child: k3),
+                          Expanded(child: kFees),
                           const SizedBox(width: 12),
                           Expanded(child: k4),
+                          const SizedBox(width: 12),
+                          Expanded(child: k3),
                         ],
                       ),
                     );
@@ -5118,6 +5211,10 @@ Status: CONFIRMED & POSTED TO LEDGER''';
 
                 // Unified Client Collections Ledger (repayment and savings in one row)
                 _buildUnifiedClientCollectionsTable(repayments, savings, dateStr),
+                const SizedBox(height: 20),
+
+                // Itemized Client Fees & Charges Audit Register
+                _buildHistoryFeesAuditSection(fees, totFees, dateStr),
                 const SizedBox(height: 20),
 
                 // EOD Summary Section & Historical Log
@@ -6044,6 +6141,227 @@ Status: CONFIRMED & POSTED TO LEDGER''';
               ],
             ),
           ],
+        ],
+      ),
+    );
+  }
+
+  String _formatFeeTypeLabel(String rawType, dynamic feeLabel) {
+    final explicit = feeLabel?.toString().trim() ?? '';
+    if (explicit.isNotEmpty) return explicit;
+    return switch (rawType.trim().toUpperCase()) {
+      'PROCESSING_FEE' || 'APP_FEE' || 'CREDIT_FORM' => 'Credit Form / App Fee',
+      'PASSBOOK' => 'Pass Book',
+      'MISC_FEE' => 'Misc Fee (Misc Savings)',
+      'CREDIT_FORM_DAMAGE' => 'Credit Form Damage',
+      'BONUS' => 'Bonus',
+      _ => rawType.isEmpty ? 'Client Fee' : rawType,
+    };
+  }
+
+  Widget _buildHistoryFeesAuditSection(List<dynamic> fees, double totFees, String dateStr) {
+    final tokens = IcareSurfaceTokens.of(context);
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: tokens.surface,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: tokens.borderSubtle),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Wrap(
+            spacing: 12,
+            runSpacing: 8,
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Recorded Client Fees & Charges',
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: tokens.textPrimary),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    'Itemized client-attributed fee register for $dateStr',
+                    style: TextStyle(fontSize: 12, color: tokens.textMuted),
+                  ),
+                ],
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: tokens.warningBg,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: tokens.warningBorder),
+                ),
+                child: Text(
+                  '${CurrencyFormatter.formatNaira(totFees)} · ${fees.length} ${fees.length == 1 ? 'Entry' : 'Entries'}',
+                  style: coTabularStyle(fontSize: 12, fontWeight: FontWeight.w800, color: tokens.warningText),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          if (fees.isEmpty)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: tokens.surfaceSubtle,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: tokens.borderSubtle),
+              ),
+              child: Text(
+                'No client fees recorded on $dateStr for the selected filter.',
+                style: TextStyle(fontSize: 12, color: tokens.textMuted),
+              ),
+            )
+          else
+            LayoutBuilder(
+              builder: (context, constraints) {
+                if (constraints.maxWidth < 680) {
+                  return Column(
+                    children: fees.map((raw) {
+                      final f = raw as Map<String, dynamic>;
+                      final cName = f['client_name']?.toString() ?? 'Unknown Client';
+                      final cCode = f['client_code']?.toString() ?? '';
+                      final fTypeRaw = f['fee_type']?.toString() ?? '';
+                      final fLabel = _formatFeeTypeLabel(fTypeRaw, f['fee_label']);
+                      final amt = (f['amount'] as num?)?.toDouble() ?? 0.0;
+                      final colOff = f['collecting_officer']?.toString() ?? '';
+                      final manOff = f['managing_officer']?.toString() ?? '';
+                      final ref = f['reference']?.toString() ?? '';
+                      final rem = f['remarks']?.toString() ?? '';
+
+                      return Container(
+                        width: double.infinity,
+                        margin: const EdgeInsets.only(bottom: 10),
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: tokens.surfaceSubtle,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: tokens.borderSubtle),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(cName, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: tokens.textPrimary)),
+                                      if (cCode.isNotEmpty)
+                                        Text(cCode, style: coTabularStyle(fontSize: 11, color: tokens.textMuted)),
+                                    ],
+                                  ),
+                                ),
+                                Text(
+                                  CurrencyFormatter.formatNaira(amt, showDecimals: true),
+                                  style: coTabularStyle(fontSize: 13, fontWeight: FontWeight.w800, color: tokens.warningText),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 6),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 4,
+                              children: [
+                                IcareStatusBadge(label: fLabel, variant: IcareBadgeVariant.warning),
+                                if (colOff.isNotEmpty)
+                                  Text('Collector: $colOff', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: tokens.textSecondary)),
+                                if (manOff.isNotEmpty)
+                                  Text('Custodian: $manOff', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: tokens.brandPrimary)),
+                              ],
+                            ),
+                            if (ref.isNotEmpty || rem.isNotEmpty) ...[
+                              const SizedBox(height: 6),
+                              Text(
+                                [if (ref.isNotEmpty) ref, if (rem.isNotEmpty) rem].join(' · '),
+                                style: TextStyle(fontSize: 11, color: tokens.textMuted),
+                              ),
+                            ],
+                          ],
+                        ),
+                      );
+                    }).toList(),
+                  );
+                }
+
+                return CoControlledHorizontalScroll(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(minWidth: 760),
+                    child: Table(
+                      border: TableBorder.all(color: tokens.borderSubtle),
+                      columnWidths: const {
+                        0: FlexColumnWidth(2.0),
+                        1: FlexColumnWidth(1.6),
+                        2: FlexColumnWidth(1.1),
+                        3: FlexColumnWidth(1.8),
+                        4: FlexColumnWidth(2.3),
+                      },
+                      children: [
+                        TableRow(
+                          decoration: BoxDecoration(color: tokens.surfaceElevated),
+                          children: [
+                            Padding(padding: const EdgeInsets.all(8), child: Text('Client', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 11, color: tokens.textSecondary))),
+                            Padding(padding: const EdgeInsets.all(8), child: Text('Fee Category', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 11, color: tokens.textSecondary))),
+                            Padding(padding: const EdgeInsets.all(8), child: Text('Amount', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 11, color: tokens.textSecondary))),
+                            Padding(padding: const EdgeInsets.all(8), child: Text('Officer / Custody', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 11, color: tokens.textSecondary))),
+                            Padding(padding: const EdgeInsets.all(8), child: Text('Reference / Remarks', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 11, color: tokens.textSecondary))),
+                          ],
+                        ),
+                        ...fees.map((raw) {
+                          final f = raw as Map<String, dynamic>;
+                          final cName = f['client_name']?.toString() ?? 'Unknown Client';
+                          final cCode = f['client_code']?.toString() ?? '';
+                          final fTypeRaw = f['fee_type']?.toString() ?? '';
+                          final fLabel = _formatFeeTypeLabel(fTypeRaw, f['fee_label']);
+                          final amt = (f['amount'] as num?)?.toDouble() ?? 0.0;
+                          final colOff = f['collecting_officer']?.toString() ?? '-';
+                          final manOff = f['managing_officer']?.toString() ?? '';
+                          final ref = f['reference']?.toString() ?? '';
+                          final rem = f['remarks']?.toString() ?? '';
+                          final officerText = manOff.isNotEmpty ? '$colOff\nCustodian: $manOff' : colOff;
+                          final refRem = [if (ref.isNotEmpty) ref, if (rem.isNotEmpty) rem].join('\n');
+
+                          return TableRow(
+                            children: [
+                              Padding(
+                                padding: const EdgeInsets.all(8),
+                                child: Text(cCode.isNotEmpty ? '$cName\n$cCode' : cName, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: tokens.textPrimary)),
+                              ),
+                              Padding(
+                                padding: const EdgeInsets.all(8),
+                                child: Text(fLabel, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: tokens.warningText)),
+                              ),
+                              Padding(
+                                padding: const EdgeInsets.all(8),
+                                child: Text(CurrencyFormatter.formatNaira(amt, showDecimals: true), style: coTabularStyle(fontSize: 11, fontWeight: FontWeight.w700, color: tokens.textPrimary)),
+                              ),
+                              Padding(
+                                padding: const EdgeInsets.all(8),
+                                child: Text(officerText, style: TextStyle(fontSize: 11, color: tokens.textSecondary)),
+                              ),
+                              Padding(
+                                padding: const EdgeInsets.all(8),
+                                child: Text(refRem.isEmpty ? '-' : refRem, style: TextStyle(fontSize: 11, color: tokens.textMuted)),
+                              ),
+                            ],
+                          );
+                        }),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
         ],
       ),
     );
@@ -7512,6 +7830,8 @@ Future<void> showSingleClientCollectionFlowSheet({
   required double appVal,
   required double pbVal,
   required double miscVal,
+  double cfdVal = 0.0,
+  double bonVal = 0.0,
   required bool isNotPaid,
   required String note,
   required bool isOnline,
@@ -7537,6 +7857,8 @@ Future<void> showSingleClientCollectionFlowSheet({
         appVal: appVal,
         pbVal: pbVal,
         miscVal: miscVal,
+        cfdVal: cfdVal,
+        bonVal: bonVal,
         isNotPaid: isNotPaid,
         note: note,
         isOnline: isOnline,
@@ -9898,6 +10220,8 @@ class _SingleClientFlowModal extends StatefulWidget {
   final double appVal;
   final double pbVal;
   final double miscVal;
+  final double cfdVal;
+  final double bonVal;
   final bool isNotPaid;
   final String note;
   final bool isOnline;
@@ -9917,6 +10241,8 @@ class _SingleClientFlowModal extends StatefulWidget {
     required this.appVal,
     required this.pbVal,
     required this.miscVal,
+    this.cfdVal = 0.0,
+    this.bonVal = 0.0,
     required this.isNotPaid,
     required this.note,
     required this.isOnline,
@@ -10118,6 +10444,20 @@ class _SingleClientFlowModalState extends State<_SingleClientFlowModal> {
         color: tokens.textSecondary,
       ));
     }
+    if (widget.cfdVal > 0) {
+      entries.add((
+        label: 'Credit Form Damage',
+        value: CurrencyFormatter.formatNaira(widget.cfdVal, showDecimals: true),
+        color: tokens.warningText,
+      ));
+    }
+    if (widget.bonVal > 0) {
+      entries.add((
+        label: 'Bonus Fee',
+        value: CurrencyFormatter.formatNaira(widget.bonVal, showDecimals: true),
+        color: tokens.warningText,
+      ));
+    }
     return entries;
   }
 
@@ -10127,7 +10467,8 @@ class _SingleClientFlowModalState extends State<_SingleClientFlowModal> {
     final clientName = widget.clientObj['client_name']?.toString() ?? 'Client';
     final clientCode = widget.clientObj['client_code']?.toString() ?? 'CLI-N/A';
     final groupName = widget.clientObj['group_name']?.toString() ?? 'Ungrouped';
-    final totalFees = widget.appVal + widget.pbVal + widget.miscVal;
+    final totalFees =
+        widget.appVal + widget.pbVal + widget.miscVal + widget.cfdVal + widget.bonVal;
     final totalSavings = widget.savVal + widget.grpSavVal;
     final totalCash = widget.repVal + totalSavings + totalFees;
     final entries = _buildItemizedEntries(tokens);
@@ -10406,7 +10747,9 @@ class _SingleClientFlowModalState extends State<_SingleClientFlowModal> {
         widget.grpSavVal +
         widget.appVal +
         widget.pbVal +
-        widget.miscVal;
+        widget.miscVal +
+        widget.cfdVal +
+        widget.bonVal;
 
     return Center(
       key: const ValueKey('single-posting'),
@@ -10515,7 +10858,9 @@ class _SingleClientFlowModalState extends State<_SingleClientFlowModal> {
             widget.grpSavVal +
             widget.appVal +
             widget.pbVal +
-            widget.miscVal);
+            widget.miscVal +
+            widget.cfdVal +
+            widget.bonVal);
     final recordedAt = r['timestamp']?.toString() ??
         DateFormat('dd MMM yyyy, hh:mm a').format(DateTime.now());
     final isOfflineQueued = _isReceiptOfflineQueued(r);

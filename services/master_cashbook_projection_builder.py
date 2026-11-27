@@ -20,6 +20,7 @@ class MasterCashbookProjectionBuilder:
         # 1. Rebuild & fetch all co_cashbooks for this branch on date first
         co_rows = []
         rebuilt_co_map = {}
+        co_user_ids: list = []
         try:
             res_cos = uow.client.table("app_users").select("id, role, username") \
                 .eq("branch_id", branch_id).execute()
@@ -46,12 +47,16 @@ class MasterCashbookProjectionBuilder:
         try:
             res_co = uow.client.table("co_cashbooks").select("*") \
                 .eq("branch_id", branch_id).eq("date", p_date_str).execute()
-            db_co_rows = res_co.data or []
+            co_id_set = set(co_user_ids)
+            db_co_rows = [
+                r for r in (res_co.data or [])
+                if isinstance(r, dict)
+                and (not co_id_set or not r.get("officer_id") or str(r["officer_id"]) in co_id_set)
+            ]
             if rebuilt_co_map:
                 merged_map = {}
                 for r in db_co_rows:
-                    if isinstance(r, dict) and r.get("officer_id"):
-                        merged_map[str(r["officer_id"])] = r
+                    merged_map[str(r["officer_id"])] = r
                 merged_map.update(rebuilt_co_map)
                 co_rows = list(merged_map.values())
             else:
@@ -60,7 +65,7 @@ class MasterCashbookProjectionBuilder:
             if rebuilt_co_map:
                 co_rows = list(rebuilt_co_map.values())
 
-        # 2. Previous day opening balance resolution
+        # 2. Previous day opening balance resolution (preserves negative excess-banked carry-forward)
         opening_bal = 0.0
         try:
             sum_co_open = sum(float(r.get("opening_balance") or 0.0) for r in co_rows) if co_rows else 0.0
@@ -68,14 +73,25 @@ class MasterCashbookProjectionBuilder:
             prev_work_date = BusinessDateService.get_previous_working_day(posting_date)
             prev_work_str = prev_work_date.isoformat()
             
-            res_prev = uow.client.table("master_cashbook").select("closing_balance") \
+            def _resolve_carry_forward(prev_row: dict) -> float:
+                c_bal = float(prev_row.get("closing_balance") or 0.0)
+                if (
+                    c_bal == 0.0
+                    and float(prev_row.get("opening_balance") or 0.0) != 0.0
+                    and float(prev_row.get("total_inflows") or 0.0) == 0.0
+                    and float(prev_row.get("total_outflows") or 0.0) == 0.0
+                    and str(prev_row.get("status") or "") == "Open"
+                ):
+                    return float(prev_row["opening_balance"])
+                return c_bal
+
+            res_prev = uow.client.table("master_cashbook").select("opening_balance, closing_balance, total_inflows, total_outflows, status") \
                 .eq("branch_id", branch_id).eq("date", prev_work_str).execute()
             if res_prev.data and res_prev.data[0].get("closing_balance") is not None:
-                prev_close = float(res_prev.data[0]["closing_balance"] or 0.0)
-                opening_bal = prev_close if prev_close >= 0 else sum_co_open
+                opening_bal = _resolve_carry_forward(res_prev.data[0])
             else:
                 # Query most recent preceding working day
-                res_recent = uow.client.table("master_cashbook").select("date, closing_balance") \
+                res_recent = uow.client.table("master_cashbook").select("date, opening_balance, closing_balance, total_inflows, total_outflows, status") \
                     .eq("branch_id", branch_id).lt("date", p_date_str) \
                     .order("date", desc=True).limit(5).execute()
                 found = False
@@ -86,7 +102,7 @@ class MasterCashbookProjectionBuilder:
                             r_d = date.fromisoformat(r_date_str)
                             is_work, _ = BusinessDateService.is_working_day(r_d)
                             if is_work and row.get("closing_balance") is not None:
-                                opening_bal = float(row["closing_balance"] or 0.0)
+                                opening_bal = _resolve_carry_forward(row)
                                 found = True
                                 break
                 if not found:
@@ -140,6 +156,7 @@ class MasterCashbookProjectionBuilder:
         branch_treasury_finance = 0.0
         branch_treasury_asset = 0.0
         co_non_loan_asset_credit = 0.0
+        gl_vault_adj_in = 0.0
         try:
             res_ledger = uow.client.table("financial_ledger_entries") \
                 .select("*, financial_transactions!inner(officer_id, event_store(event_type, payload))") \
@@ -150,34 +167,9 @@ class MasterCashbookProjectionBuilder:
             
             co_officer_ids = set(str(r.get("officer_id")) for r in co_rows if r.get("officer_id"))
 
-            def _apply_fee_to_totals(narr_text: str, delta: float) -> None:
-                n = (narr_text or "").lower()
-                if "passbook" in n or "pass book" in n or "pass_book" in n:
-                    totals["passbook"] += delta
-                elif "damage" in n and ("credit" in n or "form" in n):
-                    totals["credit_form_damage"] += delta
-                elif "processing" in n or "application" in n or "app fee" in n or "app_fee" in n or "credit form" in n or "credit_form" in n:
-                    totals["app_fee"] += delta
-                elif "contingency" in n:
-                    totals["contingency"] += delta
-                elif "bonus" in n:
-                    totals["bonus"] += delta
-                elif "11%" in n and ("weekly" in n or "12w" in n):
-                    totals["weekly_11_pct"] += delta
-                elif "20%" in n and ("weekly" in n or "24w" in n or "24" in n):
-                    totals["weekly_20_pct"] += delta
-                elif "11%" in n and ("daily" in n or "60" in n):
-                    totals["daily_11_pct"] += delta
-                elif "20%" in n and ("daily" in n or "120" in n):
-                    totals["daily_20_pct"] += delta
-                elif "month" in n or "3m" in n or "6m" in n or "monthly" in n or "risk" in n:
-                    totals["risk_premium_returns"] += delta
-                elif "weekly" in n:
-                    totals["weekly_11_pct"] += delta
-                elif "daily" in n:
-                    totals["daily_11_pct"] += delta
-                else:
-                    totals["savings_deposit"] += delta
+            def _apply_fee_to_totals(narr_text: str, delta: float, fee_type: str = "") -> None:
+                b_key = CoCashbookProjectionBuilder.classify_fee_bucket(narr_text, fee_type)
+                CoCashbookProjectionBuilder.apply_fee_bucket(totals, b_key, delta)
 
             def _apply_repayment_to_totals(ev_p: dict, delta: float) -> None:
                 p_name = str(ev_p.get("product_type") or ev_p.get("narration") or "").lower()
@@ -215,6 +207,8 @@ class MasterCashbookProjectionBuilder:
                             totals["funds_received_other_area"] += amt
                         else:
                             totals["funds_received_ho"] += amt
+                    elif event_type == "VaultAdjusted_In":
+                        gl_vault_adj_in += amt
                     elif event_type == "CashTransferred_HO_Out_Reversed":
                         tx_type = payload.get("transaction_type")
                         if tx_type == "INTER_BRANCH_OUT":
@@ -248,7 +242,7 @@ class MasterCashbookProjectionBuilder:
                             _apply_repayment_to_totals(payload, amt)
                     elif event_type in ["FeeCharged", "MARKUP", "MARKUP_11", "MARKUP_20", "CONTINGENCY", "PROCESSING_FEE", "PASSBOOK", "PenaltyCharged"]:
                         if tx_officer_id not in co_officer_ids:
-                            _apply_fee_to_totals(narr_l, amt)
+                            _apply_fee_to_totals(narr_l, amt, str(payload.get("fee_type") or ""))
                     elif event_type == "AssetSoldCash":
                         if tx_officer_id not in co_officer_ids:
                             if "credit" in narr_l:
@@ -257,10 +251,11 @@ class MasterCashbookProjectionBuilder:
                                 totals["cash_and_carry"] += amt
                         elif "credit" in narr_l:
                             co_non_loan_asset_credit += amt
-                    elif event_type == "SavingsWithdrawalReversed":
+                    elif event_type in ("SavingsWithdrawalReversed", "LapsPaidOutReversed"):
                         if tx_officer_id not in co_officer_ids:
                             is_laps_rev = (
-                                bool(payload.get("is_laps"))
+                                event_type == "LapsPaidOutReversed"
+                                or bool(payload.get("is_laps"))
                                 or str(payload.get("reversed_event_type") or "") == "LapsPaidOut"
                                 or "laps" in str(payload.get("source_bucket") or "").lower()
                             )
@@ -288,6 +283,8 @@ class MasterCashbookProjectionBuilder:
                             totals["fund_to_asset_program"] += amt
                         else:
                             totals["fund_transferred_ho"] += amt
+                    elif event_type == "VaultAdjusted_In_Reversed":
+                        gl_vault_adj_in -= amt
                     elif event_type == "CashTransferred_HO_In_Reversed":
                         tx_type = payload.get("transaction_type")
                         if tx_type == "INTER_BRANCH_IN":
@@ -357,15 +354,16 @@ class MasterCashbookProjectionBuilder:
                         if tx_officer_id not in co_officer_ids:
                             _apply_repayment_to_totals(payload, -amt)
 
-            # 4b. Non-CO Bank-paid Savings / LAPS withdrawals & reversals (Account 1050)
+            # 4b. Bank-routed Treasury Transfers, Salaries, Loans, Savings & LAPS payouts (Account 1050 / 1300)
             res_1050 = uow.client.table("financial_ledger_entries") \
                 .select("*, financial_transactions!inner(officer_id, event_store(event_type, payload))") \
                 .eq("branch_id", branch_id) \
-                .eq("account_code", "1050") \
+                .in_("account_code", ["1050", "1300"]) \
                 .eq("financial_transactions.posting_date", p_date_str) \
                 .execute()
             for entry in (res_1050.data or []):
-                if entry.get("account_code") != "1050":
+                acc_code = str(entry.get("account_code") or "")
+                if acc_code not in ("1050", "1300"):
                     continue
                 amt = float(entry.get("amount") or 0.0)
                 side = entry.get("side")
@@ -374,31 +372,129 @@ class MasterCashbookProjectionBuilder:
                 event_type = ev_store.get("event_type")
                 payload = ev_store.get("payload") or {}
                 tx_officer_id = str(tx.get("officer_id") or "")
-                if tx_officer_id in co_officer_ids:
-                    continue
                 narr_l = str(payload.get("narration") or entry.get("narration") or "").lower()
                 is_auto = CoCashbookProjectionBuilder._is_auto_deduction_withdrawal(event_type, narr_l, payload)
-                if side == "Credit":
-                    if event_type in ["SavingsWithdrawn", "INDIVIDUAL_SAVINGS_WITHDRAWAL", "AUTOMATIC_DEDUCTION"] and not is_auto:
+
+                if acc_code == "1300":
+                    if side == "Credit" and event_type in ["LoanDisbursed", "LOAN_DISBURSED"] and tx_officer_id not in co_officer_ids:
+                        princ = float(payload.get("amount") or amt)
+                        act_cr = float(payload.get("active_credit") or princ)
+                        p_type = str(payload.get("product_type") or "").lower()
+                        cyc = str(payload.get("repayment_cycle") or "")
+                        dur = int(payload.get("duration") or 0)
+                        totals["asset_credit_sales"] += princ
+                        totals["loan_received_asset"] += princ
+                        branch_treasury_asset += princ
+                        bucket = CoCashbookProjectionBuilder._classify_loan_product(p_type or narr_l, cyc, dur)
+                        if bucket == "120d":
+                            totals["disb_120d"] += act_cr
+                        elif bucket == "60d":
+                            totals["disb_60d"] += act_cr
+                        elif bucket == "24w":
+                            totals["disb_24w"] += act_cr
+                        elif bucket == "monthly":
+                            totals["disb_mth"] += act_cr
+                        else:
+                            totals["disb_12w"] += act_cr
+                    continue
+
+                if side == "Debit":
+                    if event_type == "CashTransferred_HO_In":
+                        # Bank-received funding pairs Left funds_received_* with Right bank_deposit (Net Vault = 0)
+                        tx_type = payload.get("transaction_type")
+                        if tx_type == "INTER_BRANCH_IN":
+                            totals["funds_received_other_branch"] += amt
+                        elif tx_type == "INTER_AREA_IN":
+                            totals["funds_received_other_area"] += amt
+                        else:
+                            totals["funds_received_ho"] += amt
+                        totals["bank_deposit"] += amt
+                    elif event_type == "CashTransferred_HO_Out_Reversed":
+                        tx_type = payload.get("transaction_type")
+                        if tx_type == "INTER_BRANCH_OUT":
+                            totals["fund_transferred_other_branch"] -= amt
+                        elif tx_type == "INTER_AREA_OUT":
+                            totals["fund_to_other_area"] -= amt
+                        elif tx_type == "ASSET_PROGRAM":
+                            totals["fund_to_asset_program"] -= amt
+                        else:
+                            totals["fund_transferred_ho"] -= amt
+                        totals["bank_withdrawal"] -= amt
+                    elif event_type == "SalaryReversed":
+                        totals["staff_salaries"] -= amt
+                        totals["bank_withdrawal"] -= amt
+                    elif event_type in ("SavingsWithdrawalReversed", "LapsPaidOutReversed") and tx_officer_id not in co_officer_ids:
+                        is_laps_rev = (
+                            event_type == "LapsPaidOutReversed"
+                            or bool(payload.get("is_laps"))
+                            or str(payload.get("reversed_event_type") or "") == "LapsPaidOut"
+                            or "laps" in str(payload.get("source_bucket") or "").lower()
+                        )
+                        if is_laps_rev:
+                            totals["laps_returns"] -= amt
+                            totals["bank_withdrawal"] -= amt
+                        elif is_auto:
+                            totals["product_withdrawal"] -= amt
+                        else:
+                            totals["product_withdrawal"] -= amt
+                            totals["bank_withdrawal"] -= amt
+                elif side == "Credit":
+                    if event_type == "CashTransferred_HO_Out":
+                        # Bank-paid outflows pair Left bank_withdrawal with Right transfer/asset bucket (Net Vault = 0)
+                        tx_type = payload.get("transaction_type")
+                        if tx_type == "INTER_BRANCH_OUT":
+                            totals["fund_transferred_other_branch"] += amt
+                        elif tx_type == "INTER_AREA_OUT":
+                            totals["fund_to_other_area"] += amt
+                        elif tx_type == "ASSET_PROGRAM":
+                            totals["fund_to_asset_program"] += amt
+                        else:
+                            totals["fund_transferred_ho"] += amt
+                        totals["bank_withdrawal"] += amt
+                    elif event_type == "SalaryPaid":
+                        totals["staff_salaries"] += amt
+                        totals["bank_withdrawal"] += amt
+                    elif event_type == "CashTransferred_HO_In_Reversed":
+                        tx_type = payload.get("transaction_type")
+                        if tx_type == "INTER_BRANCH_IN":
+                            totals["funds_received_other_branch"] -= amt
+                        elif tx_type == "INTER_AREA_IN":
+                            totals["funds_received_other_area"] -= amt
+                        else:
+                            totals["funds_received_ho"] -= amt
+                        totals["bank_deposit"] -= amt
+                    elif event_type in ["LoanDisbursed", "LOAN_DISBURSED"] and tx_officer_id not in co_officer_ids:
+                        cat = str(payload.get("product_category") or "")
+                        p_type = str(payload.get("product_type") or "").lower()
+                        cyc = str(payload.get("repayment_cycle") or "")
+                        dur = int(payload.get("duration") or 0)
+                        princ = float(payload.get("amount") or amt)
+                        act_cr = float(payload.get("active_credit") or princ)
+                        if "asset" in cat.lower() or "asset" in p_type or "asset" in narr_l:
+                            totals["asset_credit_sales"] += princ
+                            totals["loan_received_asset"] += princ
+                            branch_treasury_asset += princ
+                        else:
+                            totals["bank_withdrawal"] += princ
+                            totals["fund_to_product_finance"] += princ
+                            branch_treasury_finance += princ
+                        bucket = CoCashbookProjectionBuilder._classify_loan_product(p_type or narr_l, cyc, dur)
+                        if bucket == "120d":
+                            totals["disb_120d"] += act_cr
+                        elif bucket == "60d":
+                            totals["disb_60d"] += act_cr
+                        elif bucket == "24w":
+                            totals["disb_24w"] += act_cr
+                        elif bucket == "monthly":
+                            totals["disb_mth"] += act_cr
+                        else:
+                            totals["disb_12w"] += act_cr
+                    elif event_type in ["SavingsWithdrawn", "INDIVIDUAL_SAVINGS_WITHDRAWAL", "AUTOMATIC_DEDUCTION"] and tx_officer_id not in co_officer_ids and not is_auto:
                         totals["product_withdrawal"] += amt
                         totals["bank_withdrawal"] += amt
-                    elif event_type == "LapsPaidOut":
+                    elif event_type == "LapsPaidOut" and tx_officer_id not in co_officer_ids:
                         totals["laps_returns"] += amt
                         totals["bank_withdrawal"] += amt
-                elif side == "Debit" and event_type == "SavingsWithdrawalReversed":
-                    is_laps_rev = (
-                        bool(payload.get("is_laps"))
-                        or str(payload.get("reversed_event_type") or "") == "LapsPaidOut"
-                        or "laps" in str(payload.get("source_bucket") or "").lower()
-                    )
-                    if is_laps_rev:
-                        totals["laps_returns"] -= amt
-                        totals["bank_withdrawal"] -= amt
-                    elif is_auto:
-                        totals["product_withdrawal"] -= amt
-                    else:
-                        totals["product_withdrawal"] -= amt
-                        totals["bank_withdrawal"] -= amt
         except Exception as e:
             print(f"[SAVINGS TRACE] Master Cashbook failed to fetch branch ledger entries: {e}")
 
@@ -524,10 +620,11 @@ class MasterCashbookProjectionBuilder:
         except Exception:
             pass
 
-        total_inflows += adj_in
+        total_inflows += adj_in + gl_vault_adj_in
         total_outflows += adj_out
         closing_balance = total_inflows - total_outflows
 
+        effective_adj_in = round(adj_in + gl_vault_adj_in, 2)
         mb_data = {
             "date": p_date_str,
             "branch_id": branch_id,
@@ -535,7 +632,7 @@ class MasterCashbookProjectionBuilder:
             "total_inflows": total_inflows,
             "total_outflows": total_outflows,
             "closing_balance": closing_balance,
-            "adjustment_in": adj_in,
+            "adjustment_in": effective_adj_in,
             "adjustment_out": adj_out,
             "adjustment_reason": adj_reason,
             "verified_by": verified_by,
@@ -546,6 +643,8 @@ class MasterCashbookProjectionBuilder:
         mb_data.update(totals)
 
         db_payload = {k: v for k, v in mb_data.items() if not k.startswith("_")}
+        # Persist only manual adj_in in DB so GL VaultAdjusted_In is never double-counted on rebuild
+        db_payload["adjustment_in"] = adj_in
         for _ in range(10):
             try:
                 uow.client.table("master_cashbook").upsert(db_payload, on_conflict="date,branch_id").execute()

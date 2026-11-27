@@ -1,30 +1,32 @@
 # Projection Rules
 
-## PROJ-001: CO Cashbook Is a Dimensional View of Account 1000 & Operational Balancing
+## PROJ-001: CO Cashbook Is a Dimensional View of Vault Cash (`1000`) & Bank Settlement Pairing
 **Status:** MANDATORY
 
-The CO Cashbook is a projection of Account 1000 Ledger entries, dimensionalized by `officer_id` and balanced by field cash bank deposits and client bank transfers.
+The CO Cashbook is built exclusively for active Credit Officer roles (`CO` / `Credit Officer`), dimensionalized by `officer_id`, tracking physical Vault Cash alongside auto-calculated Bank settlement pairings.
 
 **Required Behavior:**
-- **Field Cash Collections $\rightarrow$ Bank Deposit**: All cash collected from the field (Repayments, Savings, Markups, Fees) is deposited into the company bank account at end of day, recorded under `bank_deposit` on the Right side.
-- **Client Payouts via Bank Transfers $\rightarrow$ Bank Withdrawal**: Client payouts (Loan disbursements, Customer savings withdrawals, LAPS claims) are executed via bank transfer, recorded under `bank_withdrawal` on the Left side.
+- **Field Cash Collections -> Bank Deposit**: Physical cash collected from the field (Repayments, Savings, Asset upfront cash/Cash-and-Carry, standalone Fees) enters Vault Cash (`1000`); when deposited to bank (`BankDeposited` -> `CR 1000`), it appears under `bank_deposit` on the Right side.
+- **Bank Transfers & Disbursements -> Auto Bank Withdrawal**: Bank-routed outflows (Finance `LoanDisbursed`, direct Customer Savings Withdrawals, direct LAPS Payouts) credit Bank (`1050`) and auto-populate `bank_withdrawal` on the Left side — there is NO manual `bank_withdrawal` input.
 - **Balancing Columns on Right Side**:
-  - `weekly_active`, `daily_active`, `monthly_active` balance the loan disbursement portion of `bank_withdrawal`.
-  - `product_withdrawal` balances customer savings withdrawals from `bank_withdrawal`, as well as non-cash loan offsets and LAPS sweeps.
-  - `laps_returns` balances the LAPS payout portion of `bank_withdrawal`.
+  - `weekly_active`, `daily_active`, `monthly_active` balance the Finance loan disbursement portion of `bank_withdrawal` (or `asset_credit_sales` for Asset loans).
+  - `product_withdrawal` balances direct Bank savings withdrawals (paired with `bank_withdrawal`) as well as non-cash offsets (`LoanOffsetFromSavings`, `FeeOffsetFromSavings`, `GapFeeOffsetFromSavings`, `LapsTransferred`).
+  - `laps_returns` balances the Bank-routed LAPS payout portion of `bank_withdrawal`.
 - **Misc Fees / Internal Savings**: Added to `Savings Deposit` ONLY for the branch's designated Misc Savings officer (e.g. CO3 in Ogijo).
 
 ---
 
-## PROJ-002: Master Cashbook Is a Branch-Level Projection of the Same Financial Truth
+## PROJ-002: Master Cashbook Is a Branch-Level Projection of Vault (`1000`) & Bank (`1050`) Pairs
 **Status:** MANDATORY
 
-The Master Cashbook aggregates all CO Cashbooks for the branch, plus directly incorporates branch-level Treasury and Disbursement operations from Account 1000.
+The Master Cashbook aggregates all Credit Officer `co_cashbooks` rows for the branch, incorporates branch-level Treasury (`1000` and `1050`) & non-CO disbursement events, preserves negative excess-banked carry-forward (`opening_balance` never clamped to zero), and exposes live `bank_balance` (`Account 1050` Net).
 
 **Required Behavior:**
-- Master Cashbook aggregates all CO Cashbook entries for a branch.
-- For branch-level items (Treasury, HO transfers, Disbursements, Staff Salaries, Expenses), the Master Cashbook queries Account 1000 Ledger entries directly.
-- Outflows sum CO product withdrawals, vault loan disbursements (`fund_to_asset_program`, `fund_to_product_finance`), bank deposits, staff salaries, expenses, and treasury transfers.
+- Master Cashbook aggregates all CO Cashbook entries for a branch (strictly Credit Officers, zero BM rows).
+- **Bank Funding Received (`CashTransferred_HO_In`)**: Pairs `Left: funds_received_ho / funds_received_other_branch / funds_received_other_area` with `Right: bank_deposit` (`Net Vault = 0`, `DR 1050`).
+- **Bank Transfers Out & Salaries (`CashTransferred_HO_Out`, `SalaryPaid`, `HO/Branch/Area/Asset Out`)**: Auto-credits `Left: bank_withdrawal` paired with `Right: fund_transferred_* / fund_to_asset_program / staff_salaries` (`Net Vault = 0`, `CR 1050`).
+- **Office Cash Expenses & Physical Vault Sweeps**: Physical branch cash outlays (`ExpenseRecorded` -> `CR 1000`) post solely to `Right: office_expenses`; physical vault deposits (`BankDeposited` -> `CR 1000`) post solely to `Right: bank_deposit`.
+- **Vault Float Adjustments (`VaultAdjusted_In`)**: Debits `Account 1000` and populates `Left: adjustment_in` idempotently without double-counting manual DB entries.
 
 ---
 

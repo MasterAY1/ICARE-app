@@ -58,7 +58,7 @@ class TreasuryService:
         if not is_open:
             raise ValueError(f"Operational Restriction: Cannot post treasury transaction. {reason}.")
 
-        # Resolve event type
+        # Resolve event type & Bank vs Vault payment channel
         mapping = {
             "HO_TRANSFER_IN": "CashTransferred_HO_In",
             "HO_TRANSFER_OUT": "CashTransferred_HO_Out",
@@ -66,7 +66,7 @@ class TreasuryService:
             "BANK_WITHDRAWAL": "BankWithdrawn",
             "OFFICE_EXPENSE": "ExpenseRecorded",
             "SALARY": "SalaryPaid",
-            "FLOAT": "ExpenseRecorded",
+            "FLOAT": "VaultAdjusted_In",
             "VAULT_ADJUSTMENT": "ExpenseRecorded",
             "INTER_BRANCH_IN": "CashTransferred_HO_In",
             "INTER_BRANCH_OUT": "CashTransferred_HO_Out",
@@ -75,6 +75,8 @@ class TreasuryService:
             "ASSET_PROGRAM": "CashTransferred_HO_Out"
         }
         event_type = mapping.get(tx_type, "ExpenseRecorded")
+        bank_channel_events = {"CashTransferred_HO_In", "CashTransferred_HO_Out", "SalaryPaid"}
+        is_bank_channel = event_type in bank_channel_events
         evt_id = str(uuid.uuid4())
 
         event = DomainEvent(
@@ -90,6 +92,8 @@ class TreasuryService:
                 "narration": remarks or f"Treasury {tx_type} transaction.",
                 "transaction_type": tx_type,
                 "classification": event_type,
+                "payment_channel": "BANK" if is_bank_channel else "VAULT",
+                "cash_paid": not is_bank_channel,
                 "date": p_date_str
             }
         )
@@ -156,7 +160,36 @@ class TreasuryService:
 
         return record_id
 
-    @classmethod
+    @staticmethod
+    def _detect_original_cash_account(uow: SupabaseUnitOfWork, reference_or_event_id: str) -> str:
+        """Inspect original financial_ledger_entries so reversals match the original account (1000 vs 1050)."""
+        if not reference_or_event_id:
+            return "1050"
+        try:
+            res_tx = (
+                uow.client.table("financial_transactions")
+                .select("transaction_id, financial_ledger_entries(account_code)")
+                .eq("event_id", str(reference_or_event_id))
+                .execute()
+            )
+            rows = getattr(res_tx, "data", None) or []
+            if not rows:
+                res_tx = (
+                    uow.client.table("financial_transactions")
+                    .select("transaction_id, financial_ledger_entries(account_code)")
+                    .eq("reference", str(reference_or_event_id))
+                    .execute()
+                )
+                rows = getattr(res_tx, "data", None) or []
+            for tx_r in rows:
+                for leg in (tx_r.get("financial_ledger_entries") or []):
+                    acc = str(leg.get("account_code") or "").strip()
+                    if acc in ("1000", "1050"):
+                        return acc
+        except Exception:
+            pass
+        return "1050"
+
     @classmethod
     def reverse_treasury_transaction(
         cls,
@@ -181,6 +214,8 @@ class TreasuryService:
             orig_ev = res_ev.data[0]
             orig_payload = orig_ev.get("payload") or {}
             orig_ev_type = orig_ev.get("event_type")
+            orig_tx_type = orig_payload.get("transaction_type")
+            orig_acc = cls._detect_original_cash_account(uow, orig_ev.get("event_id") or original_tx_id)
             amount = float(orig_payload.get("amount") or 0.0)
             branch_val = orig_payload.get("branch") or orig_payload.get("branch_id")
             officer_val = orig_payload.get("officer") or orig_payload.get("officer_id")
@@ -191,8 +226,9 @@ class TreasuryService:
                 "SalaryPaid": "SalaryReversed",
                 "BankDeposited": "BankDepositReversed",
                 "BankWithdrawn": "BankWithdrawalReversed",
-                "CashTransferred_HO_In": "CashTransferred_HO_Out",
-                "CashTransferred_HO_Out": "CashTransferred_HO_In"
+                "CashTransferred_HO_In": "CashTransferred_HO_In_Reversed",
+                "CashTransferred_HO_Out": "CashTransferred_HO_Out_Reversed",
+                "VaultAdjusted_In": "VaultAdjusted_In_Reversed",
             }
             rev_event_type = reversal_ev_map.get(orig_ev_type, "ExpenseReversed")
             
@@ -230,6 +266,8 @@ class TreasuryService:
                     "amount": amount,
                     "date": ev_date_str,
                     "posting_date": ev_date_str,
+                    "transaction_type": orig_tx_type,
+                    "original_cash_account": orig_acc,
                     "reference": new_id,
                     "narration": f"REVERSAL of {orig_ev_type} ({original_tx_id}). Reason: {reason} (by {reversed_by})"
                 }
@@ -259,26 +297,27 @@ class TreasuryService:
 
         orig = res.data[0]
         orig_type = orig.get("transaction_type")
+        orig_acc = cls._detect_original_cash_account(uow, orig.get("reference") or original_tx_id)
         amount = float(orig.get("amount") or 0.0)
         branch_id = orig.get("branch_id")
         officer_id = orig.get("officer_id")
 
         reversal_map = {
-            "HO_TRANSFER_IN": ("HO_TRANSFER_OUT", "CashTransferred_HO_Out"),
-            "HO_TRANSFER_OUT": ("HO_TRANSFER_IN", "CashTransferred_HO_In"),
-            "INTER_BRANCH_IN": ("INTER_BRANCH_OUT", "CashTransferred_HO_Out"),
-            "INTER_BRANCH_OUT": ("INTER_BRANCH_IN", "CashTransferred_HO_In"),
-            "INTER_AREA_IN": ("INTER_AREA_OUT", "CashTransferred_HO_Out"),
-            "INTER_AREA_OUT": ("INTER_AREA_IN", "CashTransferred_HO_In"),
+            "HO_TRANSFER_IN": ("HO_TRANSFER_IN", "CashTransferred_HO_In_Reversed"),
+            "HO_TRANSFER_OUT": ("HO_TRANSFER_OUT", "CashTransferred_HO_Out_Reversed"),
+            "INTER_BRANCH_IN": ("INTER_BRANCH_IN", "CashTransferred_HO_In_Reversed"),
+            "INTER_BRANCH_OUT": ("INTER_BRANCH_OUT", "CashTransferred_HO_Out_Reversed"),
+            "INTER_AREA_IN": ("INTER_AREA_IN", "CashTransferred_HO_In_Reversed"),
+            "INTER_AREA_OUT": ("INTER_AREA_OUT", "CashTransferred_HO_Out_Reversed"),
             "ASSET_PROGRAM": ("ASSET_PROGRAM", "CashTransferred_HO_Out_Reversed"),
             "BANK_DEPOSIT": ("BANK_DEPOSIT", "BankDepositReversed"),
             "BANK_WITHDRAWAL": ("BANK_WITHDRAWAL", "BankWithdrawalReversed"),
             "OFFICE_EXPENSE": ("OFFICE_EXPENSE", "ExpenseReversed"),
             "SALARY": ("SALARY", "SalaryReversed"),
-            "FLOAT": ("FLOAT", "ExpenseReversed"),
+            "FLOAT": ("FLOAT", "VaultAdjusted_In_Reversed" if orig_acc == "1000" else "CashTransferred_HO_In_Reversed"),
             "VAULT_ADJUSTMENT": ("VAULT_ADJUSTMENT", "ExpenseReversed")
         }
-        
+
         comp_tx_type, rev_event_type = reversal_map.get(orig_type, ("OFFICE_EXPENSE", "ExpenseReversed"))
         new_id = str(uuid.uuid4())
         from services.business_date_service import BusinessDateService
@@ -330,6 +369,7 @@ class TreasuryService:
                 "reference": new_id,
                 "narration": f"REVERSAL of Treasury {orig_type} ({original_tx_id}). Reason: {reason}",
                 "transaction_type": comp_tx_type,
+                "original_cash_account": orig_acc,
                 "classification": rev_event_type
             }
         )

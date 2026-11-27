@@ -3125,7 +3125,57 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
               );
             },
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 12),
+
+          // Live Branch Bank Reserve Summary Strip
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: tokens.surfaceSubtle,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: tokens.borderSubtle),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: Row(
+                    children: [
+                      Icon(Icons.account_balance_rounded, size: 17, color: tokens.brandPrimary),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Branch Bank Position',
+                              style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: tokens.textPrimary),
+                            ),
+                            Text(
+                              'Net corporate transfers, bank disbursements & vault sweeps',
+                              style: TextStyle(fontSize: 11, color: tokens.textMuted),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Text(
+                  CurrencyFormatter.format(cp.bankBalance),
+                  style: bmTabularStyle(
+                    fontSize: 14.5,
+                    fontWeight: FontWeight.w800,
+                    color: cp.bankBalance >= 0 ? tokens.textPrimary : tokens.dangerText,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
 
           // Reconciliation Verification Banner
           Container(

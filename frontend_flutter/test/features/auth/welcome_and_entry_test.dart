@@ -6,10 +6,10 @@ import 'package:frontend_flutter/core/auth/auth_state.dart';
 import 'package:frontend_flutter/core/auth/session_storage_base.dart';
 import 'package:frontend_flutter/core/network/api_client.dart';
 import 'package:frontend_flutter/core/offline/connectivity_service.dart';
+import 'package:frontend_flutter/core/offline/offline_database_service.dart';
 import 'package:frontend_flutter/features/auth/presentation/login_screen.dart';
 import 'package:frontend_flutter/features/auth/presentation/splash_screen.dart';
 import 'package:frontend_flutter/features/auth/presentation/widgets/auth_entry_components.dart';
-import 'package:frontend_flutter/features/auth/presentation/widgets/icare_brand_crest.dart';
 
 class _MemorySessionStorage implements SessionStorage {
   @override
@@ -112,6 +112,9 @@ Widget _wrapWithHost({
   return ProviderScope(
     overrides: [
       authControllerProvider.overrideWith((ref) => authController),
+      offlineDatabaseServiceProvider.overrideWithValue(
+        OfflineDatabaseService(useMemoryStore: true),
+      ),
       if (connectivityService != null)
         connectivityServiceProvider.overrideWith((ref) {
           ref.onDispose(connectivityService.dispose);
@@ -154,14 +157,87 @@ void main() {
       );
       await tester.pump();
 
-      expect(find.byType(IcareBrandCrest), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      expect(find.bySemanticsLabel('ICARE Institutional Crest'), findsOneWidget);
       expect(find.text('ICARE'), findsOneWidget);
       expect(
-        find.text('Empowering Communities, Growing Together'),
+        find.text(
+          'Initiative for Community Advancement,\nRelief and Empowerment',
+        ),
         findsOneWidget,
       );
-      expect(find.text('Initializing secure vault...'), findsOneWidget);
+      expect(find.text('Growing Together'), findsOneWidget);
+      expect(find.text('TAP TO CONTINUE'), findsOneWidget);
       _expectNoEmojis(tester);
+    });
+
+    testWidgets(
+        'SplashScreen renders cleanly on compact screens and large text scale without overflow',
+        (
+      WidgetTester tester,
+    ) async {
+      final _FakeAuthController auth = _FakeAuthController();
+
+      tester.view.physicalSize = const Size(360, 640);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      await tester.pumpWidget(
+        _wrapWithHost(
+          authController: auth,
+          viewport: const Size(360, 640),
+          disableAnimations: true,
+          textScale: 1.25,
+          child: const SplashScreen(enableBootstrap: false),
+        ),
+      );
+      await tester.pump();
+
+      expect(tester.takeException(), isNull);
+      expect(find.text('ICARE'), findsOneWidget);
+      expect(find.text('Growing Together'), findsOneWidget);
+      _expectNoEmojis(tester);
+    });
+
+    testWidgets(
+        'SplashScreen supports tap-to-continue once bootstrap completes', (
+      WidgetTester tester,
+    ) async {
+      final _FakeAuthController auth = _FakeAuthController();
+      final _SilentConnectivityService conn = _SilentConnectivityService();
+
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      await tester.pumpWidget(
+        _wrapWithHost(
+          authController: auth,
+          connectivityService: conn,
+          disableAnimations: false,
+          child: const SplashScreen(
+            minimumHoldOverride: Duration(seconds: 10),
+            enableBootstrap: true,
+          ),
+        ),
+      );
+
+      // Allow post-frame bootstrap to complete while 10s showcase timer is active
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 150));
+      expect(find.byType(SplashScreen), findsOneWidget);
+
+      // Tapping skips remaining showcase wait and routes into LoginScreen cleanly
+      await tester.tap(find.byType(SplashScreen));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 600));
+
+      expect(find.byType(LoginScreen), findsOneWidget);
+      expect(find.text('Staff Workspace Sign-In'), findsOneWidget);
+      _expectNoEmojis(tester);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
     });
 
     testWidgets(

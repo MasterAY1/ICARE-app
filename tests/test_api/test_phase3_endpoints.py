@@ -130,12 +130,18 @@ def test_eod_adjustments_closed_date(setup_dependencies):
 def test_eod_adjustments_success(setup_dependencies):
     mock_uow, mock_user = setup_dependencies
     with patch("services.business_date_service.BusinessDateService.is_operational_open", return_value=(True, "Working Day")), \
+         patch("services.co_cashbook_projection_builder.CoCashbookProjectionBuilder.rebuild_co_projection", return_value={
+             "opening_balance": 10000.0,
+             "office_expenses": 500.0,
+             "bank_deposit": 0.0,
+         }), \
+         patch("services.master_cashbook_projection_builder.MasterCashbookProjectionBuilder.rebuild_master_projection"), \
          patch("services.posting_engine.FinancialPostingEngine.post_event") as mock_post_ev:
         mock_uow.cashbook._resolve_branch_id.return_value = "b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a22"
         mock_uow.loans._resolve_officer_id.return_value = "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"
         mock_uow.client.table().select().eq().eq().eq().execute.return_value = MagicMock(data=[
             {
-                "app_fee": 1000.0,
+                "opening_balance": 10000.0,
                 "office_expenses": 500.0,
                 "bank_deposit": 0.0
             }
@@ -143,7 +149,6 @@ def test_eod_adjustments_success(setup_dependencies):
 
         payload = {
             "opening_balance": 15000.0,
-            "app_fee": 2500.0,          # Delta +1500
             "office_expenses": 1200.0,   # Delta +700
             "bank_deposit": 5000.0       # Delta +5000
         }
@@ -152,5 +157,17 @@ def test_eod_adjustments_success(setup_dependencies):
         assert res.status_code == 200
         data = res.json()
         assert data["success"] is True
-        assert mock_post_ev.call_count == 3  # 3 deltas posted
+        assert mock_post_ev.call_count == 2  # ExpenseRecorded + BankDeposited
         mock_uow.cashbook.cascade_co_projection.assert_called_once()
+
+
+def test_eod_adjustments_rejects_unattributed_fees(setup_dependencies):
+    mock_uow, mock_user = setup_dependencies
+    with patch("services.business_date_service.BusinessDateService.is_operational_open", return_value=(True, "Working Day")), \
+         patch("services.co_cashbook_projection_builder.CoCashbookProjectionBuilder.rebuild_co_projection", return_value={}):
+        mock_uow.cashbook._resolve_branch_id.return_value = "b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a22"
+        mock_uow.loans._resolve_officer_id.return_value = "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"
+
+        res = client.post("/api/v1/co/cashbook/eod-adjustments", json={"app_fee": 2500.0}, headers=HEADERS)
+        assert res.status_code == 400
+        assert "Single Client Quick Entry" in res.json()["detail"]

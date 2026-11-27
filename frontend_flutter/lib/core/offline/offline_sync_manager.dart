@@ -80,6 +80,7 @@ class OfflineSyncManager {
 
   bool _isSyncing = false;
   bool get isSyncing => _isSyncing;
+  Future<SyncResult>? _activeSyncFuture;
 
   OfflineSyncManager(
     this._db,
@@ -326,7 +327,9 @@ class OfflineSyncManager {
     final savAmt = (payload['savings_deposit'] as num?)?.toDouble() ?? 0.0;
     final fees = ((payload['app_fee'] as num?)?.toDouble() ?? 0.0) +
                  ((payload['passbook_fee'] as num?)?.toDouble() ?? 0.0) +
-                 ((payload['misc_fee'] as num?)?.toDouble() ?? 0.0);
+                 ((payload['misc_fee'] as num?)?.toDouble() ?? 0.0) +
+                 ((payload['credit_form_damage'] as num?)?.toDouble() ?? 0.0) +
+                 ((payload['bonus'] as num?)?.toDouble() ?? 0.0);
     final totCash = repAmt + savAmt + grpSavAmt + fees;
 
     return {
@@ -523,12 +526,23 @@ class OfflineSyncManager {
   }
 
   /// Flushes all queued collection & withdrawal request batches sequentially to the cloud backend.
-  /// Ensures strict double-entry ledger atomicity via atomic_execute_operations.
-  Future<SyncResult> syncOutbox() async {
-    if (_isSyncing) {
-      return SyncResult(success: false, message: 'Synchronization already in progress');
+  /// Synchronize queued outbox items cleanly, joining any in-flight sync run.
+  Future<SyncResult> syncOutbox() {
+    final existing = _activeSyncFuture;
+    if (existing != null) {
+      return existing;
     }
+    final future = _runSyncOutboxInternal();
+    _activeSyncFuture = future;
+    future.whenComplete(() {
+      if (identical(_activeSyncFuture, future)) {
+        _activeSyncFuture = null;
+      }
+    });
+    return future;
+  }
 
+  Future<SyncResult> _runSyncOutboxInternal() async {
     _isSyncing = true;
     int syncedCount = 0;
     int failedCount = 0;

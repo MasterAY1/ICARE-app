@@ -122,8 +122,9 @@ class TestWithdrawalServices(unittest.TestCase):
             )
         self.assertEqual(result["status"], "SUCCESS")
         self.assertEqual(result["amount"], 10000.0)
-        self.assertTrue(result["cash_paid"])
-        self.assertTrue(result["affects_cash_vault"])
+        # Option A enforces Bank Transfer routing (Account 1050) for direct LAPS payouts
+        self.assertFalse(result["cash_paid"])
+        self.assertFalse(result["affects_cash_vault"])
 
         ops = self._extract_rpc_ops()
         tables = [o.get("table") for o in ops]

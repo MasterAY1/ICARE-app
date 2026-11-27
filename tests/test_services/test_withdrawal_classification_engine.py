@@ -4,20 +4,24 @@ from services.withdrawal_classification_engine import WithdrawalClassificationEn
 
 class TestWithdrawalClassificationEngine(unittest.TestCase):
     def test_normal_customer_cash_withdrawal(self):
+        # Option A: direct customer savings withdrawals route via Bank Transfer (zero Vault cash)
         res = WithdrawalClassificationEngine.classify_withdrawal(
             TransactionClassification.CUSTOMER_CASH_WITHDRAWAL, 5000.0
         )
         self.assertEqual(res["product_withdrawal"], 5000.0)
-        self.assertEqual(res["cash_withdrawal"], 5000.0)
-        self.assertTrue(res["affects_cash_vault"])
+        self.assertEqual(res["cash_withdrawal"], 0.0)
+        self.assertEqual(res["bank_withdrawal"], 5000.0)
+        self.assertFalse(res["affects_cash_vault"])
 
     def test_individual_savings_cash_withdrawal(self):
+        # Option A: individual savings withdrawals route via Bank Transfer (zero Vault cash)
         res = WithdrawalClassificationEngine.classify_withdrawal(
             TransactionClassification.INDIVIDUAL_SAVINGS_WITHDRAWAL, 2500.0
         )
         self.assertEqual(res["product_withdrawal"], 2500.0)
-        self.assertEqual(res["cash_withdrawal"], 2500.0)
-        self.assertTrue(res["affects_cash_vault"])
+        self.assertEqual(res["cash_withdrawal"], 0.0)
+        self.assertEqual(res["bank_withdrawal"], 2500.0)
+        self.assertFalse(res["affects_cash_vault"])
 
     def test_loan_offset_classification(self):
         res = WithdrawalClassificationEngine.classify_withdrawal(
@@ -37,12 +41,14 @@ class TestWithdrawalClassificationEngine(unittest.TestCase):
         self.assertFalse(res["affects_cash_vault"])
 
     def test_laps_payout_cash_true(self):
+        # Option A: direct LAPS payouts enforce Bank Transfer regardless of legacy flag
         res = WithdrawalClassificationEngine.classify_withdrawal(
             TransactionClassification.LAPS_PAYOUT, 8000.0, is_cash_paid=True
         )
         self.assertEqual(res["product_withdrawal"], 8000.0)
-        self.assertEqual(res["cash_withdrawal"], 8000.0)
-        self.assertTrue(res["affects_cash_vault"])
+        self.assertEqual(res["cash_withdrawal"], 0.0)
+        self.assertEqual(res["bank_withdrawal"], 8000.0)
+        self.assertFalse(res["affects_cash_vault"])
 
     def test_laps_payout_cash_false(self):
         res = WithdrawalClassificationEngine.classify_withdrawal(

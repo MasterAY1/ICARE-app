@@ -58,6 +58,48 @@ DB_TO_UI_REP = {
 
 UI_TO_DB_REP = {v: k for k, v in DB_TO_UI_REP.items()}
 UI_TO_DB_REP["Group ID"] = "group_id"
+
+
+def _is_explicit_unpaid_loan_mark(data: Dict[str, Any], db_data: Optional[Dict[str, Any]] = None) -> bool:
+    """Return True only when a collection explicitly marks a loan installment unpaid.
+
+    Savings-only, fee-only, or cash-and-carry collections (including legacy callers
+    that omit Transaction Type and default Payment Status to NOT_PAID) are never
+    treated as unpaid loan marks when zero repayment is paired with a non-loan inflow.
+    """
+    if bool(data.get("mark_not_paid")):
+        return True
+    db = db_data or {}
+    raw_p_status = str(data.get("Payment Status") or data.get("payment_status") or db.get("payment_status") or "PAID").upper()
+    if raw_p_status != "NOT_PAID":
+        return False
+    tx_type = str(data.get("Transaction Type") or db.get("transaction_type") or "")
+    if tx_type == "Individual Savings Deposit":
+        return False
+    non_loan_keys = (
+        "Individual Savings Deposit", "Savings Amount", "savings_amount", "savings_deposit",
+        "Group Savings Deposit", "group_savings_dep",
+        "App Fee", "app_fee", "Processing Fee Paid", "processing_fee_paid",
+        "Pass Book", "Pass Book Paid", "pass_book_paid", "passbook",
+        "Misc Fee", "Misc Fees", "misc_fees", "misc_fee",
+        "Credit Form", "credit_form",
+        "Credit Form Damage", "credit_form_damage",
+        "Bonus", "bonus",
+        "Asset Cash and Carry", "Cash and Carry", "cash_and_carry",
+    )
+    loan_rep_val = max(
+        float(data.get("Repayment Amount") or 0.0),
+        float(data.get("Loan Repayment Amount") or 0.0),
+        float(data.get("loan_repayment_amount") or 0.0),
+        float(db.get("loan_repayment_amount") or 0.0),
+    )
+    has_non_loan_inflow = any(
+        float(data.get(k) or db.get(k) or 0.0) > 0.0
+        for k in non_loan_keys
+    )
+    if loan_rep_val <= 0.0 and has_non_loan_inflow:
+        return False
+    return True
 UI_TO_DB_REP["group_id"] = "group_id"
 UI_TO_DB_REP["payment_status"] = "payment_status"
 UI_TO_DB_REP["expected_amount"] = "expected_amount"
@@ -72,6 +114,70 @@ def is_valid_uuid(val: Any) -> bool:
         return True
     except (ValueError, TypeError, AttributeError):
         return False
+
+
+def _append_fee_audit_ops(
+    target_ops: List[Dict[str, Any]],
+    *,
+    fee_record_id: str,
+    fee_category: str,
+    amount_val: float,
+    client_id_val: Optional[str],
+    client_name_val: str,
+    branch_name: str,
+    officer_name: str,
+    actor_username: str,
+    actor_role: str,
+    officer_uuid: Optional[str],
+    posting_date_iso: str,
+    reference_val: str,
+    description_str: str,
+    managing_officer: Optional[str] = None,
+) -> None:
+    """Append immutable audit_logs and user_audit_logs entries for every fee recorded."""
+    safe_uid = officer_uuid if is_valid_uuid(officer_uuid) else None
+    new_val_payload: Dict[str, Any] = {
+        "client_id": client_id_val,
+        "client_name": str(client_name_val),
+        "fee_type": fee_category,
+        "amount": float(amount_val),
+        "posting_date": posting_date_iso,
+        "collecting_officer": str(officer_name),
+        "reference": str(reference_val),
+    }
+    if managing_officer:
+        new_val_payload["managing_officer"] = str(managing_officer)
+
+    target_ops.append({
+        "type": "insert",
+        "table": "audit_logs",
+        "record": {
+            "id": str(uuid.uuid4()),
+            "user_id": safe_uid,
+            "action": "RECORD_CLIENT_FEE",
+            "description": description_str,
+            "table_name": "fees",
+            "record_id": fee_record_id,
+        },
+    })
+    target_ops.append({
+        "type": "insert",
+        "table": "user_audit_logs",
+        "record": {
+            "id": str(uuid.uuid4()),
+            "user_id": safe_uid,
+            "username": str(actor_username or officer_name or "system"),
+            "role": str(actor_role or "Credit Officer"),
+            "branch": str(branch_name or ""),
+            "action": "RECORD_CLIENT_FEE",
+            "module": "collections",
+            "entity_type": "Fee",
+            "entity_id": fee_record_id,
+            "display_name": f"{client_name_val} ({fee_category})",
+            "new_value": new_val_payload,
+            "status": "SUCCESS",
+        },
+    })
 
 
 def _strip_client_suffix(raw_cid: Any) -> str:
@@ -300,7 +406,7 @@ def save_repayment(
 
             # 4. Route Loan Repayment (including explicit NOT_PAID / 0 collection records)
             raw_p_status = str(data.get('Payment Status') or data.get('payment_status') or db_data.get('payment_status') or "PAID").upper()
-            is_marked_not_paid = bool(data.get('mark_not_paid') or (raw_p_status == "NOT_PAID" and str(data.get('Transaction Type') or db_data.get('transaction_type')) != "Individual Savings Deposit"))
+            is_marked_not_paid = _is_explicit_unpaid_loan_mark(data, db_data)
 
             if not skip_repayment and (loan_repay > 0 or is_marked_not_paid):
                 active_loan_id = data.get('loan_id') or db_data.get('loan_id')
@@ -438,6 +544,54 @@ def save_repayment(
                     defer_operations=member_ops,
                     allow_closed_date=allow_closed_date
                 )
+                # Mirror audit visibility into public.fees (collector officer_id) + audit logs
+                # WITHOUT emitting FeeCharged (monetary/ledger stays 100% in internal_savings Cr 2000/2020)
+                misc_col_oid = FinancialPostingEngine._resolve_officer_id(uow, officer)
+                misc_bid = FinancialPostingEngine._resolve_branch_id(uow, branch)
+                misc_cid = str(client_id) if is_valid_uuid(client_id) else None
+                misc_mgr_name = None
+                try:
+                    _, misc_mgr_name = SavingsService.get_branch_misc_savings_officer(uow, branch)
+                except Exception:
+                    misc_mgr_name = None
+                misc_fee_row_id = str(uuid.uuid4())
+                misc_ref_str = str(misc_id_val or data.get('fee_reference') or data.get('batch_id') or misc_fee_row_id)
+                misc_audit_desc = (
+                    f"Recorded Misc Fee (Misc Savings Custody: {misc_mgr_name or 'Designated Misc Manager'} | "
+                    f"Collector: {officer}) of ₦{misc_fees:,.2f} for {client_name}"
+                )
+                member_ops.append({
+                    "type": "insert",
+                    "table": "fees",
+                    "record": {
+                        "id": misc_fee_row_id,
+                        "posting_date": p_date.isoformat(),
+                        "client_id": misc_cid,
+                        "branch_id": misc_bid if is_valid_uuid(misc_bid) else None,
+                        "officer_id": misc_col_oid if is_valid_uuid(misc_col_oid) else None,
+                        "fee_type": "MISC_FEE",
+                        "amount": misc_fees,
+                        "reference": misc_ref_str,
+                        "remarks": misc_audit_desc,
+                    },
+                })
+                _append_fee_audit_ops(
+                    member_ops,
+                    fee_record_id=misc_fee_row_id,
+                    fee_category="MISC_FEE",
+                    amount_val=misc_fees,
+                    client_id_val=misc_cid,
+                    client_name_val=str(client_name),
+                    branch_name=str(branch),
+                    officer_name=str(officer),
+                    actor_username=str(data.get("actor_username") or officer),
+                    actor_role=str(data.get("actor_role") or "Credit Officer"),
+                    officer_uuid=misc_col_oid,
+                    posting_date_iso=p_date.isoformat(),
+                    reference_val=misc_ref_str,
+                    description_str=misc_audit_desc,
+                    managing_officer=misc_mgr_name or str(officer),
+                )
 
             # 6. Route EOD / Global Inputs & Cash Flows (atomically in member_ops)
             p_date_str = p_date.isoformat()
@@ -528,6 +682,7 @@ def save_repayment(
                 def _record_fee_with_client_attribution(amount_val: float, fee_category: str, narration_str: str) -> None:
                     if amount_val <= 0:
                         return
+                    fee_row_id = str(uuid.uuid4())
                     event_fee = DomainEvent(
                         event_id=str(uuid.uuid4()),
                         aggregate_id=valid_aggregate_id,
@@ -553,7 +708,7 @@ def save_repayment(
                         "type": "insert",
                         "table": "fees",
                         "record": {
-                            "id": str(uuid.uuid4()),
+                            "id": fee_row_id,
                             "posting_date": p_date_str,
                             "client_id": c_uuid_str,
                             "branch_id": branch_uuid,
@@ -564,6 +719,22 @@ def save_repayment(
                             "remarks": narration_str
                         }
                     })
+                    _append_fee_audit_ops(
+                        member_ops,
+                        fee_record_id=fee_row_id,
+                        fee_category=fee_category,
+                        amount_val=amount_val,
+                        client_id_val=c_uuid_str,
+                        client_name_val=str(client_name),
+                        branch_name=str(branch),
+                        officer_name=str(officer),
+                        actor_username=str(data.get("actor_username") or officer),
+                        actor_role=str(data.get("actor_role") or "Credit Officer"),
+                        officer_uuid=officer_uuid,
+                        posting_date_iso=p_date_str,
+                        reference_val=ev_ref,
+                        description_str=narration_str,
+                    )
 
                 # Passbook Fee / Bonus
                 pb_amt = float(db_data.get('passbook_bonus') or db_data.get('pass_book_paid') or db_data.get('passbook') or 0.0)
@@ -869,8 +1040,7 @@ def save_repayments(
                 acr_amt = float(data.get('Asset Credit Sales') or data.get('asset_credit_sales') or 0.0)
                 item_fees = app_amt + pb_amt + misc_amt + cfd_amt + bon_amt + cf_amt + cc_amt + acr_amt
 
-                p_status_val = str(data.get('Payment Status') or data.get('payment_status') or "PAID").upper()
-                is_not_paid_mark = bool(data.get('mark_not_paid') or (p_status_val == "NOT_PAID" and str(data.get('Transaction Type')) != "Individual Savings Deposit"))
+                is_not_paid_mark = _is_explicit_unpaid_loan_mark(data)
 
                 is_rep_done = bool(rep_tx_id and rep_tx_id in existing_rep_ids)
                 is_sav_done = bool(sav_tx_id and sav_tx_id in existing_sav_ids)

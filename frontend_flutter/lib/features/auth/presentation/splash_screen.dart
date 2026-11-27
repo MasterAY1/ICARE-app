@@ -8,27 +8,32 @@ import '../../../core/auth/auth_controller.dart';
 import '../../../core/auth/auth_state.dart';
 import '../../../core/offline/connectivity_service.dart';
 import '../../../core/offline/offline_database_service.dart';
-import '../../../core/theme/icare_colors.dart';
 import '../../../core/theme/theme_controller.dart';
 import '../../onboarding/presentation/branch_onboarding_portal_screen.dart';
 import '../../onboarding/presentation/credit_officer_portal_screen.dart';
 import '../../shared/presentation/co_app_scaffold.dart';
 import 'login_screen.dart';
-import 'widgets/icare_brand_crest.dart';
 
-/// Institutional Welcome Animation & Bootstrap Splash Screen for ICARE Core Banking.
+/// Animated Brand Introduction & Bootstrap Splash Screen for ICARE Core Banking.
 ///
-/// Coordinates vault initialization, connectivity probing, and session restoration
-/// concurrently with an emerald crest reveal that hands off seamlessly into `LoginScreen`
-/// via Hero shared-element continuity. Respects system reduced-motion settings.
+/// Combines ICARE's crisp light brand canvas, halo rings, dual blue/green waves,
+/// staggered crest/wordmark/motto reveal, 8-dot loader, and tap-to-continue
+/// choreography with concurrent SQLite vault initialization, connectivity probing,
+/// deep-link resolution, and staff session restoration.
 class SplashScreen extends ConsumerStatefulWidget {
   final Duration? minimumHoldOverride;
   final bool enableBootstrap;
+  final Duration duration;
+  final Duration holdDuration;
+  final bool allowTapToSkip;
 
   const SplashScreen({
     super.key,
     this.minimumHoldOverride,
     this.enableBootstrap = true,
+    this.duration = const Duration(milliseconds: 4300),
+    this.holdDuration = const Duration(milliseconds: 450),
+    this.allowTapToSkip = true,
   });
 
   @override
@@ -36,76 +41,64 @@ class SplashScreen extends ConsumerStatefulWidget {
 }
 
 class _SplashScreenState extends ConsumerState<SplashScreen>
-    with TickerProviderStateMixin {
-  late final AnimationController _introCtrl;
-  late final AnimationController _orbitCtrl;
+    with SingleTickerProviderStateMixin {
+  static const Color icareBlue = Color(0xFF237DB8);
+  static const Color icareMottoGreen = Color(0xFF58A923);
+  static const Color ink = Color(0xFF172A43);
 
-  late final Animation<double> _crestScale;
-  late final Animation<double> _crestFade;
-  late final Animation<double> _brandFade;
-  late final Animation<Offset> _brandSlide;
-  late final Animation<double> _footerFade;
-  late final Animation<Offset> _footerSlide;
+  late final AnimationController _controller;
+  late final Animation<double> _logoOpacity;
+  late final Animation<double> _logoScale;
+  late final Animation<double> _titleOpacity;
+  late final Animation<Offset> _titleOffset;
+  late final Animation<double> _descriptionOpacity;
+  late final Animation<double> _mottoOpacity;
+  late final Animation<Offset> _mottoOffset;
+  late final Animation<double> _loaderOpacity;
 
-  final List<Timer> _activeTimers = <Timer>[];
+  Timer? _finishTimer;
   bool _disableAnimations = false;
   bool _bootstrapStarted = false;
+  bool _bootstrapCompleted = false;
+  bool _showcaseHoldElapsed = false;
+  bool _skipRequested = false;
+  bool _navigated = false;
   bool _isDisposed = false;
-
-  String _statusMessage = 'Initializing secure vault...';
-  double _progressValue = 0.16;
 
   @override
   void initState() {
     super.initState();
 
-    _introCtrl = AnimationController(
+    _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 780),
+      duration: widget.duration,
     );
 
-    _orbitCtrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 2800),
+    _logoOpacity = _interval(0.00, 0.42, Curves.easeOut);
+    _logoScale = Tween<double>(begin: 0.78, end: 1.0).animate(
+      _interval(0.00, 0.56, Curves.easeOutBack),
     );
 
-    _crestScale = Tween<double>(begin: 0.86, end: 1.0).animate(
-      CurvedAnimation(
-        parent: _introCtrl,
-        curve: const Interval(0.0, 0.65, curve: Curves.easeOutCubic),
-      ),
-    );
-    _crestFade = CurvedAnimation(
-      parent: _introCtrl,
-      curve: const Interval(0.0, 0.42, curve: Curves.easeOut),
-    );
+    _titleOpacity = _interval(0.28, 0.60, Curves.easeOut);
+    _titleOffset = Tween<Offset>(
+      begin: const Offset(0, 0.20),
+      end: Offset.zero,
+    ).animate(_interval(0.28, 0.62, Curves.easeOutCubic));
 
-    _brandFade = CurvedAnimation(
-      parent: _introCtrl,
-      curve: const Interval(0.24, 0.78, curve: Curves.easeOut),
-    );
-    _brandSlide = Tween<Offset>(
+    _descriptionOpacity = _interval(0.43, 0.72, Curves.easeOut);
+    _mottoOpacity = _interval(0.64, 0.91, Curves.easeOut);
+    _mottoOffset = Tween<Offset>(
       begin: const Offset(0, 0.18),
       end: Offset.zero,
-    ).animate(
-      CurvedAnimation(
-        parent: _introCtrl,
-        curve: const Interval(0.24, 0.82, curve: Curves.easeOutCubic),
-      ),
-    );
+    ).animate(_interval(0.64, 0.92, Curves.easeOutCubic));
 
-    _footerFade = CurvedAnimation(
-      parent: _introCtrl,
-      curve: const Interval(0.45, 1.0, curve: Curves.easeOut),
-    );
-    _footerSlide = Tween<Offset>(
-      begin: const Offset(0, 0.14),
-      end: Offset.zero,
-    ).animate(
-      CurvedAnimation(
-        parent: _introCtrl,
-        curve: const Interval(0.45, 1.0, curve: Curves.easeOutCubic),
-      ),
+    _loaderOpacity = _interval(0.78, 1.0, Curves.easeIn);
+  }
+
+  Animation<double> _interval(double begin, double end, Curve curve) {
+    return CurvedAnimation(
+      parent: _controller,
+      curve: Interval(begin, end, curve: curve),
     );
   }
 
@@ -116,47 +109,53 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
     _disableAnimations = reduced;
 
     if (reduced) {
-      _introCtrl.value = 1.0;
-      _orbitCtrl.stop();
-    } else {
-      if (!_introCtrl.isCompleted && !_introCtrl.isAnimating) {
-        _introCtrl.forward();
-      }
-      if (!_orbitCtrl.isAnimating) {
-        _orbitCtrl.repeat();
-      }
+      _controller.value = 1.0;
+    } else if (!_controller.isCompleted && !_controller.isAnimating) {
+      _controller.forward();
     }
 
     if (widget.enableBootstrap && !_bootstrapStarted) {
       _bootstrapStarted = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && !_isDisposed) {
-          _bootstrapApp();
-        }
+        if (!mounted || _isDisposed) return;
+        final Duration holdDelay = widget.minimumHoldOverride ??
+            (_disableAnimations
+                ? const Duration(milliseconds: 900)
+                : widget.duration + widget.holdDuration);
+        _scheduleHoldCompletion(holdDelay);
+        _bootstrapApp();
       });
     }
   }
 
-  Future<void> _waitCancellable(Duration duration) {
-    if (duration <= Duration.zero || _isDisposed || !mounted) {
-      return Future<void>.value();
+  void _scheduleHoldCompletion(Duration delay) {
+    _finishTimer?.cancel();
+    if (delay <= Duration.zero) {
+      _showcaseHoldElapsed = true;
+      _tryNavigate();
+      return;
     }
-    final Completer<void> completer = Completer<void>();
-    late final Timer timer;
-    timer = Timer(duration, () {
-      _activeTimers.remove(timer);
-      if (!completer.isCompleted) {
-        completer.complete();
-      }
+    _finishTimer = Timer(delay, () {
+      if (!mounted || _isDisposed) return;
+      _showcaseHoldElapsed = true;
+      _tryNavigate();
     });
-    _activeTimers.add(timer);
-    return completer.future;
+  }
+
+  void _handleTapToContinue() {
+    if (!widget.allowTapToSkip || !widget.enableBootstrap || _isDisposed) {
+      return;
+    }
+    if (!_skipRequested && mounted) {
+      setState(() => _skipRequested = true);
+    }
+    if (_controller.value < 1.0 && !_disableAnimations) {
+      _controller.value = 1.0;
+    }
+    _tryNavigate();
   }
 
   Future<void> _bootstrapApp() async {
-    final Stopwatch stopwatch = Stopwatch()..start();
-
-    // 1. Ensure Offline SQLite vault store is ready
     try {
       final dbService = ref.read(offlineDatabaseServiceProvider);
       await dbService.database;
@@ -164,30 +163,13 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
       // Offline database fallback runs silently on Web or unsupported hosts
     }
 
-    if (!mounted || _isDisposed) return;
-    setState(() {
-      _progressValue = 0.44;
-      _statusMessage = 'Verifying network connection...';
-    });
-
-    // 2. Probe network reachability cleanly
-    bool isOnline = false;
     try {
       final connService = ref.read(connectivityServiceProvider);
-      isOnline = await connService.checkActualConnection();
+      await connService.checkActualConnection();
     } catch (_) {
-      isOnline = false;
+      // Offline mode continues seamlessly if connectivity check throws
     }
 
-    if (!mounted || _isDisposed) return;
-    setState(() {
-      _progressValue = 0.72;
-      _statusMessage = isOnline
-          ? 'Synchronizing core session...'
-          : 'Restoring offline vault session...';
-    });
-
-    // 3. Restore authenticated staff session if present
     try {
       await ref.read(authControllerProvider.notifier).restoreSession();
     } catch (_) {
@@ -195,36 +177,25 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
     }
 
     if (!mounted || _isDisposed) return;
-    setState(() {
-      _progressValue = 1.0;
-      _statusMessage = 'Workspace ready';
-    });
+    _bootstrapCompleted = true;
+    _tryNavigate();
+  }
 
-    // Ensure crisp, dignified reveal duration without gratuitous startup blocking
-    final Duration minFloor = widget.minimumHoldOverride ??
-        (_disableAnimations
-            ? const Duration(milliseconds: 220)
-            : const Duration(milliseconds: 900));
-    final Duration remaining = minFloor - stopwatch.elapsed;
-    if (remaining > Duration.zero) {
-      await _waitCancellable(remaining);
-    }
+  void _tryNavigate() {
+    if (!mounted || _isDisposed || _navigated) return;
+    if (!_bootstrapCompleted) return;
+    if (!_showcaseHoldElapsed && !_skipRequested) return;
 
-    // Brief settle pause on 100% progress only when full motion is active
-    if (!_disableAnimations && mounted && !_isDisposed) {
-      await _waitCancellable(const Duration(milliseconds: 160));
-    }
-
-    if (!mounted || _isDisposed) return;
+    _navigated = true;
+    _finishTimer?.cancel();
 
     final Widget targetScreen = _resolveTargetScreen();
-
     Navigator.of(context).pushReplacement(
       PageRouteBuilder<void>(
         pageBuilder: (context, animation, secondaryAnimation) => targetScreen,
         transitionDuration: _disableAnimations
             ? const Duration(milliseconds: 150)
-            : const Duration(milliseconds: 520),
+            : const Duration(milliseconds: 500),
         reverseTransitionDuration: const Duration(milliseconds: 220),
         transitionsBuilder: (context, animation, secondaryAnimation, child) {
           final CurvedAnimation eased = CurvedAnimation(
@@ -290,7 +261,9 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
     final AuthState authState = ref.read(authControllerProvider);
     if (authState is AuthStateAuthenticated) {
       if (authState.user.preferences.isNotEmpty) {
-        ref.read(themeControllerProvider.notifier).applyRemotePreferences(authState.user.preferences);
+        ref
+            .read(themeControllerProvider.notifier)
+            .applyRemotePreferences(authState.user.preferences);
       }
       return const CoAppScaffold();
     }
@@ -300,351 +273,364 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
   @override
   void dispose() {
     _isDisposed = true;
-    for (final Timer timer in List<Timer>.from(_activeTimers)) {
-      timer.cancel();
-    }
-    _activeTimers.clear();
-    _introCtrl.dispose();
-    _orbitCtrl.dispose();
+    _finishTimer?.cancel();
+    _controller.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final Size screenSize = MediaQuery.sizeOf(context);
-    final bool compactHeight = screenSize.height < 640;
+    final Size size = MediaQuery.sizeOf(context);
+    final bool compact = size.height < 700;
+    final double logoWidth =
+        (size.width * (compact ? 0.44 : 0.57)).clamp(156.0, 285.0);
 
     return Scaffold(
-      backgroundColor: IcareColors.primaryDark,
-      body: Stack(
-        children: [
-          // Deep Forest Emerald Vault Backdrop
-          const Positioned.fill(
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    IcareColors.primaryDark,
-                    Color(0xFF043B2E),
-                    Color(0xFF02261D),
-                  ],
-                ),
-              ),
-              child: CustomPaint(
-                painter: IcareEmeraldBackdropPainter(alignmentYFactor: 0.42),
-              ),
+      backgroundColor: Colors.white,
+      body: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: widget.allowTapToSkip ? _handleTapToContinue : null,
+        child: Stack(
+          children: [
+            const Positioned.fill(
+              child: CustomPaint(painter: _IcareBackgroundPainter()),
             ),
-          ),
-
-          // Main Centered Welcome Canvas
-          SafeArea(
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                return Center(
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 24,
-                      vertical: 24,
+            SafeArea(
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  return SingleChildScrollView(
+                    padding: EdgeInsets.fromLTRB(
+                      24,
+                      compact ? 16 : 24,
+                      24,
+                      widget.allowTapToSkip ? 44 : 24,
                     ),
                     child: ConstrainedBox(
                       constraints: BoxConstraints(
-                        maxWidth: 420,
-                        minHeight: math.max(0, constraints.maxHeight - 48),
+                        minHeight: math.max(
+                          0,
+                          constraints.maxHeight -
+                              (compact ? 16 : 24) -
+                              (widget.allowTapToSkip ? 44 : 24),
+                        ),
                       ),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          // Top Institutional Overline
-                          FadeTransition(
-                            opacity: _brandFade,
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 5,
-                              ),
-                              decoration: BoxDecoration(
-                                color: Colors.white.withValues(alpha: 0.06),
-                                borderRadius: BorderRadius.circular(999),
-                                border: Border.all(
-                                  color: const Color(0xFF34D399)
-                                      .withValues(alpha: 0.25),
-                                ),
-                              ),
-                              child: const Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  SizedBox(
-                                    width: 7,
-                                    height: 7,
-                                    child: DecoratedBox(
-                                      decoration: BoxDecoration(
-                                        shape: BoxShape.circle,
-                                        color: IcareColors.accent,
-                                      ),
-                                    ),
-                                  ),
-                                  SizedBox(width: 8),
-                                  Flexible(
-                                    child: Text(
-                                      'CORE BANKING & FIELD OPERATIONS',
-                                      softWrap: true,
-                                      style: TextStyle(
-                                        color: Color(0xFFA7F3D0),
-                                        fontSize: 10.5,
-                                        fontWeight: FontWeight.w700,
-                                        letterSpacing: 1.2,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-
-                          SizedBox(height: compactHeight ? 24 : 40),
-
-                          // Central Hero Crest & Brand Typography
-                          Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              FadeTransition(
-                                opacity: _crestFade,
-                                child: ScaleTransition(
-                                  scale: _crestScale,
-                                  child: SizedBox(
-                                    width: 164,
-                                    height: 164,
-                                    child: Stack(
-                                      alignment: Alignment.center,
-                                      children: [
-                                        if (!_disableAnimations)
-                                          AnimatedBuilder(
-                                            animation: _orbitCtrl,
-                                            builder: (context, _) {
-                                              return CustomPaint(
-                                                size: const Size(164, 164),
-                                                painter: _VaultOrbitPainter(
-                                                  progress: _orbitCtrl.value,
+                      child: Center(
+                        child: AnimatedBuilder(
+                          animation: _controller,
+                          builder: (context, _) {
+                            return Column(
+                              mainAxisSize: MainAxisSize.min,
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                FadeTransition(
+                                  opacity: _logoOpacity,
+                                  child: ScaleTransition(
+                                    scale: _logoScale,
+                                    child: Hero(
+                                      tag: 'icare_brand_crest',
+                                      child: Semantics(
+                                        label: 'ICARE Institutional Crest',
+                                        image: true,
+                                        child: Container(
+                                          width: logoWidth,
+                                          height: logoWidth,
+                                          decoration: BoxDecoration(
+                                            shape: BoxShape.circle,
+                                            color: Colors.white,
+                                            boxShadow: [
+                                              BoxShadow(
+                                                color: icareBlue.withValues(
+                                                  alpha: 0.13,
                                                 ),
+                                                blurRadius: 30,
+                                                spreadRadius: 2,
+                                                offset: const Offset(0, 12),
+                                              ),
+                                            ],
+                                          ),
+                                          clipBehavior: Clip.antiAlias,
+                                          child: Image.asset(
+                                            'assets/icare_logo.png',
+                                            fit: BoxFit.contain,
+                                            errorBuilder:
+                                                (context, error, stackTrace) {
+                                              return Icon(
+                                                Icons.volunteer_activism_rounded,
+                                                size: logoWidth * 0.56,
+                                                color: icareBlue,
                                               );
                                             },
                                           ),
-                                        const IcareBrandCrest(
-                                          size: 108,
-                                          heroTag: 'icare_brand_crest',
-                                          animateSweep: true,
                                         ),
-                                      ],
+                                      ),
                                     ),
                                   ),
                                 ),
-                              ),
-                              SizedBox(height: compactHeight ? 18 : 26),
-                              FadeTransition(
-                                opacity: _brandFade,
-                                child: SlideTransition(
-                                  position: _brandSlide,
+                                SizedBox(height: compact ? 15 : 22),
+                                FadeTransition(
+                                  opacity: _titleOpacity,
+                                  child: SlideTransition(
+                                    position: _titleOffset,
+                                    child: Text(
+                                      'ICARE',
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(
+                                        color: icareBlue,
+                                        fontSize: compact ? 34 : 40,
+                                        height: 1,
+                                        fontWeight: FontWeight.w900,
+                                        letterSpacing: 5.5,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 10),
+                                FadeTransition(
+                                  opacity: _descriptionOpacity,
+                                  child: ConstrainedBox(
+                                    constraints: const BoxConstraints(maxWidth: 340),
+                                    child: const Text(
+                                      'Initiative for Community Advancement,\n'
+                                      'Relief and Empowerment',
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(
+                                        color: ink,
+                                        fontSize: 14,
+                                        height: 1.45,
+                                        fontWeight: FontWeight.w600,
+                                        letterSpacing: 0.05,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                SizedBox(height: compact ? 14 : 24),
+                                FadeTransition(
+                                  opacity: _mottoOpacity,
+                                  child: SlideTransition(
+                                    position: _mottoOffset,
+                                    child: Text(
+                                      'Growing Together',
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(
+                                        color: icareMottoGreen,
+                                        fontSize: compact ? 22 : 25,
+                                        fontWeight: FontWeight.w800,
+                                        fontStyle: FontStyle.italic,
+                                        letterSpacing: 0.2,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                SizedBox(height: compact ? 24 : 34),
+                                FadeTransition(
+                                  opacity: _loaderOpacity,
                                   child: Column(
+                                    mainAxisSize: MainAxisSize.min,
                                     children: [
-                                      const Text(
-                                        'ICARE',
-                                        style: TextStyle(
-                                          fontSize: 38,
-                                          fontWeight: FontWeight.w800,
-                                          color: Colors.white,
-                                          letterSpacing: 7.0,
-                                          height: 1.05,
-                                        ),
+                                      _IcareLoader(
+                                        animate: !_disableAnimations,
                                       ),
-                                      const SizedBox(height: 10),
-                                      const Text(
-                                        'Empowering Communities, Growing Together',
-                                        textAlign: TextAlign.center,
-                                        softWrap: true,
-                                        style: TextStyle(
-                                          fontSize: 13.5,
-                                          fontWeight: FontWeight.w500,
-                                          color: Color(0xFFA7F3D0),
-                                          letterSpacing: 0.25,
+                                      if (_skipRequested &&
+                                          !_bootstrapCompleted) ...[
+                                        const SizedBox(height: 10),
+                                        const Text(
+                                          'Preparing workspace...',
+                                          textAlign: TextAlign.center,
+                                          style: TextStyle(
+                                            color: Color(0xFF64748B),
+                                            fontSize: 11.5,
+                                            fontWeight: FontWeight.w600,
+                                          ),
                                         ),
-                                      ),
-                                      const SizedBox(height: 28),
-                                      _buildProgressIndicator(),
+                                      ],
                                     ],
                                   ),
                                 ),
-                              ),
-                            ],
-                          ),
-
-                          SizedBox(height: compactHeight ? 24 : 40),
-
-                          // Institutional Footer
-                          FadeTransition(
-                            opacity: _footerFade,
-                            child: SlideTransition(
-                              position: _footerSlide,
-                              child: const Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(
-                                    Icons.verified_user_outlined,
-                                    size: 13,
-                                    color: Color(0xFF6EE7B7),
-                                  ),
-                                  SizedBox(width: 6),
-                                  Flexible(
-                                    child: Text(
-                                      'Initiative for Community Advancement, Relief and Empowerment',
-                                      textAlign: TextAlign.center,
-                                      softWrap: true,
-                                      style: TextStyle(
-                                        color: Color(0xFF94A3B8),
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.w500,
-                                        letterSpacing: 0.15,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ],
+                              ],
+                            );
+                          },
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+            if (widget.allowTapToSkip)
+              Positioned(
+                bottom: 18,
+                left: 0,
+                right: 0,
+                child: SafeArea(
+                  top: false,
+                  child: FadeTransition(
+                    opacity: _loaderOpacity,
+                    child: const Text(
+                      'TAP TO CONTINUE',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Color(0xFF8A99A8),
+                        fontSize: 9,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 2,
                       ),
                     ),
                   ),
-                );
-              },
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildProgressIndicator() {
-    final Duration barDuration =
-        _disableAnimations ? Duration.zero : const Duration(milliseconds: 360);
-
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Semantics(
-          label: 'Startup progress ${(100 * _progressValue).round()} percent',
-          value: '${(100 * _progressValue).round()}%',
-          child: Container(
-            width: 220,
-            height: 5,
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(999),
-            ),
-            alignment: Alignment.centerLeft,
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                return AnimatedContainer(
-                  duration: barDuration,
-                  curve: Curves.easeOutCubic,
-                  width: constraints.maxWidth * _progressValue.clamp(0.0, 1.0),
-                  height: 5,
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [IcareColors.accent, Color(0xFF34D399)],
-                    ),
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                );
-              },
-            ),
-          ),
-        ),
-        const SizedBox(height: 12),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 6,
-              height: 6,
-              decoration: const BoxDecoration(
-                shape: BoxShape.circle,
-                color: Color(0xFF34D399),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Flexible(
-              child: AnimatedSwitcher(
-                duration: _disableAnimations
-                    ? Duration.zero
-                    : const Duration(milliseconds: 220),
-                child: Text(
-                  _statusMessage,
-                  key: ValueKey<String>(_statusMessage),
-                  softWrap: true,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    color: Color(0xFFCBD5E1),
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                    letterSpacing: 0.1,
-                  ),
                 ),
               ),
-            ),
           ],
         ),
-      ],
+      ),
     );
   }
 }
 
-/// Subtle expanding concentric ring painter framing the central brand crest.
-class _VaultOrbitPainter extends CustomPainter {
-  final double progress;
+class _IcareLoader extends StatefulWidget {
+  final bool animate;
 
-  const _VaultOrbitPainter({required this.progress});
+  const _IcareLoader({this.animate = true});
+
+  @override
+  State<_IcareLoader> createState() => _IcareLoaderState();
+}
+
+class _IcareLoaderState extends State<_IcareLoader>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 950),
+    );
+    if (widget.animate) {
+      _controller.repeat();
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant _IcareLoader oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.animate != widget.animate) {
+      if (widget.animate) {
+        if (!_controller.isAnimating) {
+          _controller.repeat();
+        }
+      } else {
+        _controller.stop();
+        _controller.value = 0.0;
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return RotationTransition(
+      turns: _controller,
+      child: SizedBox(
+        width: 28,
+        height: 28,
+        child: Stack(
+          children: List.generate(8, (index) {
+            final double angle = index * math.pi / 4;
+            return Transform.translate(
+              offset: Offset(
+                10 * math.cos(angle),
+                10 * math.sin(angle),
+              ),
+              child: Align(
+                alignment: Alignment.center,
+                child: Container(
+                  width: 6,
+                  height: 6,
+                  decoration: BoxDecoration(
+                    color: _SplashScreenState.icareBlue.withValues(
+                      alpha: 0.25 + (index / 8) * 0.75,
+                    ),
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              ),
+            );
+          }),
+        ),
+      ),
+    );
+  }
+}
+
+class _IcareBackgroundPainter extends CustomPainter {
+  const _IcareBackgroundPainter();
 
   @override
   void paint(Canvas canvas, Size size) {
-    final Offset center = Offset(size.width / 2, size.height / 2);
-    const double minR = 56.0;
-    const double maxR = 80.0;
+    final Offset center = Offset(size.width / 2, size.height * 0.43);
 
-    for (int i = 0; i < 2; i++) {
-      final double phase = (progress + i * 0.5) % 1.0;
-      final double radius = minR + (maxR - minR) * phase;
-      final double alpha = (1.0 - phase) * 0.28;
+    final Paint haloPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.2
+      ..color = _SplashScreenState.icareBlue.withValues(alpha: 0.045);
 
-      final Paint p = Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.25
-        ..color = const Color(0xFF34D399).withValues(alpha: alpha);
-
-      canvas.drawCircle(center, radius, p);
+    for (var i = 0; i < 3; i++) {
+      canvas.drawCircle(
+        center,
+        size.width * (0.36 + i * 0.105),
+        haloPaint,
+      );
     }
 
-    // Subtle directional sweep arc
-    final double sweepAngle = progress * 2 * math.pi;
-    final Paint arcPaint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.5
-      ..strokeCap = StrokeCap.round
-      ..color = IcareColors.accent.withValues(alpha: 0.45);
+    final Paint blue = Paint()..color = const Color(0xFF1683C7);
+    final Paint blueDark = Paint()..color = const Color(0xFF0868AD);
+    final Paint green = Paint()..color = const Color(0xFF78C928);
+    final Paint greenLight = Paint()..color = const Color(0xFF9BD83B);
 
-    canvas.drawArc(
-      Rect.fromCircle(center: center, radius: 62.0),
-      sweepAngle,
-      math.pi * 0.45,
-      false,
-      arcPaint,
-    );
+    Path wave(double y, double rise, bool fromLeft) {
+      final Path path = Path();
+      if (fromLeft) {
+        path
+          ..moveTo(0, y)
+          ..cubicTo(
+            size.width * 0.18,
+            y - rise,
+            size.width * 0.30,
+            y + rise * 0.8,
+            size.width * 0.52,
+            size.height,
+          )
+          ..lineTo(0, size.height)
+          ..close();
+      } else {
+        path
+          ..moveTo(size.width, y)
+          ..cubicTo(
+            size.width * 0.82,
+            y - rise,
+            size.width * 0.70,
+            y + rise * 0.8,
+            size.width * 0.48,
+            size.height,
+          )
+          ..lineTo(size.width, size.height)
+          ..close();
+      }
+      return path;
+    }
+
+    final double y = size.height * 0.91;
+    canvas.drawPath(wave(y, size.height * 0.055, true), blueDark);
+    canvas.drawPath(wave(y + 10, size.height * 0.045, true), blue);
+    canvas.drawPath(wave(y, size.height * 0.055, false), green);
+    canvas.drawPath(wave(y + 10, size.height * 0.045, false), greenLight);
   }
 
   @override
-  bool shouldRepaint(covariant _VaultOrbitPainter oldDelegate) {
-    return oldDelegate.progress != progress;
-  }
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

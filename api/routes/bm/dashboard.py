@@ -216,6 +216,7 @@ def get_bm_dashboard(
             bank_deposit=float(bcp.get("bank_deposit", 0.0)),
             bank_withdrawal=float(bcp.get("bank_withdrawal", 0.0)),
             closing_balance=float(bcp.get("closing_balance", 0.0)),
+            bank_balance=float(bcp.get("bank_balance", 0.0)),
             status=str(bcp.get("status", "Balanced")),
             difference=float(bcp.get("difference", 0.0))
         )
