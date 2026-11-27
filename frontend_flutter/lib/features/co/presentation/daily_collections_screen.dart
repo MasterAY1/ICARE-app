@@ -10,9 +10,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:intl/intl.dart';
 
+import '../../../core/widgets/icare_card.dart';
+
 import '../../../core/widgets/icare_section_header.dart';
 
 import '../../../core/widgets/icare_skeleton_loader.dart';
+
+import '../../../core/widgets/icare_status_badge.dart';
 
 import '../../../core/theme/icare_motion.dart';
 
@@ -630,83 +634,65 @@ class _DailyCollectionsScreenState extends ConsumerState<DailyCollectionsScreen>
 
     final isOnline = ref.read(isOnlineProvider);
 
-    showIcareAdaptiveSheet(
+    showGroupCollectionFlowSheet(
 
       context: context,
 
-      mobileBreakpoint: 700,
+      groupName: groupName,
 
-      mobileHeightFactor: 0.94,
+      dateStr: dateStr,
 
-      enablePeekSnap: false,
+      isOpen: isOpen,
 
-      desktopConstraints: const BoxConstraints(maxWidth: 720, maxHeight: 760),
+      openReason: openReason,
 
-      builder: (dialogCtx, isDialog) {
+      isLateEntry: isLateEntry,
 
-        return _CollectionFlowModal(
+      stagedTransactions: List<Map<String, dynamic>>.from(_stagedTransactions),
 
-          groupName: groupName,
+      grpSavings: grpSavAmt,
 
-          dateStr: dateStr,
+      isOnline: isOnline,
 
-          isOpen: isOpen,
+      onConfirmPost: () => _executeBatchPost(groupName, dateStr),
 
-          openReason: openReason,
+      onDismissAndReset: (dialogCtx) {
 
-          isLateEntry: isLateEntry,
+        Navigator.of(dialogCtx).pop();
 
-          stagedTransactions: List<Map<String, dynamic>>.from(_stagedTransactions),
+        setState(() {
 
-          grpSavings: grpSavAmt,
+          _stagedTransactions = [];
 
-          isOnline: isOnline,
+          _grpSavingsCtrl.clear();
 
-          isDialog: isDialog,
+          _memberRepaymentCtrls.clear();
 
-          onConfirmPost: () => _executeBatchPost(groupName, dateStr),
+          _memberSavingsCtrls.clear();
 
-          onDismissAndReset: () {
+          _memberNotPaidFlags.clear();
 
-            Navigator.of(dialogCtx).pop();
+          _expandedMemberCards.clear();
 
-            setState(() {
+        });
 
-              _stagedTransactions = [];
+        _invalidateCollectionRelatedProviders();
 
-              _grpSavingsCtrl.clear();
+      },
 
-              _memberRepaymentCtrls.clear();
+      onViewHistory: (dialogCtx) {
 
-              _memberSavingsCtrls.clear();
+        Navigator.of(dialogCtx).pop();
 
-              _memberNotPaidFlags.clear();
+        setState(() {
 
-              _expandedMemberCards.clear();
+          _stagedTransactions = [];
 
-            });
+          ref.read(collectionsTabProvider.notifier).state = 1; // Tab 1: History
 
-            _invalidateCollectionRelatedProviders();
+        });
 
-          },
-
-          onViewHistory: () {
-
-            Navigator.of(dialogCtx).pop();
-
-            setState(() {
-
-              _stagedTransactions = [];
-
-              ref.read(collectionsTabProvider.notifier).state = 1; // Tab 1: History
-
-            });
-
-            _invalidateCollectionRelatedProviders();
-
-          },
-
-        );
+        _invalidateCollectionRelatedProviders();
 
       },
 
@@ -901,68 +887,54 @@ class _DailyCollectionsScreenState extends ConsumerState<DailyCollectionsScreen>
 
     final isLateEntry = _canAuthorizeLateEntry(ref.read(authControllerProvider)) && ref.read(collectionsLateEntryProvider);
 
-    showIcareAdaptiveSheet(
+    showSingleClientCollectionFlowSheet(
 
       context: context,
 
-      mobileBreakpoint: 700,
+      clientObj: clientObj,
 
-      mobileHeightFactor: 0.94,
+      dateStr: dateStr,
 
-      enablePeekSnap: false,
+      loanId: _scSelectedLoanId,
 
-      desktopConstraints: const BoxConstraints(maxWidth: 680, maxHeight: 760),
+      expRep: expRep,
 
-      builder: (dialogCtx, isDialog) {
+      savVal: savVal,
 
-        return _SingleClientFlowModal(
+      grpSavVal: grpSavVal,
 
-          clientObj: clientObj,
+      repVal: repVal,
 
-          dateStr: dateStr,
+      appVal: appVal,
 
-          loanId: _scSelectedLoanId,
+      pbVal: pbVal,
 
-          expRep: expRep,
+      miscVal: miscVal,
 
-          savVal: savVal,
+      isNotPaid: isNotPaid,
 
-          grpSavVal: grpSavVal,
+      note: note,
 
-          repVal: repVal,
+      isOnline: isOnline,
 
-          appVal: appVal,
-
-          pbVal: pbVal,
-
-          miscVal: miscVal,
-
-          isNotPaid: isNotPaid,
-
-          note: note,
-
-          isOnline: isOnline,
-
-          isDialog: isDialog,
-
-          onConfirmPost: () async {
-            final isOnline = ref.read(isOnlineProvider);
-            final syncMgr = ref.read(offlineSyncManagerProvider);
-            final api = ref.read(coApiServiceProvider);
-            final authorizedLateEntry = _canAuthorizeLateEntry(ref.read(authControllerProvider)) && isLateEntry;
-            final payload = {
-              'client_id': clientObj['client_id'],
-              'client_name': clientObj['client_name'],
-              'group_id': clientObj['group_id'],
-              'group_name': clientObj['group_name'],
-              'loan_id': _scSelectedLoanId,
-              'date': dateStr,
-              'is_late_entry': authorizedLateEntry,
-              'savings_deposit': savVal,
-              'group_savings_deposit': grpSavVal,
-              'loan_repayment': repVal,
-              'app_fee': appVal,
-              'passbook_fee': pbVal,
+      onConfirmPost: () async {
+        final isOnline = ref.read(isOnlineProvider);
+        final syncMgr = ref.read(offlineSyncManagerProvider);
+        final api = ref.read(coApiServiceProvider);
+        final authorizedLateEntry = _canAuthorizeLateEntry(ref.read(authControllerProvider)) && isLateEntry;
+        final payload = {
+          'client_id': clientObj['client_id'],
+          'client_name': clientObj['client_name'],
+          'group_id': clientObj['group_id'],
+          'group_name': clientObj['group_name'],
+          'loan_id': _scSelectedLoanId,
+          'date': dateStr,
+          'is_late_entry': authorizedLateEntry,
+          'savings_deposit': savVal,
+          'group_savings_deposit': grpSavVal,
+          'loan_repayment': repVal,
+          'app_fee': appVal,
+          'passbook_fee': pbVal,
               'misc_fee': miscVal,
               'note': note,
               'mark_not_paid': isNotPaid,
@@ -1018,7 +990,7 @@ class _DailyCollectionsScreenState extends ConsumerState<DailyCollectionsScreen>
               rethrow;
             }
           },
-          onDismissAndReset: () {
+          onDismissAndReset: (dialogCtx) {
 
             Navigator.of(dialogCtx).pop();
 
@@ -1048,7 +1020,7 @@ class _DailyCollectionsScreenState extends ConsumerState<DailyCollectionsScreen>
 
           },
 
-          onViewHistory: () {
+          onViewHistory: (dialogCtx) {
 
             Navigator.of(dialogCtx).pop();
 
@@ -1079,10 +1051,6 @@ class _DailyCollectionsScreenState extends ConsumerState<DailyCollectionsScreen>
             _invalidateCollectionRelatedProviders();
 
           },
-
-        );
-
-      },
 
     ).then((_) {
 
@@ -1169,9 +1137,6 @@ class _DailyCollectionsScreenState extends ConsumerState<DailyCollectionsScreen>
   Widget build(BuildContext context) {
     final tokens = IcareSurfaceTokens.of(context);
     final activeTab = ref.watch(collectionsTabProvider);
-    final activeMode = ref.watch(collectionsModeProvider);
-    final selectedGroup = ref.watch(collectionsSelectedGroupProvider);
-    final outboxCount = ref.watch(pendingOutboxCountProvider);
 
     return Stack(
       children: [
@@ -1180,15 +1145,6 @@ class _DailyCollectionsScreenState extends ConsumerState<DailyCollectionsScreen>
           children: [
             const IcareSectionHeader(
               title: 'Daily Collections',
-            ),
-            const SizedBox(height: 12),
-            CoCollectionsFlowCard(
-              activeTab: activeTab,
-              activeMode: activeMode,
-              selectedGroup: selectedGroup,
-              outboxCount: outboxCount,
-              onSelectTab: (t) =>
-                  ref.read(collectionsTabProvider.notifier).state = t,
             ),
             const SizedBox(height: 12),
 
@@ -7498,2599 +7454,2437 @@ Status: CONFIRMED & POSTED TO LEDGER''';
 }
 
 // =========================================================================
-
 // ANIMATED COLLECTION CONFIRMATION, LIVE POSTING & SUCCESS MODAL
-
 // =========================================================================
 
 enum _ModalStage { confirmation, posting, success, error }
 
-class _CollectionFlowModal extends StatefulWidget {
+@visibleForTesting
+Future<void> showGroupCollectionFlowSheet({
+  required BuildContext context,
+  required String groupName,
+  required String dateStr,
+  required bool isOpen,
+  required String openReason,
+  required bool isLateEntry,
+  required List<Map<String, dynamic>> stagedTransactions,
+  required double grpSavings,
+  required bool isOnline,
+  required Future<Map<String, dynamic>> Function() onConfirmPost,
+  required void Function(BuildContext sheetContext) onDismissAndReset,
+  required void Function(BuildContext sheetContext) onViewHistory,
+}) {
+  return showIcareAdaptiveSheet<void>(
+    context: context,
+    mobileBreakpoint: 700,
+    mobileHeightFactor: 0.94,
+    enablePeekSnap: false,
+    desktopConstraints: const BoxConstraints(maxWidth: 720, maxHeight: 760),
+    builder: (dialogCtx, isDialog) {
+      return _CollectionFlowModal(
+        groupName: groupName,
+        dateStr: dateStr,
+        isOpen: isOpen,
+        openReason: openReason,
+        isLateEntry: isLateEntry,
+        stagedTransactions: stagedTransactions,
+        grpSavings: grpSavings,
+        isOnline: isOnline,
+        isDialog: isDialog,
+        onConfirmPost: onConfirmPost,
+        onDismissAndReset: () => onDismissAndReset(dialogCtx),
+        onViewHistory: () => onViewHistory(dialogCtx),
+      );
+    },
+  );
+}
 
-  final String groupName;
+@visibleForTesting
+Future<void> showSingleClientCollectionFlowSheet({
+  required BuildContext context,
+  required Map<String, dynamic> clientObj,
+  required String dateStr,
+  required String? loanId,
+  required double expRep,
+  required double savVal,
+  required double grpSavVal,
+  required double repVal,
+  required double appVal,
+  required double pbVal,
+  required double miscVal,
+  required bool isNotPaid,
+  required String note,
+  required bool isOnline,
+  required Future<Map<String, dynamic>> Function() onConfirmPost,
+  required void Function(BuildContext sheetContext) onDismissAndReset,
+  required void Function(BuildContext sheetContext) onViewHistory,
+}) {
+  return showIcareAdaptiveSheet<void>(
+    context: context,
+    mobileBreakpoint: 700,
+    mobileHeightFactor: 0.94,
+    enablePeekSnap: false,
+    desktopConstraints: const BoxConstraints(maxWidth: 680, maxHeight: 760),
+    builder: (dialogCtx, isDialog) {
+      return _SingleClientFlowModal(
+        clientObj: clientObj,
+        dateStr: dateStr,
+        loanId: loanId,
+        expRep: expRep,
+        savVal: savVal,
+        grpSavVal: grpSavVal,
+        repVal: repVal,
+        appVal: appVal,
+        pbVal: pbVal,
+        miscVal: miscVal,
+        isNotPaid: isNotPaid,
+        note: note,
+        isOnline: isOnline,
+        isDialog: isDialog,
+        onConfirmPost: onConfirmPost,
+        onDismissAndReset: () => onDismissAndReset(dialogCtx),
+        onViewHistory: () => onViewHistory(dialogCtx),
+      );
+    },
+  );
+}
 
-  final String dateStr;
+bool _isReceiptOfflineQueued(Map<String, dynamic>? receipt) {
+  if (receipt == null) return false;
+  return receipt['is_offline_queued'] == true ||
+      receipt['offline_queued'] == true ||
+      receipt['status'] == 'QUEUED_LOCAL' ||
+      receipt['watermark'] != null;
+}
 
-  final bool isOpen;
+double _toDouble(dynamic value) => (value as num?)?.toDouble() ?? 0.0;
 
-  final String openReason;
-
-  final bool isLateEntry;
-
-  final List<Map<String, dynamic>> stagedTransactions;
-
-  final double grpSavings;
-
-  final bool isOnline;
-
-  final Future<Map<String, dynamic>> Function() onConfirmPost;
-
-  final VoidCallback onDismissAndReset;
-
-  final VoidCallback onViewHistory;
-
+class _CollectionModalShell extends StatelessWidget {
   final bool isDialog;
+  final String title;
+  final String subtitle;
+  final IconData iconData;
+  final Color iconBg;
+  final Color iconColor;
+  final bool showClose;
+  final Widget child;
 
-  const _CollectionFlowModal({
-
-    required this.groupName,
-
-    required this.dateStr,
-
-    required this.isOpen,
-
-    required this.openReason,
-
-    required this.isLateEntry,
-
-    required this.stagedTransactions,
-
-    required this.grpSavings,
-
-    required this.isOnline,
-
-    required this.onConfirmPost,
-
-    required this.onDismissAndReset,
-
-    required this.onViewHistory,
-
-    this.isDialog = true,
-
+  const _CollectionModalShell({
+    required this.isDialog,
+    required this.title,
+    required this.subtitle,
+    required this.iconData,
+    required this.iconBg,
+    required this.iconColor,
+    required this.showClose,
+    required this.child,
   });
 
   @override
+  Widget build(BuildContext context) {
+    final tokens = IcareSurfaceTokens.of(context);
+    final isMobile = !isDialog || MediaQuery.sizeOf(context).width < 700;
 
+    return Material(
+      color: tokens.surface,
+      borderRadius: isDialog
+          ? BorderRadius.circular(18)
+          : const BorderRadius.vertical(top: Radius.circular(18)),
+      child: ClipRRect(
+        borderRadius: isDialog
+            ? BorderRadius.circular(18)
+            : const BorderRadius.vertical(top: Radius.circular(18)),
+        child: Column(
+          children: [
+            if (!isDialog)
+              Padding(
+                padding: const EdgeInsets.only(top: 9, bottom: 2),
+                child: Container(
+                  width: 38,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: tokens.borderStrong,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+            Container(
+              color: tokens.surface,
+              padding: EdgeInsets.fromLTRB(
+                isMobile ? 16 : 20,
+                isDialog ? 16 : 10,
+                isMobile ? 8 : 14,
+                14,
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: iconBg,
+                      borderRadius: BorderRadius.circular(11),
+                      border: Border.all(
+                        color: iconColor.withValues(alpha: 0.2),
+                      ),
+                    ),
+                    child: Icon(iconData, size: 20, color: iconColor),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: isMobile ? 15.5 : 17.5,
+                            fontWeight: FontWeight.w800,
+                            color: tokens.textPrimary,
+                            letterSpacing: -0.25,
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          subtitle,
+                          maxLines: 2,
+                          softWrap: true,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: isMobile ? 12 : 12.5,
+                            color: tokens.textMuted,
+                            height: 1.3,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (showClose)
+                    IconButton(
+                      icon: Icon(
+                        Icons.close_rounded,
+                        size: 20,
+                        color: tokens.textMuted,
+                      ),
+                      tooltip: 'Close',
+                      visualDensity: VisualDensity.compact,
+                      onPressed: () => Navigator.of(context).pop(),
+                    ),
+                ],
+              ),
+            ),
+            Divider(height: 1, color: tokens.borderSubtle),
+            Expanded(child: child),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CollectionModalFooterBar extends StatelessWidget {
+  final bool isMobile;
+  final String secondaryLabel;
+  final IconData secondaryIcon;
+  final VoidCallback onSecondary;
+  final String primaryLabel;
+  final IconData primaryIcon;
+  final VoidCallback? onPrimary;
+  final int secondaryFlex;
+  final int primaryFlex;
+
+  const _CollectionModalFooterBar({
+    required this.isMobile,
+    required this.secondaryLabel,
+    required this.secondaryIcon,
+    required this.onSecondary,
+    required this.primaryLabel,
+    required this.primaryIcon,
+    required this.onPrimary,
+    this.secondaryFlex = 2,
+    this.primaryFlex = 3,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = IcareSurfaceTokens.of(context);
+    final primaryBg =
+        tokens.isDark ? tokens.brandPrimaryDark : tokens.brandPrimary;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: tokens.surface,
+        border: Border(top: BorderSide(color: tokens.borderSubtle)),
+      ),
+      padding: EdgeInsets.symmetric(
+        horizontal: isMobile ? 16 : 20,
+        vertical: 12,
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            flex: secondaryFlex,
+            child: OutlinedButton.icon(
+              onPressed: onSecondary,
+              icon: Icon(secondaryIcon, size: 16),
+              label: Text(
+                secondaryLabel,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 13,
+                ),
+              ),
+              style: OutlinedButton.styleFrom(
+                minimumSize: const Size(0, 46),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+                foregroundColor: tokens.textSecondary,
+                side: BorderSide(color: tokens.borderStrong, width: 1.2),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            flex: primaryFlex,
+            child: ElevatedButton.icon(
+              onPressed: onPrimary,
+              icon: Icon(primaryIcon, size: 17),
+              label: Text(
+                primaryLabel,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 13,
+                ),
+              ),
+              style: ElevatedButton.styleFrom(
+                minimumSize: const Size(0, 46),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                backgroundColor: primaryBg,
+                foregroundColor: Colors.white,
+                disabledBackgroundColor: tokens.surfaceSubtle,
+                disabledForegroundColor: tokens.textMuted,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                elevation: 0,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CollectionPaymentStatusBadge extends StatelessWidget {
+  final String rawStatus;
+  final double loanRepayment;
+  final double expectedAmount;
+  final double overdueAmount;
+  final bool markNotPaid;
+  final bool compact;
+
+  const _CollectionPaymentStatusBadge({
+    required this.rawStatus,
+    this.loanRepayment = 0.0,
+    this.expectedAmount = 0.0,
+    this.overdueAmount = 0.0,
+    this.markNotPaid = false,
+    this.compact = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final norm = rawStatus.trim().toUpperCase();
+    if (norm == 'GROUP_SAVINGS') {
+      return const IcareStatusBadge(
+        label: 'Group Savings',
+        variant: IcareBadgeVariant.info,
+      );
+    }
+    if (norm == 'NOT_PAID' || (loanRepayment == 0 && markNotPaid)) {
+      final lbl = !compact && overdueAmount > 0
+          ? 'Not Paid (${CurrencyFormatter.formatNaira(overdueAmount)} Arr)'
+          : 'Not Paid';
+      return IcareStatusBadge(
+        label: lbl,
+        variant: IcareBadgeVariant.danger,
+      );
+    }
+    if (norm == 'PART_PAID') {
+      final lbl = overdueAmount > 0
+          ? 'Part Paid (${CurrencyFormatter.formatNaira(overdueAmount)} Arr)'
+          : 'Part Paid';
+      return IcareStatusBadge(
+        label: lbl,
+        variant: IcareBadgeVariant.warning,
+      );
+    }
+    if (norm == 'EXCESS') {
+      final surplus = loanRepayment - expectedAmount;
+      final lbl = surplus > 0
+          ? 'Excess (+${CurrencyFormatter.formatNaira(surplus)})'
+          : 'Excess';
+      return IcareStatusBadge(
+        label: lbl,
+        variant: IcareBadgeVariant.info,
+      );
+    }
+    if (norm == 'PAID' || norm == 'FULL' || norm == 'FULL PAID') {
+      return const IcareStatusBadge(
+        label: 'Full Paid',
+        variant: IcareBadgeVariant.success,
+      );
+    }
+    return IcareStatusBadge.fromStatus(rawStatus);
+  }
+}
+
+class _CollectionReceiptMetaRow extends StatelessWidget {
+  final String label;
+  final String value;
+  final bool isCopyable;
+
+  const _CollectionReceiptMetaRow({
+    required this.label,
+    required this.value,
+    this.isCopyable = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = IcareSurfaceTokens.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4.5),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          ConstrainedBox(
+            constraints: const BoxConstraints(minWidth: 92, maxWidth: 128),
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+                color: tokens.textMuted,
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              value,
+              textAlign: TextAlign.end,
+              softWrap: true,
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+              style: coTabularStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: tokens.textPrimary,
+                height: 1.3,
+              ),
+            ),
+          ),
+          if (isCopyable) ...[
+            const SizedBox(width: 6),
+            Tooltip(
+              message: 'Copy Reference',
+              child: InkWell(
+                borderRadius: BorderRadius.circular(6),
+                onTap: () {
+                  Clipboard.setData(ClipboardData(text: value));
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Reference copied to clipboard'),
+                      duration: Duration(seconds: 1),
+                    ),
+                  );
+                },
+                child: Padding(
+                  padding: const EdgeInsets.all(2),
+                  child: Icon(
+                    Icons.copy_rounded,
+                    size: 14,
+                    color:
+                        tokens.isDark ? tokens.brandSoftText : tokens.brandPrimary,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _CollectionReceiptRow extends StatelessWidget {
+  final String label;
+  final String value;
+  final Color? valueColor;
+  final bool showDivider;
+
+  const _CollectionReceiptRow({
+    required this.label,
+    required this.value,
+    this.valueColor,
+    this.showDivider = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = IcareSurfaceTokens.of(context);
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                flex: 3,
+                child: Text(
+                  label,
+                  softWrap: true,
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
+                    color: tokens.textSecondary,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Flexible(
+                flex: 2,
+                child: Text(
+                  value,
+                  textAlign: TextAlign.end,
+                  softWrap: true,
+                  style: coTabularStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                    color: valueColor ?? tokens.textPrimary,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        if (showDivider) Divider(height: 1, color: tokens.borderSubtle),
+      ],
+    );
+  }
+}
+
+class _CollectionContextChip extends StatelessWidget {
+  final IconData icon;
+  final String label;
+
+  const _CollectionContextChip({
+    required this.icon,
+    required this.label,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = IcareSurfaceTokens.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: tokens.surfaceSubtle,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: tokens.borderSubtle),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 13.5, color: tokens.textSecondary),
+          const SizedBox(width: 5),
+          Flexible(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: coTabularStyle(
+                fontSize: 11.5,
+                fontWeight: FontWeight.w600,
+                color: tokens.textPrimary,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CollectionFlowModal extends StatefulWidget {
+  final String groupName;
+  final String dateStr;
+  final bool isOpen;
+  final String openReason;
+  final bool isLateEntry;
+  final List<Map<String, dynamic>> stagedTransactions;
+  final double grpSavings;
+  final bool isOnline;
+  final Future<Map<String, dynamic>> Function() onConfirmPost;
+  final VoidCallback onDismissAndReset;
+  final VoidCallback onViewHistory;
+  final bool isDialog;
+
+  const _CollectionFlowModal({
+    required this.groupName,
+    required this.dateStr,
+    required this.isOpen,
+    required this.openReason,
+    required this.isLateEntry,
+    required this.stagedTransactions,
+    required this.grpSavings,
+    required this.isOnline,
+    required this.onConfirmPost,
+    required this.onDismissAndReset,
+    required this.onViewHistory,
+    this.isDialog = true,
+  });
+
+  @override
   State<_CollectionFlowModal> createState() => _CollectionFlowModalState();
-
 }
 
 class _CollectionFlowModalState extends State<_CollectionFlowModal> {
-
   _ModalStage _phase = _ModalStage.confirmation;
-
   Map<String, dynamic>? _receiptData;
-
   String? _errorMessage;
-
   int _postingStep = 0;
-
   Timer? _stepTimer;
-
   bool _itemizedExpanded = true;
-
   bool _whatsappExpanded = false;
 
   @override
-
   void dispose() {
-
     _stepTimer?.cancel();
-
     super.dispose();
-
   }
 
   Future<void> _startPosting() async {
-
     HapticFeedback.mediumImpact();
-
     setState(() {
-
       _phase = _ModalStage.posting;
-
       _postingStep = 0;
-
       _errorMessage = null;
-
     });
 
     _stepTimer?.cancel();
-
     _stepTimer = Timer.periodic(const Duration(milliseconds: 750), (t) {
-
       if (mounted && _phase == _ModalStage.posting) {
-
         setState(() {
-
           _postingStep = (_postingStep + 1) % 3;
-
         });
-
       }
-
     });
 
     try {
-
       final res = await widget.onConfirmPost();
-
       _stepTimer?.cancel();
-
       if (mounted) {
-
         setState(() {
-
-          _receiptData = res['receipt'] as Map<String, dynamic>?;
-
+          _receiptData = res['receipt'] as Map<String, dynamic>? ?? res;
           _phase = _ModalStage.success;
-
         });
-
         HapticFeedback.heavyImpact();
-
       }
-
     } catch (e) {
-
       _stepTimer?.cancel();
-
       if (mounted) {
-
-        String cleanMessage = 'An error occurred while posting collections to the ledger.';
+        String cleanMessage =
+            'An error occurred while posting collections to the ledger.';
         if (e is DioException) {
           final resData = e.response?.data;
           if (resData is Map) {
-            if (resData['message'] != null && resData['message'].toString().trim().isNotEmpty) {
+            if (resData['message'] != null &&
+                resData['message'].toString().trim().isNotEmpty) {
               cleanMessage = resData['message'].toString();
-            } else if (resData['detail'] != null && resData['detail'].toString().trim().isNotEmpty) {
+            } else if (resData['detail'] != null &&
+                resData['detail'].toString().trim().isNotEmpty) {
               cleanMessage = resData['detail'].toString();
             }
           } else if (e.response?.statusCode == 403) {
-            cleanMessage = 'Operational Restriction: Branch collections are closed for this date. Enable Late Entry or select an open working day.';
-          } else if (e.response?.statusCode == 409) {
-            cleanMessage = 'Lock Conflict: A transaction with this reference is currently being processed. Please wait a moment and check history.';
-          } else if (e.type == DioExceptionType.connectionTimeout || e.type == DioExceptionType.connectionError) {
-            cleanMessage = 'Network Connection Interrupted: The batch could not reach the server. You can queue this transaction offline.';
+            cleanMessage =
+                'Operational Restriction: Branch collections are closed for this date. Enable Late Entry or select an open working day.';
+          } else if (e.message != null && e.message!.isNotEmpty) {
+            cleanMessage = e.message!;
           }
         } else {
           cleanMessage = AppErrorDetails.from(e).message;
         }
-
         setState(() {
-
           _errorMessage = cleanMessage;
-
           _phase = _ModalStage.error;
-
         });
-
         HapticFeedback.vibrate();
-
       }
+    }
+  }
 
+  ({
+    double totalRep,
+    double totalSav,
+    double netCash,
+    int paidCount,
+    int notPaidCount,
+  }) _computeTotals() {
+    double totalRep = 0.0;
+    double totalSav = widget.grpSavings;
+    int paidCount = 0;
+    int notPaidCount = 0;
+
+    for (final tx in widget.stagedTransactions) {
+      final rep = _toDouble(tx['loan_repayment_amount']);
+      final sav = _toDouble(tx['savings_deposit_amount']);
+      totalRep += rep;
+      totalSav += sav;
+      if (rep > 0) {
+        paidCount++;
+      } else if (tx['payment_status'] == 'NOT_PAID' ||
+          tx['mark_not_paid'] == true) {
+        notPaidCount++;
+      }
     }
 
+    return (
+      totalRep: totalRep,
+      totalSav: totalSav,
+      netCash: totalRep + totalSav,
+      paidCount: paidCount,
+      notPaidCount: notPaidCount,
+    );
   }
 
   @override
-
   Widget build(BuildContext context) {
-
     final tokens = IcareSurfaceTokens.of(context);
-
-    final media = MediaQuery.of(context);
-
-    final isMobile = !widget.isDialog || media.size.width < 700;
-
-    return Material(
-
-      color: tokens.surface,
-
-      borderRadius: widget.isDialog ? BorderRadius.circular(18) : BorderRadius.zero,
-
-      child: ClipRRect(
-
-        borderRadius: widget.isDialog ? BorderRadius.circular(18) : BorderRadius.zero,
-
-        child: Column(
-
-          children: [
-
-            _buildHeader(context, isMobile),
-
-            Divider(height: 1, color: tokens.borderSubtle),
-
-            Expanded(
-
-              child: AnimatedSwitcher(
-
-                duration: const Duration(milliseconds: 320),
-
-                switchInCurve: Curves.easeOutCubic,
-
-                switchOutCurve: Curves.easeInCubic,
-
-                transitionBuilder: (child, anim) {
-
-                  return FadeTransition(
-
-                    opacity: anim,
-
-                    child: ScaleTransition(
-
-                      scale: Tween<double>(begin: 0.95, end: 1.0).animate(anim),
-
-                      child: child,
-
-                    ),
-
-                  );
-
-                },
-
-                child: switch (_phase) {
-
-                  _ModalStage.confirmation => _buildConfirmationView(isMobile),
-
-                  _ModalStage.posting => _buildPostingView(isMobile),
-
-                  _ModalStage.success => _buildSuccessView(isMobile),
-
-                  _ModalStage.error => _buildErrorView(isMobile),
-
-                },
-
-              ),
-
-            ),
-
-          ],
-
-        ),
-
-      ),
-
-    );
-
-  }
-
-  Widget _buildHeader(BuildContext context, bool isMobile) {
-    final tokens = IcareSurfaceTokens.of(context);
-    final isOfflineQueued = _receiptData?['is_offline_queued'] == true ||
-        _receiptData?['offline_queued'] == true ||
-        _receiptData?['status'] == 'QUEUED_LOCAL' ||
-        _receiptData?['watermark'] != null;
+    final isMobile = !widget.isDialog || MediaQuery.sizeOf(context).width < 700;
+    final isOfflineQueued = _isReceiptOfflineQueued(_receiptData);
+    final brandFg = tokens.isDark ? tokens.brandSoftText : tokens.brandPrimary;
 
     final title = switch (_phase) {
-
       _ModalStage.confirmation => 'Review Group Collections',
-
-      _ModalStage.posting => 'Posting Collections to Ledger',
-
-      _ModalStage.success => isOfflineQueued ? 'Collection Queued Offline' : 'Collection Confirmed',
-
+      _ModalStage.posting => 'Posting Collections',
+      _ModalStage.success =>
+        isOfflineQueued ? 'Batch Queued Offline' : 'Collection Confirmed',
       _ModalStage.error => 'Posting Interrupted',
-
     };
 
     final subtitle = switch (_phase) {
-
-      _ModalStage.confirmation => 'Verify all collection entries for ${widget.groupName} before final ledger commitment.',
-
-      _ModalStage.posting => 'Atomic double-entry transactions committing in real time.',
-
+      _ModalStage.confirmation =>
+        'Verify staged entries for ${widget.groupName} before ledger commitment.',
+      _ModalStage.posting =>
+        'Committing atomic entries to Primary Vault Cash.',
       _ModalStage.success => isOfflineQueued
-          ? 'Saved to device outbox for automatic synchronization when back online.'
-          : 'All entries successfully committed to Primary Vault Cash.',
-
-      _ModalStage.error => 'Ledger communication encountered an issue.',
-
+          ? 'Saved to device outbox and queued for automatic synchronization.'
+          : 'All entries committed to Primary Vault Cash.',
+      _ModalStage.error => 'Unable to complete ledger submission.',
     };
 
     final iconData = switch (_phase) {
-
       _ModalStage.confirmation => Icons.fact_check_outlined,
-
-      _ModalStage.posting => Icons.sync,
-
-      _ModalStage.success => isOfflineQueued ? Icons.cloud_upload_outlined : Icons.check_circle_outline,
-
-      _ModalStage.error => Icons.error_outline,
-
+      _ModalStage.posting => Icons.sync_rounded,
+      _ModalStage.success => isOfflineQueued
+          ? Icons.cloud_upload_outlined
+          : Icons.check_circle_outline_rounded,
+      _ModalStage.error => Icons.error_outline_rounded,
     };
 
     final iconBg = switch (_phase) {
-
-      _ModalStage.confirmation => tokens.infoBg,
-
-      _ModalStage.posting => tokens.successBg,
-
-      _ModalStage.success => isOfflineQueued ? tokens.warningBg : tokens.successBg,
-
+      _ModalStage.confirmation => tokens.brandSoftBg,
+      _ModalStage.posting => tokens.brandSoftBg,
+      _ModalStage.success =>
+        isOfflineQueued ? tokens.warningBg : tokens.successBg,
       _ModalStage.error => tokens.dangerBg,
-
     };
 
     final iconColor = switch (_phase) {
-
-      _ModalStage.confirmation => tokens.infoText,
-
-      _ModalStage.posting => tokens.successDot,
-
-      _ModalStage.success => isOfflineQueued ? tokens.warningDot : tokens.successDot,
-
+      _ModalStage.confirmation => brandFg,
+      _ModalStage.posting => brandFg,
+      _ModalStage.success =>
+        isOfflineQueued ? tokens.warningDot : tokens.successDot,
       _ModalStage.error => tokens.dangerDot,
-
     };
 
-    return Container(
-
-      padding: EdgeInsets.symmetric(horizontal: isMobile ? 14 : 20, vertical: 14),
-
-      color: tokens.surface,
-
-      child: Row(
-
-        children: [
-
-          Container(
-
-            padding: const EdgeInsets.all(8),
-
-            decoration: BoxDecoration(
-
-              color: iconBg,
-
-              borderRadius: BorderRadius.circular(10),
-
-            ),
-
-            child: Icon(iconData, size: 20, color: iconColor),
-
+    return _CollectionModalShell(
+      isDialog: widget.isDialog,
+      title: title,
+      subtitle: subtitle,
+      iconData: iconData,
+      iconBg: iconBg,
+      iconColor: iconColor,
+      showClose: _phase != _ModalStage.posting,
+      child: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 280),
+        switchInCurve: Curves.easeOutCubic,
+        switchOutCurve: Curves.easeInCubic,
+        transitionBuilder: (child, anim) => FadeTransition(
+          opacity: anim,
+          child: ScaleTransition(
+            scale: Tween<double>(begin: 0.97, end: 1.0).animate(anim),
+            child: child,
           ),
-
-          const SizedBox(width: 12),
-
-          Expanded(
-
-            child: Column(
-
-              crossAxisAlignment: CrossAxisAlignment.start,
-
-              children: [
-
-                Text(
-
-                  title,
-
-                  style: TextStyle(
-
-                    fontSize: isMobile ? 15 : 17,
-
-                    fontWeight: FontWeight.w800,
-
-                    color: tokens.textPrimary,
-
-                    letterSpacing: -0.2,
-
-                  ),
-
-                ),
-
-                const SizedBox(height: 2),
-
-                Text(
-
-                  subtitle,
-
-                  style: TextStyle(
-
-                    fontSize: isMobile ? 11.5 : 12.5,
-
-                    color: tokens.textMuted,
-
-                  ),
-
-                  maxLines: 1,
-
-                  overflow: TextOverflow.ellipsis,
-
-                ),
-
-              ],
-
-            ),
-
-          ),
-
-          if (_phase != _ModalStage.posting)
-
-            IconButton(
-
-              icon: Icon(Icons.close, size: 20, color: tokens.textMuted),
-
-              tooltip: 'Close Modal',
-
-              onPressed: () => Navigator.of(context).pop(),
-
-            ),
-
-        ],
-
+        ),
+        child: switch (_phase) {
+          _ModalStage.confirmation => _buildConfirmationView(isMobile),
+          _ModalStage.posting => _buildPostingView(isMobile),
+          _ModalStage.success => _buildSuccessView(isMobile),
+          _ModalStage.error => _buildErrorView(isMobile),
+        },
       ),
-
     );
-
   }
-
-  // -------------------------------------------------------------------------
-
-  // STAGE 1: CONFIRMATION VIEW
-
-  // -------------------------------------------------------------------------
 
   Widget _buildConfirmationView(bool isMobile) {
-
     final tokens = IcareSurfaceTokens.of(context);
-
-    double totalRep = 0.0;
-
-    double totalSav = widget.grpSavings;
-
-    int paidCount = 0;
-
-    int notPaidCount = 0;
-
-    for (var tx in widget.stagedTransactions) {
-
-      final rep = (tx['loan_repayment_amount'] as num?)?.toDouble() ?? 0.0;
-
-      final sav = (tx['savings_deposit_amount'] as num?)?.toDouble() ?? 0.0;
-
-      totalRep += rep;
-
-      totalSav += sav;
-
-      if (rep > 0) {
-
-        paidCount++;
-
-      } else if (tx['payment_status'] == 'NOT_PAID') {
-
-        notPaidCount++;
-
-      }
-
-    }
-
-    final netCash = totalRep + totalSav;
-
+    final brandFg = tokens.isDark ? tokens.brandSoftText : tokens.brandPrimary;
+    final totals = _computeTotals();
     final canSubmit = widget.isOpen || widget.isLateEntry;
+    final txCount = widget.stagedTransactions.length;
 
     return Column(
-
+      key: const ValueKey('group-confirmation'),
       children: [
-
         Expanded(
-
           child: SingleChildScrollView(
-
             padding: EdgeInsets.all(isMobile ? 14 : 20),
-
             child: Column(
-
               crossAxisAlignment: CrossAxisAlignment.start,
-
               children: [
-
-                // 3 Executive Summary Tiles
-
-                LayoutBuilder(
-
-                  builder: (context, constraints) {
-
-                    final w = constraints.maxWidth;
-
-                    final card1 = _buildSummaryTile(
-
-                      title: 'Net Cash Expected From Group',
-
-                      value: CurrencyFormatter.formatNaira(netCash, showDecimals: true),
-
-                      subtitle: 'Gross physical cash payable to vault',
-
-                      icon: Icons.payments_outlined,
-
-                      accentColor: tokens.brandPrimary,
-
-                      bgColor: tokens.brandSoftBg,
-
-                      isHero: true,
-
-                    );
-
-                    final card2 = _buildSummaryTile(
-
-                      title: 'Total Loan Repayments',
-
-                      value: CurrencyFormatter.formatNaira(totalRep, showDecimals: true),
-
-                      subtitle: '$paidCount paying member(s)${notPaidCount > 0 ? ' • $notPaidCount arrears' : ''}',
-
-                      icon: Icons.assignment_turned_in_outlined,
-
-                      accentColor: tokens.infoText,
-
-                      bgColor: tokens.infoBg,
-
-                    );
-
-                    final card3 = _buildSummaryTile(
-
-                      title: 'Total Net Savings',
-
-                      value: CurrencyFormatter.formatNaira(totalSav, showDecimals: true),
-
-                      subtitle: widget.grpSavings > 0
-
-                          ? 'Includes ${CurrencyFormatter.formatNaira(widget.grpSavings)} communal savings'
-
-                          : 'Individual member savings',
-
-                      icon: Icons.savings_outlined,
-
-                      accentColor: tokens.successText,
-
-                      bgColor: tokens.successBg,
-
-                    );
-
-                    if (w < 650) {
-
-                      return Column(
-
-                        children: [
-
-                          card1,
-
-                          const SizedBox(height: 10),
-
-                          Row(
-
-                            children: [
-
-                              Expanded(child: card2),
-
-                              const SizedBox(width: 10),
-
-                              Expanded(child: card3),
-
-                            ],
-
-                          ),
-
-                        ],
-
-                      );
-
-                    }
-
-                    return Row(
-
-                      children: [
-
-                        Expanded(flex: 4, child: card1),
-
-                        const SizedBox(width: 12),
-
-                        Expanded(flex: 3, child: card2),
-
-                        const SizedBox(width: 12),
-
-                        Expanded(flex: 3, child: card3),
-
-                      ],
-
-                    );
-
-                  },
-
-                ),
-
-                const SizedBox(height: 14),
-
-                // Optional Group Communal Savings Callout Banner
-
-                if (widget.grpSavings > 0) ...[
-
-                  Container(
-
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-
-                    decoration: BoxDecoration(
-
-                      color: tokens.infoBg,
-
-                      borderRadius: BorderRadius.circular(10),
-
-                      border: Border.all(color: tokens.infoBorder),
-
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 6,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    _CollectionContextChip(
+                      icon: Icons.groups_outlined,
+                      label: widget.groupName,
                     ),
-
-                    child: Row(
-
-                      children: [
-
-                        Container(
-
-                          padding: const EdgeInsets.all(6),
-
-                          decoration: BoxDecoration(
-
-                            color: tokens.surfaceElevated,
-
-                            borderRadius: BorderRadius.circular(6),
-
-                          ),
-
-                          child: Icon(Icons.account_balance, size: 16, color: tokens.infoText),
-
-                        ),
-
-                        const SizedBox(width: 10),
-
-                        Expanded(
-
-                          child: Text(
-
-                            'Group Communal Savings: ${CurrencyFormatter.formatNaira(widget.grpSavings)} entered for ${widget.groupName} will be committed alongside individual collections.',
-
-                            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tokens.infoText),
-
-                            softWrap: true,
-
-                          ),
-
-                        ),
-
-                      ],
-
+                    _CollectionContextChip(
+                      icon: Icons.calendar_today_outlined,
+                      label: widget.dateStr,
                     ),
-
-                  ),
-
-                  const SizedBox(height: 14),
-
-                ],
-
-                // Staged Collections Member Checklist Table
-
-                Container(
-
-                  decoration: BoxDecoration(
-
-                    color: tokens.surfaceElevated,
-
-                    borderRadius: BorderRadius.circular(12),
-
-                    border: Border.all(color: tokens.borderSubtle),
-
-                  ),
-
-                  child: Column(
-
-                    crossAxisAlignment: CrossAxisAlignment.start,
-
-                    children: [
-
-                      Padding(
-
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
-
-                        child: Row(
-
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-
-                          children: [
-
-                            Flexible(
-
-                              child: Text(
-
-                                'Staged Collections Checklist (${widget.stagedTransactions.length} Members)',
-
-                                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: tokens.textPrimary),
-
-                                overflow: TextOverflow.ellipsis,
-
-                              ),
-
-                            ),
-
-                            const SizedBox(width: 8),
-
-                            Container(
-
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-
-                              decoration: BoxDecoration(
-
-                                color: tokens.successBg,
-
-                                borderRadius: BorderRadius.circular(6),
-
-                                border: Border.all(color: tokens.successBorder),
-
-                              ),
-
-                              child: Text(
-
-                                'Primary Vault',
-
-                                style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: tokens.successText),
-
-                              ),
-
-                            ),
-
-                          ],
-
-                        ),
-
+                    if (!canSubmit)
+                      IcareStatusBadge(
+                        label: 'Closed (${widget.openReason})',
+                        variant: IcareBadgeVariant.danger,
+                      )
+                    else if (!widget.isOnline)
+                      const IcareStatusBadge(
+                        label: 'Offline Outbox',
+                        variant: IcareBadgeVariant.warning,
+                      )
+                    else if (widget.isLateEntry)
+                      const IcareStatusBadge(
+                        label: 'Late Entry',
+                        variant: IcareBadgeVariant.info,
+                      )
+                    else
+                      const IcareStatusBadge(
+                        label: 'Primary Vault',
+                        variant: IcareBadgeVariant.success,
                       ),
-
-                      Divider(height: 1, color: tokens.borderSubtle),
-
-                      if (isMobile) ...[
-
-                        Padding(
-
-                          padding: const EdgeInsets.all(12),
-
-                          child: Column(
-
-                            children: [
-
-                              if (widget.grpSavings > 0)
-
-                                Container(
-
-                                  margin: const EdgeInsets.only(bottom: 8),
-
-                                  padding: const EdgeInsets.all(10),
-
-                                  decoration: BoxDecoration(
-
-                                    color: tokens.infoBg,
-
-                                    borderRadius: BorderRadius.circular(8),
-
-                                    border: Border.all(color: tokens.infoBorder),
-
-                                  ),
-
-                                  child: Row(
-
-                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-
-                                    children: [
-
-                                      Expanded(
-
-                                        child: Text(
-
-                                          '${widget.groupName} (Communal)',
-
-                                          style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: tokens.infoText),
-
-                                          overflow: TextOverflow.ellipsis,
-
-                                        ),
-
-                                      ),
-
-                                      Text(
-
-                                        CurrencyFormatter.formatNaira(widget.grpSavings),
-
-                                        style: coTabularStyle(fontSize: 12, fontWeight: FontWeight.w800, color: tokens.infoText),
-
-                                      ),
-
-                                    ],
-
-                                  ),
-
-                                ),
-
-                              ...widget.stagedTransactions.map((tx) {
-
-                                final cName = tx['client_name']?.toString() ?? 'Client';
-
-                                final cCode = tx['client_code']?.toString() ?? '';
-
-                                final sDep = (tx['savings_deposit_amount'] as num?)?.toDouble() ?? 0.0;
-
-                                final lRep = (tx['loan_repayment_amount'] as num?)?.toDouble() ?? 0.0;
-
-                                final expAmt = (tx['expected_amount'] as num?)?.toDouble() ?? 0.0;
-
-                                final ovAmt = (tx['overdue_amount'] as num?)?.toDouble() ?? 0.0;
-
-                                final pStat = tx['payment_status']?.toString() ?? 'UNRECORDED';
-
-                                String badgeText = 'FULL PAID';
-
-                                Color badgeBg = tokens.successBg;
-
-                                Color badgeFg = tokens.successText;
-
-                                Color badgeBorder = tokens.successBorder;
-
-                                if (pStat == 'NOT_PAID' || (lRep == 0 && tx['mark_not_paid'] == true)) {
-
-                                  badgeText = 'NOT PAID';
-
-                                  badgeBg = tokens.dangerBg;
-
-                                  badgeFg = tokens.dangerText;
-
-                                  badgeBorder = tokens.dangerBorder;
-
-                                } else if (pStat == 'PART_PAID') {
-
-                                  badgeText = 'PART PAID (₦${ovAmt.toStringAsFixed(0)} Arr)';
-
-                                  badgeBg = tokens.warningBg;
-
-                                  badgeFg = tokens.warningText;
-
-                                  badgeBorder = tokens.warningBorder;
-
-                                } else if (pStat == 'EXCESS') {
-
-                                  badgeText = 'EXCESS (+₦${(lRep - expAmt).toStringAsFixed(0)})';
-
-                                  badgeBg = tokens.infoBg;
-
-                                  badgeFg = tokens.infoText;
-
-                                  badgeBorder = tokens.infoBorder;
-
-                                }
-
-                                final repDisplay = (pStat == 'NOT_PAID' || lRep == 0)
-
-                                    ? '₦0.00'
-
-                                    : CurrencyFormatter.formatNaira(lRep);
-
-                                return Container(
-
-                                  margin: const EdgeInsets.only(bottom: 8),
-
-                                  padding: const EdgeInsets.all(10),
-
-                                  decoration: BoxDecoration(
-
-                                    color: tokens.surfaceSubtle,
-
-                                    borderRadius: BorderRadius.circular(8),
-
-                                    border: Border.all(color: tokens.borderSubtle),
-
-                                  ),
-
-                                  child: Column(
-
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-
-                                    children: [
-
-                                      Row(
-
-                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-
-                                        children: [
-
-                                          Expanded(
-
-                                            child: Column(
-
-                                              crossAxisAlignment: CrossAxisAlignment.start,
-
-                                              children: [
-
-                                                Text(cName, style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12.5, color: tokens.textPrimary), overflow: TextOverflow.ellipsis),
-
-                                                Text(cCode, style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: tokens.textMuted)),
-
-                                              ],
-
-                                            ),
-
-                                          ),
-
-                                          Container(
-
-                                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
-
-                                            decoration: BoxDecoration(color: badgeBg, borderRadius: BorderRadius.circular(4), border: Border.all(color: badgeBorder)),
-
-                                            child: Text(badgeText, style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: badgeFg)),
-
-                                          ),
-
-                                        ],
-
-                                      ),
-
-                                      const SizedBox(height: 8),
-
-                                      Row(
-
-                                        children: [
-
-                                          Expanded(
-
-                                            child: Column(
-
-                                              crossAxisAlignment: CrossAxisAlignment.start,
-
-                                              children: [
-
-                                                Text('Repayment', style: TextStyle(fontSize: 10, color: tokens.textMuted, fontWeight: FontWeight.w600)),
-
-                                                const SizedBox(height: 1),
-
-                                                Text(repDisplay, style: coTabularStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: pStat == 'NOT_PAID' ? tokens.dangerText : tokens.textPrimary)),
-
-                                              ],
-
-                                            ),
-
-                                          ),
-
-                                          Expanded(
-
-                                            child: Column(
-
-                                              crossAxisAlignment: CrossAxisAlignment.start,
-
-                                              children: [
-
-                                                Text('Savings Deposit', style: TextStyle(fontSize: 10, color: tokens.textMuted, fontWeight: FontWeight.w600)),
-
-                                                const SizedBox(height: 1),
-
-                                                Text(sDep > 0 ? CurrencyFormatter.formatNaira(sDep) : '₦0.00', style: coTabularStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: sDep > 0 ? tokens.successText : tokens.textMuted)),
-
-                                              ],
-
-                                            ),
-
-                                          ),
-
-                                        ],
-
-                                      ),
-
-                                    ],
-
-                                  ),
-
-                                );
-
-                              }),
-
-                            ],
-
-                          ),
-
-                        ),
-
-                      ] else ...[
-
-                      CoControlledHorizontalScroll(
-
-                        child: ConstrainedBox(
-
-                          constraints: const BoxConstraints(minWidth: 580),
-
-                          child: Table(
-
-                            columnWidths: const {
-
-                              0: FlexColumnWidth(2.6),
-
-                              1: FlexColumnWidth(1.4),
-
-                              2: FlexColumnWidth(1.8),
-
-                              3: FlexColumnWidth(1.8),
-
-                            },
-
-                            children: [
-
-                              TableRow(
-
-                                decoration: BoxDecoration(color: tokens.surfaceSubtle),
-
-                                children: [
-
-                                  Padding(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10), child: Text('Client / Code', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 11.5, color: tokens.textSecondary))),
-
-                                  Padding(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10), child: Text('Savings (₦)', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 11.5, color: tokens.textSecondary))),
-
-                                  Padding(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10), child: Text('Repayment (₦)', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 11.5, color: tokens.textSecondary))),
-
-                                  Padding(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10), child: Text('Payment Status', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 11.5, color: tokens.textSecondary))),
-
-                                ],
-
-                              ),
-
-                              if (widget.grpSavings > 0)
-
-                                TableRow(
-
-                                  decoration: BoxDecoration(border: Border(top: BorderSide(color: tokens.borderSubtle))),
-
-                                  children: [
-
-                                    Padding(
-
-                                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-
-                                      child: Text('${widget.groupName} (Communal)', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: tokens.infoText)),
-
-                                    ),
-
-                                    Padding(
-
-                                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-
-                                      child: Text(CurrencyFormatter.formatNaira(widget.grpSavings), style: coTabularStyle(fontSize: 12, fontWeight: FontWeight.w700, color: tokens.textPrimary)),
-
-                                    ),
-
-                                    Padding(
-
-                                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-
-                                      child: Text('—', style: TextStyle(fontSize: 12, color: tokens.textMuted)),
-
-                                    ),
-
-                                    Padding(
-
-                                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-
-                                      child: Container(
-
-                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-
-                                        decoration: BoxDecoration(color: tokens.infoBg, borderRadius: BorderRadius.circular(4), border: Border.all(color: tokens.infoBorder)),
-
-                                        child: Text('GROUP SAVINGS', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: tokens.infoText), textAlign: TextAlign.center),
-
-                                      ),
-
-                                    ),
-
-                                  ],
-
-                                ),
-
-                              ...widget.stagedTransactions.map((tx) {
-
-                                final cName = tx['client_name']?.toString() ?? '';
-
-                                final cCode = tx['client_code']?.toString() ?? '';
-
-                                final sDep = (tx['savings_deposit_amount'] as num?)?.toDouble() ?? 0.0;
-
-                                final lRep = (tx['loan_repayment_amount'] as num?)?.toDouble() ?? 0.0;
-
-                                final expAmt = (tx['expected_amount'] as num?)?.toDouble() ?? 0.0;
-
-                                final pStat = tx['payment_status']?.toString() ?? 'UNRECORDED';
-
-                                final ovAmt = (tx['overdue_amount'] as num?)?.toDouble() ?? 0.0;
-
-                                String badgeText = 'UNRECORDED';
-
-                                Color badgeBg = tokens.neutralBg;
-
-                                Color badgeFg = tokens.neutralText;
-
-                                Color badgeBorder = tokens.neutralBorder;
-
-                                String repDisplay = CurrencyFormatter.formatNaira(lRep);
-
-                                if (pStat == 'PAID' || pStat == 'FULL' || pStat == 'FULL PAID') {
-
-                                  badgeText = 'FULL PAID';
-
-                                  badgeBg = tokens.successBg;
-
-                                  badgeFg = tokens.successText;
-
-                                  badgeBorder = tokens.successBorder;
-
-                                } else if (pStat == 'NOT_PAID') {
-
-                                  badgeText = 'NOT PAID (₦${ovAmt.toStringAsFixed(0)} Arrears)';
-
-                                  badgeBg = tokens.dangerBg;
-
-                                  badgeFg = tokens.dangerText;
-
-                                  badgeBorder = tokens.dangerBorder;
-
-                                  repDisplay = '₦0 (Exp ₦${expAmt.toStringAsFixed(0)})';
-
-                                } else if (pStat == 'PART_PAID') {
-
-                                  badgeText = 'PART PAID (₦${ovAmt.toStringAsFixed(0)} Arrears)';
-
-                                  badgeBg = tokens.warningBg;
-
-                                  badgeFg = tokens.warningText;
-
-                                  badgeBorder = tokens.warningBorder;
-
-                                } else if (pStat == 'EXCESS') {
-
-                                  badgeText = 'EXCESS (+₦${(lRep - expAmt).toStringAsFixed(0)})';
-
-                                  badgeBg = tokens.infoBg;
-
-                                  badgeFg = tokens.infoText;
-
-                                  badgeBorder = tokens.infoBorder;
-
-                                }
-
-                                return TableRow(
-
-                                  decoration: BoxDecoration(border: Border(top: BorderSide(color: tokens.borderSubtle))),
-
-                                  children: [
-
-                                    Padding(
-
-                                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-
-                                      child: Column(
-
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-
-                                        children: [
-
-                                          Text(cName, style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: tokens.textPrimary), softWrap: true),
-
-                                          Text(cCode, style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: tokens.textMuted)),
-
-                                        ],
-
-                                      ),
-
-                                    ),
-
-                                    Padding(
-
-                                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-
-                                      child: Text(
-
-                                        sDep > 0 ? CurrencyFormatter.formatNaira(sDep) : '—',
-
-                                        style: TextStyle(
-
-                                          fontSize: 12,
-
-                                          fontWeight: sDep > 0 ? FontWeight.w700 : FontWeight.w500,
-
-                                          color: sDep > 0 ? tokens.textPrimary : tokens.textMuted,
-
-                                          fontFeatures: const [FontFeature.tabularFigures()],
-
-                                        ),
-
-                                      ),
-
-                                    ),
-
-                                    Padding(
-
-                                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-
-                                      child: Text(
-
-                                        repDisplay,
-
-                                        style: TextStyle(
-
-                                          fontSize: 12,
-
-                                          fontWeight: lRep > 0 ? FontWeight.w700 : FontWeight.w500,
-
-                                          color: pStat == 'NOT_PAID' ? tokens.dangerText : tokens.textPrimary,
-
-                                          fontFeatures: const [FontFeature.tabularFigures()],
-
-                                        ),
-
-                                      ),
-
-                                    ),
-
-                                    Padding(
-
-                                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-
-                                      child: Container(
-
-                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-
-                                        decoration: BoxDecoration(color: badgeBg, borderRadius: BorderRadius.circular(4), border: Border.all(color: badgeBorder)),
-
-                                        child: Text(badgeText, style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: badgeFg), textAlign: TextAlign.center),
-
-                                      ),
-
-                                    ),
-
-                                  ],
-
-                                );
-
-                              }),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ],
                   ],
                 ),
-              ),
-            ],
+                const SizedBox(height: 12),
+                IcareCard(
+                  padding: EdgeInsets.zero,
+                  topAccentColor: tokens.brandPrimary,
+                  topAccentHeight: 3.5,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        width: double.infinity,
+                        color: tokens.brandSoftBg.withValues(
+                          alpha: tokens.isDark ? 0.55 : 0.7,
+                        ),
+                        padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'NET CASH EXPECTED',
+                                    style: TextStyle(
+                                      fontSize: 10.5,
+                                      fontWeight: FontWeight.w800,
+                                      letterSpacing: 0.45,
+                                      color: brandFg,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  FittedBox(
+                                    fit: BoxFit.scaleDown,
+                                    alignment: Alignment.centerLeft,
+                                    child: Text(
+                                      CurrencyFormatter.formatNaira(
+                                        totals.netCash,
+                                        showDecimals: true,
+                                      ),
+                                      style: coTabularStyle(
+                                        fontSize: 24,
+                                        fontWeight: FontWeight.w900,
+                                        color: brandFg,
+                                        letterSpacing: -0.5,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    'Gross physical cash payable to Primary Vault',
+                                    style: TextStyle(
+                                      fontSize: 11.5,
+                                      color: tokens.textSecondary,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Container(
+                              padding: const EdgeInsets.all(10),
+                              decoration: BoxDecoration(
+                                color: tokens.surfaceElevated,
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(color: tokens.brandSoftBorder),
+                              ),
+                              child: Icon(
+                                Icons.payments_outlined,
+                                size: 22,
+                                color: brandFg,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Divider(height: 1, color: tokens.borderSubtle),
+                      IntrinsicHeight(
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Expanded(
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 14,
+                                  vertical: 12,
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Loan Repayments',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w600,
+                                        color: tokens.textMuted,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    FittedBox(
+                                      fit: BoxFit.scaleDown,
+                                      alignment: Alignment.centerLeft,
+                                      child: Text(
+                                        CurrencyFormatter.formatNaira(
+                                          totals.totalRep,
+                                          showDecimals: true,
+                                        ),
+                                        style: coTabularStyle(
+                                          fontSize: 15,
+                                          fontWeight: FontWeight.w800,
+                                          color: tokens.textPrimary,
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      '${totals.paidCount} ${totals.paidCount == 1 ? 'paying member' : 'paying members'}${totals.notPaidCount > 0 ? ' · ${totals.notPaidCount} arrears' : ''}',
+                                      maxLines: 2,
+                                      softWrap: true,
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: tokens.textMuted,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            VerticalDivider(
+                              width: 1,
+                              color: tokens.borderSubtle,
+                            ),
+                            Expanded(
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 14,
+                                  vertical: 12,
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Total Net Savings',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w600,
+                                        color: tokens.textMuted,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    FittedBox(
+                                      fit: BoxFit.scaleDown,
+                                      alignment: Alignment.centerLeft,
+                                      child: Text(
+                                        CurrencyFormatter.formatNaira(
+                                          totals.totalSav,
+                                          showDecimals: true,
+                                        ),
+                                        style: coTabularStyle(
+                                          fontSize: 15,
+                                          fontWeight: FontWeight.w800,
+                                          color: tokens.successText,
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      widget.grpSavings > 0
+                                          ? 'Incl. ${CurrencyFormatter.formatNaira(widget.grpSavings)} communal'
+                                          : 'Individual deposits',
+                                      maxLines: 2,
+                                      softWrap: true,
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: tokens.textMuted,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (widget.grpSavings > 0) ...[
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
+                    decoration: BoxDecoration(
+                      color: tokens.infoBg,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: tokens.infoBorder),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.account_balance_outlined,
+                          size: 16,
+                          color: tokens.infoText,
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            'Group Communal Savings of ${CurrencyFormatter.formatNaira(widget.grpSavings)} for ${widget.groupName} will be posted with member entries.',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: tokens.infoText,
+                              height: 1.35,
+                            ),
+                            softWrap: true,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 12),
+                IcareCard(
+                  padding: EdgeInsets.zero,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 11,
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Staged Checklist',
+                                    style: TextStyle(
+                                      fontSize: 13.5,
+                                      fontWeight: FontWeight.w800,
+                                      color: tokens.textPrimary,
+                                    ),
+                                  ),
+                                  Text(
+                                    '$txCount ${txCount == 1 ? 'Member' : 'Members'} verified for posting',
+                                    style: TextStyle(
+                                      fontSize: 11.5,
+                                      color: tokens.textMuted,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            const IcareStatusBadge(
+                              label: 'Primary Vault',
+                              variant: IcareBadgeVariant.success,
+                            ),
+                          ],
+                        ),
+                      ),
+                      Divider(height: 1, color: tokens.borderSubtle),
+                      if (isMobile)
+                        _buildMobileChecklist(tokens)
+                      else
+                        _buildDesktopChecklist(tokens),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
-      ),
-
-        Divider(height: 1, color: tokens.borderSubtle),
-
-        // Bottom Action Bar
-
-        Padding(
-
-          padding: EdgeInsets.symmetric(horizontal: isMobile ? 14 : 20, vertical: 12),
-
-          child: Row(
-
-            children: [
-
-              Expanded(
-
-                flex: 1,
-
-                child: SizedBox(
-
-                  height: 48,
-
-                  child: OutlinedButton.icon(
-
-                    onPressed: () => Navigator.of(context).pop(),
-
-                    icon: const Icon(Icons.arrow_back, size: 16),
-
-                    label: Text(isMobile ? 'Edit' : 'Edit / Go Back', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5)),
-
-                    style: OutlinedButton.styleFrom(
-
-                      foregroundColor: tokens.textSecondary,
-
-                      side: BorderSide(color: tokens.borderStrong, width: 1.2),
-
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-
-                    ),
-
-                  ),
-
-                ),
-
-              ),
-
-              const SizedBox(width: 10),
-
-              Expanded(
-
-                flex: 2,
-
-                child: SizedBox(
-
-                  height: 48,
-
-                  child: ElevatedButton.icon(
-
-                    onPressed: canSubmit ? _startPosting : null,
-
-                    icon: const Icon(Icons.check_circle_outline, size: 18),
-
-                    label: Text(
-
-                      canSubmit
-
-                          ? (isMobile ? 'Confirm (${CurrencyFormatter.formatNaira(netCash)})' : 'Confirm & Save (${CurrencyFormatter.formatNaira(netCash)})')
-
-                          : 'Suspended (${widget.openReason})',
-
-                      style: TextStyle(fontWeight: FontWeight.w700, fontSize: isMobile ? 12.5 : 14),
-
-                      overflow: TextOverflow.ellipsis,
-
-                    ),
-
-                    style: ElevatedButton.styleFrom(
-
-                      backgroundColor: tokens.isDark ? tokens.brandPrimaryDark : tokens.brandPrimary,
-
-                      foregroundColor: Colors.white,
-
-                      disabledBackgroundColor: tokens.textLight,
-
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-
-                      elevation: 1,
-
-                    ),
-
-                  ),
-
-                ),
-
-              ),
-
-            ],
-
-          ),
-
+        _CollectionModalFooterBar(
+          isMobile: isMobile,
+          secondaryLabel: isMobile ? 'Edit' : 'Edit / Go Back',
+          secondaryIcon: Icons.arrow_back_rounded,
+          onSecondary: () => Navigator.of(context).pop(),
+          primaryLabel: canSubmit
+              ? (isMobile
+                  ? 'Confirm (${CurrencyFormatter.formatNaira(totals.netCash)})'
+                  : 'Confirm & Save (${CurrencyFormatter.formatNaira(totals.netCash)})')
+              : 'Suspended (${widget.openReason})',
+          primaryIcon: Icons.check_circle_outline_rounded,
+          onPrimary: canSubmit ? _startPosting : null,
+          secondaryFlex: 2,
+          primaryFlex: 3,
         ),
-
       ],
-
     );
-
   }
 
-  // -------------------------------------------------------------------------
+  Widget _buildMobileChecklist(IcareSurfaceTokens tokens) {
+    return Padding(
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        children: [
+          if (widget.grpSavings > 0)
+            Container(
+              margin: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: tokens.infoBg,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: tokens.infoBorder),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '${widget.groupName} (Communal)',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 12.5,
+                        color: tokens.infoText,
+                      ),
+                      softWrap: true,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    CurrencyFormatter.formatNaira(widget.grpSavings),
+                    style: coTabularStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w800,
+                      color: tokens.infoText,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ...widget.stagedTransactions.asMap().entries.map((entry) {
+            final idx = entry.key;
+            final tx = entry.value;
+            final cName = tx['client_name']?.toString() ?? 'Member';
+            final cCode = tx['client_code']?.toString() ?? '';
+            final sDep = _toDouble(tx['savings_deposit_amount']);
+            final lRep = _toDouble(tx['loan_repayment_amount']);
+            final expAmt = _toDouble(tx['expected_amount']);
+            final ovAmt = _toDouble(tx['overdue_amount']);
+            final pStat = tx['payment_status']?.toString() ?? 'UNRECORDED';
+            final markNotPaid = tx['mark_not_paid'] == true;
+            final isNotPaid = pStat == 'NOT_PAID' || (lRep == 0 && markNotPaid);
 
-  // STAGE 2: LIVE IN-MODAL POSTING VIEW
+            final repDisplay = (isNotPaid || lRep == 0)
+                ? '₦0.00'
+                : CurrencyFormatter.formatNaira(lRep, showDecimals: true);
 
-  // -------------------------------------------------------------------------
+            return Container(
+              margin: EdgeInsets.only(
+                bottom: idx == widget.stagedTransactions.length - 1 ? 0 : 8,
+              ),
+              padding: const EdgeInsets.all(11),
+              decoration: BoxDecoration(
+                color: tokens.surfaceSubtle,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: tokens.borderSubtle),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              cName,
+                              maxLines: 2,
+                              softWrap: true,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontWeight: FontWeight.w700,
+                                fontSize: 13,
+                                color: tokens.textPrimary,
+                              ),
+                            ),
+                            if (cCode.isNotEmpty) ...[
+                              const SizedBox(height: 1),
+                              Text(
+                                cCode,
+                                style: coTabularStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                  color: tokens.textMuted,
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      _CollectionPaymentStatusBadge(
+                        rawStatus: pStat,
+                        loanRepayment: lRep,
+                        expectedAmount: expAmt,
+                        overdueAmount: ovAmt,
+                        markNotPaid: markNotPaid,
+                        compact: true,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Repayment',
+                              style: TextStyle(
+                                fontSize: 10.5,
+                                color: tokens.textMuted,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              repDisplay,
+                              style: coTabularStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w800,
+                                color: isNotPaid
+                                    ? tokens.dangerText
+                                    : tokens.textPrimary,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Savings Deposit',
+                              style: TextStyle(
+                                fontSize: 10.5,
+                                color: tokens.textMuted,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              sDep > 0
+                                  ? CurrencyFormatter.formatNaira(
+                                      sDep,
+                                      showDecimals: true,
+                                    )
+                                  : '₦0.00',
+                              style: coTabularStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w800,
+                                color: sDep > 0
+                                    ? tokens.successText
+                                    : tokens.textMuted,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            );
+          }),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDesktopChecklist(IcareSurfaceTokens tokens) {
+    return CoControlledHorizontalScroll(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minWidth: 580),
+        child: Table(
+          columnWidths: const {
+            0: FlexColumnWidth(2.6),
+            1: FlexColumnWidth(1.4),
+            2: FlexColumnWidth(1.8),
+            3: FlexColumnWidth(1.8),
+          },
+          children: [
+            TableRow(
+              decoration: BoxDecoration(color: tokens.surfaceSubtle),
+              children: [
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
+                  ),
+                  child: Text(
+                    'Client / Code',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 11.5,
+                      color: tokens.textSecondary,
+                    ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
+                  ),
+                  child: Text(
+                    'Savings (₦)',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 11.5,
+                      color: tokens.textSecondary,
+                    ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
+                  ),
+                  child: Text(
+                    'Repayment (₦)',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 11.5,
+                      color: tokens.textSecondary,
+                    ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
+                  ),
+                  child: Text(
+                    'Payment Status',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 11.5,
+                      color: tokens.textSecondary,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            if (widget.grpSavings > 0)
+              TableRow(
+                decoration: BoxDecoration(
+                  border: Border(top: BorderSide(color: tokens.borderSubtle)),
+                ),
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
+                    child: Text(
+                      '${widget.groupName} (Communal)',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 12,
+                        color: tokens.infoText,
+                      ),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
+                    child: Text(
+                      CurrencyFormatter.formatNaira(widget.grpSavings),
+                      style: coTabularStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: tokens.textPrimary,
+                      ),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
+                    child: Text(
+                      '—',
+                      style: TextStyle(fontSize: 12, color: tokens.textMuted),
+                    ),
+                  ),
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: _CollectionPaymentStatusBadge(
+                        rawStatus: 'GROUP_SAVINGS',
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ...widget.stagedTransactions.map((tx) {
+              final cName = tx['client_name']?.toString() ?? '';
+              final cCode = tx['client_code']?.toString() ?? '';
+              final sDep = _toDouble(tx['savings_deposit_amount']);
+              final lRep = _toDouble(tx['loan_repayment_amount']);
+              final expAmt = _toDouble(tx['expected_amount']);
+              final ovAmt = _toDouble(tx['overdue_amount']);
+              final pStat = tx['payment_status']?.toString() ?? 'UNRECORDED';
+              final markNotPaid = tx['mark_not_paid'] == true;
+              final repDisplay = pStat == 'NOT_PAID'
+                  ? '₦0 (Exp ${CurrencyFormatter.formatNaira(expAmt)})'
+                  : CurrencyFormatter.formatNaira(lRep);
+
+              return TableRow(
+                decoration: BoxDecoration(
+                  border: Border(top: BorderSide(color: tokens.borderSubtle)),
+                ),
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          cName,
+                          style: TextStyle(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 12,
+                            color: tokens.textPrimary,
+                          ),
+                          softWrap: true,
+                        ),
+                        Text(
+                          cCode,
+                          style: coTabularStyle(
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w600,
+                            color: tokens.textMuted,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
+                    child: Text(
+                      sDep > 0 ? CurrencyFormatter.formatNaira(sDep) : '—',
+                      style: coTabularStyle(
+                        fontSize: 12,
+                        fontWeight: sDep > 0 ? FontWeight.w700 : FontWeight.w500,
+                        color: sDep > 0 ? tokens.textPrimary : tokens.textMuted,
+                      ),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
+                    child: Text(
+                      repDisplay,
+                      style: coTabularStyle(
+                        fontSize: 12,
+                        fontWeight: lRep > 0 ? FontWeight.w700 : FontWeight.w500,
+                        color: pStat == 'NOT_PAID'
+                            ? tokens.dangerText
+                            : tokens.textPrimary,
+                      ),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: _CollectionPaymentStatusBadge(
+                        rawStatus: pStat,
+                        loanRepayment: lRep,
+                        expectedAmount: expAmt,
+                        overdueAmount: ovAmt,
+                        markNotPaid: markNotPaid,
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            }),
+          ],
+        ),
+      ),
+    );
+  }
 
   Widget _buildPostingView(bool isMobile) {
-
     final tokens = IcareSurfaceTokens.of(context);
-
-    double totalRep = 0.0;
-
-    double totalSav = widget.grpSavings;
-
-    for (var tx in widget.stagedTransactions) {
-
-      totalRep += (tx['loan_repayment_amount'] as num?)?.toDouble() ?? 0.0;
-
-      totalSav += (tx['savings_deposit_amount'] as num?)?.toDouble() ?? 0.0;
-
-    }
-
-    final netCash = totalRep + totalSav;
+    final totals = _computeTotals();
+    final txCount = widget.stagedTransactions.length;
 
     return Center(
-
+      key: const ValueKey('group-posting'),
       child: Padding(
-
         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
-
         child: Column(
-
           mainAxisAlignment: MainAxisAlignment.center,
-
           children: [
-
             const _AnimatedPulsingVaultIcon(),
-
-            const SizedBox(height: 24),
-
+            const SizedBox(height: 22),
             Text(
-
               'Posting Collections to Ledger',
-
               textAlign: TextAlign.center,
-
               style: TextStyle(
-
                 fontSize: 18,
-
                 fontWeight: FontWeight.w800,
-
                 color: tokens.textPrimary,
-
                 letterSpacing: -0.3,
-
               ),
-
             ),
-
             const SizedBox(height: 8),
-
             AnimatedSwitcher(
-
               duration: const Duration(milliseconds: 250),
-
               child: Text(
-
                 switch (_postingStep) {
-
                   0 => 'Connecting to Core Banking Engine...',
-
-                  1 => 'Committing atomic journal entries to Primary Vault Cash...',
-
-                  _ => 'Securing double-entry ledger lock and client balances...',
-
+                  1 => 'Committing entries to Primary Vault Cash...',
+                  _ => 'Locking double-entry journal & member balances...',
                 },
-
                 key: ValueKey<int>(_postingStep),
-
                 textAlign: TextAlign.center,
-
                 style: TextStyle(
-
                   fontSize: 13,
-
                   color: tokens.textSecondary,
-
                   fontWeight: FontWeight.w500,
-
                 ),
-
               ),
-
             ),
-
             const SizedBox(height: 18),
-
             Container(
-
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-
               decoration: BoxDecoration(
-
                 color: tokens.surfaceSubtle,
-
-                borderRadius: BorderRadius.circular(8),
-
-                border: Border.all(color: tokens.borderStrong),
-
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: tokens.borderSubtle),
               ),
-
               child: Row(
-
                 mainAxisSize: MainAxisSize.min,
-
                 children: [
-
-                  Icon(Icons.group_outlined, size: 14, color: tokens.textSecondary),
-
-                  const SizedBox(width: 6),
-
-                  Text(
-
-                    '${widget.groupName} • ${widget.stagedTransactions.length} Member(s) • ${CurrencyFormatter.formatNaira(netCash)}',
-
-                    style: TextStyle(
-
-                      fontSize: 12,
-
-                      fontWeight: FontWeight.w700,
-
-                      color: tokens.textPrimary,
-
-                      fontFeatures: const [FontFeature.tabularFigures()],
-
-                    ),
-
+                  Icon(
+                    Icons.group_outlined,
+                    size: 14,
+                    color: tokens.textSecondary,
                   ),
-
+                  const SizedBox(width: 6),
+                  Flexible(
+                    child: Text(
+                      '${widget.groupName} · $txCount ${txCount == 1 ? 'Member' : 'Members'} · ${CurrencyFormatter.formatNaira(totals.netCash)}',
+                      overflow: TextOverflow.ellipsis,
+                      style: coTabularStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: tokens.textPrimary,
+                      ),
+                    ),
+                  ),
                 ],
-
               ),
-
             ),
-
             const SizedBox(height: 16),
-
             Row(
-
               mainAxisSize: MainAxisSize.min,
-
               children: [
-
                 Icon(Icons.lock_outline, size: 13, color: tokens.textMuted),
-
                 const SizedBox(width: 6),
-
-                Text(
-
-                  'Idempotency lock active • Please do not close or navigate away',
-
-                  style: TextStyle(fontSize: 11.5, color: tokens.textMuted, fontWeight: FontWeight.w500),
-
+                Flexible(
+                  child: Text(
+                    'Idempotency lock active · Please keep screen open',
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      color: tokens.textMuted,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
                 ),
-
               ],
-
             ),
-
           ],
-
         ),
-
       ),
-
     );
-
   }
-
-  // -------------------------------------------------------------------------
-
-  // STAGE 3: SUCCESS CONFIRMED RECEIPT VIEW
-
-  // -------------------------------------------------------------------------
 
   Widget _buildSuccessView(bool isMobile) {
-
     final tokens = IcareSurfaceTokens.of(context);
-
-    final r = _receiptData ?? {};
-
+    final brandFg = tokens.isDark ? tokens.brandSoftText : tokens.brandPrimary;
+    final r = _receiptData ?? const <String, dynamic>{};
     final batchId = r['batch_id']?.toString() ?? 'COL-OK';
-
     final groupName = r['group_name']?.toString() ?? widget.groupName;
-
-    final totalCash = (r['total_cash'] as num?)?.toDouble() ?? 0.0;
-
-    final totalRep = (r['total_repayment'] ?? r['total_repayments'] as num?)?.toDouble() ?? 0.0;
-
-    final totalSav = (r['total_savings'] as num?)?.toDouble() ?? 0.0;
-
-    final totalRecs = r['total_submitted'] ?? r['items_processed'] ?? widget.stagedTransactions.length;
-
+    final fallbackTotals = _computeTotals();
+    final totalCash =
+        (r['total_cash'] as num?)?.toDouble() ?? fallbackTotals.netCash;
+    final totalRep =
+        ((r['total_repayment'] ?? r['total_repayments']) as num?)?.toDouble() ??
+            fallbackTotals.totalRep;
+    final totalSav =
+        (r['total_savings'] as num?)?.toDouble() ?? fallbackTotals.totalSav;
+    final totalRecs = (r['total_submitted'] ??
+            r['items_processed'] ??
+            widget.stagedTransactions.length) as num? ??
+        widget.stagedTransactions.length;
     final ofcStr = r['officer_name']?.toString() ?? 'Field Credit Officer';
-
-    final recordedAt = r['timestamp']?.toString() ?? DateFormat('dd MMM yyyy, hh:mm a').format(DateTime.now());
-
-    final isOfflineQueued = r['is_offline_queued'] == true ||
-        r['offline_queued'] == true ||
-        r['status'] == 'QUEUED_LOCAL' ||
-        r['watermark'] != null;
-
+    final recordedAt = r['timestamp']?.toString() ??
+        DateFormat('dd MMM yyyy, hh:mm a').format(DateTime.now());
+    final isOfflineQueued = _isReceiptOfflineQueued(r);
     final items = (r['items'] as List<dynamic>?) ?? widget.stagedTransactions;
 
-    final String totStr = CurrencyFormatter.formatNaira(totalCash, showDecimals: true);
+    final totStr = CurrencyFormatter.formatNaira(totalCash, showDecimals: true);
+    final repStr = CurrencyFormatter.formatNaira(totalRep, showDecimals: true);
+    final savStr = CurrencyFormatter.formatNaira(totalSav, showDecimals: true);
 
-    final String repStr = CurrencyFormatter.formatNaira(totalRep, showDecimals: true);
-
-    final String savStr = CurrencyFormatter.formatNaira(totalSav, showDecimals: true);
-
-    final whatsappText = 'ICARE COLLECTION RECEIPT\\n'
-
-        'Batch ID: $batchId\\n'
-
-        'Group: $groupName\\n'
-
-        'Recorded: $recordedAt\\n'
-
-        'Officer: $ofcStr\\n'
-
-        'Total Collected: $totStr\\n'
-
-        '- Loan Repayments: $repStr\\n'
-
-        '- Savings Deposits: $savStr\\n'
-
-        'Records Accounted: $totalRecs\\n'
-
-        'Status: ${isOfflineQueued ? 'QUEUED LOCALLY (PENDING NETWORK SYNC)' : 'CONFIRMED & COMMITTED TO PRIMARY VAULT CASH'}';
+    final whatsappText = 'ICARE COLLECTION RECEIPT\n'
+        'Batch Reference: $batchId\n'
+        'Group: $groupName\n'
+        'Recorded: $recordedAt\n'
+        'Officer: $ofcStr\n'
+        'Total Collected: $totStr\n'
+        '- Loan Repayments: $repStr\n'
+        '- Savings Deposits: $savStr\n'
+        'Records: ${totalRecs.toInt()}\n'
+        'Status: ${isOfflineQueued ? 'QUEUED LOCALLY (PENDING SYNC)' : 'COMMITTED TO PRIMARY VAULT CASH'}';
 
     return Column(
-
+      key: const ValueKey('group-success'),
       children: [
-
         Expanded(
-
           child: SingleChildScrollView(
-
             padding: EdgeInsets.all(isMobile ? 14 : 20),
-
             child: Column(
-
               crossAxisAlignment: CrossAxisAlignment.start,
-
               children: [
-
-                // Celebratory Checkmark & Status Header Banner
-
-                Center(
-
+                IcareCard(
+                  padding: EdgeInsets.zero,
+                  topAccentColor:
+                      isOfflineQueued ? tokens.warningDot : tokens.successDot,
+                  topAccentHeight: 3.5,
                   child: Column(
-
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-
-                      const _AnimatedSuccessCheckmark(),
-
-                      const SizedBox(height: 12),
-
-                      Text(
-
-                        isOfflineQueued
-
-                            ? 'COLLECTION QUEUED LOCALLY (PENDING SYNC)'
-
-                            : 'COLLECTION POSTED & CONFIRMED IN GENERAL LEDGER',
-
-                        textAlign: TextAlign.center,
-
-                        style: TextStyle(
-
-                          fontSize: isMobile ? 13.5 : 15,
-
-                          fontWeight: FontWeight.w800,
-
-                          color: isOfflineQueued ? tokens.warningText : tokens.successText,
-
-                          letterSpacing: 0.1,
-
-                        ),
-
-                      ),
-
-                      const SizedBox(height: 4),
-
-                      Text(
-
-                        isOfflineQueued
-
-                            ? 'Batch stored in local outbox on device. Final ledger posting to Primary Vault Cash will occur upon network synchronization.'
-
-                            : 'All member repayments and savings deposits have been committed to the ledger with physical cash recorded in Primary Vault Cash.',
-
-                        textAlign: TextAlign.center,
-
-                        style: TextStyle(
-
-                          fontSize: isMobile ? 11.5 : 12.5,
-
-                          color: isOfflineQueued ? tokens.warningDot : tokens.successText,
-
-                          height: 1.35,
-
-                        ),
-
-                      ),
-
-                    ],
-
-                  ),
-
-                ),
-
-                const SizedBox(height: 16),
-
-                // 4 Metadata Capsules
-
-                Container(
-
-                  padding: const EdgeInsets.all(12),
-
-                  decoration: BoxDecoration(
-
-                    color: tokens.surfaceSubtle,
-
-                    borderRadius: BorderRadius.circular(10),
-
-                    border: Border.all(color: tokens.borderSubtle),
-
-                  ),
-
-                  child: LayoutBuilder(
-
-                    builder: (context, constraints) {
-
-                      final m1 = _buildMetaCapsule('Batch Reference', batchId, isCopyable: true);
-
-                      final m2 = _buildMetaCapsule('Group / Source', groupName);
-
-                      final m3 = _buildMetaCapsule('Officer / Branch', ofcStr);
-
-                      final m4 = _buildMetaCapsule('Recorded At', recordedAt);
-
-                      if (constraints.maxWidth < 600) {
-
-                        return Column(
-
+                      Padding(
+                        padding: const EdgeInsets.all(14),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.center,
                           children: [
-
-                            Row(children: [Expanded(child: m1), const SizedBox(width: 8), Expanded(child: m2)]),
-
-                            const SizedBox(height: 8),
-
-                            Row(children: [Expanded(child: m3), const SizedBox(width: 8), Expanded(child: m4)]),
-
-                          ],
-
-                        );
-
-                      }
-
-                      return Row(
-
-                        children: [
-
-                          Expanded(child: m1),
-
-                          const SizedBox(width: 8),
-
-                          Expanded(child: m2),
-
-                          const SizedBox(width: 8),
-
-                          Expanded(child: m3),
-
-                          const SizedBox(width: 8),
-
-                          Expanded(child: m4),
-
-                        ],
-
-                      );
-
-                    },
-
-                  ),
-
-                ),
-
-                const SizedBox(height: 14),
-
-                // 4 Executive KPI Summary Cards
-
-                LayoutBuilder(
-
-                  builder: (context, constraints) {
-
-                    final w = constraints.maxWidth;
-
-                    final c1 = _buildSummaryTile(title: 'Total Cash Collected', value: totStr, subtitle: 'Physical Vault Inflow', icon: Icons.payments_outlined, accentColor: tokens.brandPrimary, bgColor: tokens.brandSoftBg, isHero: true);
-
-                    final c2 = _buildSummaryTile(title: 'Loan Repayments', value: repStr, subtitle: 'Active credit settlements', icon: Icons.assignment_turned_in_outlined, accentColor: tokens.infoText, bgColor: tokens.infoBg);
-
-                    final c3 = _buildSummaryTile(title: 'Savings Deposits', value: savStr, subtitle: 'Individual & Group Savings', icon: Icons.savings_outlined, accentColor: tokens.successText, bgColor: tokens.successBg);
-
-                    final c4 = _buildSummaryTile(title: 'Members Accounted', value: '$totalRecs records', subtitle: 'Processed entries', icon: Icons.group_outlined, accentColor: tokens.neutralText, bgColor: tokens.neutralBg);
-
-                    if (w < 600) {
-
-                      return Column(
-
-                        children: [
-
-                          Row(children: [Expanded(child: c1), const SizedBox(width: 8), Expanded(child: c2)]),
-
-                          const SizedBox(height: 8),
-
-                          Row(children: [Expanded(child: c3), const SizedBox(width: 8), Expanded(child: c4)]),
-
-                        ],
-
-                      );
-
-                    }
-
-                    return Row(
-
-                      children: [
-
-                        Expanded(child: c1),
-
-                        const SizedBox(width: 10),
-
-                        Expanded(child: c2),
-
-                        const SizedBox(width: 10),
-
-                        Expanded(child: c3),
-
-                        const SizedBox(width: 10),
-
-                        Expanded(child: c4),
-
-                      ],
-
-                    );
-
-                  },
-
-                ),
-
-                const SizedBox(height: 14),
-
-                // Collapsible Itemized Member Verification Breakdown
-
-                Container(
-
-                  decoration: BoxDecoration(
-
-                    color: tokens.surfaceElevated,
-
-                    borderRadius: BorderRadius.circular(10),
-
-                    border: Border.all(color: tokens.borderSubtle),
-
-                  ),
-
-                  child: Column(
-
-                    children: [
-
-                      InkWell(
-
-                        onTap: () => setState(() => _itemizedExpanded = !_itemizedExpanded),
-
-                        borderRadius: BorderRadius.circular(10),
-
-                        child: Padding(
-
-                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-
-                          child: Row(
-
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-
-                            children: [
-
-                              Row(
-
-                                children: [
-
-                                  Icon(Icons.list_alt, size: 16, color: tokens.successText),
-
-                                  const SizedBox(width: 8),
-
-                                  Text(
-
-                                    'View Itemized Member Verification Breakdown',
-
-                                    style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: tokens.successText),
-
+                            if (isOfflineQueued)
+                              Container(
+                                width: 44,
+                                height: 44,
+                                decoration: BoxDecoration(
+                                  color: tokens.warningBg,
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: tokens.warningBorder,
+                                    width: 1.5,
                                   ),
-
-                                ],
-
-                              ),
-
-                              Icon(_itemizedExpanded ? Icons.expand_less : Icons.expand_more, size: 18, color: tokens.successText),
-
-                            ],
-
-                          ),
-
-                        ),
-
-                      ),
-
-                      if (_itemizedExpanded) ...[
-
-                        Divider(height: 1, color: tokens.borderSubtle),
-
-                        CoControlledHorizontalScroll(
-
-                          child: ConstrainedBox(
-
-                            constraints: const BoxConstraints(minWidth: 500),
-
-                            child: Table(
-
-                              columnWidths: const {
-
-                                0: FlexColumnWidth(2.4),
-
-                                1: FlexColumnWidth(1.4),
-
-                                2: FlexColumnWidth(1.4),
-
-                                3: FlexColumnWidth(1.2),
-
-                              },
-
-                              children: [
-
-                                TableRow(
-
-                                  decoration: BoxDecoration(color: tokens.surfaceSubtle),
-
-                                  children: [
-
-                                    Padding(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8), child: Text('Client / Member', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 11, color: tokens.textSecondary))),
-
-                                    Padding(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8), child: Text('Repayment (₦)', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 11, color: tokens.textSecondary))),
-
-                                    Padding(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8), child: Text('Savings (₦)', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 11, color: tokens.textSecondary))),
-
-                                    Padding(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8), child: Text('Posting Status', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 11, color: tokens.textSecondary))),
-
-                                  ],
-
                                 ),
-
-                                ...items.map((it) {
-
-                                  final cName = it['client_name'] ?? it['client'] ?? 'Member';
-
-                                  final rep = (it['loan_repayment_amount'] ?? it['repayment'] as num?)?.toDouble() ?? 0.0;
-
-                                  final sav = (it['savings_deposit_amount'] ?? it['savings'] as num?)?.toDouble() ?? 0.0;
-
-                                  final stat = it['status']?.toString() ?? 'UNRECORDED';
-
-                                  return TableRow(
-
-                                    children: [
-
-                                      Padding(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8), child: Text(cName.toString(), style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: tokens.textPrimary))),
-
-                                      Padding(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8), child: Text(rep > 0 ? CurrencyFormatter.formatNaira(rep, showDecimals: true) : '—', style: coTabularStyle(fontSize: 11.5, fontWeight: FontWeight.w500, color: tokens.textPrimary))),
-
-                                      Padding(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8), child: Text(sav > 0 ? CurrencyFormatter.formatNaira(sav, showDecimals: true) : '—', style: coTabularStyle(fontSize: 11.5, fontWeight: FontWeight.w500, color: tokens.textPrimary))),
-
-                                      Padding(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8), child: Container(padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2), decoration: BoxDecoration(color: tokens.successBg, borderRadius: BorderRadius.circular(4), border: Border.all(color: tokens.successBorder)), child: Text(stat, style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.w700, color: tokens.successText), textAlign: TextAlign.center))),
-
-                                    ],
-
-                                  );
-
-                                }),
-
-                              ],
-
-                            ),
-
-                          ),
-
-                        ),
-
-                      ],
-
-                    ],
-
-                  ),
-
-                ),
-
-                const SizedBox(height: 12),
-
-                // Collapsible Official WhatsApp Receipt Card
-
-                Container(
-
-                  decoration: BoxDecoration(
-
-                    color: const Color(0xFF0F172A),
-
-                    borderRadius: BorderRadius.circular(10),
-
-                    border: tokens.isDark ? Border.all(color: tokens.borderSubtle) : null,
-
-                  ),
-
-                  child: Column(
-
-                    children: [
-
-                      InkWell(
-
-                        onTap: () => setState(() => _whatsappExpanded = !_whatsappExpanded),
-
-                        borderRadius: BorderRadius.circular(10),
-
-                        child: Padding(
-
-                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-
-                          child: Row(
-
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-
-                            children: [
-
-                              const Row(
-
+                                child: Icon(
+                                  Icons.cloud_upload_outlined,
+                                  color: tokens.warningDot,
+                                  size: 22,
+                                ),
+                              )
+                            else
+                              const _AnimatedSuccessCheckmark(size: 44),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-
-                                  Icon(Icons.share, size: 16, color: Color(0xFF10B981)),
-
-                                  SizedBox(width: 8),
-
+                                  IcareStatusBadge(
+                                    label: isOfflineQueued
+                                        ? 'Queued Offline'
+                                        : 'Posted to Vault',
+                                    variant: isOfflineQueued
+                                        ? IcareBadgeVariant.warning
+                                        : IcareBadgeVariant.success,
+                                  ),
+                                  const SizedBox(height: 6),
                                   Text(
-
-                                    'View / Copy WhatsApp Summary',
-
-                                    style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: Color(0xFF10B981)),
-
+                                    isOfflineQueued
+                                        ? 'Stored in Device Outbox'
+                                        : 'Committed to Primary Vault',
+                                    style: TextStyle(
+                                      fontSize: 14.5,
+                                      fontWeight: FontWeight.w800,
+                                      color: tokens.textPrimary,
+                                    ),
                                   ),
-
-                                ],
-
-                              ),
-
-                              Row(
-
-                                children: [
-
-                                  TextButton.icon(
-
-                                    icon: const Icon(Icons.copy, size: 13, color: Color(0xFF10B981)),
-
-                                    label: const Text('Copy', style: TextStyle(color: Color(0xFF10B981), fontSize: 11.5, fontWeight: FontWeight.w700)),
-
-                                    style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2), minimumSize: Size.zero),
-
-                                    onPressed: () {
-
-                                      Clipboard.setData(ClipboardData(text: whatsappText));
-
-                                      ScaffoldMessenger.of(context).showSnackBar(
-
-                                        const SnackBar(content: Text('WhatsApp receipt copied to clipboard!'), duration: Duration(seconds: 2)),
-
-                                      );
-
-                                    },
-
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    isOfflineQueued
+                                        ? 'Will synchronize automatically once online.'
+                                        : 'All member repayments & savings are balanced.',
+                                    softWrap: true,
+                                    style: TextStyle(
+                                      fontSize: 11.5,
+                                      color: tokens.textSecondary,
+                                    ),
                                   ),
-
-                                  Icon(_whatsappExpanded ? Icons.expand_less : Icons.expand_more, size: 18, color: const Color(0xFF94A3B8)),
-
                                 ],
-
                               ),
-
-                            ],
-
-                          ),
-
+                            ),
+                          ],
                         ),
-
                       ),
-
-                      if (_whatsappExpanded) ...[
-
-                        const Divider(height: 1, color: Color(0xFF334155)),
-
-                        Padding(
-
-                          padding: const EdgeInsets.all(14),
-
-                          child: SelectableText(
-
-                            whatsappText,
-
-                            style: coTabularStyle(fontSize: 11.5, fontWeight: FontWeight.w500, color: const Color(0xFFF1F5F9), height: 1.4),
-
-                          ),
-
+                      Divider(height: 1, color: tokens.borderSubtle),
+                      Container(
+                        width: double.infinity,
+                        color: tokens.brandSoftBg.withValues(
+                          alpha: tokens.isDark ? 0.5 : 0.65,
                         ),
-
-                      ],
-
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 12,
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    'TOTAL CASH COLLECTED',
+                                    style: TextStyle(
+                                      fontSize: 10.5,
+                                      fontWeight: FontWeight.w800,
+                                      letterSpacing: 0.4,
+                                      color: brandFg,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Flexible(
+                                  child: Text(
+                                    '${totalRecs.toInt()} ${totalRecs.toInt() == 1 ? 'Record' : 'Records'}',
+                                    textAlign: TextAlign.end,
+                                    style: coTabularStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w700,
+                                      color: tokens.textSecondary,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 4),
+                            FittedBox(
+                              fit: BoxFit.scaleDown,
+                              alignment: Alignment.centerLeft,
+                              child: Text(
+                                totStr,
+                                style: coTabularStyle(
+                                  fontSize: 22,
+                                  fontWeight: FontWeight.w900,
+                                  color: brandFg,
+                                  letterSpacing: -0.4,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Wrap(
+                              spacing: 12,
+                              runSpacing: 4,
+                              children: [
+                                Text(
+                                  'Repayments: $repStr',
+                                  style: coTabularStyle(
+                                    fontSize: 11.5,
+                                    fontWeight: FontWeight.w600,
+                                    color: tokens.textSecondary,
+                                  ),
+                                ),
+                                Text(
+                                  'Savings: $savStr',
+                                  style: coTabularStyle(
+                                    fontSize: 11.5,
+                                    fontWeight: FontWeight.w600,
+                                    color: tokens.successText,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
                     ],
-
                   ),
-
                 ),
+                const SizedBox(height: 12),
+                IcareCard(
+                  padding: const EdgeInsets.all(14),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _CollectionReceiptMetaRow(
+                        label: 'Batch Reference',
+                        value: batchId,
+                        isCopyable: true,
+                      ),
+                      Divider(height: 10, color: tokens.borderSubtle),
+                      _CollectionReceiptMetaRow(
+                        label: 'Group / Source',
+                        value: groupName,
+                      ),
+                      Divider(height: 10, color: tokens.borderSubtle),
+                      _CollectionReceiptMetaRow(
+                        label: 'Officer / Branch',
+                        value: ofcStr,
+                      ),
+                      Divider(height: 10, color: tokens.borderSubtle),
+                      _CollectionReceiptMetaRow(
+                        label: 'Recorded At',
+                        value: recordedAt,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+                IcareCard(
+                  padding: EdgeInsets.zero,
+                  child: Column(
+                    children: [
+                      InkWell(
+                        onTap: () => setState(
+                          () => _itemizedExpanded = !_itemizedExpanded,
+                        ),
+                        borderRadius: BorderRadius.circular(12),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 12,
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.list_alt_rounded,
+                                size: 17,
+                                color: brandFg,
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'Member Verification (${items.length})',
+                                  style: TextStyle(
+                                    fontSize: 12.5,
+                                    fontWeight: FontWeight.w700,
+                                    color: tokens.textPrimary,
+                                  ),
+                                ),
+                              ),
+                              Icon(
+                                _itemizedExpanded
+                                    ? Icons.expand_less_rounded
+                                    : Icons.expand_more_rounded,
+                                size: 19,
+                                color: tokens.textMuted,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      if (_itemizedExpanded) ...[
+                        Divider(height: 1, color: tokens.borderSubtle),
+                        if (isMobile)
+                          Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: Column(
+                              children: items.asMap().entries.map((entry) {
+                                final idx = entry.key;
+                                final it = entry.value;
+                                final cName = (it['client_name'] ??
+                                        it['client'] ??
+                                        'Member')
+                                    .toString();
+                                final rep = _toDouble(
+                                  it['loan_repayment_amount'] ?? it['repayment'],
+                                );
+                                final sav = _toDouble(
+                                  it['savings_deposit_amount'] ?? it['savings'],
+                                );
+                                final stat = (it['status'] ??
+                                        it['payment_status'] ??
+                                        'POSTED')
+                                    .toString();
 
+                                return Container(
+                                  margin: EdgeInsets.only(
+                                    bottom: idx == items.length - 1 ? 0 : 8,
+                                  ),
+                                  padding: const EdgeInsets.all(10),
+                                  decoration: BoxDecoration(
+                                    color: tokens.surfaceSubtle,
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(
+                                      color: tokens.borderSubtle,
+                                    ),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              cName,
+                                              maxLines: 2,
+                                              softWrap: true,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: TextStyle(
+                                                fontSize: 12.5,
+                                                fontWeight: FontWeight.w700,
+                                                color: tokens.textPrimary,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 3),
+                                            Text(
+                                              'Rep ${rep > 0 ? CurrencyFormatter.formatNaira(rep, showDecimals: true) : '—'} · Sav ${sav > 0 ? CurrencyFormatter.formatNaira(sav, showDecimals: true) : '—'}',
+                                              style: coTabularStyle(
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.w600,
+                                                color: tokens.textSecondary,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      _CollectionPaymentStatusBadge(
+                                        rawStatus: stat,
+                                        loanRepayment: rep,
+                                        compact: true,
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              }).toList(),
+                            ),
+                          )
+                        else
+                          CoControlledHorizontalScroll(
+                            child: ConstrainedBox(
+                              constraints: const BoxConstraints(minWidth: 500),
+                              child: Table(
+                                columnWidths: const {
+                                  0: FlexColumnWidth(2.4),
+                                  1: FlexColumnWidth(1.4),
+                                  2: FlexColumnWidth(1.4),
+                                  3: FlexColumnWidth(1.3),
+                                },
+                                children: [
+                                  TableRow(
+                                    decoration: BoxDecoration(
+                                      color: tokens.surfaceSubtle,
+                                    ),
+                                    children: [
+                                      Padding(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 12,
+                                          vertical: 8,
+                                        ),
+                                        child: Text(
+                                          'Client / Member',
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.w700,
+                                            fontSize: 11,
+                                            color: tokens.textSecondary,
+                                          ),
+                                        ),
+                                      ),
+                                      Padding(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 12,
+                                          vertical: 8,
+                                        ),
+                                        child: Text(
+                                          'Repayment (₦)',
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.w700,
+                                            fontSize: 11,
+                                            color: tokens.textSecondary,
+                                          ),
+                                        ),
+                                      ),
+                                      Padding(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 12,
+                                          vertical: 8,
+                                        ),
+                                        child: Text(
+                                          'Savings (₦)',
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.w700,
+                                            fontSize: 11,
+                                            color: tokens.textSecondary,
+                                          ),
+                                        ),
+                                      ),
+                                      Padding(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 12,
+                                          vertical: 8,
+                                        ),
+                                        child: Text(
+                                          'Posting Status',
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.w700,
+                                            fontSize: 11,
+                                            color: tokens.textSecondary,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  ...items.map((it) {
+                                    final cName = (it['client_name'] ??
+                                            it['client'] ??
+                                            'Member')
+                                        .toString();
+                                    final rep = _toDouble(
+                                      it['loan_repayment_amount'] ??
+                                          it['repayment'],
+                                    );
+                                    final sav = _toDouble(
+                                      it['savings_deposit_amount'] ??
+                                          it['savings'],
+                                    );
+                                    final stat = (it['status'] ??
+                                            it['payment_status'] ??
+                                            'POSTED')
+                                        .toString();
+
+                                    return TableRow(
+                                      decoration: BoxDecoration(
+                                        border: Border(
+                                          top: BorderSide(
+                                            color: tokens.borderSubtle,
+                                          ),
+                                        ),
+                                      ),
+                                      children: [
+                                        Padding(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 12,
+                                            vertical: 8,
+                                          ),
+                                          child: Text(
+                                            cName,
+                                            style: TextStyle(
+                                              fontSize: 11.5,
+                                              fontWeight: FontWeight.w600,
+                                              color: tokens.textPrimary,
+                                            ),
+                                          ),
+                                        ),
+                                        Padding(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 12,
+                                            vertical: 8,
+                                          ),
+                                          child: Text(
+                                            rep > 0
+                                                ? CurrencyFormatter.formatNaira(
+                                                    rep,
+                                                    showDecimals: true,
+                                                  )
+                                                : '—',
+                                            style: coTabularStyle(
+                                              fontSize: 11.5,
+                                              fontWeight: FontWeight.w500,
+                                              color: tokens.textPrimary,
+                                            ),
+                                          ),
+                                        ),
+                                        Padding(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 12,
+                                            vertical: 8,
+                                          ),
+                                          child: Text(
+                                            sav > 0
+                                                ? CurrencyFormatter.formatNaira(
+                                                    sav,
+                                                    showDecimals: true,
+                                                  )
+                                                : '—',
+                                            style: coTabularStyle(
+                                              fontSize: 11.5,
+                                              fontWeight: FontWeight.w500,
+                                              color: tokens.textPrimary,
+                                            ),
+                                          ),
+                                        ),
+                                        Padding(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 12,
+                                            vertical: 6,
+                                          ),
+                                          child: Align(
+                                            alignment: Alignment.centerLeft,
+                                            child: _CollectionPaymentStatusBadge(
+                                              rawStatus: stat,
+                                              loanRepayment: rep,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    );
+                                  }),
+                                ],
+                              ),
+                            ),
+                          ),
+                      ],
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+                IcareCard(
+                  padding: EdgeInsets.zero,
+                  child: Column(
+                    children: [
+                      InkWell(
+                        onTap: () => setState(
+                          () => _whatsappExpanded = !_whatsappExpanded,
+                        ),
+                        borderRadius: BorderRadius.circular(12),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 10,
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.share_outlined,
+                                size: 17,
+                                color: brandFg,
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'WhatsApp Receipt Summary',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: 12.5,
+                                    fontWeight: FontWeight.w700,
+                                    color: tokens.textPrimary,
+                                  ),
+                                ),
+                              ),
+                              TextButton.icon(
+                                icon: Icon(
+                                  Icons.copy_rounded,
+                                  size: 13,
+                                  color: brandFg,
+                                ),
+                                label: Text(
+                                  'Copy',
+                                  style: TextStyle(
+                                    color: brandFg,
+                                    fontSize: 11.5,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                style: TextButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 4,
+                                  ),
+                                  minimumSize: Size.zero,
+                                ),
+                                onPressed: () {
+                                  Clipboard.setData(
+                                    ClipboardData(text: whatsappText),
+                                  );
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        'WhatsApp receipt copied to clipboard',
+                                      ),
+                                      duration: Duration(seconds: 2),
+                                    ),
+                                  );
+                                },
+                              ),
+                              Icon(
+                                _whatsappExpanded
+                                    ? Icons.expand_less_rounded
+                                    : Icons.expand_more_rounded,
+                                size: 19,
+                                color: tokens.textMuted,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      if (_whatsappExpanded) ...[
+                        Divider(height: 1, color: tokens.borderSubtle),
+                        Container(
+                          width: double.infinity,
+                          color: tokens.surfaceSubtle,
+                          padding: const EdgeInsets.all(14),
+                          child: SelectableText(
+                            whatsappText,
+                            style: coTabularStyle(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w500,
+                              color: tokens.textPrimary,
+                              height: 1.45,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
               ],
-
             ),
-
           ),
-
         ),
-
-        Divider(height: 1, color: tokens.borderSubtle),
-
-        // Bottom Actions Bar
-
-        Padding(
-
-          padding: EdgeInsets.symmetric(horizontal: isMobile ? 14 : 20, vertical: 12),
-
-          child: Row(
-
-            children: [
-
-              Expanded(
-
-                child: SizedBox(
-
-                  height: 48,
-
-                  child: ElevatedButton.icon(
-
-                    onPressed: widget.onDismissAndReset,
-
-                    icon: const Icon(Icons.refresh, size: 18),
-
-                    label: const Text('Record Next Group / Return', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5)),
-
-                    style: ElevatedButton.styleFrom(
-
-                      backgroundColor: tokens.isDark ? tokens.brandPrimaryDark : tokens.brandPrimary,
-
-                      foregroundColor: Colors.white,
-
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-
-                      elevation: 1,
-
-                    ),
-
-                  ),
-
-                ),
-
-              ),
-
-              const SizedBox(width: 12),
-
-              Expanded(
-
-                child: SizedBox(
-
-                  height: 48,
-
-                  child: OutlinedButton.icon(
-
-                    onPressed: widget.onViewHistory,
-
-                    icon: const Icon(Icons.history, size: 18),
-
-                    label: const Text('View in History & Audit', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5)),
-
-                    style: OutlinedButton.styleFrom(
-
-                      foregroundColor: tokens.textSecondary,
-
-                      side: BorderSide(color: tokens.borderStrong, width: 1.2),
-
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-
-                    ),
-
-                  ),
-
-                ),
-
-              ),
-
-            ],
-
-          ),
-
+        _CollectionModalFooterBar(
+          isMobile: isMobile,
+          secondaryLabel:
+              isMobile ? 'View History' : 'View in History & Audit',
+          secondaryIcon: Icons.history_rounded,
+          onSecondary: widget.onViewHistory,
+          primaryLabel: isMobile ? 'Record Next' : 'Record Next Group',
+          primaryIcon: Icons.refresh_rounded,
+          onPrimary: widget.onDismissAndReset,
+          secondaryFlex: 1,
+          primaryFlex: 1,
         ),
-
       ],
-
     );
-
   }
-
-  // -------------------------------------------------------------------------
-
-  // STAGE 4: ERROR VIEW
-
-  // -------------------------------------------------------------------------
 
   Widget _buildErrorView(bool isMobile) {
-
     final tokens = IcareSurfaceTokens.of(context);
+    final primaryBg =
+        tokens.isDark ? tokens.brandPrimaryDark : tokens.brandPrimary;
 
     return Center(
-
+      key: const ValueKey('group-error'),
       child: SingleChildScrollView(
-
         padding: EdgeInsets.all(isMobile ? 16 : 24),
-
-        child: Column(
-
-          mainAxisAlignment: MainAxisAlignment.center,
-
-          children: [
-
-            Container(
-
-              width: 56,
-
-              height: 56,
-
-              decoration: BoxDecoration(color: tokens.dangerBg, shape: BoxShape.circle),
-
-              child: Icon(Icons.error_outline, size: 32, color: tokens.dangerDot),
-
-            ),
-
-            const SizedBox(height: 14),
-
-            Text(
-
-              'Posting Interrupted',
-
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: tokens.textPrimary),
-
-            ),
-
-            const SizedBox(height: 8),
-
-            Container(
-
-              constraints: const BoxConstraints(maxWidth: 480),
-
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-
-              decoration: BoxDecoration(
-
-                color: tokens.dangerBg,
-
-                borderRadius: BorderRadius.circular(10),
-
-                border: Border.all(color: tokens.dangerBorder),
-
-              ),
-
-              child: Text(
-
-                _errorMessage ?? 'An error occurred while posting collections to the ledger. Staged data has been preserved.',
-
-                textAlign: TextAlign.center,
-
-                style: TextStyle(fontSize: 12.5, color: tokens.dangerText, height: 1.4, fontWeight: FontWeight.w500),
-
-              ),
-
-            ),
-
-            const SizedBox(height: 20),
-
-            Row(
-
-              mainAxisAlignment: MainAxisAlignment.center,
-
-              children: [
-
-                OutlinedButton.icon(
-
-                  onPressed: () => setState(() => _phase = _ModalStage.confirmation),
-
-                  icon: const Icon(Icons.arrow_back, size: 16),
-
-                  label: const Text('Edit Collections', style: TextStyle(fontWeight: FontWeight.w700)),
-
-                  style: OutlinedButton.styleFrom(
-
-                    foregroundColor: tokens.textSecondary,
-
-                    side: BorderSide(color: tokens.borderStrong),
-
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-
-                    padding: EdgeInsets.symmetric(horizontal: isMobile ? 12 : 16, vertical: 12),
-
-                  ),
-
-                ),
-
-                const SizedBox(width: 12),
-
-                ElevatedButton.icon(
-
-                  onPressed: _startPosting,
-
-                  icon: const Icon(Icons.refresh, size: 16),
-
-                  label: const Text('Retry Submission', style: TextStyle(fontWeight: FontWeight.w700)),
-
-                  style: ElevatedButton.styleFrom(
-
-                    backgroundColor: tokens.isDark ? tokens.brandPrimaryDark : tokens.brandPrimary,
-
-                    foregroundColor: Colors.white,
-
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-
-                    padding: EdgeInsets.symmetric(horizontal: isMobile ? 12 : 16, vertical: 12),
-
-                  ),
-
-                ),
-
-              ],
-
-            ),
-
-          ],
-
-        ),
-
-      ),
-
-    );
-
-  }
-
-  Widget _buildSummaryTile({
-
-    required String title,
-
-    required String value,
-
-    required String subtitle,
-
-    required IconData icon,
-
-    required Color accentColor,
-
-    required Color bgColor,
-
-    bool isHero = false,
-
-  }) {
-
-    final tokens = IcareSurfaceTokens.of(context);
-
-    return Container(
-
-      padding: const EdgeInsets.all(12),
-
-      decoration: BoxDecoration(
-
-        color: tokens.surfaceElevated,
-
-        borderRadius: BorderRadius.circular(10),
-
-        border: Border(
-
-          top: BorderSide(color: accentColor, width: 2.5),
-
-          left: BorderSide(color: isHero ? accentColor.withValues(alpha: 0.3) : tokens.borderSubtle),
-
-          right: BorderSide(color: isHero ? accentColor.withValues(alpha: 0.3) : tokens.borderSubtle),
-
-          bottom: BorderSide(color: isHero ? accentColor.withValues(alpha: 0.3) : tokens.borderSubtle),
-
-        ),
-
-        boxShadow: [
-
-          BoxShadow(color: Colors.black.withValues(alpha: tokens.isDark ? 0.16 : 0.03), blurRadius: 4, offset: const Offset(0, 1)),
-
-        ],
-
-      ),
-
-      child: Column(
-
-        crossAxisAlignment: CrossAxisAlignment.start,
-
-        children: [
-
-          Row(
-
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-
+        child: IcareCard(
+          topAccentColor: tokens.dangerDot,
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
-
-              Expanded(
-
-                child: Text(
-
-                  title,
-
-                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: tokens.textMuted),
-
-                  softWrap: true,
-
-                  maxLines: 2,
-
-                  overflow: TextOverflow.ellipsis,
-
-                ),
-
-              ),
-
               Container(
-
-                padding: const EdgeInsets.all(4),
-
-                decoration: BoxDecoration(color: bgColor, borderRadius: BorderRadius.circular(6)),
-
-                child: Icon(icon, size: 14, color: accentColor),
-
+                width: 52,
+                height: 52,
+                decoration: BoxDecoration(
+                  color: tokens.dangerBg,
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  Icons.error_outline_rounded,
+                  size: 28,
+                  color: tokens.dangerDot,
+                ),
               ),
-
-            ],
-
-          ),
-
-          const SizedBox(height: 5),
-
-          FittedBox(
-
-            fit: BoxFit.scaleDown,
-
-            alignment: Alignment.centerLeft,
-
-            child: Text(
-
-              value,
-
-              maxLines: 1,
-
-              softWrap: false,
-
-              style: coTabularStyle(
-
-                fontSize: 16,
-
-                fontWeight: FontWeight.w800,
-
-                color: isHero ? accentColor : tokens.textPrimary,
-
+              const SizedBox(height: 14),
+              Text(
+                'Posting Interrupted',
+                style: TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w800,
+                  color: tokens.textPrimary,
+                ),
               ),
-
-            ),
-
-          ),
-
-          const SizedBox(height: 3),
-
-          Text(
-
-            subtitle,
-
-            style: TextStyle(fontSize: 10.5, color: tokens.textMuted, fontWeight: FontWeight.w500),
-
-            softWrap: true,
-
-            maxLines: 1,
-
-            overflow: TextOverflow.ellipsis,
-
-          ),
-
-        ],
-
-      ),
-
-    );
-
-  }
-
-  Widget _buildMetaCapsule(String label, String value, {bool isCopyable = false}) {
-
-    final tokens = IcareSurfaceTokens.of(context);
-
-    return Container(
-
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-
-      decoration: BoxDecoration(
-
-        color: tokens.surfaceElevated,
-
-        borderRadius: BorderRadius.circular(8),
-
-        border: Border.all(color: tokens.borderSubtle),
-
-      ),
-
-      child: Column(
-
-        crossAxisAlignment: CrossAxisAlignment.start,
-
-        children: [
-
-          Text(label, style: TextStyle(fontSize: 10, color: tokens.textMuted, fontWeight: FontWeight.w600)),
-
-          const SizedBox(height: 2),
-
-          Row(
-
-            children: [
-
-              Expanded(
-
+              const SizedBox(height: 8),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 12,
+                ),
+                decoration: BoxDecoration(
+                  color: tokens.dangerBg,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: tokens.dangerBorder),
+                ),
                 child: Text(
-
-                  value,
-
-                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: tokens.textPrimary),
-
-                  maxLines: 1,
-
-                  overflow: TextOverflow.ellipsis,
-
+                  _errorMessage ??
+                      'An error occurred while posting collections to the ledger. Staged entries were preserved.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    color: tokens.dangerText,
+                    height: 1.4,
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
-
               ),
-
-              if (isCopyable) ...[
-
-                const SizedBox(width: 4),
-
-                InkWell(
-
-                  onTap: () {
-
-                    Clipboard.setData(ClipboardData(text: value));
-
-                    ScaffoldMessenger.of(context).showSnackBar(
-
-                      const SnackBar(content: Text('Copied reference!'), duration: Duration(seconds: 1)),
-
-                    );
-
-                  },
-
-                  child: Icon(Icons.copy, size: 13, color: tokens.textMuted),
-
-                ),
-
-              ],
-
+              const SizedBox(height: 18),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () =>
+                          setState(() => _phase = _ModalStage.confirmation),
+                      icon: const Icon(Icons.arrow_back_rounded, size: 16),
+                      label: const Text(
+                        'Edit Entries',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                      style: OutlinedButton.styleFrom(
+                        minimumSize: const Size(0, 44),
+                        foregroundColor: tokens.textSecondary,
+                        side: BorderSide(color: tokens.borderStrong),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: _startPosting,
+                      icon: const Icon(Icons.refresh_rounded, size: 16),
+                      label: const Text(
+                        'Retry',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        minimumSize: const Size(0, 44),
+                        backgroundColor: primaryBg,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        elevation: 0,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ],
-
           ),
-
-        ],
-
+        ),
       ),
-
     );
-
   }
-
 }
 
 // =========================================================================
-
 // SINGLE CLIENT 4-PHASE ANIMATED CONFIRMATION & RECEIPT MODAL
-
 // =========================================================================
 
 class _SingleClientFlowModal extends StatefulWidget {
@@ -10191,152 +9985,155 @@ class _SingleClientFlowModalState extends State<_SingleClientFlowModal> {
   @override
   Widget build(BuildContext context) {
     final tokens = IcareSurfaceTokens.of(context);
-    final media = MediaQuery.of(context);
-    final isMobile = !widget.isDialog || media.size.width < 700;
-
-    return Material(
-      color: tokens.surface,
-      borderRadius: widget.isDialog ? BorderRadius.circular(18) : BorderRadius.zero,
-      child: ClipRRect(
-        borderRadius: widget.isDialog ? BorderRadius.circular(18) : BorderRadius.zero,
-        child: Column(
-          children: [
-            _buildHeader(context, isMobile),
-            Divider(height: 1, color: tokens.borderSubtle),
-            Expanded(
-              child: AnimatedSwitcher(
-                duration: const Duration(milliseconds: 320),
-                switchInCurve: Curves.easeOutCubic,
-                switchOutCurve: Curves.easeInCubic,
-                transitionBuilder: (child, anim) {
-                  return FadeTransition(
-                    opacity: anim,
-                    child: ScaleTransition(
-                      scale: Tween<double>(begin: 0.95, end: 1.0).animate(anim),
-                      child: child,
-                    ),
-                  );
-                },
-                child: switch (_phase) {
-                  _ModalStage.confirmation => _buildConfirmationView(isMobile),
-                  _ModalStage.posting => _buildPostingView(isMobile),
-                  _ModalStage.success => _buildSuccessView(isMobile),
-                  _ModalStage.error => _buildErrorView(isMobile),
-                },
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildHeader(BuildContext context, bool isMobile) {
-    final tokens = IcareSurfaceTokens.of(context);
+    final isMobile = !widget.isDialog || MediaQuery.sizeOf(context).width < 700;
     final clientName = widget.clientObj['client_name']?.toString() ?? 'Client';
-    final isOfflineQueued = _receiptData?['is_offline_queued'] == true ||
-        _receiptData?['offline_queued'] == true ||
-        _receiptData?['status'] == 'QUEUED_LOCAL' ||
-        _receiptData?['watermark'] != null;
+    final isOfflineQueued = _isReceiptOfflineQueued(_receiptData);
+    final brandFg = tokens.isDark ? tokens.brandSoftText : tokens.brandPrimary;
 
     final title = switch (_phase) {
       _ModalStage.confirmation => 'Review Client Collection',
-      _ModalStage.posting => 'Posting Collection to Vault',
-      _ModalStage.success => isOfflineQueued ? 'Client Collection Queued Offline' : 'Client Collection Confirmed',
+      _ModalStage.posting => 'Posting to Vault',
+      _ModalStage.success => isOfflineQueued
+          ? 'Client Entry Queued Offline'
+          : 'Client Collection Confirmed',
       _ModalStage.error => 'Posting Interrupted',
     };
 
     final subtitle = switch (_phase) {
-      _ModalStage.confirmation => 'Verify collection entries for $clientName before ledger commitment.',
-      _ModalStage.posting => 'Double-entry journal committing to Primary Vault Cash in real time.',
+      _ModalStage.confirmation =>
+        'Verify entries for $clientName before ledger commitment.',
+      _ModalStage.posting =>
+        'Committing journal entries to Primary Vault Cash.',
       _ModalStage.success => isOfflineQueued
-          ? 'Saved to device outbox for automatic synchronization when back online.'
-          : 'Successfully committed to Vault Cash with complete client audit trail.',
-      _ModalStage.error => 'Ledger communication encountered an issue.',
+          ? 'Saved to device outbox for synchronization when online.'
+          : 'Successfully committed to Primary Vault Cash.',
+      _ModalStage.error => 'Unable to complete ledger submission.',
     };
 
     final iconData = switch (_phase) {
-      _ModalStage.confirmation => Icons.person_outline,
-      _ModalStage.posting => Icons.sync,
-      _ModalStage.success => isOfflineQueued ? Icons.cloud_upload_outlined : Icons.check_circle_outline,
-      _ModalStage.error => Icons.error_outline,
+      _ModalStage.confirmation => Icons.person_outline_rounded,
+      _ModalStage.posting => Icons.sync_rounded,
+      _ModalStage.success => isOfflineQueued
+          ? Icons.cloud_upload_outlined
+          : Icons.check_circle_outline_rounded,
+      _ModalStage.error => Icons.error_outline_rounded,
     };
 
     final iconBg = switch (_phase) {
-      _ModalStage.confirmation => tokens.infoBg,
+      _ModalStage.confirmation => tokens.brandSoftBg,
       _ModalStage.posting => tokens.brandSoftBg,
-      _ModalStage.success => isOfflineQueued ? tokens.warningBg : tokens.successBg,
+      _ModalStage.success =>
+        isOfflineQueued ? tokens.warningBg : tokens.successBg,
       _ModalStage.error => tokens.dangerBg,
     };
 
     final iconColor = switch (_phase) {
-      _ModalStage.confirmation => tokens.infoText,
-      _ModalStage.posting => tokens.brandPrimary,
-      _ModalStage.success => isOfflineQueued ? tokens.warningDot : tokens.successDot,
+      _ModalStage.confirmation => brandFg,
+      _ModalStage.posting => brandFg,
+      _ModalStage.success =>
+        isOfflineQueued ? tokens.warningDot : tokens.successDot,
       _ModalStage.error => tokens.dangerDot,
     };
 
-    return Container(
-      padding: EdgeInsets.symmetric(horizontal: isMobile ? 14 : 20, vertical: 14),
-      color: tokens.surface,
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: iconBg,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Icon(iconData, size: 20, color: iconColor),
+    return _CollectionModalShell(
+      isDialog: widget.isDialog,
+      title: title,
+      subtitle: subtitle,
+      iconData: iconData,
+      iconBg: iconBg,
+      iconColor: iconColor,
+      showClose: _phase != _ModalStage.posting,
+      child: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 280),
+        switchInCurve: Curves.easeOutCubic,
+        switchOutCurve: Curves.easeInCubic,
+        transitionBuilder: (child, anim) => FadeTransition(
+          opacity: anim,
+          child: ScaleTransition(
+            scale: Tween<double>(begin: 0.97, end: 1.0).animate(anim),
+            child: child,
           ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: TextStyle(
-                    fontSize: isMobile ? 15 : 17,
-                    fontWeight: FontWeight.w800,
-                    color: tokens.textPrimary,
-                    letterSpacing: -0.2,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  subtitle,
-                  style: TextStyle(
-                    fontSize: isMobile ? 11.5 : 12.5,
-                    color: tokens.textMuted,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
-            ),
-          ),
-          if (_phase == _ModalStage.confirmation || _phase == _ModalStage.error)
-            IconButton(
-              icon: Icon(Icons.close, size: 20, color: tokens.textMuted),
-              onPressed: () => Navigator.of(context).pop(),
-              tooltip: 'Close',
-            ),
-        ],
+        ),
+        child: switch (_phase) {
+          _ModalStage.confirmation => _buildConfirmationView(isMobile),
+          _ModalStage.posting => _buildPostingView(isMobile),
+          _ModalStage.success => _buildSuccessView(isMobile),
+          _ModalStage.error => _buildErrorView(isMobile),
+        },
       ),
     );
   }
 
+  List<({String label, String value, Color color})> _buildItemizedEntries(
+    IcareSurfaceTokens tokens,
+  ) {
+    final entries = <({String label, String value, Color color})>[];
+    if (widget.isNotPaid) {
+      entries.add((
+        label: 'Loan Repayment',
+        value:
+            'Marked NOT PAID (${CurrencyFormatter.formatNaira(widget.expRep)} Arrears)',
+        color: tokens.dangerText,
+      ));
+    } else if (widget.repVal > 0) {
+      entries.add((
+        label: 'Loan Repayment',
+        value: CurrencyFormatter.formatNaira(widget.repVal, showDecimals: true),
+        color: tokens.textPrimary,
+      ));
+    }
+    if (widget.savVal > 0) {
+      entries.add((
+        label: 'Personal Savings',
+        value: CurrencyFormatter.formatNaira(widget.savVal, showDecimals: true),
+        color: tokens.successText,
+      ));
+    }
+    if (widget.grpSavVal > 0) {
+      entries.add((
+        label: 'Group Savings',
+        value:
+            CurrencyFormatter.formatNaira(widget.grpSavVal, showDecimals: true),
+        color: tokens.successText,
+      ));
+    }
+    if (widget.appVal > 0) {
+      entries.add((
+        label: 'Application Fee',
+        value: CurrencyFormatter.formatNaira(widget.appVal, showDecimals: true),
+        color: tokens.warningText,
+      ));
+    }
+    if (widget.pbVal > 0) {
+      entries.add((
+        label: 'Pass Book Fee',
+        value: CurrencyFormatter.formatNaira(widget.pbVal, showDecimals: true),
+        color: tokens.warningText,
+      ));
+    }
+    if (widget.miscVal > 0) {
+      entries.add((
+        label: 'Misc Fee (Misc Savings)',
+        value: CurrencyFormatter.formatNaira(widget.miscVal, showDecimals: true),
+        color: tokens.textSecondary,
+      ));
+    }
+    return entries;
+  }
+
   Widget _buildConfirmationView(bool isMobile) {
     final tokens = IcareSurfaceTokens.of(context);
+    final brandFg = tokens.isDark ? tokens.brandSoftText : tokens.brandPrimary;
     final clientName = widget.clientObj['client_name']?.toString() ?? 'Client';
     final clientCode = widget.clientObj['client_code']?.toString() ?? 'CLI-N/A';
     final groupName = widget.clientObj['group_name']?.toString() ?? 'Ungrouped';
     final totalFees = widget.appVal + widget.pbVal + widget.miscVal;
     final totalSavings = widget.savVal + widget.grpSavVal;
     final totalCash = widget.repVal + totalSavings + totalFees;
+    final entries = _buildItemizedEntries(tokens);
 
     return Column(
+      key: const ValueKey('single-confirmation'),
       children: [
         Expanded(
           child: SingleChildScrollView(
@@ -10344,163 +10141,239 @@ class _SingleClientFlowModalState extends State<_SingleClientFlowModal> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Client Card Header
-                Container(
+                IcareCard(
                   padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: tokens.surfaceSubtle,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: tokens.borderSubtle),
-                  ),
-                  child: Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          color: tokens.brandSoftBg,
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Icon(Icons.badge_outlined, size: 22, color: tokens.brandPrimary),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              clientName,
-                              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: tokens.textPrimary),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              'Code: $clientCode • Group: $groupName',
-                              style: TextStyle(fontSize: 12, color: tokens.textMuted, fontWeight: FontWeight.w500),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 14),
-
-                // Hero Cash Card
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: tokens.brandSoftBg,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: tokens.brandSoftBorder),
-                  ),
-                  child: Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          color: tokens.successBg,
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Icon(Icons.payments_outlined, size: 24, color: tokens.brandPrimary),
-                      ),
-                      const SizedBox(width: 14),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Total Cash Collection',
-                              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: tokens.brandSoftText),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              CurrencyFormatter.formatNaira(totalCash, showDecimals: true),
-                              style: TextStyle(
-                                fontSize: 22,
-                                fontWeight: FontWeight.w900,
-                                color: tokens.brandSoftText,
-                                letterSpacing: -0.5,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 16),
-
-                // Itemized Breakdown Table
-                Text(
-                  'Transaction Breakdown',
-                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: tokens.textSecondary),
-                ),
-                const SizedBox(height: 8),
-                Container(
-                  decoration: BoxDecoration(
-                    color: tokens.surfaceElevated,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: tokens.borderSubtle),
-                  ),
                   child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      if (widget.isNotPaid)
-                        _buildLineItem(
-                          'Loan Repayment',
-                          'Marked NOT PAID (₦${widget.expRep.toStringAsFixed(0)} Arrears)',
-                          tokens.dangerText,
-                          isAlert: true,
-                        )
-                      else if (widget.repVal > 0)
-                        _buildLineItem(
-                          'Loan Repayment',
-                          CurrencyFormatter.formatNaira(widget.repVal, showDecimals: true),
-                          tokens.infoText,
-                        ),
-                      if (widget.savVal > 0)
-                        _buildLineItem(
-                          'Personal Savings Deposit',
-                          CurrencyFormatter.formatNaira(widget.savVal, showDecimals: true),
-                          tokens.brandAccent,
-                        ),
-                      if (widget.grpSavVal > 0)
-                        _buildLineItem(
-                          'Group Savings Deposit',
-                          CurrencyFormatter.formatNaira(widget.grpSavVal, showDecimals: true),
-                          tokens.brandAccent,
-                        ),
-                      if (widget.appVal > 0)
-                        _buildLineItem(
-                          'Application / Credit Form Fee',
-                          CurrencyFormatter.formatNaira(widget.appVal, showDecimals: true),
-                          tokens.warningText,
-                        ),
-                      if (widget.pbVal > 0)
-                        _buildLineItem(
-                          'Pass Book Fee',
-                          CurrencyFormatter.formatNaira(widget.pbVal, showDecimals: true),
-                          tokens.warningText,
-                        ),
-                      if (widget.miscVal > 0)
-                        _buildLineItem(
-                          'Misc Fee (Routed to Misc Savings)',
-                          CurrencyFormatter.formatNaira(widget.miscVal, showDecimals: true),
-                          tokens.textSecondary,
-                        ),
-                      if (widget.note.isNotEmpty)
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                          child: Row(
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Container(
+                            width: 40,
+                            height: 40,
+                            decoration: BoxDecoration(
+                              color: tokens.brandSoftBg,
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(color: tokens.brandSoftBorder),
+                            ),
+                            child: Icon(
+                              Icons.badge_outlined,
+                              size: 20,
+                              color: brandFg,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  clientName,
+                                  maxLines: 2,
+                                  softWrap: true,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w800,
+                                    color: tokens.textPrimary,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  '$clientCode · $groupName',
+                                  maxLines: 2,
+                                  softWrap: true,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: coTabularStyle(
+                                    fontSize: 12,
+                                    color: tokens.textMuted,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 6,
+                        children: [
+                          _CollectionContextChip(
+                            icon: Icons.calendar_today_outlined,
+                            label: widget.dateStr,
+                          ),
+                          if (widget.isNotPaid)
+                            const IcareStatusBadge(
+                              label: 'Marked Not Paid',
+                              variant: IcareBadgeVariant.danger,
+                            )
+                          else if (!widget.isOnline)
+                            const IcareStatusBadge(
+                              label: 'Offline Outbox',
+                              variant: IcareBadgeVariant.warning,
+                            )
+                          else
+                            const IcareStatusBadge(
+                              label: 'Primary Vault',
+                              variant: IcareBadgeVariant.success,
+                            ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+                IcareCard(
+                  padding: EdgeInsets.zero,
+                  topAccentColor: tokens.brandPrimary,
+                  topAccentHeight: 3.5,
+                  child: Container(
+                    width: double.infinity,
+                    color: tokens.brandSoftBg.withValues(
+                      alpha: tokens.isDark ? 0.55 : 0.7,
+                    ),
+                    padding: const EdgeInsets.all(16),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text('Remarks:', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tokens.textMuted)),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(widget.note, style: TextStyle(fontSize: 12, color: tokens.textPrimary)),
+                              Text(
+                                'TOTAL PHYSICAL CASH',
+                                style: TextStyle(
+                                  fontSize: 10.5,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: 0.45,
+                                  color: brandFg,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              FittedBox(
+                                fit: BoxFit.scaleDown,
+                                alignment: Alignment.centerLeft,
+                                child: Text(
+                                  CurrencyFormatter.formatNaira(
+                                    totalCash,
+                                    showDecimals: true,
+                                  ),
+                                  style: coTabularStyle(
+                                    fontSize: 24,
+                                    fontWeight: FontWeight.w900,
+                                    color: brandFg,
+                                    letterSpacing: -0.5,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                'Rep ${CurrencyFormatter.formatNaira(widget.repVal)} · Sav ${CurrencyFormatter.formatNaira(totalSavings)} · Fees ${CurrencyFormatter.formatNaira(totalFees)}',
+                                softWrap: true,
+                                style: coTabularStyle(
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.w600,
+                                  color: tokens.textSecondary,
+                                ),
                               ),
                             ],
                           ),
                         ),
+                        const SizedBox(width: 10),
+                        Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: tokens.surfaceElevated,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: tokens.brandSoftBorder),
+                          ),
+                          child: Icon(
+                            Icons.payments_outlined,
+                            size: 22,
+                            color: brandFg,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                IcareCard(
+                  padding: const EdgeInsets.fromLTRB(14, 12, 14, 10),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              'Transaction Breakdown',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w800,
+                                color: tokens.textPrimary,
+                              ),
+                            ),
+                          ),
+                          Text(
+                            '${entries.length} ${entries.length == 1 ? 'Item' : 'Items'}',
+                            style: coTabularStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: tokens.textMuted,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      Divider(height: 1, color: tokens.borderSubtle),
+                      ...entries.asMap().entries.map((entry) {
+                        final idx = entry.key;
+                        final item = entry.value;
+                        return _CollectionReceiptRow(
+                          label: item.label,
+                          value: item.value,
+                          valueColor: item.color,
+                          showDivider: idx < entries.length - 1,
+                        );
+                      }),
+                      if (widget.note.isNotEmpty) ...[
+                        Divider(height: 12, color: tokens.borderSubtle),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: tokens.surfaceSubtle,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Remarks:',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                  color: tokens.textMuted,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  widget.note,
+                                  softWrap: true,
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: tokens.textPrimary,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -10508,95 +10381,42 @@ class _SingleClientFlowModalState extends State<_SingleClientFlowModal> {
             ),
           ),
         ),
-        Divider(height: 1, color: tokens.borderSubtle),
-
-        // Bottom Action Bar
-        Padding(
-          padding: EdgeInsets.symmetric(horizontal: isMobile ? 14 : 20, vertical: 12),
-          child: Row(
-            children: [
-              Expanded(
-                flex: isMobile ? 2 : 1,
-                child: SizedBox(
-                  height: 48,
-                  child: OutlinedButton.icon(
-                    onPressed: () => Navigator.of(context).pop(),
-                    icon: const Icon(Icons.arrow_back, size: 16),
-                    label: const Text('Edit Entry', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5)),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: tokens.textSecondary,
-                      side: BorderSide(color: tokens.borderStrong, width: 1.2),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                flex: isMobile ? 3 : 2,
-                child: SizedBox(
-                  height: 48,
-                  child: ElevatedButton.icon(
-                    onPressed: _startPosting,
-                    icon: const Icon(Icons.check_circle_outline, size: 18),
-                    label: Text(
-                      'Confirm & Post (${CurrencyFormatter.formatNaira(totalCash)})',
-                      style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: tokens.brandPrimaryDark,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                      elevation: 1,
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
+        _CollectionModalFooterBar(
+          isMobile: isMobile,
+          secondaryLabel: isMobile ? 'Edit' : 'Edit Entry',
+          secondaryIcon: Icons.arrow_back_rounded,
+          onSecondary: () => Navigator.of(context).pop(),
+          primaryLabel: isMobile
+              ? 'Confirm (${CurrencyFormatter.formatNaira(totalCash)})'
+              : 'Confirm & Post (${CurrencyFormatter.formatNaira(totalCash)})',
+          primaryIcon: Icons.check_circle_outline_rounded,
+          onPrimary: _startPosting,
+          secondaryFlex: 2,
+          primaryFlex: 3,
         ),
       ],
-    );
-  }
-
-  Widget _buildLineItem(String label, String value, Color valueColor, {bool isAlert = false}) {
-    final tokens = IcareSurfaceTokens.of(context);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
-      decoration: BoxDecoration(
-        border: Border(bottom: BorderSide(color: tokens.borderSubtle)),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(label, style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: tokens.textSecondary)),
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w800,
-              color: valueColor,
-            ),
-          ),
-        ],
-      ),
     );
   }
 
   Widget _buildPostingView(bool isMobile) {
     final tokens = IcareSurfaceTokens.of(context);
     final clientName = widget.clientObj['client_name']?.toString() ?? 'Client';
-    final totalCash = widget.repVal + widget.savVal + widget.grpSavVal + widget.appVal + widget.pbVal + widget.miscVal;
+    final totalCash = widget.repVal +
+        widget.savVal +
+        widget.grpSavVal +
+        widget.appVal +
+        widget.pbVal +
+        widget.miscVal;
 
     return Center(
+      key: const ValueKey('single-posting'),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             const _AnimatedPulsingVaultIcon(),
-            const SizedBox(height: 24),
+            const SizedBox(height: 22),
             Text(
               'Posting Collection to Vault',
               textAlign: TextAlign.center,
@@ -10612,9 +10432,9 @@ class _SingleClientFlowModalState extends State<_SingleClientFlowModal> {
               duration: const Duration(milliseconds: 250),
               child: Text(
                 switch (_postingStep) {
-                  0 => 'Verifying client portfolio & account balances...',
-                  1 => 'Committing atomic journal entries to Primary Vault Cash...',
-                  _ => 'Securing double-entry ledger lock and fee audit trail...',
+                  0 => 'Verifying client portfolio & balances...',
+                  1 => 'Committing entries to Primary Vault Cash...',
+                  _ => 'Securing double-entry ledger & fee trail...',
                 },
                 key: ValueKey<int>(_postingStep),
                 textAlign: TextAlign.center,
@@ -10630,20 +10450,27 @@ class _SingleClientFlowModalState extends State<_SingleClientFlowModal> {
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
               decoration: BoxDecoration(
                 color: tokens.surfaceSubtle,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: tokens.borderStrong),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: tokens.borderSubtle),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.person_outline, size: 14, color: tokens.textSecondary),
+                  Icon(
+                    Icons.person_outline_rounded,
+                    size: 14,
+                    color: tokens.textSecondary,
+                  ),
                   const SizedBox(width: 6),
-                  Text(
-                    '$clientName • ${CurrencyFormatter.formatNaira(totalCash)}',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                      color: tokens.textPrimary,
+                  Flexible(
+                    child: Text(
+                      '$clientName · ${CurrencyFormatter.formatNaira(totalCash)}',
+                      overflow: TextOverflow.ellipsis,
+                      style: coTabularStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: tokens.textPrimary,
+                      ),
                     ),
                   ),
                 ],
@@ -10655,9 +10482,16 @@ class _SingleClientFlowModalState extends State<_SingleClientFlowModal> {
               children: [
                 Icon(Icons.lock_outline, size: 13, color: tokens.textMuted),
                 const SizedBox(width: 6),
-                Text(
-                  'Idempotency lock active • Please do not close or navigate away',
-                  style: TextStyle(fontSize: 11.5, color: tokens.textMuted, fontWeight: FontWeight.w500),
+                Flexible(
+                  child: Text(
+                    'Idempotency lock active · Please keep screen open',
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      color: tokens.textMuted,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
                 ),
               ],
             ),
@@ -10669,16 +10503,39 @@ class _SingleClientFlowModalState extends State<_SingleClientFlowModal> {
 
   Widget _buildSuccessView(bool isMobile) {
     final tokens = IcareSurfaceTokens.of(context);
-    final r = _receiptData ?? {};
+    final brandFg = tokens.isDark ? tokens.brandSoftText : tokens.brandPrimary;
+    final r = _receiptData ?? const <String, dynamic>{};
     final batchId = r['batch_id']?.toString() ?? 'COL-SC-OK';
     final clientName = widget.clientObj['client_name']?.toString() ?? 'Client';
     final clientCode = widget.clientObj['client_code']?.toString() ?? 'CLI-N/A';
     final groupName = widget.clientObj['group_name']?.toString() ?? 'Ungrouped';
-    final totalCash = (r['total_cash'] as num?)?.toDouble() ?? (widget.repVal + widget.savVal + widget.grpSavVal + widget.appVal + widget.pbVal + widget.miscVal);
-    final recordedAt = r['timestamp']?.toString() ?? DateFormat('dd MMM yyyy, hh:mm a').format(DateTime.now());
-    final isOfflineQueued = r['offline_queued'] == true || r['status'] == 'QUEUED_LOCAL' || r['watermark'] != null;
+    final totalCash = (r['total_cash'] as num?)?.toDouble() ??
+        (widget.repVal +
+            widget.savVal +
+            widget.grpSavVal +
+            widget.appVal +
+            widget.pbVal +
+            widget.miscVal);
+    final recordedAt = r['timestamp']?.toString() ??
+        DateFormat('dd MMM yyyy, hh:mm a').format(DateTime.now());
+    final isOfflineQueued = _isReceiptOfflineQueued(r);
+    final entries = _buildItemizedEntries(tokens);
+    final totalStr =
+        CurrencyFormatter.formatNaira(totalCash, showDecimals: true);
+
+    final receiptCopyText = [
+      'ICARE DIGITAL VAULT RECEIPT',
+      'Receipt Reference: $batchId',
+      'Client: $clientName ($clientCode)',
+      'Group: $groupName',
+      'Recorded At: $recordedAt',
+      ...entries.map((e) => '${e.label}: ${e.value}'),
+      'Total Cash Collected: $totalStr',
+      'Status: ${isOfflineQueued ? 'QUEUED OFFLINE' : 'POSTED TO PRIMARY VAULT'}',
+    ].join('\n');
 
     return Column(
+      key: const ValueKey('single-success'),
       children: [
         Expanded(
           child: SingleChildScrollView(
@@ -10686,146 +10543,261 @@ class _SingleClientFlowModalState extends State<_SingleClientFlowModal> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Center(
+                IcareCard(
+                  padding: EdgeInsets.zero,
+                  topAccentColor:
+                      isOfflineQueued ? tokens.warningDot : tokens.successDot,
+                  topAccentHeight: 3.5,
                   child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      if (isOfflineQueued)
-                        Container(
-                          width: 52,
-                          height: 52,
-                          decoration: BoxDecoration(
-                            color: tokens.warningBg,
-                            shape: BoxShape.circle,
-                            border: Border.all(color: tokens.warningBorder, width: 2),
-                          ),
-                          child: Icon(Icons.cloud_upload_outlined, color: tokens.warningDot, size: 28),
-                        )
-                      else
-                        const _AnimatedSuccessCheckmark(),
-                      const SizedBox(height: 12),
-                      Text(
-                        isOfflineQueued
-                            ? 'COLLECTION QUEUED LOCALLY (PENDING SYNC)'
-                            : 'COLLECTION POSTED & COMMITTED TO PRIMARY VAULT CASH',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w800,
-                          color: isOfflineQueued ? tokens.warningText : tokens.brandPrimary,
-                          letterSpacing: 0.1,
+                      Padding(
+                        padding: const EdgeInsets.all(14),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            if (isOfflineQueued)
+                              Container(
+                                width: 44,
+                                height: 44,
+                                decoration: BoxDecoration(
+                                  color: tokens.warningBg,
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: tokens.warningBorder,
+                                    width: 1.5,
+                                  ),
+                                ),
+                                child: Icon(
+                                  Icons.cloud_upload_outlined,
+                                  color: tokens.warningDot,
+                                  size: 22,
+                                ),
+                              )
+                            else
+                              const _AnimatedSuccessCheckmark(size: 44),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  IcareStatusBadge(
+                                    label: isOfflineQueued
+                                        ? 'Queued Offline'
+                                        : 'Posted to Vault',
+                                    variant: isOfflineQueued
+                                        ? IcareBadgeVariant.warning
+                                        : IcareBadgeVariant.success,
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    isOfflineQueued
+                                        ? 'Stored in Device Outbox'
+                                        : 'Committed to Primary Vault Cash',
+                                    style: TextStyle(
+                                      fontSize: 14.5,
+                                      fontWeight: FontWeight.w800,
+                                      color: tokens.textPrimary,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    isOfflineQueued
+                                        ? 'Will synchronize automatically once connected.'
+                                        : 'Recorded with client attribution & ledger entry.',
+                                    softWrap: true,
+                                    style: TextStyle(
+                                      fontSize: 11.5,
+                                      color: tokens.textSecondary,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                      const SizedBox(height: 4),
-                      Text(
-                        isOfflineQueued
-                            ? 'Single client collection stored in local outbox on device. Final ledger posting to Primary Vault Cash will occur upon network synchronization.'
-                            : 'Transaction recorded with client attribution in fee register and double-entry ledger.',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: isOfflineQueued ? tokens.warningText : tokens.textSecondary,
+                      Divider(height: 1, color: tokens.borderSubtle),
+                      Container(
+                        width: double.infinity,
+                        color: tokens.brandSoftBg.withValues(
+                          alpha: tokens.isDark ? 0.5 : 0.65,
+                        ),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 12,
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                'TOTAL CASH COLLECTED',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: 0.4,
+                                  color: brandFg,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Text(
+                              totalStr,
+                              style: coTabularStyle(
+                                fontSize: 19,
+                                fontWeight: FontWeight.w900,
+                                color: brandFg,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ],
                   ),
                 ),
-                const SizedBox(height: 16),
-                // Digital Receipt Card
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: isOfflineQueued ? tokens.warningBg : tokens.surfaceSubtle,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: isOfflineQueued ? tokens.warningBorder : tokens.borderStrong,
-                      width: isOfflineQueued ? 1.5 : 1.0,
-                    ),
-                  ),
+                const SizedBox(height: 12),
+                IcareCard(
+                  padding: EdgeInsets.zero,
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      if (isOfflineQueued) ...[
-                        Container(
-                          width: double.infinity,
-                          margin: const EdgeInsets.only(bottom: 12),
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                          decoration: BoxDecoration(
-                            color: tokens.surfaceElevated,
-                            borderRadius: BorderRadius.circular(6),
-                            border: Border.all(color: tokens.warningBorder),
-                          ),
-                          child: Row(
-                            children: [
-                              Icon(Icons.access_time_filled, size: 14, color: tokens.warningText),
-                              const SizedBox(width: 6),
-                              Expanded(
-                                child: Text(
-                                  'OFFLINE RECEIPT · PENDING RECONCILIATION TO VAULT CASH',
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.w800,
-                                    color: tokens.warningText,
-                                    letterSpacing: 0.2,
+                      Container(
+                        color: tokens.surfaceSubtle,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 9,
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                'DIGITAL VAULT RECEIPT',
+                                style: TextStyle(
+                                  fontSize: 10.5,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: 0.45,
+                                  color: tokens.textSecondary,
+                                ),
+                              ),
+                            ),
+                            TextButton.icon(
+                              onPressed: () {
+                                Clipboard.setData(
+                                  ClipboardData(text: receiptCopyText),
+                                );
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text(
+                                      'Client receipt copied to clipboard',
+                                    ),
+                                    duration: Duration(seconds: 2),
                                   ),
+                                );
+                              },
+                              icon: Icon(
+                                Icons.copy_rounded,
+                                size: 13,
+                                color: brandFg,
+                              ),
+                              label: Text(
+                                'Copy Receipt',
+                                style: TextStyle(
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.w700,
+                                  color: brandFg,
+                                ),
+                              ),
+                              style: TextButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 4,
+                                ),
+                                minimumSize: Size.zero,
+                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Divider(height: 1, color: tokens.borderSubtle),
+                      Padding(
+                        padding: const EdgeInsets.all(14),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if (isOfflineQueued) ...[
+                              Container(
+                                width: double.infinity,
+                                margin: const EdgeInsets.only(bottom: 10),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 7,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: tokens.warningBg,
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(
+                                    color: tokens.warningBorder,
+                                  ),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      Icons.access_time_filled,
+                                      size: 14,
+                                      color: tokens.warningText,
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Expanded(
+                                      child: Text(
+                                        'Offline receipt queued locally · pending sync to Vault Cash',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w700,
+                                          color: tokens.warningText,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
                             ],
-                          ),
+                            _CollectionReceiptMetaRow(
+                              label: 'Receipt Reference',
+                              value: batchId,
+                              isCopyable: true,
+                            ),
+                            Divider(height: 10, color: tokens.borderSubtle),
+                            _CollectionReceiptMetaRow(
+                              label: 'Client',
+                              value: '$clientName ($clientCode)',
+                            ),
+                            Divider(height: 10, color: tokens.borderSubtle),
+                            _CollectionReceiptMetaRow(
+                              label: 'Group',
+                              value: groupName,
+                            ),
+                            Divider(height: 10, color: tokens.borderSubtle),
+                            _CollectionReceiptMetaRow(
+                              label: 'Recorded At',
+                              value: recordedAt,
+                            ),
+                            if (entries.isNotEmpty) ...[
+                              const SizedBox(height: 6),
+                              Divider(height: 1, color: tokens.borderStrong),
+                              ...entries.asMap().entries.map((entry) {
+                                final idx = entry.key;
+                                final item = entry.value;
+                                return _CollectionReceiptRow(
+                                  label: item.label,
+                                  value: item.value,
+                                  valueColor: item.color,
+                                  showDivider: idx < entries.length - 1,
+                                );
+                              }),
+                            ],
+                          ],
                         ),
-                      ],
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text('Receipt Reference:', style: TextStyle(fontSize: 12, color: tokens.textMuted)),
-                          Text(batchId, style: coTabularStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: tokens.textPrimary)),
-                        ],
-                      ),
-                      const SizedBox(height: 6),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text('Client:', style: TextStyle(fontSize: 12, color: tokens.textMuted)),
-                          Text('$clientName ($clientCode)', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: tokens.textPrimary)),
-                        ],
-                      ),
-                      const SizedBox(height: 6),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text('Group:', style: TextStyle(fontSize: 12, color: tokens.textMuted)),
-                          Text(groupName, style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: tokens.textPrimary)),
-                        ],
-                      ),
-                      const SizedBox(height: 6),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text('Recorded At:', style: TextStyle(fontSize: 12, color: tokens.textMuted)),
-                          Text(recordedAt, style: TextStyle(fontSize: 12, color: tokens.textSecondary)),
-                        ],
-                      ),
-                      Divider(height: 18, color: tokens.borderSubtle),
-                      if (widget.isNotPaid)
-                        _buildReceiptRow('Loan Repayment', 'Marked NOT PAID')
-                      else if (widget.repVal > 0)
-                        _buildReceiptRow('Loan Repayment', CurrencyFormatter.formatNaira(widget.repVal, showDecimals: true)),
-                      if (widget.savVal > 0)
-                        _buildReceiptRow('Personal Savings', CurrencyFormatter.formatNaira(widget.savVal, showDecimals: true)),
-                      if (widget.grpSavVal > 0)
-                        _buildReceiptRow('Group Savings', CurrencyFormatter.formatNaira(widget.grpSavVal, showDecimals: true)),
-                      if (widget.appVal > 0)
-                        _buildReceiptRow('Application Fee', CurrencyFormatter.formatNaira(widget.appVal, showDecimals: true)),
-                      if (widget.pbVal > 0)
-                        _buildReceiptRow('Pass Book Fee', CurrencyFormatter.formatNaira(widget.pbVal, showDecimals: true)),
-                      if (widget.miscVal > 0)
-                        _buildReceiptRow('Misc Fee', CurrencyFormatter.formatNaira(widget.miscVal, showDecimals: true)),
-                      Divider(height: 18, color: tokens.borderStrong),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text('TOTAL CASH COLLECTED', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: tokens.textPrimary)),
-                          Text(CurrencyFormatter.formatNaira(totalCash, showDecimals: true), style: TextStyle(fontSize: 15, fontWeight: FontWeight.w900, color: tokens.brandPrimary)),
-                        ],
                       ),
                     ],
                   ),
@@ -10834,103 +10806,129 @@ class _SingleClientFlowModalState extends State<_SingleClientFlowModal> {
             ),
           ),
         ),
-        Divider(height: 1, color: tokens.borderSubtle),
-
-        // Bottom Actions
-        Padding(
-          padding: EdgeInsets.symmetric(horizontal: isMobile ? 14 : 20, vertical: 12),
-          child: Row(
-            children: [
-              Expanded(
-                child: SizedBox(
-                  height: 46,
-                  child: OutlinedButton.icon(
-                    onPressed: widget.onViewHistory,
-                    icon: const Icon(Icons.history, size: 16),
-                    label: const Text('View History', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: tokens.textSecondary,
-                      side: BorderSide(color: tokens.borderStrong),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: SizedBox(
-                  height: 46,
-                  child: ElevatedButton.icon(
-                    onPressed: widget.onDismissAndReset,
-                    icon: const Icon(Icons.check, size: 16),
-                    label: const Text('Record Next Client', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: tokens.brandPrimaryDark,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
+        _CollectionModalFooterBar(
+          isMobile: isMobile,
+          secondaryLabel: 'View History',
+          secondaryIcon: Icons.history_rounded,
+          onSecondary: widget.onViewHistory,
+          primaryLabel: isMobile ? 'Record Next' : 'Record Next Client',
+          primaryIcon: Icons.check_rounded,
+          onPrimary: widget.onDismissAndReset,
+          secondaryFlex: 1,
+          primaryFlex: 1,
         ),
       ],
     );
   }
 
-  Widget _buildReceiptRow(String label, String value) {
-    final tokens = IcareSurfaceTokens.of(context);
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 3),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(label, style: TextStyle(fontSize: 12, color: tokens.textMuted)),
-          Text(value, style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: tokens.textPrimary)),
-        ],
-      ),
-    );
-  }
-
   Widget _buildErrorView(bool isMobile) {
     final tokens = IcareSurfaceTokens.of(context);
+    final primaryBg =
+        tokens.isDark ? tokens.brandPrimaryDark : tokens.brandPrimary;
+
     return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(color: tokens.dangerBg, shape: BoxShape.circle),
-              child: Icon(Icons.error_outline, size: 36, color: tokens.dangerDot),
-            ),
-            const SizedBox(height: 16),
-            Text('Posting Failed', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: tokens.textPrimary)),
-            const SizedBox(height: 8),
-            Text(_errorMessage ?? 'An unknown error occurred.', textAlign: TextAlign.center, style: TextStyle(fontSize: 12.5, color: tokens.textMuted)),
-            const SizedBox(height: 20),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                OutlinedButton(
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: tokens.textSecondary,
-                    side: BorderSide(color: tokens.borderStrong),
+      key: const ValueKey('single-error'),
+      child: SingleChildScrollView(
+        padding: EdgeInsets.all(isMobile ? 16 : 24),
+        child: IcareCard(
+          topAccentColor: tokens.dangerDot,
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 52,
+                height: 52,
+                decoration: BoxDecoration(
+                  color: tokens.dangerBg,
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  Icons.error_outline_rounded,
+                  size: 28,
+                  color: tokens.dangerDot,
+                ),
+              ),
+              const SizedBox(height: 14),
+              Text(
+                'Posting Failed',
+                style: TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w800,
+                  color: tokens.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 12,
+                ),
+                decoration: BoxDecoration(
+                  color: tokens.dangerBg,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: tokens.dangerBorder),
+                ),
+                child: Text(
+                  _errorMessage ?? 'An unknown error occurred.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    color: tokens.dangerText,
+                    height: 1.4,
+                    fontWeight: FontWeight.w500,
                   ),
-                  onPressed: () => Navigator.of(context).pop(),
-                  child: const Text('Cancel'),
                 ),
-                const SizedBox(width: 12),
-                ElevatedButton(
-                  onPressed: _startPosting,
-                  style: ElevatedButton.styleFrom(backgroundColor: tokens.brandPrimaryDark, foregroundColor: Colors.white),
-                  child: const Text('Retry Posting'),
-                ),
-              ],
-            ),
-          ],
+              ),
+              const SizedBox(height: 18),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      style: OutlinedButton.styleFrom(
+                        minimumSize: const Size(0, 44),
+                        foregroundColor: tokens.textSecondary,
+                        side: BorderSide(color: tokens.borderStrong),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                      onPressed: () =>
+                          setState(() => _phase = _ModalStage.confirmation),
+                      child: const Text(
+                        'Edit Entry',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: _startPosting,
+                      style: ElevatedButton.styleFrom(
+                        minimumSize: const Size(0, 44),
+                        backgroundColor: primaryBg,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        elevation: 0,
+                      ),
+                      child: const Text(
+                        'Retry Posting',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -10940,11 +10938,15 @@ class _SingleClientFlowModalState extends State<_SingleClientFlowModal> {
 // =========================================================================
 // CELEBRATORY CHECKMARK & PULSING VAULT ANIMATION WIDGETS
 // =========================================================================
+
 class _AnimatedSuccessCheckmark extends StatefulWidget {
-  const _AnimatedSuccessCheckmark();
+  final double size;
+
+  const _AnimatedSuccessCheckmark({this.size = 54});
 
   @override
-  State<_AnimatedSuccessCheckmark> createState() => _AnimatedSuccessCheckmarkState();
+  State<_AnimatedSuccessCheckmark> createState() =>
+      _AnimatedSuccessCheckmarkState();
 }
 
 class _AnimatedSuccessCheckmarkState extends State<_AnimatedSuccessCheckmark>
@@ -10955,7 +10957,10 @@ class _AnimatedSuccessCheckmarkState extends State<_AnimatedSuccessCheckmark>
   @override
   void initState() {
     super.initState();
-    _ctrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 550));
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 500),
+    );
     _scaleAnim = CurvedAnimation(parent: _ctrl, curve: Curves.easeOutBack);
     _ctrl.forward();
   }
@@ -10972,8 +10977,8 @@ class _AnimatedSuccessCheckmarkState extends State<_AnimatedSuccessCheckmark>
     return ScaleTransition(
       scale: _scaleAnim,
       child: Container(
-        width: 58,
-        height: 58,
+        width: widget.size,
+        height: widget.size,
         decoration: BoxDecoration(
           color: tokens.successBg,
           shape: BoxShape.circle,
@@ -10981,10 +10986,18 @@ class _AnimatedSuccessCheckmarkState extends State<_AnimatedSuccessCheckmark>
           boxShadow: tokens.isDark
               ? null
               : const [
-                  BoxShadow(color: Color(0x1F059669), blurRadius: 14, offset: Offset(0, 4)),
+                  BoxShadow(
+                    color: Color(0x1F059669),
+                    blurRadius: 12,
+                    offset: Offset(0, 4),
+                  ),
                 ],
         ),
-        child: Icon(Icons.check, color: tokens.successDot, size: 34),
+        child: Icon(
+          Icons.check_rounded,
+          color: tokens.successDot,
+          size: widget.size * 0.56,
+        ),
       ),
     );
   }
@@ -10994,7 +11007,8 @@ class _AnimatedPulsingVaultIcon extends StatefulWidget {
   const _AnimatedPulsingVaultIcon();
 
   @override
-  State<_AnimatedPulsingVaultIcon> createState() => _AnimatedPulsingVaultIconState();
+  State<_AnimatedPulsingVaultIcon> createState() =>
+      _AnimatedPulsingVaultIconState();
 }
 
 class _AnimatedPulsingVaultIconState extends State<_AnimatedPulsingVaultIcon>
@@ -11005,7 +11019,10 @@ class _AnimatedPulsingVaultIconState extends State<_AnimatedPulsingVaultIcon>
   @override
   void initState() {
     super.initState();
-    _pulseCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 1100))..repeat(reverse: true);
+    _pulseCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1100),
+    )..repeat(reverse: true);
     _pulseAnim = Tween<double>(begin: 0.94, end: 1.06).animate(
       CurvedAnimation(parent: _pulseCtrl, curve: Curves.easeInOut),
     );
@@ -11023,8 +11040,8 @@ class _AnimatedPulsingVaultIconState extends State<_AnimatedPulsingVaultIcon>
     return ScaleTransition(
       scale: _pulseAnim,
       child: Container(
-        width: 76,
-        height: 76,
+        width: 72,
+        height: 72,
         decoration: BoxDecoration(
           color: tokens.brandSoftBg,
           shape: BoxShape.circle,
@@ -11032,13 +11049,17 @@ class _AnimatedPulsingVaultIconState extends State<_AnimatedPulsingVaultIcon>
           boxShadow: tokens.isDark
               ? null
               : const [
-                  BoxShadow(color: Color(0x1F059669), blurRadius: 18, offset: Offset(0, 6)),
+                  BoxShadow(
+                    color: Color(0x1F059669),
+                    blurRadius: 16,
+                    offset: Offset(0, 6),
+                  ),
                 ],
         ),
         child: Center(
           child: SizedBox(
-            width: 42,
-            height: 42,
+            width: 38,
+            height: 38,
             child: CircularProgressIndicator(
               strokeWidth: 3.5,
               valueColor: AlwaysStoppedAnimation<Color>(tokens.brandPrimary),
@@ -11049,4 +11070,3 @@ class _AnimatedPulsingVaultIconState extends State<_AnimatedPulsingVaultIcon>
     );
   }
 }
-

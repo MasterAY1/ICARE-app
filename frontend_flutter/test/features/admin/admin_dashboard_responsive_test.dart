@@ -444,7 +444,7 @@ void main() {
     );
 
     testWidgets(
-      'Renders Interactive Flow, Liquidity Strip, Charts, Asset Pulse & Dark Mode cleanly (BIA-ADMIN-DASH-004)',
+      'Renders Liquidity Strip, Charts, Asset Pulse & Dark Mode cleanly without Flow Cards (BIA-ADMIN-DASH-004)',
       (tester) async {
         await tester.binding.setSurfaceSize(const Size(1280, 1400));
         addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -466,14 +466,9 @@ void main() {
         expect(tester.takeException(), isNull);
         expect(find.text('VAULT CASH CUSTODY'), findsOneWidget);
         expect(find.text('96.4%'), findsOneWidget);
-        expect(find.text('Institution Capital & Governance Flow'), findsOneWidget);
+        expect(find.text('Institution Capital & Governance Flow'), findsNothing);
+        expect(find.text('Asset & SKU Flow'), findsNothing);
         expect(find.text('Asset Financing & Stock Pulse (Read-Only)'), findsOneWidget);
-
-        // Switch flow diagram from Credit & Vault Cycle to Asset & SKU Flow
-        await tester.tap(find.text('Asset & SKU Flow'));
-        await tester.pumpAndSettle();
-        expect(find.text('01 • Master SKU Catalog'), findsOneWidget);
-        expect(find.text('540 SKUs'), findsOneWidget);
 
         // Check Rankings Charts + 6-Pillar Breakdown
         await tester.tap(find.text('Branch & Officer Rankings'));

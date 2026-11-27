@@ -7,11 +7,15 @@ import '../../../../core/theme/icare_theme_tokens.dart';
 import '../../../../core/errors/app_error_formatter.dart';
 import '../../../../core/utils/currency_formatter.dart';
 import '../../../../core/utils/app_url_helper.dart';
+import '../../../../core/widgets/icare_card.dart';
+import '../../../../core/widgets/icare_metric_card.dart';
 import '../../../../core/widgets/icare_skeleton_loader.dart';
+import '../../../../core/widgets/icare_status_badge.dart';
 import '../../../../core/auth/auth_controller.dart';
 import '../../../../core/auth/auth_state.dart';
 import '../data/onboarding_api_service.dart';
 import 'branch_onboarding_portal_screen.dart';
+import 'widgets/onboarding_analytics_charts.dart';
 import 'widgets/successful_delete_dialog.dart';
 import 'package:frontend_flutter/core/theme/icare_motion.dart';
 
@@ -34,19 +38,17 @@ Future<void> showGenerateOnboardingLinkDialog(
   String? errorMessage;
   bool isCopied = false;
 
-  await showIcareDialog<void>(
+  await showIcareAdaptiveSheet<void>(
     context: context,
-    barrierDismissible: false,
-    builder: (ctx) {
+    fitContent: true,
+    builder: (ctx, isDialog) {
       return StatefulBuilder(
         builder: (context, setDialogState) {
-          final tokens = IcareSurfaceTokens.of(context);
-          return Dialog(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            backgroundColor: tokens.surfaceElevated,
-            child: Container(
+          final bottomInset = isDialog ? 0.0 : MediaQuery.viewInsetsOf(ctx).bottom;
+          return SingleChildScrollView(
+            padding: EdgeInsets.fromLTRB(20, isDialog ? 24 : 12, 20, 24 + bottomInset),
+            child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 520),
-              padding: const EdgeInsets.all(24),
               child: generatedUrl != null
                   ? _buildSuccessView(
                       context: context,
@@ -112,7 +114,7 @@ Future<void> showGenerateOnboardingLinkDialog(
                         } catch (e) {
                           setDialogState(() {
                             isCreating = false;
-                            errorMessage = e.toString().replaceAll('Exception: ', '');
+                            errorMessage = AppErrorDetails.from(e).message;
                           });
                         }
                       },
@@ -122,7 +124,14 @@ Future<void> showGenerateOnboardingLinkDialog(
         },
       );
     },
-  );
+  ).whenComplete(() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      nameCtrl.dispose();
+      codeCtrl.dispose();
+      personCtrl.dispose();
+      phoneCtrl.dispose();
+    });
+  });
 }
 
 Widget _buildFormView({
@@ -287,14 +296,15 @@ Widget _buildFormView({
         const SizedBox(height: 20),
 
         // Action Buttons
-        Row(
-          mainAxisAlignment: MainAxisAlignment.end,
+        Wrap(
+          alignment: WrapAlignment.end,
+          spacing: 10,
+          runSpacing: 8,
           children: [
             TextButton(
               onPressed: isCreating ? null : onCancel,
               child: const Text('Cancel'),
             ),
-            const SizedBox(width: 12),
             ElevatedButton.icon(
               style: ElevatedButton.styleFrom(
                 backgroundColor: tokens.brandPrimaryDark,
@@ -372,51 +382,55 @@ Widget _buildSuccessView({
           borderRadius: BorderRadius.circular(8),
           border: Border.all(color: tokens.borderStrong),
         ),
-        child: Row(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Expanded(
-              child: SelectableText(
-                url,
-                style: TextStyle(fontSize: 12, color: tokens.textPrimary, fontWeight: FontWeight.w600),
-              ),
+            SelectableText(
+              url,
+              style: TextStyle(fontSize: 12, color: tokens.textPrimary, fontWeight: FontWeight.w600),
             ),
-            const SizedBox(width: 8),
-            ElevatedButton.icon(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: isCopied ? const Color(0xFF15803D) : tokens.brandPrimaryDark,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            const SizedBox(height: 10),
+            Align(
+              alignment: Alignment.centerRight,
+              child: ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: isCopied ? tokens.successDot : tokens.brandPrimaryDark,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                ),
+                onPressed: onCopy,
+                icon: Icon(isCopied ? Icons.done : Icons.copy, size: 14),
+                label: Text(isCopied ? 'Copied!' : 'Copy Link', style: const TextStyle(fontSize: 11.5)),
               ),
-              onPressed: onCopy,
-              icon: Icon(isCopied ? Icons.done : Icons.copy, size: 14),
-              label: Text(isCopied ? 'Copied!' : 'Copy Link', style: const TextStyle(fontSize: 11.5)),
             ),
           ],
         ),
       ),
       const SizedBox(height: 14),
 
-      Row(
+      Wrap(
+        crossAxisAlignment: WrapCrossAlignment.center,
+        spacing: 6,
+        runSpacing: 4,
         children: [
-          Text('Invitation Token: ', style: TextStyle(fontSize: 11, color: tokens.textMuted)),
-          Flexible(
-            child: SelectableText(
-              token,
-              style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: tokens.infoText),
-            ),
+          Text('Invitation Token:', style: TextStyle(fontSize: 11, color: tokens.textMuted)),
+          SelectableText(
+            token,
+            style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: tokens.infoText),
           ),
         ],
       ),
       const SizedBox(height: 20),
 
-      Row(
-        mainAxisAlignment: MainAxisAlignment.end,
+      Wrap(
+        alignment: WrapAlignment.end,
+        spacing: 10,
+        runSpacing: 8,
         children: [
           OutlinedButton(
             onPressed: onClose,
             child: const Text('Close'),
           ),
-          const SizedBox(width: 10),
           ElevatedButton.icon(
             style: ElevatedButton.styleFrom(
               backgroundColor: tokens.brandPrimaryDark,
@@ -475,7 +489,7 @@ class _BranchOnboardingAdminScreenState extends ConsumerState<BranchOnboardingAd
       });
     } catch (e) {
       setState(() {
-        _errorMessage = e.toString().replaceAll('Exception: ', '');
+        _errorMessage = AppErrorDetails.from(e).message;
         _isLoading = false;
       });
     }
@@ -486,19 +500,29 @@ class _BranchOnboardingAdminScreenState extends ConsumerState<BranchOnboardingAd
     final sessionId = session['id']?.toString() ?? '';
     final notesCtrl = TextEditingController();
 
-    final confirmed = await showIcareDialog<bool>(
+    final confirmed = await showIcareAdaptiveSheet<bool>(
       context: context,
-      builder: (ctx) {
+      fitContent: true,
+      builder: (ctx, isDialog) {
         final dialogTokens = IcareSurfaceTokens.of(ctx);
-        return AlertDialog(
-          backgroundColor: dialogTokens.surfaceElevated,
-          title: Text('Approve & Activate $branchName', style: TextStyle(color: dialogTokens.textPrimary)),
-          content: Column(
+        final bottomInset = isDialog ? 0.0 : MediaQuery.viewInsetsOf(ctx).bottom;
+        return SingleChildScrollView(
+          padding: EdgeInsets.fromLTRB(20, isDialog ? 24 : 12, 20, 24 + bottomInset),
+          child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'This action will atomically commit all staged solidarity groups, members, savings balances, loans, and schedules into live core banking tables.',
+                'Approve & Activate $branchName',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                  color: dialogTokens.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                'This action will permanently activate all staged solidarity groups, members, savings balances, loans, and schedules into live branch operations.',
                 style: TextStyle(fontSize: 13, height: 1.4, color: dialogTokens.textSecondary),
               ),
               const SizedBox(height: 16),
@@ -511,40 +535,63 @@ class _BranchOnboardingAdminScreenState extends ConsumerState<BranchOnboardingAd
                   contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                 ),
               ),
+              const SizedBox(height: 20),
+              Wrap(
+                alignment: WrapAlignment.end,
+                spacing: 10,
+                runSpacing: 8,
+                children: [
+                  TextButton(
+                    onPressed: () => Navigator.of(ctx).pop(false),
+                    child: const Text('Cancel'),
+                  ),
+                  ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: dialogTokens.brandPrimaryDark,
+                      foregroundColor: Colors.white,
+                    ),
+                    onPressed: () => Navigator.of(ctx).pop(true),
+                    child: const Text('Approve & Activate Branch'),
+                  ),
+                ],
+              ),
             ],
           ),
-          actions: [
-            TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF15803D), foregroundColor: Colors.white),
-              onPressed: () => Navigator.of(ctx).pop(true),
-              child: const Text('Approve & Commit to Core Banking'),
-            ),
-          ],
         );
       },
     );
+
+    final notesText = notesCtrl.text.trim();
+    WidgetsBinding.instance.addPostFrameCallback((_) => notesCtrl.dispose());
 
     if (confirmed != true) return;
 
     try {
       final api = ref.read(onboardingApiServiceProvider);
-      await api.approveAdminSession(sessionId, notes: notesCtrl.text.trim().isEmpty ? null : notesCtrl.text.trim());
+      await api.approveAdminSession(sessionId, notes: notesText.isEmpty ? null : notesText);
       if (mounted) {
+        final tokens = IcareSurfaceTokens.of(context);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Branch $branchName successfully activated into live banking!', style: const TextStyle(color: Colors.white)),
-            backgroundColor: const Color(0xFF15803D),
+            content: Text(
+              'Branch $branchName successfully activated into live operations!',
+              style: TextStyle(color: tokens.successText, fontWeight: FontWeight.w600),
+            ),
+            backgroundColor: tokens.successBg,
           ),
         );
       }
       _loadSessions();
     } catch (e) {
       if (mounted) {
+        final tokens = IcareSurfaceTokens.of(context);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Failed to approve session: ${AppErrorDetails.from(e).message}', style: const TextStyle(color: Colors.white)),
-            backgroundColor: const Color(0xFFDC2626),
+            content: Text(
+              'Failed to approve session: ${AppErrorDetails.from(e).message}',
+              style: TextStyle(color: tokens.dangerText, fontWeight: FontWeight.w600),
+            ),
+            backgroundColor: tokens.dangerBg,
           ),
         );
       }
@@ -558,52 +605,71 @@ class _BranchOnboardingAdminScreenState extends ConsumerState<BranchOnboardingAd
     final status = (session['status'] ?? 'draft').toString().toLowerCase();
 
     if (status == 'approved') {
+      final tokens = IcareSurfaceTokens.of(context);
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Approved onboarding packages cannot be deleted because core banking records have already been committed.', style: TextStyle(color: Colors.white)),
-          backgroundColor: Color(0xFFDC2626),
+        SnackBar(
+          content: Text(
+            'Approved onboarding packages cannot be deleted because branch records have already been activated.',
+            style: TextStyle(color: tokens.dangerText, fontWeight: FontWeight.w600),
+          ),
+          backgroundColor: tokens.dangerBg,
         ),
       );
       return;
     }
 
-    final confirmed = await showIcareDialog<bool>(
+    final confirmed = await showIcareAdaptiveSheet<bool>(
       context: context,
-      builder: (ctx) {
+      fitContent: true,
+      builder: (ctx, isDialog) {
         final dialogTokens = IcareSurfaceTokens.of(ctx);
-        return AlertDialog(
-          backgroundColor: dialogTokens.surfaceElevated,
-          title: Text('Delete $branchName ($branchCode)', style: TextStyle(color: dialogTokens.textPrimary)),
-          content: Column(
+        return Padding(
+          padding: EdgeInsets.fromLTRB(20, isDialog ? 24 : 12, 20, 24),
+          child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
+                'Delete $branchName ($branchCode)',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                  color: dialogTokens.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Text(
                 'Are you sure you want to permanently delete the onboarding session for $branchName ($branchCode)?',
                 style: TextStyle(fontSize: 13, height: 1.4, fontWeight: FontWeight.w600, color: dialogTokens.textPrimary),
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 10),
               Text(
                 'All draft groups, credit officer rosters, and unposted member records will be permanently removed. This action cannot be undone.',
                 style: TextStyle(fontSize: 12.5, color: dialogTokens.textMuted, height: 1.4),
               ),
+              const SizedBox(height: 20),
+              Wrap(
+                alignment: WrapAlignment.end,
+                spacing: 10,
+                runSpacing: 8,
+                children: [
+                  TextButton(
+                    onPressed: () => Navigator.of(ctx).pop(false),
+                    child: const Text('Cancel'),
+                  ),
+                  ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: dialogTokens.dangerDot,
+                      foregroundColor: Colors.white,
+                    ),
+                    onPressed: () => Navigator.of(ctx).pop(true),
+                    icon: const Icon(Icons.delete_outline, size: 16),
+                    label: const Text('Delete Session'),
+                  ),
+                ],
+              ),
             ],
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(false),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton.icon(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFFDC2626),
-                foregroundColor: Colors.white,
-              ),
-              onPressed: () => Navigator.of(ctx).pop(true),
-              icon: const Icon(Icons.delete_outline, size: 16),
-              label: const Text('Delete Session'),
-            ),
-          ],
         );
       },
     );
@@ -627,10 +693,14 @@ class _BranchOnboardingAdminScreenState extends ConsumerState<BranchOnboardingAd
       _loadSessions();
     } catch (e) {
       if (mounted) {
+        final tokens = IcareSurfaceTokens.of(context);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Failed to delete session: ${AppErrorDetails.from(e).message}', style: const TextStyle(color: Colors.white)),
-            backgroundColor: const Color(0xFFDC2626),
+            content: Text(
+              'Failed to delete session: ${AppErrorDetails.from(e).message}',
+              style: TextStyle(color: tokens.dangerText, fontWeight: FontWeight.w600),
+            ),
+            backgroundColor: tokens.dangerBg,
           ),
         );
       }
@@ -670,6 +740,10 @@ class _BranchOnboardingAdminScreenState extends ConsumerState<BranchOnboardingAd
 
         // KPI Metric Cards
         _buildMetricCards(totalCount, draftCount, submittedCount, approvedCount),
+        if (!_isLoading && _errorMessage == null && _sessions.isNotEmpty) ...[
+          const SizedBox(height: 16),
+          OnboardingAdminOverviewCharts(sessions: _sessions),
+        ],
         const SizedBox(height: 20),
 
         // Filter and Search Bar
@@ -701,13 +775,9 @@ class _BranchOnboardingAdminScreenState extends ConsumerState<BranchOnboardingAd
 
   Widget _buildPageHeader() {
     final tokens = IcareSurfaceTokens.of(context);
-    return Container(
+    return IcareCard(
       padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: tokens.surface,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: tokens.borderSubtle),
-      ),
+      topAccentColor: tokens.brandPrimaryDark,
       child: LayoutBuilder(
         builder: (context, constraints) {
           final isNarrow = constraints.maxWidth < 650;
@@ -719,32 +789,34 @@ class _BranchOnboardingAdminScreenState extends ConsumerState<BranchOnboardingAd
           final titleBlock = Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
+              Wrap(
+                spacing: 8,
+                runSpacing: 6,
+                crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
-                  if (isAm) ...[
+                  if (isAm)
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
                       decoration: BoxDecoration(
                         color: tokens.brandPrimaryDark,
                         borderRadius: BorderRadius.circular(6),
                       ),
-                      child: const Text('REGIONAL OVERSIGHT', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 10, letterSpacing: 0.5)),
+                      child: const Text(
+                        'REGIONAL OVERSIGHT',
+                        style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 10, letterSpacing: 0.5),
+                      ),
                     ),
-                    const SizedBox(width: 8),
-                  ],
-                  Flexible(
-                    child: Text(
-                      isAm ? 'Regional Branch Setup Oversight' : 'Branch Digital Onboarding Management',
-                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: tokens.textPrimary),
-                    ),
+                  Text(
+                    isAm ? 'Regional Branch Setup Oversight' : 'Branch Digital Onboarding Management',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: tokens.textPrimary),
                   ),
                 ],
               ),
               const SizedBox(height: 4),
               Text(
                 isAm
-                    ? 'Oversee staged branch groups, officer rosters, and authorize core banking activations.'
-                    : 'Active branch digital onboarding and core banking activations.',
+                    ? 'Oversee staged branch groups, officer rosters, and authorize live branch activations.'
+                    : 'Active branch digital onboarding and operational activations.',
                 style: TextStyle(fontSize: 12.5, color: tokens.textMuted),
               ),
             ],
@@ -822,40 +894,11 @@ class _BranchOnboardingAdminScreenState extends ConsumerState<BranchOnboardingAd
   }
 
   Widget _buildKpiCard(String label, String value, IconData icon, Color color) {
-    final tokens = IcareSurfaceTokens.of(context);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      decoration: BoxDecoration(
-        color: tokens.surface,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: tokens.borderSubtle),
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: color.withValues(alpha: tokens.isDark ? 0.16 : 0.1),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Icon(icon, size: 20, color: color),
-          ),
-          const SizedBox(width: 12),
-          Flexible(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(label, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: tokens.textMuted), overflow: TextOverflow.ellipsis),
-                const SizedBox(height: 2),
-                Text(
-                  value,
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: tokens.textPrimary, fontFeatures: const [FontFeature.tabularFigures()]),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
+    return IcareMetricCard(
+      label: label,
+      value: value,
+      icon: icon,
+      topBorderColor: color,
     );
   }
 
@@ -922,8 +965,10 @@ class _BranchOnboardingAdminScreenState extends ConsumerState<BranchOnboardingAd
 
     return Row(
       children: [
-        ...chips.map((c) => Padding(padding: const EdgeInsets.only(right: 8), child: c)),
-        const Spacer(),
+        Expanded(
+          child: Wrap(spacing: 8, runSpacing: 6, children: chips),
+        ),
+        const SizedBox(width: 12),
         searchBox,
         const SizedBox(width: 8),
         IconButton(
@@ -954,19 +999,6 @@ class _BranchOnboardingAdminScreenState extends ConsumerState<BranchOnboardingAd
     final origin = getAppPublicOrigin();
     final fullUrl = '$origin/#/onboarding?token=$token';
 
-    Color badgeBg;
-    Color badgeText;
-    if (status == 'approved') {
-      badgeBg = tokens.successBg;
-      badgeText = tokens.successText;
-    } else if (status == 'submitted') {
-      badgeBg = tokens.infoBg;
-      badgeText = tokens.infoText;
-    } else {
-      badgeBg = tokens.warningBg;
-      badgeText = tokens.warningText;
-    }
-
     final isDeletingThis = _deletingSessionIds.contains(sessionId);
 
     return AnimatedOpacity(
@@ -974,24 +1006,23 @@ class _BranchOnboardingAdminScreenState extends ConsumerState<BranchOnboardingAd
       opacity: isDeletingThis ? 0.45 : 1.0,
       child: Stack(
         children: [
-          Container(
-            margin: const EdgeInsets.only(bottom: 12),
-            padding: const EdgeInsets.all(18),
-            decoration: BoxDecoration(
-              color: tokens.surface,
-              borderRadius: BorderRadius.circular(10),
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: IcareCard(
+              padding: const EdgeInsets.all(18),
+              topAccentColor: status == 'submitted' ? tokens.infoDot : null,
               border: Border.all(
                 color: isDeletingThis
                     ? tokens.dangerBorder
                     : (status == 'submitted' ? tokens.infoBorder : tokens.borderSubtle),
                 width: status == 'submitted' ? 1.4 : 1.0,
               ),
-            ),
-            child: Column(
+              child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Header Row
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -1018,17 +1049,8 @@ class _BranchOnboardingAdminScreenState extends ConsumerState<BranchOnboardingAd
                   ],
                 ),
               ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: badgeBg,
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Text(
-                  status.toUpperCase(),
-                  style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: badgeText),
-                ),
-              ),
+              const SizedBox(width: 8),
+              IcareStatusBadge.fromStatus(status),
               if (status != 'approved') ...[
                 const SizedBox(width: 8),
                 Tooltip(
@@ -1171,7 +1193,7 @@ class _BranchOnboardingAdminScreenState extends ConsumerState<BranchOnboardingAd
                   if (status == 'submitted')
                     ElevatedButton.icon(
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF15803D),
+                        backgroundColor: tokens.brandPrimaryDark,
                         foregroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                         minimumSize: const Size(0, 32),
@@ -1220,6 +1242,7 @@ class _BranchOnboardingAdminScreenState extends ConsumerState<BranchOnboardingAd
         ],
       ),
     ),
+  ),
     if (isDeletingThis)
       Positioned.fill(
         child: Container(
@@ -1285,21 +1308,34 @@ class _BranchOnboardingAdminScreenState extends ConsumerState<BranchOnboardingAd
 
   Widget _buildErrorNotice() {
     final tokens = IcareSurfaceTokens.of(context);
-    return Container(
+    return IcareCard(
       padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: tokens.surface,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: tokens.borderSubtle),
-      ),
+      topAccentColor: tokens.dangerDot,
       child: Center(
         child: Column(
           children: [
             Icon(Icons.error_outline, size: 40, color: tokens.dangerDot),
             const SizedBox(height: 8),
-            Text(_errorMessage!, style: TextStyle(fontSize: 13, color: tokens.textSecondary)),
-            const SizedBox(height: 12),
-            ElevatedButton(onPressed: _loadSessions, child: const Text('Try Again')),
+            Text(
+              'Unable to Load Onboarding Sessions',
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: tokens.textPrimary),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              _errorMessage ?? 'Please check your connection and try again.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 13, color: tokens.textSecondary),
+            ),
+            const SizedBox(height: 14),
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: tokens.brandPrimaryDark,
+                foregroundColor: Colors.white,
+              ),
+              onPressed: _loadSessions,
+              icon: const Icon(Icons.refresh, size: 16),
+              label: const Text('Retry'),
+            ),
           ],
         ),
       ),
@@ -1308,13 +1344,8 @@ class _BranchOnboardingAdminScreenState extends ConsumerState<BranchOnboardingAd
 
   Widget _buildEmptyState() {
     final tokens = IcareSurfaceTokens.of(context);
-    return Container(
+    return IcareCard(
       padding: const EdgeInsets.all(40),
-      decoration: BoxDecoration(
-        color: tokens.surface,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: tokens.borderSubtle),
-      ),
       child: Center(
         child: Column(
           children: [
@@ -1322,7 +1353,11 @@ class _BranchOnboardingAdminScreenState extends ConsumerState<BranchOnboardingAd
             const SizedBox(height: 12),
             Text('No Branch Onboarding Sessions Found', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: tokens.textPrimary)),
             const SizedBox(height: 6),
-            Text('Click "Generate Branch Link" above to issue an invitation to a new branch.', style: TextStyle(fontSize: 12, color: tokens.textMuted)),
+            Text(
+              'Click "Generate Branch Link" above to issue an invitation to a new branch.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 12, color: tokens.textMuted),
+            ),
           ],
         ),
       ),

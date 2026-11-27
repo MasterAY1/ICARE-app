@@ -839,7 +839,7 @@ void main() {
           width: width,
           themeMode: width == 800 ? ThemeMode.dark : ThemeMode.light,
         );
-        expect(find.byType(CoOperationalFlowCard), findsOneWidget);
+        expect(find.text('Daily Field Operations Flow'), findsNothing);
         if (width >= 800) {
           expect(find.byType(BarChart), findsOneWidget);
           expect(find.byType(PieChart), findsOneWidget);
@@ -853,7 +853,7 @@ void main() {
           width: width,
           themeMode: width == 360 ? ThemeMode.dark : ThemeMode.light,
         );
-        expect(find.byType(CoOperationalFlowCard), findsOneWidget);
+        expect(find.text('Loan Origination & Asset Pipeline'), findsNothing);
         expect(find.textContaining('200MB'), findsNothing);
 
         // Advance Step 1 -> Step 4 (KYC & Uploads) to verify document upload zones
@@ -895,10 +895,11 @@ void main() {
           width: width,
           themeMode: width == 1280 ? ThemeMode.dark : ThemeMode.light,
         );
-        expect(find.byType(CoOperationalFlowCard), findsOneWidget);
+        expect(find.text('Field Collections & Posting Flow'), findsNothing);
 
-        // Tap Audit Stage (03 / Collection Audit) to switch to History Tab
-        await tester.tap(find.text('Posted Ledger'));
+        // Tap Collection History & Audit tab to switch to History Tab
+        await tester.ensureVisible(find.text('Collection History & Audit').first);
+        await tester.tap(find.text('Collection History & Audit').first);
         await tester.pumpAndSettle();
         expect(tester.takeException(), isNull);
         expect(find.byType(BarChart), findsOneWidget);
@@ -913,7 +914,7 @@ void main() {
           width: width,
           themeMode: width == 800 ? ThemeMode.dark : ThemeMode.light,
         );
-        expect(find.byType(CoOperationalFlowCard), findsOneWidget);
+        expect(find.textContaining('Operations Flow'), findsNothing);
 
         await tester.ensureVisible(find.text('Daily Withdrawals').first);
         await tester.tap(find.text('Daily Withdrawals').first);
@@ -933,7 +934,7 @@ void main() {
           width: width,
           themeMode: width == 360 ? ThemeMode.dark : ThemeMode.light,
         );
-        expect(find.byType(CoOperationalFlowCard), findsOneWidget);
+        expect(find.text('Loan Portfolio & Risk Lifecycle'), findsNothing);
         expect(find.text('22'), findsNothing);
         expect(find.text('23'), findsNothing);
         if (width < 900) {
@@ -953,7 +954,7 @@ void main() {
           width: width,
           themeMode: width == 1280 ? ThemeMode.dark : ThemeMode.light,
         );
-        expect(find.byType(CoOperationalFlowCard), findsOneWidget);
+        expect(find.textContaining('Cashbook Flow'), findsNothing);
         expect(find.byType(BarChart), findsOneWidget);
         expect(find.byType(PieChart), findsOneWidget);
         if (width < 900) {
@@ -1045,5 +1046,210 @@ void main() {
         expect(find.text('Master Asset Price List & Branch Stock'), findsNothing);
       }
     });
+
+    for (final mode in <ThemeMode>[ThemeMode.light, ThemeMode.dark]) {
+      testWidgets(
+        'Redesigned Group Collection Confirmation & Receipt renders without bottom clipping on 360x800 (${mode.name})',
+        (tester) async {
+          tester.view.physicalSize = const Size(360, 800);
+          tester.view.devicePixelRatio = 1.0;
+          tester.view.padding = const FakeViewPadding(bottom: 32);
+          tester.view.viewPadding = const FakeViewPadding(bottom: 32);
+          addTearDown(tester.view.reset);
+
+          var resetCalled = false;
+          await tester.pumpWidget(
+            MaterialApp(
+              theme: IcareTheme.lightTheme,
+              darkTheme: IcareTheme.darkTheme,
+              themeMode: mode,
+              home: Builder(
+                builder: (context) => Scaffold(
+                  body: Center(
+                    child: ElevatedButton(
+                      onPressed: () {
+                        showGroupCollectionFlowSheet(
+                          context: context,
+                          groupName: 'Favour',
+                          dateStr: '2026-11-26',
+                          isOpen: true,
+                          openReason: 'Open',
+                          isLateEntry: false,
+                          stagedTransactions: const [
+                            {
+                              'client_name': 'Kehinde Afolabi',
+                              'client_code': 'OGI-28-005',
+                              'loan_repayment_amount': 0.0,
+                              'savings_deposit_amount': 2000.0,
+                              'expected_amount': 0.0,
+                              'payment_status': 'PAID',
+                            },
+                          ],
+                          grpSavings: 0.0,
+                          isOnline: true,
+                          onConfirmPost: () async => {
+                            'receipt': {
+                              'batch_id': 'IDEM-GRP_Favour-17956766049123',
+                              'group_name': 'Favour',
+                              'total_cash': 2000.0,
+                              'total_repayment': 0.0,
+                              'total_savings': 2000.0,
+                              'total_submitted': 1,
+                              'officer_name': 'Ada Obi',
+                              'timestamp': '26 Nov 2026, 08:02 AM',
+                            },
+                          },
+                          onDismissAndReset: (ctx) {
+                            resetCalled = true;
+                            Navigator.of(ctx).pop();
+                          },
+                          onViewHistory: (ctx) => Navigator.of(ctx).pop(),
+                        );
+                      },
+                      child: const Text('Review Group Sheet'),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          );
+
+          await tester.tap(find.text('Review Group Sheet'));
+          await tester.pumpAndSettle();
+
+          expect(tester.takeException(), isNull);
+          expect(find.text('1 Member verified for posting'), findsOneWidget);
+          expect(find.textContaining('1 Members'), findsNothing);
+          expect(
+            find.text('Verify staged entries for Favour before ledger commitment.'),
+            findsOneWidget,
+          );
+
+          final editRect = tester.getRect(find.text('Edit'));
+          final confirmRect = tester.getRect(find.text('Confirm (₦2,000)'));
+          expect(editRect.bottom, lessThanOrEqualTo(800 - 32));
+          expect(confirmRect.bottom, lessThanOrEqualTo(800 - 32));
+
+          await tester.tap(find.text('Confirm (₦2,000)'));
+          await tester.pumpAndSettle();
+
+          expect(tester.takeException(), isNull);
+          expect(find.text('Collection Confirmed'), findsOneWidget);
+          expect(find.text('Committed to Primary Vault'), findsOneWidget);
+          expect(find.text('1 Record'), findsOneWidget);
+
+          final historyRect = tester.getRect(find.text('View History'));
+          final nextRect = tester.getRect(find.text('Record Next'));
+          expect(historyRect.bottom, lessThanOrEqualTo(800 - 32));
+          expect(nextRect.bottom, lessThanOrEqualTo(800 - 32));
+
+          _assertNoForbiddenText(tester);
+
+          await tester.tap(find.text('Record Next'));
+          await tester.pumpAndSettle();
+          expect(resetCalled, isTrue);
+        },
+      );
+    }
+
+    testWidgets(
+      'Redesigned Single Client Collection & Digital Receipt eliminates right overflow and bottom clipping on 360x800 Dark Mode',
+      (tester) async {
+        tester.view.physicalSize = const Size(360, 800);
+        tester.view.devicePixelRatio = 1.0;
+        tester.view.padding = const FakeViewPadding(bottom: 32);
+        tester.view.viewPadding = const FakeViewPadding(bottom: 32);
+        addTearDown(tester.view.reset);
+
+        const longBatchId =
+            'IDEM-SC_Orija_Temitope_Adenike-17956766049123456789';
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: IcareTheme.lightTheme,
+            darkTheme: IcareTheme.darkTheme,
+            themeMode: ThemeMode.dark,
+            home: Builder(
+              builder: (context) => Scaffold(
+                body: Center(
+                  child: ElevatedButton(
+                    onPressed: () {
+                      showSingleClientCollectionFlowSheet(
+                        context: context,
+                        clientObj: const {
+                          'client_id': 'c-1',
+                          'client_name': 'Orija Temitope Adenike',
+                          'client_code': 'OGI-20-008',
+                          'group_name': 'Success',
+                        },
+                        dateStr: '2026-11-26',
+                        loanId: null,
+                        expRep: 0.0,
+                        savVal: 3000.0,
+                        grpSavVal: 0.0,
+                        repVal: 0.0,
+                        appVal: 0.0,
+                        pbVal: 0.0,
+                        miscVal: 0.0,
+                        isNotPaid: false,
+                        note: '',
+                        isOnline: true,
+                        onConfirmPost: () async => {
+                          'receipt': {
+                            'batch_id': longBatchId,
+                            'total_cash': 3000.0,
+                            'timestamp': '26 Nov 2026, 07:03 AM',
+                          },
+                        },
+                        onDismissAndReset: (ctx) => Navigator.of(ctx).pop(),
+                        onViewHistory: (ctx) => Navigator.of(ctx).pop(),
+                      );
+                    },
+                    child: const Text('Review Single Sheet'),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+
+        await tester.tap(find.text('Review Single Sheet'));
+        await tester.pumpAndSettle();
+
+        expect(tester.takeException(), isNull);
+        expect(find.text('Review Client Collection'), findsOneWidget);
+        expect(find.text('Orija Temitope Adenike'), findsOneWidget);
+        expect(
+          tester.getRect(find.text('Edit')).bottom,
+          lessThanOrEqualTo(800 - 32),
+        );
+        expect(
+          tester.getRect(find.text('Confirm (₦3,000)')).bottom,
+          lessThanOrEqualTo(800 - 32),
+        );
+
+        await tester.tap(find.text('Confirm (₦3,000)'));
+        await tester.pumpAndSettle();
+
+        expect(tester.takeException(), isNull);
+        expect(find.text('Client Collection Confirmed'), findsOneWidget);
+        expect(find.text('DIGITAL VAULT RECEIPT'), findsOneWidget);
+        expect(find.text('Copy Receipt'), findsOneWidget);
+
+        final refRect = tester.getRect(find.text(longBatchId));
+        expect(refRect.left, greaterThanOrEqualTo(0.0));
+        expect(refRect.right, lessThanOrEqualTo(360.0));
+
+        expect(
+          tester.getRect(find.text('View History')).bottom,
+          lessThanOrEqualTo(800 - 32),
+        );
+        expect(
+          tester.getRect(find.text('Record Next')).bottom,
+          lessThanOrEqualTo(800 - 32),
+        );
+
+        _assertNoForbiddenText(tester);
+      },
+    );
   });
 }

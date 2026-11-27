@@ -5,8 +5,11 @@ import '../../../../core/theme/icare_motion.dart';
 import '../../../../core/theme/icare_theme_tokens.dart';
 import '../../../../core/errors/app_error_formatter.dart';
 import '../../../../core/utils/currency_formatter.dart';
+import '../../../../core/widgets/icare_card.dart';
+import '../../../../core/widgets/icare_skeleton_loader.dart';
 import '../data/datasources/am_api_service.dart';
 import '../data/models/am_dashboard_models.dart';
+import 'widgets/am_subpage_charts.dart';
 
 /// Helper to calculate period dates (Today, This Week, This Month)
 (String, String) getPeriodDates(String period) {
@@ -84,6 +87,12 @@ class _OfficerProductivityModalSheetState extends ConsumerState<OfficerProductiv
   }
 
   Future<void> _fetchOfficers() async {
+    if (mounted) {
+      setState(() {
+        _isLoading = true;
+        _errorMessage = null;
+      });
+    }
     try {
       final apiService = ref.read(amApiServiceProvider);
       final (startDate, endDate) = widget.dates;
@@ -192,24 +201,36 @@ class _OfficerProductivityModalSheetState extends ConsumerState<OfficerProductiv
           // Body Content
           Flexible(
             child: _isLoading
-                ? Center(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 48),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          CircularProgressIndicator(color: tokens.brandPrimary),
-                          const SizedBox(height: 12),
-                          Text('Loading officer productivity metrics...', style: TextStyle(fontSize: 12, color: tokens.textMuted)),
-                        ],
-                      ),
-                    ),
+                ? const Padding(
+                    padding: EdgeInsets.all(16),
+                    child: IcareTableSkeleton(rowCount: 4, hasFilterBar: false),
                   )
                 : _errorMessage != null
                     ? Center(
                         child: Padding(
                           padding: const EdgeInsets.all(24),
-                          child: Text('Error: $_errorMessage', style: TextStyle(color: tokens.dangerText)),
+                          child: IcareCard(
+                            padding: const EdgeInsets.all(20),
+                            topAccentColor: tokens.dangerDot,
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.error_outline, size: 36, color: tokens.dangerDot),
+                                const SizedBox(height: 10),
+                                Text(
+                                  _errorMessage!,
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(color: tokens.dangerText, fontSize: 13),
+                                ),
+                                const SizedBox(height: 14),
+                                OutlinedButton.icon(
+                                  onPressed: _fetchOfficers,
+                                  icon: const Icon(Icons.refresh, size: 15),
+                                  label: const Text('Retry'),
+                                ),
+                              ],
+                            ),
+                          ),
                         ),
                       )
                     : (_data?.officers.isEmpty ?? true)
@@ -222,10 +243,15 @@ class _OfficerProductivityModalSheetState extends ConsumerState<OfficerProductiv
                         : ListView.separated(
                             padding: const EdgeInsets.all(16),
                             shrinkWrap: true,
-                            itemCount: _data!.officers.length,
+                            itemCount: _data!.officers.length + 1,
                             separatorBuilder: (_, __) => const SizedBox(height: 12),
                             itemBuilder: (context, idx) {
-                              final o = _data!.officers[idx];
+                              if (idx == 0) {
+                                return OfficerProductivityComparisonChart(
+                                  officers: _data!.officers,
+                                );
+                              }
+                              final o = _data!.officers[idx - 1];
                               return _buildOfficerCard(o);
                             },
                           ),
@@ -242,22 +268,22 @@ class _OfficerProductivityModalSheetState extends ConsumerState<OfficerProductiv
     final netBg = isNetPositive ? tokens.successBg : tokens.warningBg;
     final netBorder = isNetPositive ? tokens.successBorder : tokens.warningBorder;
 
-    return Container(
+    return IcareCard(
       padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: tokens.surfaceElevated,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: tokens.borderSubtle),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: tokens.isDark ? 0.18 : 0.02), blurRadius: 3, offset: const Offset(0, 1))],
-      ),
+      backgroundColor: tokens.surfaceElevated,
+      topAccentColor: isNetPositive ? tokens.brandPrimary : tokens.warningDot,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Officer Header
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          // Officer Header (Wrap prevents 360px horizontal overflow on long names)
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               Row(
+                mainAxisSize: MainAxisSize.min,
                 children: [
                   CircleAvatar(
                     radius: 16,
@@ -268,22 +294,28 @@ class _OfficerProductivityModalSheetState extends ConsumerState<OfficerProductiv
                     ),
                   ),
                   const SizedBox(width: 10),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        o.fullName,
-                        style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700, color: tokens.textPrimary),
-                      ),
-                      Text(
-                        '@${o.username}',
-                        style: TextStyle(fontSize: 11, color: tokens.textMuted),
-                      ),
-                    ],
+                  Flexible(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          o.fullName,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700, color: tokens.textPrimary),
+                        ),
+                        Text(
+                          '@${o.username}',
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontSize: 11, color: tokens.textMuted),
+                        ),
+                      ],
+                    ),
                   ),
                 ],
               ),
-              Row(
+              Wrap(
+                spacing: 6,
+                runSpacing: 4,
                 children: [
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
@@ -294,10 +326,14 @@ class _OfficerProductivityModalSheetState extends ConsumerState<OfficerProductiv
                     ),
                     child: Text(
                       '${o.activeClientsCount} Borrowers',
-                      style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: tokens.textSecondary),
+                      style: TextStyle(
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w600,
+                        fontFeatures: const [FontFeature.tabularFigures()],
+                        color: tokens.textSecondary,
+                      ),
                     ),
                   ),
-                  const SizedBox(width: 6),
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
                     decoration: BoxDecoration(
@@ -307,7 +343,12 @@ class _OfficerProductivityModalSheetState extends ConsumerState<OfficerProductiv
                     ),
                     child: Text(
                       CurrencyFormatter.formatNaira(o.activePortfolio),
-                      style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: tokens.brandSoftText),
+                      style: TextStyle(
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.bold,
+                        fontFeatures: const [FontFeature.tabularFigures()],
+                        color: tokens.brandSoftText,
+                      ),
                     ),
                   ),
                 ],
@@ -419,15 +460,25 @@ class _OfficerProductivityModalSheetState extends ConsumerState<OfficerProductiv
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text(
-                        '${o.compliancePct.toStringAsFixed(1)}% Comp',
-                        style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: tokens.textSecondary),
+                      Flexible(
+                        child: Text(
+                          '${o.compliancePct.toStringAsFixed(1)}% Comp',
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w600,
+                            fontFeatures: const [FontFeature.tabularFigures()],
+                            color: tokens.textSecondary,
+                          ),
+                        ),
                       ),
+                      const SizedBox(width: 4),
                       Text(
                         o.parPct,
                         style: TextStyle(
                           fontSize: 10,
                           fontWeight: FontWeight.bold,
+                          fontFeatures: const [FontFeature.tabularFigures()],
                           color: o.parPct == '0.0%' ? tokens.successText : tokens.dangerText,
                         ),
                       ),

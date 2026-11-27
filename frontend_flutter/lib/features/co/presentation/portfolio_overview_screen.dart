@@ -325,31 +325,12 @@ class _PortfolioOverviewScreenState extends ConsumerState<PortfolioOverviewScree
     final activeMainTab = ref.watch(portfolioMainTabProvider);
     final filterKey = _buildFilterKey();
     final portfolioAsync = ref.watch(portfolioDataProvider(filterKey));
-    final summary = portfolioAsync.valueOrNull?['summary'] as Map<String, dynamic>? ?? const <String, dynamic>{};
-    final activeCred = (summary['total_active_credit'] as num?)?.toDouble() ?? 0.0;
-    final activeLoans = (summary['active_loans_count'] as num?)?.toInt() ?? 0;
-    final parStr = summary['par']?.toString().replaceAll('%', '') ?? '0.0';
-    final parVal = double.tryParse(parStr) ?? 0.0;
-    final overdueMap = summary['overdue'];
-    final overdueCnt = overdueMap is Map ? (overdueMap['count'] as num?)?.toInt() ?? 0 : 0;
-    final selectedCode = ref.watch(selectedClientCodeProvider);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         // 1. Page Header
         IcareSectionHeader(title: pageTitle),
-        const SizedBox(height: 12),
-        CoPortfolioFlowCard(
-          activeMainTab: activeMainTab,
-          selectedPeriod: _selectedTimePeriod,
-          activeCredit: activeCred,
-          activeLoansCount: activeLoans,
-          parPercent: parVal,
-          overdueCount: overdueCnt,
-          selectedClientCode: selectedCode,
-          onSelectMainTab: (t) => ref.read(portfolioMainTabProvider.notifier).state = t,
-        ),
         const SizedBox(height: 12),
         // 2. Filters & Scope Bar
         _buildFilterBar(portfolioAsync, user),

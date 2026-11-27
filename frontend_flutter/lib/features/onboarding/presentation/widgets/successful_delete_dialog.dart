@@ -79,10 +79,10 @@ class _SuccessfulDeleteAnimationDialogState extends State<SuccessfulDeleteAnimat
 
     _controller.forward();
 
-    // Auto-dismiss smoothly after 2.2 seconds
+    // Auto-dismiss smoothly after 2.2 seconds only if still the active route
     Future.delayed(const Duration(milliseconds: 2200), () {
-      if (mounted) {
-        Navigator.of(context, rootNavigator: true).pop();
+      if (mounted && (ModalRoute.of(context)?.isCurrent ?? false)) {
+        Navigator.of(context, rootNavigator: true).maybePop();
       }
     });
   }
@@ -102,7 +102,7 @@ class _SuccessfulDeleteAnimationDialogState extends State<SuccessfulDeleteAnimat
       backgroundColor: tokens.surfaceElevated,
       child: Container(
         constraints: const BoxConstraints(maxWidth: 420),
-        padding: const EdgeInsets.symmetric(horizontal: 26, vertical: 30),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -130,9 +130,9 @@ class _SuccessfulDeleteAnimationDialogState extends State<SuccessfulDeleteAnimat
                     child: Container(
                       width: 52,
                       height: 52,
-                      decoration: const BoxDecoration(
+                      decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        color: Color(0xFFDC2626),
+                        color: tokens.dangerDot,
                       ),
                       child: const Icon(
                         Icons.delete_sweep_outlined,
@@ -186,7 +186,7 @@ class _SuccessfulDeleteAnimationDialogState extends State<SuccessfulDeleteAnimat
                         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                       ),
-                      onPressed: () => Navigator.of(context, rootNavigator: true).pop(),
+                      onPressed: () => Navigator.of(context, rootNavigator: true).maybePop(),
                       child: const Text('Dismiss', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
                     ),
                   ],

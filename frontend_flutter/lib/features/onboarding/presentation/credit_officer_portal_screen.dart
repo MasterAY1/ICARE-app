@@ -6,9 +6,13 @@ import 'package:intl/intl.dart';
 import '../../../../core/theme/icare_theme_tokens.dart';
 import '../../../../core/errors/app_error_formatter.dart';
 import '../../../../core/utils/currency_formatter.dart';
+import '../../../../core/widgets/icare_card.dart';
+import '../../../../core/widgets/icare_skeleton_loader.dart';
+import '../../../../core/widgets/icare_status_badge.dart';
 import '../../auth/presentation/login_screen.dart';
 import '../data/onboarding_api_service.dart';
 import 'branch_onboarding_portal_screen.dart';
+import 'widgets/onboarding_analytics_charts.dart';
 import 'package:frontend_flutter/core/theme/icare_motion.dart';
 
 /// Dedicated, cryptographically isolated onboarding workspace for Credit Officers.
@@ -128,7 +132,7 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
       });
     } catch (e) {
       setState(() {
-        _errorMessage = e.toString().replaceAll('Exception:', '').trim();
+        _errorMessage = AppErrorDetails.from(e).message;
         _isLoading = false;
       });
     }
@@ -156,21 +160,29 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
           _isSaving = false;
         });
 
+        final tokens = IcareSurfaceTokens.of(context);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Roster draft saved successfully.', style: TextStyle(color: Colors.white)),
-            backgroundColor: Color(0xFF15803D),
-            duration: Duration(seconds: 2),
+          SnackBar(
+            content: Text(
+              'Roster draft saved successfully.',
+              style: TextStyle(color: tokens.successText, fontWeight: FontWeight.w600),
+            ),
+            backgroundColor: tokens.successBg,
+            duration: const Duration(seconds: 2),
           ),
         );
       }
     } catch (e) {
       if (mounted) {
         setState(() => _isSaving = false);
+        final tokens = IcareSurfaceTokens.of(context);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Failed to save draft: ${AppErrorDetails.from(e).message}', style: const TextStyle(color: Colors.white)),
-            backgroundColor: const Color(0xFFDC2626),
+            content: Text(
+              'Failed to save draft: ${AppErrorDetails.from(e).message}',
+              style: TextStyle(color: tokens.dangerText, fontWeight: FontWeight.w600),
+            ),
+            backgroundColor: tokens.dangerBg,
           ),
         );
       }
@@ -181,32 +193,42 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
     if (_isLocked) return;
 
     if (_groups.isEmpty) {
+      final tokens = IcareSurfaceTokens.of(context);
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please register at least one solidarity group before submitting.', style: TextStyle(color: Colors.white)),
-          backgroundColor: Color(0xFFD97706),
+        SnackBar(
+          content: Text(
+            'Please register at least one solidarity group before submitting.',
+            style: TextStyle(color: tokens.warningText, fontWeight: FontWeight.w600),
+          ),
+          backgroundColor: tokens.warningBg,
         ),
       );
       return;
     }
 
-    final confirmed = await showIcareDialog<bool>(
+    final confirmed = await showIcareAdaptiveSheet<bool>(
       context: context,
-      builder: (ctx) {
+      fitContent: true,
+      builder: (ctx, isDialog) {
         final dialogTokens = IcareSurfaceTokens.of(ctx);
-        return AlertDialog(
-          backgroundColor: dialogTokens.surfaceElevated,
-          title: Text('Submit Roster to Branch Manager', style: TextStyle(color: dialogTokens.textPrimary)),
-          content: Column(
+        return Padding(
+          padding: EdgeInsets.fromLTRB(20, isDialog ? 24 : 12, 20, 24),
+          child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              Text(
+                'Submit Roster to Branch Manager',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: dialogTokens.textPrimary),
+              ),
+              const SizedBox(height: 10),
               Text(
                 'Are you sure you want to submit your roster to your Branch Manager?',
                 style: TextStyle(fontSize: 13, color: dialogTokens.textPrimary),
               ),
               const SizedBox(height: 12),
               Container(
+                width: double.infinity,
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
                   color: dialogTokens.surfaceSubtle,
@@ -232,22 +254,28 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
                 'Once submitted, your workspace will be locked for editing. If you need to make changes, your Branch Manager can unlock it for you.',
                 style: TextStyle(fontSize: 11.5, color: dialogTokens.textMuted),
               ),
+              const SizedBox(height: 20),
+              Wrap(
+                alignment: WrapAlignment.end,
+                spacing: 10,
+                runSpacing: 8,
+                children: [
+                  TextButton(
+                    onPressed: () => Navigator.of(ctx).pop(false),
+                    child: const Text('Cancel'),
+                  ),
+                  ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: dialogTokens.brandPrimaryDark,
+                      foregroundColor: Colors.white,
+                    ),
+                    onPressed: () => Navigator.of(ctx).pop(true),
+                    child: const Text('Confirm & Submit to BM'),
+                  ),
+                ],
+              ),
             ],
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(false),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: dialogTokens.brandPrimaryDark,
-                foregroundColor: Colors.white,
-              ),
-              onPressed: () => Navigator.of(ctx).pop(true),
-              child: const Text('Confirm & Submit to BM'),
-            ),
-          ],
         );
       },
     );
@@ -263,11 +291,15 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
       await api.submitOfficerRoster(_currentToken);
 
       if (mounted) {
+        final tokens = IcareSurfaceTokens.of(context);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Your roster has been submitted to your Branch Manager!', style: TextStyle(color: Colors.white)),
-            backgroundColor: Color(0xFF15803D),
-            duration: Duration(seconds: 3),
+          SnackBar(
+            content: Text(
+              'Your roster has been submitted to your Branch Manager!',
+              style: TextStyle(color: tokens.successText, fontWeight: FontWeight.w600),
+            ),
+            backgroundColor: tokens.successBg,
+            duration: const Duration(seconds: 3),
           ),
         );
         _loadWorkspace();
@@ -275,10 +307,14 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
     } catch (e) {
       if (mounted) {
         setState(() => _isSaving = false);
+        final tokens = IcareSurfaceTokens.of(context);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Submission failed: ${AppErrorDetails.from(e).message}', style: const TextStyle(color: Colors.white)),
-            backgroundColor: const Color(0xFFDC2626),
+            content: Text(
+              'Submission failed: ${AppErrorDetails.from(e).message}',
+              style: TextStyle(color: tokens.dangerText, fontWeight: FontWeight.w600),
+            ),
+            backgroundColor: tokens.dangerBg,
           ),
         );
       }
@@ -313,20 +349,28 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
           _isSaving = false;
         });
 
+        final tokens = IcareSurfaceTokens.of(context);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(res['message'] ?? 'Excel file ingested successfully.', style: const TextStyle(color: Colors.white)),
-            backgroundColor: const Color(0xFF15803D),
+            content: Text(
+              res['message'] ?? 'Excel file ingested successfully.',
+              style: TextStyle(color: tokens.successText, fontWeight: FontWeight.w600),
+            ),
+            backgroundColor: tokens.successBg,
           ),
         );
       }
     } catch (e) {
       if (mounted) {
         setState(() => _isSaving = false);
+        final tokens = IcareSurfaceTokens.of(context);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Excel upload failed: ${AppErrorDetails.from(e).message}', style: const TextStyle(color: Colors.white)),
-            backgroundColor: const Color(0xFFDC2626),
+            content: Text(
+              'Excel upload failed: ${AppErrorDetails.from(e).message}',
+              style: TextStyle(color: tokens.dangerText, fontWeight: FontWeight.w600),
+            ),
+            backgroundColor: tokens.dangerBg,
           ),
         );
       }
@@ -348,134 +392,159 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
     final savingsCtrl = TextEditingController(text: existingGroupSavings > 0 ? existingGroupSavings.toStringAsFixed(2) : '');
     String selectedDay = groupToEdit?['meeting_day'] ?? _meetingDays.first;
 
-    showIcareDialog(
+    showIcareAdaptiveSheet<void>(
       context: context,
-      builder: (ctx) => StatefulBuilder(
+      fitContent: true,
+      builder: (ctx, isDialog) => StatefulBuilder(
         builder: (ctx, setDialogState) {
           final dialogTokens = IcareSurfaceTokens.of(ctx);
-          return AlertDialog(
-            backgroundColor: dialogTokens.surfaceElevated,
-            title: Text(isEdit ? 'Edit Solidarity Group' : 'Add New Solidarity Group', style: TextStyle(color: dialogTokens.textPrimary)),
-            content: SingleChildScrollView(
-              child: SizedBox(
-                width: 440,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    TextFormField(
-                      controller: nameCtrl,
-                      style: TextStyle(color: dialogTokens.textPrimary),
-                      decoration: const InputDecoration(
-                        labelText: 'Group Name *',
-                        hintText: 'e.g. Progressive Traders Group',
+          final bottomInset = isDialog ? 0.0 : MediaQuery.viewInsetsOf(ctx).bottom;
+          return SingleChildScrollView(
+            padding: EdgeInsets.fromLTRB(20, isDialog ? 24 : 12, 20, 24 + bottomInset),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 440),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    isEdit ? 'Edit Solidarity Group' : 'Add New Solidarity Group',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: dialogTokens.textPrimary),
+                  ),
+                  const SizedBox(height: 14),
+                  TextFormField(
+                    controller: nameCtrl,
+                    style: TextStyle(color: dialogTokens.textPrimary),
+                    decoration: const InputDecoration(
+                      labelText: 'Group Name *',
+                      hintText: 'e.g. Progressive Traders Group',
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: refCtrl,
+                    style: TextStyle(color: dialogTokens.textPrimary),
+                    textCapitalization: TextCapitalization.characters,
+                    decoration: const InputDecoration(
+                      labelText: 'Group Reference *',
+                      hintText: 'e.g. GRP-01',
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    initialValue: _meetingDays.contains(selectedDay) ? selectedDay : _meetingDays.first,
+                    isExpanded: true,
+                    dropdownColor: dialogTokens.surfaceElevated,
+                    style: TextStyle(fontSize: 14, color: dialogTokens.textPrimary),
+                    decoration: const InputDecoration(labelText: 'Weekly Meeting Day'),
+                    items: _meetingDays.map<DropdownMenuItem<String>>((d) => DropdownMenuItem<String>(value: d, child: Text(d))).toList(),
+                    onChanged: (val) {
+                      if (val != null) setDialogState(() => selectedDay = val);
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: leaderCtrl,
+                    style: TextStyle(color: dialogTokens.textPrimary),
+                    decoration: const InputDecoration(
+                      labelText: 'Group Leader / Representative',
+                      hintText: 'e.g. Mrs. Aminat Adeleke',
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: savingsCtrl,
+                    style: TextStyle(color: dialogTokens.textPrimary),
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    decoration: const InputDecoration(
+                      labelText: 'Initial Group Opening Savings (₦)',
+                      hintText: '0.00',
+                      prefixText: '₦ ',
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  Wrap(
+                    alignment: WrapAlignment.end,
+                    spacing: 10,
+                    runSpacing: 8,
+                    children: [
+                      TextButton(
+                        onPressed: () => Navigator.of(ctx).pop(),
+                        child: const Text('Cancel'),
                       ),
-                    ),
-                    const SizedBox(height: 12),
-                    TextFormField(
-                      controller: refCtrl,
-                      style: TextStyle(color: dialogTokens.textPrimary),
-                      textCapitalization: TextCapitalization.characters,
-                      decoration: const InputDecoration(
-                        labelText: 'Group Reference *',
-                        hintText: 'e.g. GRP-01',
+                      ElevatedButton(
+                        style: ElevatedButton.styleFrom(backgroundColor: dialogTokens.brandPrimaryDark, foregroundColor: Colors.white),
+                        onPressed: () {
+                          final gName = nameCtrl.text.trim();
+                          final gRef = refCtrl.text.trim().toUpperCase();
+                          final gSav = double.tryParse(savingsCtrl.text.trim()) ?? 0.0;
+
+                          if (gName.isEmpty || gRef.isEmpty) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  'Group Name and Reference are required.',
+                                  style: TextStyle(color: dialogTokens.dangerText, fontWeight: FontWeight.w600),
+                                ),
+                                backgroundColor: dialogTokens.dangerBg,
+                              ),
+                            );
+                            return;
+                          }
+
+                          // Check duplicate reference in this officer's groups
+                          if (!isEdit && _groups.any((g) => (g['group_reference'] ?? '').toString().toUpperCase() == gRef)) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  'Group Reference "$gRef" already exists in your roster.',
+                                  style: TextStyle(color: dialogTokens.dangerText, fontWeight: FontWeight.w600),
+                                ),
+                                backgroundColor: dialogTokens.dangerBg,
+                              ),
+                            );
+                            return;
+                          }
+
+                          final updatedGroup = {
+                            'group_reference': gRef,
+                            'group_name': gName,
+                            'meeting_day': selectedDay,
+                            'leader_name': leaderCtrl.text.trim().isEmpty ? null : leaderCtrl.text.trim(),
+                            'group_savings': gSav,
+                            'officer_name': _officer?['name'] ?? '',
+                          };
+
+                          setState(() {
+                            if (isEdit) {
+                              final idx = _groups.indexOf(groupToEdit);
+                              if (idx >= 0) _groups[idx] = updatedGroup;
+                            } else {
+                              _groups.add(updatedGroup);
+                            }
+                          });
+
+                          Navigator.of(ctx).pop();
+                          _saveDraft();
+                        },
+                        child: Text(isEdit ? 'Save Changes' : 'Create Group'),
                       ),
-                    ),
-                    const SizedBox(height: 12),
-                    DropdownButtonFormField<String>(
-                      initialValue: _meetingDays.contains(selectedDay) ? selectedDay : _meetingDays.first,
-                      dropdownColor: dialogTokens.surfaceElevated,
-                      style: TextStyle(fontSize: 14, color: dialogTokens.textPrimary),
-                      decoration: const InputDecoration(labelText: 'Weekly Meeting Day'),
-                      items: _meetingDays.map<DropdownMenuItem<String>>((d) => DropdownMenuItem<String>(value: d, child: Text(d))).toList(),
-                      onChanged: (val) {
-                        if (val != null) setDialogState(() => selectedDay = val);
-                      },
-                    ),
-                    const SizedBox(height: 12),
-                    TextFormField(
-                      controller: leaderCtrl,
-                      style: TextStyle(color: dialogTokens.textPrimary),
-                      decoration: const InputDecoration(
-                        labelText: 'Group Leader / Representative',
-                        hintText: 'e.g. Mrs. Aminat Adeleke',
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    TextFormField(
-                      controller: savingsCtrl,
-                      style: TextStyle(color: dialogTokens.textPrimary),
-                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                      decoration: const InputDecoration(
-                        labelText: 'Initial Group Opening Savings (₦)',
-                        hintText: '0.00',
-                        prefixText: '₦ ',
-                      ),
-                    ),
-                  ],
-                ),
+                    ],
+                  ),
+                ],
               ),
             ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(ctx).pop(),
-                child: const Text('Cancel'),
-              ),
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(backgroundColor: dialogTokens.brandPrimaryDark, foregroundColor: Colors.white),
-                onPressed: () {
-                  final gName = nameCtrl.text.trim();
-                  final gRef = refCtrl.text.trim().toUpperCase();
-                  final gSav = double.tryParse(savingsCtrl.text.trim()) ?? 0.0;
-
-                  if (gName.isEmpty || gRef.isEmpty) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Group Name and Reference are required.', style: TextStyle(color: Colors.white)),
-                        backgroundColor: Color(0xFFDC2626),
-                      ),
-                    );
-                    return;
-                  }
-
-                  // Check duplicate reference in this officer's groups
-                  if (!isEdit && _groups.any((g) => (g['group_reference'] ?? '').toString().toUpperCase() == gRef)) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text('Group Reference "$gRef" already exists in your roster.', style: const TextStyle(color: Colors.white)),
-                        backgroundColor: const Color(0xFFDC2626),
-                      ),
-                    );
-                    return;
-                  }
-
-                  final updatedGroup = {
-                    'group_reference': gRef,
-                    'group_name': gName,
-                    'meeting_day': selectedDay,
-                    'leader_name': leaderCtrl.text.trim().isEmpty ? null : leaderCtrl.text.trim(),
-                    'group_savings': gSav,
-                    'officer_name': _officer?['name'] ?? '',
-                  };
-
-                  setState(() {
-                    if (isEdit) {
-                      final idx = _groups.indexOf(groupToEdit);
-                      if (idx >= 0) _groups[idx] = updatedGroup;
-                    } else {
-                      _groups.add(updatedGroup);
-                    }
-                  });
-
-                  Navigator.of(ctx).pop();
-                  _saveDraft();
-                },
-                child: Text(isEdit ? 'Save Changes' : 'Create Group'),
-              ),
-            ],
           );
         },
       ),
-    );
+    ).whenComplete(() {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        nameCtrl.dispose();
+        refCtrl.dispose();
+        leaderCtrl.dispose();
+        savingsCtrl.dispose();
+      });
+    });
   }
 
   void _confirmDeleteGroup(Map<String, dynamic> group) {
@@ -484,36 +553,50 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
     final gRef = (group['group_reference'] ?? '').toString();
     final memberCount = _members.where((m) => (m['group_reference'] ?? '').toString().toUpperCase() == gRef.toUpperCase()).length;
 
-    showIcareDialog(
+    showIcareAdaptiveSheet<void>(
       context: context,
-      builder: (ctx) {
+      fitContent: true,
+      builder: (ctx, isDialog) {
         final dialogTokens = IcareSurfaceTokens.of(ctx);
-        return AlertDialog(
-          backgroundColor: dialogTokens.surfaceElevated,
-          title: Text('Delete Solidarity Group', style: TextStyle(color: dialogTokens.textPrimary)),
-          content: Text(
-            memberCount > 0
-                ? 'Warning: This group currently has $memberCount assigned clients. Deleting it will also remove these clients from your roster. Proceed?'
-                : 'Are you sure you want to delete group "$gRef"?',
-            style: TextStyle(color: dialogTokens.textSecondary),
+        return Padding(
+          padding: EdgeInsets.fromLTRB(20, isDialog ? 24 : 12, 20, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Delete Solidarity Group', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: dialogTokens.textPrimary)),
+              const SizedBox(height: 10),
+              Text(
+                memberCount > 0
+                    ? 'Warning: This group currently has $memberCount assigned clients. Deleting it will also remove these clients from your roster. Proceed?'
+                    : 'Are you sure you want to delete group "$gRef"?',
+                style: TextStyle(color: dialogTokens.textSecondary, height: 1.4),
+              ),
+              const SizedBox(height: 20),
+              Wrap(
+                alignment: WrapAlignment.end,
+                spacing: 10,
+                runSpacing: 8,
+                children: [
+                  TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Cancel')),
+                  ElevatedButton(
+                    style: ElevatedButton.styleFrom(backgroundColor: dialogTokens.dangerDot, foregroundColor: Colors.white),
+                    onPressed: () {
+                      setState(() {
+                        _groups.remove(group);
+                        if (memberCount > 0) {
+                          _members.removeWhere((m) => (m['group_reference'] ?? '').toString().toUpperCase() == gRef.toUpperCase());
+                        }
+                      });
+                      Navigator.of(ctx).pop();
+                      _saveDraft();
+                    },
+                    child: const Text('Delete'),
+                  ),
+                ],
+              ),
+            ],
           ),
-          actions: [
-            TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Cancel')),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFDC2626), foregroundColor: Colors.white),
-              onPressed: () {
-                setState(() {
-                  _groups.remove(group);
-                  if (memberCount > 0) {
-                    _members.removeWhere((m) => (m['group_reference'] ?? '').toString().toUpperCase() == gRef.toUpperCase());
-                  }
-                });
-                Navigator.of(ctx).pop();
-                _saveDraft();
-              },
-              child: const Text('Delete'),
-            ),
-          ],
         );
       },
     );
@@ -527,10 +610,14 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
     if (_isLocked) return;
 
     if (_groups.isEmpty) {
+      final tokens = IcareSurfaceTokens.of(context);
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please create at least one solidarity group first.', style: TextStyle(color: Colors.white)),
-          backgroundColor: Color(0xFFDC2626),
+        SnackBar(
+          content: Text(
+            'Please create at least one solidarity group first.',
+            style: TextStyle(color: tokens.dangerText, fontWeight: FontWeight.w600),
+          ),
+          backgroundColor: tokens.dangerBg,
         ),
       );
       return;
@@ -557,197 +644,236 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
       selectedLoanProduct = _loanProducts.first['name'];
     }
 
-    showIcareDialog(
+    showIcareAdaptiveSheet<void>(
       context: context,
-      builder: (ctx) => StatefulBuilder(
+      fitContent: true,
+      builder: (ctx, isDialog) => StatefulBuilder(
         builder: (ctx, setDialogState) {
           final dialogTokens = IcareSurfaceTokens.of(ctx);
-          return AlertDialog(
-            backgroundColor: dialogTokens.surfaceElevated,
-            title: Text(isEdit ? 'Edit Client Roster Record' : 'Register New Client', style: TextStyle(color: dialogTokens.textPrimary)),
-            content: SingleChildScrollView(
-              child: SizedBox(
-                width: 480,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    TextFormField(
-                      controller: nameCtrl,
-                      style: TextStyle(color: dialogTokens.textPrimary),
-                      decoration: const InputDecoration(labelText: 'Client Full Name *', hintText: 'e.g. Babatunde Adeleke'),
-                    ),
-                    const SizedBox(height: 12),
-                    DropdownButtonFormField<String>(
-                      initialValue: _groups.any((g) => g['group_reference'] == selectedGroupRef) ? selectedGroupRef : _groups.first['group_reference'],
-                      dropdownColor: dialogTokens.surfaceElevated,
-                      style: TextStyle(fontSize: 14, color: dialogTokens.textPrimary),
-                      decoration: const InputDecoration(labelText: 'Assigned Solidarity Group *'),
-                      items: _groups.map<DropdownMenuItem<String>>((g) {
-                        final ref = g['group_reference']?.toString() ?? '';
-                        final name = g['group_name']?.toString() ?? '';
-                        return DropdownMenuItem<String>(value: ref, child: Text('$ref — $name'));
-                      }).toList(),
-                      onChanged: (val) {
-                        if (val != null) setDialogState(() => selectedGroupRef = val);
-                      },
-                    ),
-                    const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: TextFormField(
-                            controller: phoneCtrl,
-                            style: TextStyle(color: dialogTokens.textPrimary),
-                            keyboardType: TextInputType.phone,
-                            decoration: const InputDecoration(labelText: 'Phone Number', hintText: '08012345678'),
-                          ),
+          final bottomInset = isDialog ? 0.0 : MediaQuery.viewInsetsOf(ctx).bottom;
+          return SingleChildScrollView(
+            padding: EdgeInsets.fromLTRB(20, isDialog ? 24 : 12, 20, 24 + bottomInset),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 480),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    isEdit ? 'Edit Client Roster Record' : 'Register New Client',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: dialogTokens.textPrimary),
+                  ),
+                  const SizedBox(height: 14),
+                  TextFormField(
+                    controller: nameCtrl,
+                    style: TextStyle(color: dialogTokens.textPrimary),
+                    decoration: const InputDecoration(labelText: 'Client Full Name *', hintText: 'e.g. Babatunde Adeleke'),
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    initialValue: _groups.any((g) => g['group_reference'] == selectedGroupRef) ? selectedGroupRef : _groups.first['group_reference'],
+                    isExpanded: true,
+                    dropdownColor: dialogTokens.surfaceElevated,
+                    style: TextStyle(fontSize: 14, color: dialogTokens.textPrimary),
+                    decoration: const InputDecoration(labelText: 'Assigned Solidarity Group *'),
+                    items: _groups.map<DropdownMenuItem<String>>((g) {
+                      final ref = g['group_reference']?.toString() ?? '';
+                      final name = g['group_name']?.toString() ?? '';
+                      return DropdownMenuItem<String>(value: ref, child: Text('$ref — $name'));
+                    }).toList(),
+                    onChanged: (val) {
+                      if (val != null) setDialogState(() => selectedGroupRef = val);
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextFormField(
+                          controller: phoneCtrl,
+                          style: TextStyle(color: dialogTokens.textPrimary),
+                          keyboardType: TextInputType.phone,
+                          decoration: const InputDecoration(labelText: 'Phone Number', hintText: '08012345678'),
                         ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: TextFormField(
-                            controller: savingsCtrl,
-                            style: TextStyle(color: dialogTokens.textPrimary),
-                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                            decoration: const InputDecoration(labelText: 'Savings Balance (₦)', hintText: '0.00', prefixText: '₦ '),
-                          ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: TextFormField(
+                          controller: savingsCtrl,
+                          style: TextStyle(color: dialogTokens.textPrimary),
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                          decoration: const InputDecoration(labelText: 'Savings Balance (₦)', hintText: '0.00', prefixText: '₦ '),
                         ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    TextFormField(
-                      controller: addrCtrl,
-                      style: TextStyle(color: dialogTokens.textPrimary),
-                      decoration: const InputDecoration(labelText: 'Residential Address', hintText: 'e.g. 14 Market Street'),
-                    ),
-                    const SizedBox(height: 16),
-                    Divider(color: dialogTokens.borderSubtle),
-                    const SizedBox(height: 8),
-                    Text('Active Loan Position (Optional)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: dialogTokens.textPrimary)),
-                    const SizedBox(height: 10),
-                    DropdownButtonFormField<String>(
-                      initialValue: _loanProducts.any((p) => p['name'] == selectedLoanProduct) ? selectedLoanProduct : null,
-                      dropdownColor: dialogTokens.surfaceElevated,
-                      style: TextStyle(fontSize: 14, color: dialogTokens.textPrimary),
-                      decoration: const InputDecoration(labelText: 'Loan Product Category'),
-                      items: _loanProducts.map<DropdownMenuItem<String>>((p) {
-                        final pName = p['name']?.toString() ?? '';
-                        return DropdownMenuItem<String>(value: pName, child: Text(pName));
-                      }).toList(),
-                      onChanged: (val) => setDialogState(() => selectedLoanProduct = val),
-                    ),
-                    const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: TextFormField(
-                            controller: principalCtrl,
-                            style: TextStyle(color: dialogTokens.textPrimary),
-                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                            decoration: const InputDecoration(labelText: 'Principal Disbursed (₦)', hintText: '0.00', prefixText: '₦ '),
-                          ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: addrCtrl,
+                    style: TextStyle(color: dialogTokens.textPrimary),
+                    decoration: const InputDecoration(labelText: 'Residential Address', hintText: 'e.g. 14 Market Street'),
+                  ),
+                  const SizedBox(height: 16),
+                  Divider(color: dialogTokens.borderSubtle),
+                  const SizedBox(height: 8),
+                  Text('Active Loan Position (Optional)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: dialogTokens.textPrimary)),
+                  const SizedBox(height: 10),
+                  DropdownButtonFormField<String>(
+                    initialValue: _loanProducts.any((p) => p['name'] == selectedLoanProduct) ? selectedLoanProduct : null,
+                    isExpanded: true,
+                    dropdownColor: dialogTokens.surfaceElevated,
+                    style: TextStyle(fontSize: 14, color: dialogTokens.textPrimary),
+                    decoration: const InputDecoration(labelText: 'Loan Product Category'),
+                    items: _loanProducts.map<DropdownMenuItem<String>>((p) {
+                      final pName = p['name']?.toString() ?? '';
+                      return DropdownMenuItem<String>(value: pName, child: Text(pName));
+                    }).toList(),
+                    onChanged: (val) => setDialogState(() => selectedLoanProduct = val),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextFormField(
+                          controller: principalCtrl,
+                          style: TextStyle(color: dialogTokens.textPrimary),
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                          decoration: const InputDecoration(labelText: 'Principal Disbursed (₦)', hintText: '0.00', prefixText: '₦ '),
                         ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: TextFormField(
-                            controller: activeCreditCtrl,
-                            style: TextStyle(color: dialogTokens.textPrimary),
-                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                            decoration: const InputDecoration(labelText: 'Active Credit (₦)', hintText: '0.00', prefixText: '₦ '),
-                          ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: TextFormField(
+                          controller: activeCreditCtrl,
+                          style: TextStyle(color: dialogTokens.textPrimary),
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                          decoration: const InputDecoration(labelText: 'Active Credit (₦)', hintText: '0.00', prefixText: '₦ '),
                         ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    TextFormField(
-                      controller: currentBalCtrl,
-                      style: TextStyle(color: dialogTokens.textPrimary),
-                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                      decoration: const InputDecoration(labelText: 'Current Loan Balance (₦)', hintText: '0.00', prefixText: '₦ '),
-                    ),
-                  ],
-                ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: currentBalCtrl,
+                    style: TextStyle(color: dialogTokens.textPrimary),
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    decoration: const InputDecoration(labelText: 'Current Loan Balance (₦)', hintText: '0.00', prefixText: '₦ '),
+                  ),
+                  const SizedBox(height: 20),
+                  Wrap(
+                    alignment: WrapAlignment.end,
+                    spacing: 10,
+                    runSpacing: 8,
+                    children: [
+                      TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Cancel')),
+                      ElevatedButton(
+                        style: ElevatedButton.styleFrom(backgroundColor: dialogTokens.brandPrimaryDark, foregroundColor: Colors.white),
+                        onPressed: () {
+                          final fName = nameCtrl.text.trim();
+                          if (fName.isEmpty) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  'Client name is required.',
+                                  style: TextStyle(color: dialogTokens.dangerText, fontWeight: FontWeight.w600),
+                                ),
+                                backgroundColor: dialogTokens.dangerBg,
+                              ),
+                            );
+                            return;
+                          }
+
+                          final sBal = double.tryParse(savingsCtrl.text.replaceAll(',', '').trim()) ?? 0.0;
+                          final pAmount = double.tryParse(principalCtrl.text.replaceAll(',', '').trim()) ?? 0.0;
+                          final aCred = double.tryParse(activeCreditCtrl.text.replaceAll(',', '').trim()) ?? 0.0;
+                          final cBal = double.tryParse(currentBalCtrl.text.replaceAll(',', '').trim()) ?? (aCred > 0 ? aCred : 0.0);
+
+                          final updatedMember = {
+                            'full_name': fName,
+                            'group_reference': selectedGroupRef,
+                            'phone_number': phoneCtrl.text.trim().isEmpty ? null : phoneCtrl.text.trim(),
+                            'home_address': addrCtrl.text.trim().isEmpty ? null : addrCtrl.text.trim(),
+                            'savings_balance': sBal,
+                            'principal': pAmount > 0 ? pAmount : (aCred > 0 ? aCred : 0.0),
+                            'principal_loan': pAmount > 0 ? pAmount : (aCred > 0 ? aCred : 0.0),
+                            'active_credit': aCred,
+                            'current_credit_balance': cBal,
+                            'loan_type': (pAmount > 0 || aCred > 0 || cBal > 0) ? selectedLoanProduct : null,
+                            'officer_name': _officer?['name'] ?? '',
+                          };
+
+                          setState(() {
+                            if (isEdit) {
+                              final idx = _members.indexOf(memberToEdit);
+                              if (idx >= 0) _members[idx] = updatedMember;
+                            } else {
+                              _members.add(updatedMember);
+                            }
+                          });
+
+                          Navigator.of(ctx).pop();
+                          _saveDraft();
+                        },
+                        child: Text(isEdit ? 'Save Changes' : 'Register Client'),
+                      ),
+                    ],
+                  ),
+                ],
               ),
             ),
-            actions: [
-              TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Cancel')),
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(backgroundColor: dialogTokens.brandPrimaryDark, foregroundColor: Colors.white),
-                onPressed: () {
-                  final fName = nameCtrl.text.trim();
-                  if (fName.isEmpty) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Client name is required.', style: TextStyle(color: Colors.white)),
-                        backgroundColor: Color(0xFFDC2626),
-                      ),
-                    );
-                    return;
-                  }
-
-                  final sBal = double.tryParse(savingsCtrl.text.replaceAll(',', '').trim()) ?? 0.0;
-                  final pAmount = double.tryParse(principalCtrl.text.replaceAll(',', '').trim()) ?? 0.0;
-                  final aCred = double.tryParse(activeCreditCtrl.text.replaceAll(',', '').trim()) ?? 0.0;
-                  final cBal = double.tryParse(currentBalCtrl.text.replaceAll(',', '').trim()) ?? (aCred > 0 ? aCred : 0.0);
-
-                  final updatedMember = {
-                    'full_name': fName,
-                    'group_reference': selectedGroupRef,
-                    'phone_number': phoneCtrl.text.trim().isEmpty ? null : phoneCtrl.text.trim(),
-                    'home_address': addrCtrl.text.trim().isEmpty ? null : addrCtrl.text.trim(),
-                    'savings_balance': sBal,
-                    'principal': pAmount > 0 ? pAmount : (aCred > 0 ? aCred : 0.0),
-                    'principal_loan': pAmount > 0 ? pAmount : (aCred > 0 ? aCred : 0.0),
-                    'active_credit': aCred,
-                    'current_credit_balance': cBal,
-                    'loan_type': (pAmount > 0 || aCred > 0 || cBal > 0) ? selectedLoanProduct : null,
-                    'officer_name': _officer?['name'] ?? '',
-                  };
-
-                  setState(() {
-                    if (isEdit) {
-                      final idx = _members.indexOf(memberToEdit);
-                      if (idx >= 0) _members[idx] = updatedMember;
-                    } else {
-                      _members.add(updatedMember);
-                    }
-                  });
-
-                  Navigator.of(ctx).pop();
-                  _saveDraft();
-                },
-                child: Text(isEdit ? 'Save Changes' : 'Register Client'),
-              ),
-            ],
           );
         },
       ),
-    );
+    ).whenComplete(() {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        nameCtrl.dispose();
+        phoneCtrl.dispose();
+        addrCtrl.dispose();
+        savingsCtrl.dispose();
+        principalCtrl.dispose();
+        activeCreditCtrl.dispose();
+        currentBalCtrl.dispose();
+      });
+    });
   }
 
   void _confirmDeleteMember(Map<String, dynamic> member) {
     if (_isLocked) return;
 
-    showIcareDialog(
+    showIcareAdaptiveSheet<void>(
       context: context,
-      builder: (ctx) {
+      fitContent: true,
+      builder: (ctx, isDialog) {
         final dialogTokens = IcareSurfaceTokens.of(ctx);
-        return AlertDialog(
-          backgroundColor: dialogTokens.surfaceElevated,
-          title: Text('Delete Client Record', style: TextStyle(color: dialogTokens.textPrimary)),
-          content: Text('Are you sure you want to remove "${member['full_name']}" from your roster?', style: TextStyle(color: dialogTokens.textSecondary)),
-          actions: [
-            TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Cancel')),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFDC2626), foregroundColor: Colors.white),
-              onPressed: () {
-                setState(() => _members.remove(member));
-                Navigator.of(ctx).pop();
-                _saveDraft();
-              },
-              child: const Text('Delete'),
-            ),
-          ],
+        return Padding(
+          padding: EdgeInsets.fromLTRB(20, isDialog ? 24 : 12, 20, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Delete Client Record', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: dialogTokens.textPrimary)),
+              const SizedBox(height: 10),
+              Text('Are you sure you want to remove "${member['full_name']}" from your roster?', style: TextStyle(color: dialogTokens.textSecondary)),
+              const SizedBox(height: 20),
+              Wrap(
+                alignment: WrapAlignment.end,
+                spacing: 10,
+                runSpacing: 8,
+                children: [
+                  TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Cancel')),
+                  ElevatedButton(
+                    style: ElevatedButton.styleFrom(backgroundColor: dialogTokens.dangerDot, foregroundColor: Colors.white),
+                    onPressed: () {
+                      setState(() => _members.remove(member));
+                      Navigator.of(ctx).pop();
+                      _saveDraft();
+                    },
+                    child: const Text('Delete'),
+                  ),
+                ],
+              ),
+            ],
+          ),
         );
       },
     );
@@ -763,8 +889,14 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
     if (_isLoading) {
       return Scaffold(
         backgroundColor: tokens.canvas,
-        body: Center(
-          child: CircularProgressIndicator(color: tokens.brandPrimary),
+        body: const SingleChildScrollView(
+          padding: EdgeInsets.all(24),
+          child: Center(
+            child: SizedBox(
+              width: 1100,
+              child: IcareOnboardingSkeleton(cardCount: 3),
+            ),
+          ),
         ),
       );
     }
@@ -775,22 +907,12 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
         body: Center(
           child: SingleChildScrollView(
             padding: const EdgeInsets.all(24),
-            child: Container(
+            child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 480),
-              padding: const EdgeInsets.all(28),
-              decoration: BoxDecoration(
-                color: tokens.surface,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: tokens.borderSubtle),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: tokens.isDark ? 0.25 : 0.04),
-                    blurRadius: 16,
-                    offset: const Offset(0, 4),
-                  )
-                ],
-              ),
-              child: Column(
+              child: IcareCard(
+                padding: const EdgeInsets.all(28),
+                topAccentColor: _errorMessage != null ? tokens.dangerDot : tokens.brandPrimary,
+                child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Container(
@@ -867,6 +989,7 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
                     label: Text('Return to Staff Login', style: TextStyle(fontSize: 12, color: tokens.textMuted)),
                   ),
                 ],
+              ),
               ),
             ),
           ),
@@ -1000,22 +1123,7 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
             ),
           );
 
-          final statusPill = Container(
-            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
-            decoration: BoxDecoration(
-              color: isSubmitted ? tokens.infoBg : tokens.warningBg,
-              borderRadius: BorderRadius.circular(4),
-              border: Border.all(color: isSubmitted ? tokens.infoBorder : tokens.warningBorder),
-            ),
-            child: Text(
-              isSubmitted ? 'SUBMITTED' : 'DRAFTING',
-              style: TextStyle(
-                fontSize: 9.5,
-                fontWeight: FontWeight.bold,
-                color: isSubmitted ? tokens.infoText : tokens.warningText,
-              ),
-            ),
-          );
+          final statusPill = IcareStatusBadge.fromStatus(isSubmitted ? 'submitted' : 'draft');
 
           if (isNarrow) {
             return Column(
@@ -1036,7 +1144,7 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
                               Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
                                 decoration: BoxDecoration(
-                                  color: const Color(0xFF15803D),
+                                  color: tokens.brandPrimaryDark,
                                   borderRadius: BorderRadius.circular(3),
                                 ),
                                 child: const Text(
@@ -1150,7 +1258,7 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF15803D),
+                      color: tokens.brandPrimaryDark,
                       borderRadius: BorderRadius.circular(4),
                     ),
                     child: const Text(
@@ -1723,30 +1831,34 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
                 ),
               ),
               const SizedBox(width: 8),
-              Container(
-                height: 38,
-                padding: const EdgeInsets.symmetric(horizontal: 10),
-                decoration: BoxDecoration(
-                  color: tokens.surface,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: tokens.borderSubtle),
-                ),
-                child: DropdownButtonHideUnderline(
-                  child: DropdownButton<String>(
-                    value: _selectedGroupFilter,
-                    dropdownColor: tokens.surfaceElevated,
-                    icon: Icon(Icons.arrow_drop_down, color: tokens.textMuted),
-                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tokens.textPrimary),
-                    items: [
-                      const DropdownMenuItem(value: 'All', child: Text('All Groups')),
-                      ..._groups.map((g) => DropdownMenuItem(
-                            value: g['group_reference'] ?? '',
-                            child: Text(g['group_reference'] ?? ''),
-                          )),
-                    ],
-                    onChanged: (val) {
-                      if (val != null) setState(() => _selectedGroupFilter = val);
-                    },
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 145),
+                child: Container(
+                  height: 38,
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  decoration: BoxDecoration(
+                    color: tokens.surface,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: tokens.borderSubtle),
+                  ),
+                  child: DropdownButtonHideUnderline(
+                    child: DropdownButton<String>(
+                      value: _selectedGroupFilter,
+                      isExpanded: true,
+                      dropdownColor: tokens.surfaceElevated,
+                      icon: Icon(Icons.arrow_drop_down, color: tokens.textMuted),
+                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tokens.textPrimary),
+                      items: [
+                        const DropdownMenuItem(value: 'All', child: Text('All Groups', overflow: TextOverflow.ellipsis)),
+                        ..._groups.map((g) => DropdownMenuItem(
+                              value: g['group_reference'] ?? '',
+                              child: Text(g['group_reference'] ?? '', overflow: TextOverflow.ellipsis),
+                            )),
+                      ],
+                      onChanged: (val) {
+                        if (val != null) setState(() => _selectedGroupFilter = val);
+                      },
+                    ),
                   ),
                 ),
               ),
@@ -2040,12 +2152,15 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
               ),
               const SizedBox(height: 12),
 
-              Container(
-                decoration: BoxDecoration(
-                  color: tokens.surface,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: tokens.borderSubtle),
-                ),
+              OnboardingPortfolioChartsSection(
+                groups: _groups,
+                members: _members,
+                miscSavings: miscSav,
+              ),
+              const SizedBox(height: 14),
+
+              IcareCard(
+                padding: EdgeInsets.zero,
                 child: Column(
                   children: [
                     _buildSummaryRow('Solidarity Groups', '${_groups.length} groups'),
@@ -2105,6 +2220,7 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
           Flexible(
             child: Text(label, style: TextStyle(fontSize: 13, color: isHighlight ? tokens.textPrimary : tokens.textMuted, fontWeight: isHighlight ? FontWeight.bold : FontWeight.normal)),
           ),
+          const SizedBox(width: 12),
           Text(
             value,
             style: TextStyle(
@@ -2121,22 +2237,18 @@ class _CreditOfficerPortalScreenState extends ConsumerState<CreditOfficerPortalS
 
   Widget _buildEmptyState(String title, String subtitle) {
     final tokens = IcareSurfaceTokens.of(context);
-    return Container(
-      width: double.infinity,
+    return IcareCard(
       padding: const EdgeInsets.all(32),
-      decoration: BoxDecoration(
-        color: tokens.surface,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: tokens.borderSubtle),
-      ),
-      child: Column(
-        children: [
-          Icon(Icons.inbox_outlined, size: 36, color: tokens.textMuted),
-          const SizedBox(height: 8),
-          Text(title, style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: tokens.textPrimary)),
-          const SizedBox(height: 4),
-          Text(subtitle, textAlign: TextAlign.center, style: TextStyle(fontSize: 12, color: tokens.textMuted)),
-        ],
+      child: Center(
+        child: Column(
+          children: [
+            Icon(Icons.inbox_outlined, size: 36, color: tokens.textMuted),
+            const SizedBox(height: 8),
+            Text(title, textAlign: TextAlign.center, style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: tokens.textPrimary)),
+            const SizedBox(height: 4),
+            Text(subtitle, textAlign: TextAlign.center, style: TextStyle(fontSize: 12, color: tokens.textMuted)),
+          ],
+        ),
       ),
     );
   }

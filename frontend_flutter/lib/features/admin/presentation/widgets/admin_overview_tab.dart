@@ -12,7 +12,7 @@ import '../../data/models/admin_dashboard_models.dart';
 import '../admin_branch_detail_sheet.dart';
 import '../admin_branch_reconciliation_sheet.dart';
 import 'admin_approval_actions.dart';
-import 'admin_governance_flow_card.dart';
+import 'admin_asset_portfolio_pulse_card.dart';
 import 'admin_overview_charts.dart';
 import 'admin_responsive.dart';
 
@@ -126,10 +126,6 @@ class AdminOverviewTab extends ConsumerWidget {
           weekData: data.financialActivityWeek,
           size: size,
         );
-        final flowCard = AdminOperationalFlowCard(
-          operations: data,
-          size: size,
-        );
         final branchLiquidityChart = AdminBranchLiquidityChart(
           branches: data.branchPerformanceSummary,
           size: size,
@@ -171,8 +167,6 @@ class AdminOverviewTab extends ConsumerWidget {
                 ],
               ),
               const SizedBox(height: 18),
-              flowCard,
-              const SizedBox(height: 18),
               branchLiquidityChart,
               const SizedBox(height: 18),
               assetPulseCard,
@@ -201,8 +195,6 @@ class AdminOverviewTab extends ConsumerWidget {
             _buildLiquidityKpiStrip(tokens, data, size),
             const SizedBox(height: 16),
             chartCard,
-            const SizedBox(height: 16),
-            flowCard,
             const SizedBox(height: 16),
             branchLiquidityChart,
             const SizedBox(height: 16),

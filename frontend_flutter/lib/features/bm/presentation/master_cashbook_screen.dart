@@ -13,6 +13,11 @@ import '../../../core/auth/auth_controller.dart';
 import '../../../core/auth/auth_state.dart';
 import '../../shared/presentation/co_app_scaffold.dart';
 import 'package:frontend_flutter/core/theme/icare_motion.dart';
+import '../../../core/widgets/icare_card.dart';
+import '../../../core/widgets/icare_data_table.dart';
+import '../../../core/widgets/icare_metric_card.dart';
+import '../../../core/widgets/icare_status_badge.dart';
+import 'widgets/bm_analytics_charts.dart';
 
 /// Target branch filter passed from external navigation (AM Dashboard, Handover modal, etc.)
 final masterCashbookTargetBranchProvider = StateProvider<String?>((ref) => null);
@@ -287,57 +292,96 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
 
   Future<void> _handleApproveReversal(MasterPendingReversalData req) async {
     final amtStr = CurrencyFormatter.format(req.amount);
-    final confirm = await showIcareDialog<bool>(
+    final confirm = await showIcareAdaptiveSheet<bool>(
       context: context,
-      builder: (ctx) {
+      fitContent: true,
+      desktopConstraints: const BoxConstraints(maxWidth: 460, maxHeight: 540),
+      builder: (ctx, isDialog) {
         final tokens = IcareSurfaceTokens.of(ctx);
-        return AlertDialog(
-          backgroundColor: tokens.surfaceElevated,
-          title: Text('Confirm Reversal — [${req.recordType}]', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: tokens.textPrimary)),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (req.clientName != null && req.clientName!.isNotEmpty) ...[
-                Text('Client / Entity: ${req.clientName!} ${req.clientCode != null && req.clientCode!.isNotEmpty ? "(${req.clientCode})" : ""}',
-                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: tokens.textPrimary)),
-                const SizedBox(height: 4),
-              ],
-              Text('Amount to Reverse: $amtStr', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: tokens.dangerText)),
-              const SizedBox(height: 6),
-              Text('Reason: ${req.reason}', style: TextStyle(fontSize: 12, fontStyle: FontStyle.italic, color: tokens.textSecondary)),
-              const SizedBox(height: 12),
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: tokens.warningBg,
-                  borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: tokens.warningBorder),
-                ),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+        return Material(
+          color: tokens.surfaceElevated,
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (!isDialog)
+                  Center(
+                    child: Container(
+                      width: 36,
+                      height: 4,
+                      margin: const EdgeInsets.only(bottom: 14),
+                      decoration: BoxDecoration(
+                        color: tokens.borderStrong,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                Row(
                   children: [
-                    Icon(Icons.info_outline, size: 16, color: tokens.warningDot),
+                    Icon(Icons.assignment_turned_in_outlined, size: 20, color: tokens.brandPrimary),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        'Approving this reversal will deduct $amtStr from Vault Cash. Ensure physical cash has been counted and aligned.',
-                        style: TextStyle(fontSize: 11.5, color: tokens.warningText),
+                        'Confirm Reversal — [${req.recordType}]',
+                        style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16, color: tokens.textPrimary),
                       ),
                     ),
                   ],
                 ),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-            ElevatedButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              style: ElevatedButton.styleFrom(backgroundColor: tokens.brandPrimaryDark, foregroundColor: Colors.white),
-              child: const Text('Approve Reversal', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 14),
+                if (req.clientName != null && req.clientName!.isNotEmpty) ...[
+                  Text(
+                    'Client / Entity: ${req.clientName!} ${req.clientCode != null && req.clientCode!.isNotEmpty ? "(${req.clientCode})" : ""}',
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: tokens.textPrimary),
+                  ),
+                  const SizedBox(height: 4),
+                ],
+                Text(
+                  'Amount to Reverse: $amtStr',
+                  style: bmTabularStyle(fontSize: 14, fontWeight: FontWeight.w700, color: tokens.dangerText),
+                ),
+                const SizedBox(height: 6),
+                Text('Reason: ${req.reason}', style: TextStyle(fontSize: 12, fontStyle: FontStyle.italic, color: tokens.textSecondary)),
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: tokens.warningBg,
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: tokens.warningBorder),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(Icons.info_outline, size: 16, color: tokens.warningDot),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Approving this reversal will deduct $amtStr from Vault Cash. Ensure physical cash has been counted and aligned.',
+                          style: TextStyle(fontSize: 11.5, color: tokens.warningText),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 18),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+                    const SizedBox(width: 8),
+                    ElevatedButton(
+                      onPressed: () => Navigator.pop(ctx, true),
+                      style: ElevatedButton.styleFrom(backgroundColor: tokens.brandPrimaryDark, foregroundColor: Colors.white),
+                      child: const Text('Approve Reversal', style: TextStyle(fontWeight: FontWeight.w700)),
+                    ),
+                  ],
+                ),
+              ],
             ),
-          ],
+          ),
         );
       },
     );
@@ -348,7 +392,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
       final api = ref.read(masterCashbookApiServiceProvider);
       final res = await api.approveReversal(req.id);
       _showBanner(
-        res['message'] ?? 'Reversal approved and executed atomically!',
+        res['message'] ?? 'Reversal approved and posted cleanly!',
         'success',
         Icons.check_circle_outline,
       );
@@ -363,23 +407,58 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
   }
 
   Future<void> _handleRejectReversal(MasterPendingReversalData req) async {
-    final confirm = await showIcareDialog<bool>(
+    final confirm = await showIcareAdaptiveSheet<bool>(
       context: context,
-      builder: (ctx) {
+      fitContent: true,
+      desktopConstraints: const BoxConstraints(maxWidth: 440, maxHeight: 420),
+      builder: (ctx, isDialog) {
         final tokens = IcareSurfaceTokens.of(ctx);
-        return AlertDialog(
-          backgroundColor: tokens.surfaceElevated,
-          title: Text('Reject Reversal Request', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: tokens.textPrimary)),
-          content: Text('Are you sure you want to reject this reversal request for [${req.recordType}] (Ref: #${req.recordId.length > 8 ? req.recordId.substring(0, 8) : req.recordId})?',
-              style: TextStyle(fontSize: 13, color: tokens.textSecondary)),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-            ElevatedButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFDC2626), foregroundColor: Colors.white),
-              child: const Text('Reject Request', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        final dangerFill = tokens.isDark ? tokens.dangerBorder : tokens.dangerText;
+        return Material(
+          color: tokens.surfaceElevated,
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (!isDialog)
+                  Center(
+                    child: Container(
+                      width: 36,
+                      height: 4,
+                      margin: const EdgeInsets.only(bottom: 14),
+                      decoration: BoxDecoration(
+                        color: tokens.borderStrong,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                Text(
+                  'Reject Reversal Request',
+                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16, color: tokens.textPrimary),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  'Are you sure you want to reject this reversal request for [${req.recordType}] (Ref: #${req.recordId.length > 8 ? req.recordId.substring(0, 8) : req.recordId})?',
+                  style: TextStyle(fontSize: 13, color: tokens.textSecondary),
+                ),
+                const SizedBox(height: 18),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+                    const SizedBox(width: 8),
+                    ElevatedButton(
+                      onPressed: () => Navigator.pop(ctx, true),
+                      style: ElevatedButton.styleFrom(backgroundColor: dangerFill, foregroundColor: Colors.white),
+                      child: const Text('Reject Request', style: TextStyle(fontWeight: FontWeight.w700)),
+                    ),
+                  ],
+                ),
+              ],
             ),
-          ],
+          ),
         );
       },
     );
@@ -452,8 +531,9 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
         'success',
         Icons.check_circle_outline,
       );
-      ref.invalidate(coAggregationProvider('${_formatDate(_selectedDateTab2)}||${_selectedOfficerTab2 ?? ""}'));
+      ref.invalidate(coAggregationProvider);
       ref.invalidate(masterDailyCashbookProvider);
+      ref.invalidate(monthlyLedgerProvider);
     } catch (e) {
       _showBanner(
         'EOD Day Close failed: ${AppErrorDetails.from(e).message}',
@@ -494,21 +574,24 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
       }
     });
 
-    final isMobile = MediaQuery.of(context).size.width < 650;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildHeader(isMobile),
-        const SizedBox(height: 14),
-        if (_bannerMessage != null) ...[
-          _buildFeedbackBanner(),
-          const SizedBox(height: 14),
-        ],
-        _buildPillTabs(),
-        const SizedBox(height: 18),
-        _buildTabContent(isMobile),
-      ],
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isMobile = constraints.maxWidth < 680;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildHeader(isMobile),
+            const SizedBox(height: 14),
+            if (_bannerMessage != null) ...[
+              _buildFeedbackBanner(),
+              const SizedBox(height: 14),
+            ],
+            _buildPillTabs(),
+            const SizedBox(height: 18),
+            _buildTabContent(isMobile),
+          ],
+        );
+      },
     );
   }
 
@@ -629,7 +712,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
   Widget _buildPillTabs() {
     final tokens = IcareSurfaceTokens.of(context);
     final isAm = _isAm;
-    final activeTabColor = isAm ? tokens.brandPrimaryDark : const Color(0xFF1D4ED8);
+    final activeTabColor = tokens.brandPrimaryDark;
     final tabs = [
       (0, isAm ? 'Daily Cashbook Audit' : 'Daily Cashbook Entry', Icons.account_balance_wallet_outlined),
       (1, isAm ? 'CO Cashbooks Inspection' : 'CO Cashbooks Aggregation', Icons.groups_outlined),
@@ -734,11 +817,37 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
 
     return asyncDaily.when(
       loading: () => const IcareTableSkeleton(rowCount: 8, hasFilterBar: false),
-      error: (err, _) => Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(color: tokens.dangerBg, borderRadius: BorderRadius.circular(8)),
-        child: Text('Error loading Master Cashbook: ${AppErrorDetails.from(err).message}', style: TextStyle(color: tokens.dangerText)),
-      ),
+      error: (err, _) {
+        final errDetails = AppErrorDetails.from(err);
+        return IcareCard(
+          topAccentColor: tokens.dangerDot,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.error_outline, size: 18, color: tokens.dangerDot),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      errDetails.title,
+                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: tokens.dangerText),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Text(errDetails.message, style: TextStyle(fontSize: 12.5, color: tokens.textSecondary)),
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                onPressed: () => ref.invalidate(masterDailyCashbookProvider),
+                icon: const Icon(Icons.refresh, size: 15),
+                label: const Text('Retry'),
+              ),
+            ],
+          ),
+        );
+      },
       data: (data) {
         final isAm = _isAm;
         if (_lastLoadedTab1Key != key || !identical(_lastLoadedTab1Data, data)) {
@@ -764,6 +873,8 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                 const SizedBox(height: 16),
               ],
               _buildDailyLedgerTAccount(data, isMobile),
+              const SizedBox(height: 16),
+              MasterCashbookDailyAnalyticsSection(data: data),
             ] else ...[
               // Branch Manager Operational View: With Inputs, Float & Reversals Hub
               if (isMobile) _buildTab1MobileSectionSelector(),
@@ -775,6 +886,8 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                   const SizedBox(height: 16),
                 ],
                 _buildDailyLedgerTAccount(data, isMobile),
+                const SizedBox(height: 16),
+                MasterCashbookDailyAnalyticsSection(data: data),
                 if (!isMobile || _tab1MobileSection == 3) ...[
                   const SizedBox(height: 28),
                   Divider(color: tokens.borderSubtle),
@@ -865,7 +978,10 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
             ),
             Divider(height: 18, color: tokens.borderSubtle),
           ],
-          Row(
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               // Calendar picker button
               OutlinedButton.icon(
@@ -892,7 +1008,6 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                 ),
               ),
-              const SizedBox(width: 8),
 
               // Quick chip: Today
               InkWell(
@@ -915,7 +1030,6 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                   ),
                 ),
               ),
-              const SizedBox(width: 6),
 
               // Quick chip: Yesterday
               InkWell(
@@ -938,7 +1052,6 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                   ),
                 ),
               ),
-              const Spacer(),
 
               if (isMobile)
                 IconButton(
@@ -951,7 +1064,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                     ref.invalidate(monthlyLedgerProvider);
                   },
                 )
-              else ...[
+              else
                 OutlinedButton.icon(
                   onPressed: () {
                     _lastLoadedTab1Key = null;
@@ -970,38 +1083,12 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                   ),
                 ),
-                const SizedBox(width: 8),
-              ],
 
-              // Operational Status Pill (Desktop/Tablet)
-              if (!isMobile)
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                  decoration: BoxDecoration(
-                    color: data.isOpen ? tokens.successBg : tokens.warningBg,
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: data.isOpen ? tokens.successBorder : tokens.warningBorder),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        data.isOpen ? Icons.lock_open_outlined : Icons.lock_outlined,
-                        size: 13,
-                        color: data.isOpen ? tokens.successDot : tokens.warningDot,
-                      ),
-                      const SizedBox(width: 5),
-                      Text(
-                        data.isOpen ? 'Ledger Open' : 'Ledger Finalized',
-                        style: TextStyle(
-                          fontSize: 11.5,
-                          fontWeight: FontWeight.w700,
-                          color: data.isOpen ? tokens.successText : tokens.warningText,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+              // Operational Status Pill
+              IcareStatusBadge(
+                label: data.isOpen ? 'Ledger Open' : 'Ledger Finalized',
+                variant: data.isOpen ? IcareBadgeVariant.success : IcareBadgeVariant.warning,
+              ),
             ],
           ),
 
@@ -1119,19 +1206,21 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Collection & Arrears Reconciliation Tally',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: tokens.textPrimary),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  '$branch Branch reconciliation',
-                  style: TextStyle(fontSize: 12, color: tokens.textMuted),
-                ),
-              ],
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Collection & Arrears Reconciliation Tally',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: tokens.textPrimary),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    '$branch Branch reconciliation',
+                    style: TextStyle(fontSize: 12, color: tokens.textMuted),
+                  ),
+                ],
+              ),
             ),
           ],
         ),
@@ -1264,12 +1353,13 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
 
   Widget _buildNonPayingClientsExpander(List<MasterNotPaidClientData> clients) {
     final tokens = IcareSurfaceTokens.of(context);
-    return Container(
-      decoration: BoxDecoration(
-        color: tokens.surface,
+    return Material(
+      color: tokens.surface,
+      shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: tokens.borderSubtle),
+        side: BorderSide(color: tokens.borderSubtle),
       ),
+      clipBehavior: Clip.antiAlias,
       child: ExpansionTile(
         tilePadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
         leading: Container(
@@ -1285,39 +1375,29 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
           style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: tokens.textPrimary),
         ),
         children: [
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: DataTable(
-              headingRowColor: WidgetStateProperty.all(tokens.surfaceSubtle),
-              columns: [
-                DataColumn(label: Text('Client Name', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: tokens.textPrimary))),
-                DataColumn(label: Text('Client Code', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: tokens.textPrimary))),
-                DataColumn(label: Text('Expected Installment', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: tokens.textPrimary))),
-                DataColumn(label: Text('Shortfall / Arrears', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: tokens.textPrimary))),
-                DataColumn(label: Text('Type', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: tokens.textPrimary))),
-              ],
-              rows: clients.map((c) {
-                return DataRow(cells: [
-                  DataCell(Text(c.name, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tokens.textPrimary))),
-                  DataCell(Text(c.code, style: TextStyle(fontSize: 12, fontFamily: 'monospace', color: tokens.textSecondary))),
-                  DataCell(Text(_formatCurrency(c.expected), style: TextStyle(fontSize: 12, fontFamily: 'monospace', color: tokens.textPrimary))),
-                  DataCell(Text(_formatCurrency(c.shortfall), style: TextStyle(fontSize: 12, color: tokens.dangerText, fontWeight: FontWeight.w700, fontFamily: 'monospace'))),
-                  DataCell(
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: c.isPartial ? tokens.warningBg : tokens.dangerBg,
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: Text(
-                        c.isPartial ? 'Partial Shortfall' : 'Marked NOT PAID (₦0)',
-                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: c.isPartial ? tokens.warningText : tokens.dangerText),
-                      ),
-                    ),
+          IcareDataTable(
+            minWidth: 560,
+            columns: [
+              DataColumn(label: Text('Client Name', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: tokens.textPrimary))),
+              DataColumn(label: Text('Client Code', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: tokens.textPrimary))),
+              DataColumn(label: Text('Expected Installment', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: tokens.textPrimary))),
+              DataColumn(label: Text('Shortfall / Arrears', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: tokens.textPrimary))),
+              DataColumn(label: Text('Type', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: tokens.textPrimary))),
+            ],
+            rows: clients.map((c) {
+              return DataRow(cells: [
+                DataCell(Text(c.name, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tokens.textPrimary))),
+                DataCell(Text(c.code, style: bmTabularStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tokens.textSecondary))),
+                DataCell(Text(_formatCurrency(c.expected), style: bmTabularStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tokens.textPrimary))),
+                DataCell(Text(_formatCurrency(c.shortfall), style: bmTabularStyle(fontSize: 12, fontWeight: FontWeight.w700, color: tokens.dangerText))),
+                DataCell(
+                  IcareStatusBadge(
+                    label: c.isPartial ? 'Partial Shortfall' : 'Not Paid (₦0)',
+                    variant: c.isPartial ? IcareBadgeVariant.warning : IcareBadgeVariant.danger,
                   ),
-                ]);
-              }).toList(),
-            ),
+                ),
+              ]);
+            }).toList(),
           ),
         ],
       ),
@@ -1470,7 +1550,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                   child: InkWell(
                     onTap: () => setState(() => _tab1TAccountTab = 0),
                     child: Container(
-                      padding: const EdgeInsets.symmetric(vertical: 6),
+                      padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
                       decoration: BoxDecoration(
                         color: _tab1TAccountTab == 0 ? tokens.surface : Colors.transparent,
                         borderRadius: BorderRadius.circular(6),
@@ -1481,6 +1561,8 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                       alignment: Alignment.center,
                       child: Text(
                         'Both (T-Panels)',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           fontSize: 11,
                           fontWeight: _tab1TAccountTab == 0 ? FontWeight.w700 : FontWeight.w500,
@@ -1494,7 +1576,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                   child: InkWell(
                     onTap: () => setState(() => _tab1TAccountTab = 1),
                     child: Container(
-                      padding: const EdgeInsets.symmetric(vertical: 6),
+                      padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
                       decoration: BoxDecoration(
                         color: _tab1TAccountTab == 1 ? tokens.surface : Colors.transparent,
                         borderRadius: BorderRadius.circular(6),
@@ -1505,7 +1587,9 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                       alignment: Alignment.center,
                       child: Text(
                         'Inflows (${_formatCurrency(data.totalInflows)})',
-                        style: TextStyle(
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: bmTabularStyle(
                           fontSize: 11,
                           fontWeight: _tab1TAccountTab == 1 ? FontWeight.w700 : FontWeight.w500,
                           color: _tab1TAccountTab == 1 ? tokens.successText : tokens.textMuted,
@@ -1518,7 +1602,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                   child: InkWell(
                     onTap: () => setState(() => _tab1TAccountTab = 2),
                     child: Container(
-                      padding: const EdgeInsets.symmetric(vertical: 6),
+                      padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
                       decoration: BoxDecoration(
                         color: _tab1TAccountTab == 2 ? tokens.surface : Colors.transparent,
                         borderRadius: BorderRadius.circular(6),
@@ -1529,7 +1613,9 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                       alignment: Alignment.center,
                       child: Text(
                         'Outflows (${_formatCurrency(data.totalOutflows)})',
-                        style: TextStyle(
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: bmTabularStyle(
                           fontSize: 11,
                           fontWeight: _tab1TAccountTab == 2 ? FontWeight.w700 : FontWeight.w500,
                           color: _tab1TAccountTab == 2 ? tokens.dangerText : tokens.textMuted,
@@ -1623,52 +1709,38 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
           _buildTAccountBalancingBar(data),
         ] else ...[
           // Spreadsheet Data Table
-          Container(
-            decoration: BoxDecoration(
-              color: tokens.surface,
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: tokens.borderSubtle),
-            ),
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: DataTable(
-                headingRowColor: WidgetStateProperty.all(tokens.surfaceSubtle),
-                columns: [
-                  DataColumn(label: Text('Inflows (Left / Debit)', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: tokens.textPrimary))),
-                  DataColumn(label: Text('Amount (₦)', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: tokens.textPrimary))),
-                  DataColumn(label: Text('Outflows (Right / Credit)', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: tokens.textPrimary))),
-                  DataColumn(label: Text('Amount (₦)', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: tokens.textPrimary))),
-                ],
-                rows: [
-                  ...List.generate(maxLen, (idx) {
-                    final infItem = idx < displayedInflows.length ? displayedInflows[idx] : ('', 0.0);
-                    final outItem = idx < displayedOutflows.length ? displayedOutflows[idx] : ('', 0.0);
+          IcareDataTable(
+            minWidth: 620,
+            columns: [
+              DataColumn(label: Text('Inflows (Left / Debit)', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: tokens.textPrimary))),
+              DataColumn(label: Text('Amount (₦)', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: tokens.textPrimary))),
+              DataColumn(label: Text('Outflows (Right / Credit)', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: tokens.textPrimary))),
+              DataColumn(label: Text('Amount (₦)', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: tokens.textPrimary))),
+            ],
+            rows: [
+              ...List.generate(maxLen, (idx) {
+                final infItem = idx < displayedInflows.length ? displayedInflows[idx] : ('', 0.0);
+                final outItem = idx < displayedOutflows.length ? displayedOutflows[idx] : ('', 0.0);
 
-                    return DataRow(
-                      color: WidgetStateProperty.resolveWith<Color?>((states) {
-                        if (idx.isOdd) return tokens.surfaceSubtle;
-                        return tokens.surface;
-                      }),
-                      cells: [
-                        DataCell(Text(infItem.$1, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: tokens.textPrimary))),
-                        DataCell(Text(infItem.$1.isNotEmpty ? _formatCurrency(infItem.$2) : '', style: TextStyle(fontSize: 12, color: tokens.successText, fontWeight: FontWeight.w600, fontFamily: 'monospace'))),
-                        DataCell(Text(outItem.$1, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: tokens.textPrimary))),
-                        DataCell(Text(outItem.$1.isNotEmpty ? _formatCurrency(outItem.$2) : '', style: TextStyle(fontSize: 12, color: tokens.dangerText, fontWeight: FontWeight.w600, fontFamily: 'monospace'))),
-                      ],
-                    );
-                  }),
-                  DataRow(
-                    color: WidgetStateProperty.all(tokens.surfaceHover),
-                    cells: [
-                      DataCell(Text('Total Debit (Opening + Receipts)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: tokens.successText))),
-                      DataCell(Text(_formatCurrency(data.totalInflows), style: TextStyle(fontSize: 12, color: tokens.successText, fontWeight: FontWeight.w800, fontFamily: 'monospace'))),
-                      DataCell(Text('Total Credit (Outflows)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: tokens.dangerText))),
-                      DataCell(Text(_formatCurrency(data.totalOutflows), style: TextStyle(fontSize: 12, color: tokens.dangerText, fontWeight: FontWeight.w800, fontFamily: 'monospace'))),
-                    ],
-                  ),
+                return DataRow(
+                  cells: [
+                    DataCell(Text(infItem.$1, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: tokens.textPrimary))),
+                    DataCell(Text(infItem.$1.isNotEmpty ? _formatCurrency(infItem.$2) : '', style: bmTabularStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tokens.successText))),
+                    DataCell(Text(outItem.$1, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: tokens.textPrimary))),
+                    DataCell(Text(outItem.$1.isNotEmpty ? _formatCurrency(outItem.$2) : '', style: bmTabularStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tokens.dangerText))),
+                  ],
+                );
+              }),
+              DataRow(
+                color: WidgetStateProperty.all(tokens.surfaceHover),
+                cells: [
+                  DataCell(Text('Total Debit (Opening + Receipts)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: tokens.successText))),
+                  DataCell(Text(_formatCurrency(data.totalInflows), style: bmTabularStyle(fontSize: 12, fontWeight: FontWeight.w800, color: tokens.successText))),
+                  DataCell(Text('Total Credit (Outflows)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: tokens.dangerText))),
+                  DataCell(Text(_formatCurrency(data.totalOutflows), style: bmTabularStyle(fontSize: 12, fontWeight: FontWeight.w800, color: tokens.dangerText))),
                 ],
               ),
-            ),
+            ],
           ),
           const SizedBox(height: 14),
           _buildTAccountBalancingBar(data),
@@ -1717,16 +1789,22 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Row(
-                  children: [
-                    Icon(icon, size: 16, color: headerColor),
-                    const SizedBox(width: 8),
-                    Text(
-                      title,
-                      style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: headerColor, letterSpacing: 0.3),
-                    ),
-                  ],
+                Expanded(
+                  child: Row(
+                    children: [
+                      Icon(icon, size: 16, color: headerColor),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          title,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: headerColor, letterSpacing: 0.3),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
+                const SizedBox(width: 8),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                   decoration: BoxDecoration(
@@ -1736,8 +1814,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                   ),
                   child: Text(
                     _formatCurrency(totalAmount),
-                    style: TextStyle(
-                      fontFamily: 'monospace',
+                    style: bmTabularStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w700,
                       color: headerColor,
@@ -1797,8 +1874,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                       const SizedBox(width: 8),
                       Text(
                         _formatCurrency(item.$2),
-                        style: TextStyle(
-                          fontFamily: 'monospace',
+                        style: bmTabularStyle(
                           fontSize: 12.5,
                           fontWeight: FontWeight.w700,
                           color: isCredit ? tokens.dangerText : tokens.successText,
@@ -1821,14 +1897,17 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(
-                  totalLabel,
-                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: tokens.textSecondary),
+                Expanded(
+                  child: Text(
+                    totalLabel,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: tokens.textSecondary),
+                  ),
                 ),
+                const SizedBox(width: 8),
                 Text(
                   _formatCurrency(totalAmount),
-                  style: TextStyle(
-                    fontFamily: 'monospace',
+                  style: bmTabularStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w800,
                     color: headerColor,
@@ -1899,8 +1978,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
               Text('Closing Balance', style: TextStyle(fontSize: 11, color: tokens.textMuted, fontWeight: FontWeight.w500)),
               Text(
                 _formatCurrency(closing),
-                style: TextStyle(
-                  fontFamily: 'monospace',
+                style: bmTabularStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w800,
                   color: isPos ? tokens.successText : tokens.dangerText,
@@ -1923,21 +2001,8 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
     bool isCredit = false,
   }) {
     final tokens = IcareSurfaceTokens.of(context);
-    return Container(
-      decoration: BoxDecoration(
-        color: tokens.surface,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: tokens.borderSubtle),
-        boxShadow: tokens.isDark
-            ? null
-            : [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.02),
-                  blurRadius: 4,
-                  offset: const Offset(0, 1),
-                ),
-              ],
-      ),
+    return IcareCard(
+      padding: EdgeInsets.zero,
       child: Column(
         children: [
           Container(
@@ -1950,16 +2015,25 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Row(
-                  children: [
-                    Icon(icon, size: 16, color: accentColor),
-                    const SizedBox(width: 8),
-                    Text(title, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: accentColor)),
-                  ],
+                Expanded(
+                  child: Row(
+                    children: [
+                      Icon(icon, size: 16, color: accentColor),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          title,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: accentColor),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
+                const SizedBox(width: 8),
                 Text(
                   _formatCurrency(totalValue),
-                  style: TextStyle(fontFamily: 'monospace', fontSize: 13, fontWeight: FontWeight.w800, color: accentColor),
+                  style: bmTabularStyle(fontSize: 13, fontWeight: FontWeight.w800, color: accentColor),
                 ),
               ],
             ),
@@ -1996,8 +2070,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                       const SizedBox(width: 8),
                       Text(
                         _formatCurrency(item.$2),
-                        style: TextStyle(
-                          fontFamily: 'monospace',
+                        style: bmTabularStyle(
                           fontSize: 12.5,
                           fontWeight: FontWeight.w700,
                           color: item.$2 > 0 ? (isCredit ? tokens.dangerText : tokens.successText) : tokens.textLight,
@@ -2073,7 +2146,9 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                   children: [
                     Icon(Icons.south_west_rounded, size: 15, color: tokens.successDot),
                     const SizedBox(width: 6),
-                    Text('Vault Funding Received (Inflows)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: tokens.successText)),
+                    Expanded(
+                      child: Text('Vault Funding Received (Inflows)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: tokens.successText)),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 12),
@@ -2114,7 +2189,9 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                   children: [
                     Icon(Icons.north_east_rounded, size: 15, color: tokens.dangerDot),
                     const SizedBox(width: 6),
-                    Text('Corporate Transfers & Outflows', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: tokens.dangerText)),
+                    Expanded(
+                      child: Text('Corporate Transfers & Outflows', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: tokens.dangerText)),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 12),
@@ -2155,12 +2232,13 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
           const SizedBox(height: 14),
 
           // Card 3: Branch Treasury Adjustments & Debt Management
-          Container(
-            decoration: BoxDecoration(
-              color: tokens.surfaceSubtle,
+          Material(
+            color: tokens.surfaceSubtle,
+            shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: tokens.borderSubtle),
+              side: BorderSide(color: tokens.borderSubtle),
             ),
+            clipBehavior: Clip.antiAlias,
             child: ExpansionTile(
               tilePadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
               leading: Icon(Icons.tune_outlined, size: 18, color: tokens.textSecondary),
@@ -2243,15 +2321,17 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
             child: ElevatedButton.icon(
               onPressed: _isSubmittingManual ? null : () => _handleSaveManualEntries(data.isOpen, data.openReason),
               icon: _isSubmittingManual
-                  ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                  : const Icon(Icons.save_outlined, size: 18, color: Colors.white),
+                  ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Icon(Icons.save_outlined, size: 18),
               label: Text(
                 _isSubmittingManual ? 'Saving Entries...' : 'Save Master Cashbook Entry',
-                style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5, color: Colors.white),
+                style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5),
               ),
               style: ElevatedButton.styleFrom(
                 backgroundColor: tokens.brandPrimaryDark,
                 foregroundColor: Colors.white,
+                disabledBackgroundColor: tokens.surfaceHover,
+                disabledForegroundColor: tokens.textMuted,
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
               ),
             ),
@@ -2279,23 +2359,29 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Row(
-            children: [
-              Icon(
-                isPos ? Icons.account_balance_wallet_outlined : Icons.warning_amber_rounded,
-                size: 18,
-                color: color,
-              ),
-              const SizedBox(width: 8),
-              Text(
-                'Closing Vault Balance',
-                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: color),
-              ),
-            ],
+          Expanded(
+            child: Row(
+              children: [
+                Icon(
+                  isPos ? Icons.account_balance_wallet_outlined : Icons.warning_amber_rounded,
+                  size: 18,
+                  color: color,
+                ),
+                const SizedBox(width: 8),
+                Flexible(
+                  child: Text(
+                    'Closing Vault Balance',
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: color),
+                  ),
+                ),
+              ],
+            ),
           ),
+          const SizedBox(width: 8),
           Text(
             _formatCurrency(closing),
-            style: TextStyle(fontFamily: 'monospace', fontSize: 17, fontWeight: FontWeight.w800, color: color),
+            style: bmTabularStyle(fontSize: 17, fontWeight: FontWeight.w800, color: color),
           ),
         ],
       ),
@@ -2358,178 +2444,173 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
     final tokens = IcareSurfaceTokens.of(context);
     final typeInfo = _getReversalTypeInfo(req.recordType, tokens);
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: tokens.surface,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: tokens.borderSubtle),
-        boxShadow: tokens.isDark
-            ? null
-            : [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.02),
-                  blurRadius: 4,
-                  offset: const Offset(0, 1),
-                ),
-              ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: typeInfo.$3,
-                        borderRadius: BorderRadius.circular(6),
-                        border: Border.all(color: typeInfo.$4),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(typeInfo.$1, size: 14, color: typeInfo.$2),
-                          const SizedBox(width: 5),
-                          Text(
-                            typeInfo.$5,
-                            style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: typeInfo.$2),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                      decoration: BoxDecoration(color: tokens.surfaceHover, borderRadius: BorderRadius.circular(4)),
-                      child: Text(
-                        'Ref #${req.recordId.length > 8 ? req.recordId.substring(0, 8) : req.recordId}',
-                        style: TextStyle(fontSize: 11, fontFamily: 'monospace', fontWeight: FontWeight.w600, color: tokens.textSecondary),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      CurrencyFormatter.format(req.amount),
-                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: tokens.dangerText, fontFamily: 'monospace'),
-                    ),
-                    if (req.clientName != null && req.clientName!.isNotEmpty) ...[
-                      const SizedBox(width: 8),
-                      Text(
-                        '• ${req.clientName!} ${req.clientCode != null && req.clientCode!.isNotEmpty ? "(${req.clientCode})" : ""}',
-                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tokens.textPrimary),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: tokens.warningBg,
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: tokens.warningBorder),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.hourglass_top_outlined, size: 11, color: tokens.warningText),
-                    const SizedBox(width: 4),
-                    Text('Pending Approval', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: tokens.warningText)),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              Icon(Icons.person_outline, size: 13, color: tokens.textMuted),
-              const SizedBox(width: 4),
-              Text(
-                'Requested by ${req.requestedByName}',
-                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tokens.textSecondary),
-              ),
-              const SizedBox(width: 8),
-              Text('•', style: TextStyle(color: tokens.borderStrong)),
-              const SizedBox(width: 8),
-              Icon(Icons.access_time, size: 13, color: tokens.textMuted),
-              const SizedBox(width: 4),
-              Text(
-                req.createdAt.length > 16 ? req.createdAt.substring(0, 16).replaceAll('T', ' ') : req.createdAt,
-                style: TextStyle(fontSize: 11.5, color: tokens.textMuted),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: BoxDecoration(
-              color: tokens.surfaceSubtle,
-              borderRadius: BorderRadius.circular(6),
-              border: Border.all(color: tokens.borderSubtle),
-            ),
-            child: Row(
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: IcareCard(
+        padding: const EdgeInsets.all(16),
+        topAccentColor: typeInfo.$2,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(Icons.format_quote_outlined, size: 15, color: tokens.textLight),
-                const SizedBox(width: 6),
                 Expanded(
-                  child: Text(
-                    req.reason,
-                    style: TextStyle(fontSize: 12, fontStyle: FontStyle.italic, color: tokens.textSecondary),
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 6,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: typeInfo.$3,
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: typeInfo.$4),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(typeInfo.$1, size: 14, color: typeInfo.$2),
+                            const SizedBox(width: 5),
+                            Flexible(
+                              child: Text(
+                                typeInfo.$5,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: typeInfo.$2),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                        decoration: BoxDecoration(color: tokens.surfaceHover, borderRadius: BorderRadius.circular(4)),
+                        child: Text(
+                          'Ref #${req.recordId.length > 8 ? req.recordId.substring(0, 8) : req.recordId}',
+                          style: bmTabularStyle(fontSize: 11, fontWeight: FontWeight.w600, color: tokens.textSecondary),
+                        ),
+                      ),
+                      Text(
+                        CurrencyFormatter.format(req.amount),
+                        style: bmTabularStyle(fontWeight: FontWeight.w800, fontSize: 13, color: tokens.dangerText),
+                      ),
+                      if (req.clientName != null && req.clientName!.isNotEmpty)
+                        Text(
+                          '• ${req.clientName!} ${req.clientCode != null && req.clientCode!.isNotEmpty ? "(${req.clientCode})" : ""}',
+                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tokens.textPrimary),
+                        ),
+                    ],
                   ),
+                ),
+                const SizedBox(width: 8),
+                const IcareStatusBadge(
+                  label: 'Pending Approval',
+                  variant: IcareBadgeVariant.warning,
                 ),
               ],
             ),
-          ),
-          const SizedBox(height: 12),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              OutlinedButton.icon(
-                onPressed: () => _handleRejectReversal(req),
-                icon: Icon(Icons.close, size: 14, color: tokens.textSecondary),
-                label: Text('Reject', style: TextStyle(color: tokens.textSecondary, fontSize: 12, fontWeight: FontWeight.w600)),
-                style: OutlinedButton.styleFrom(
-                  side: BorderSide(color: tokens.borderStrong),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 4,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.person_outline, size: 13, color: tokens.textMuted),
+                    const SizedBox(width: 4),
+                    Text(
+                      'Requested by ${req.requestedByName}',
+                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tokens.textSecondary),
+                    ),
+                  ],
                 ),
-              ),
-              const SizedBox(width: 8),
-              ElevatedButton.icon(
-                onPressed: () => _handleApproveReversal(req),
-                icon: const Icon(Icons.check, size: 14, color: Colors.white),
-                label: const Text('Approve Reversal', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w700)),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: tokens.brandPrimaryDark,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.access_time, size: 13, color: tokens.textMuted),
+                    const SizedBox(width: 4),
+                    Text(
+                      req.createdAt.length > 16 ? req.createdAt.substring(0, 16).replaceAll('T', ' ') : req.createdAt,
+                      style: bmTabularStyle(fontSize: 11.5, fontWeight: FontWeight.w500, color: tokens.textMuted),
+                    ),
+                  ],
                 ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: tokens.surfaceSubtle,
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: tokens.borderSubtle),
               ),
-            ],
-          ),
-        ],
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.format_quote_outlined, size: 15, color: tokens.textLight),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      req.reason,
+                      style: TextStyle(fontSize: 12, fontStyle: FontStyle.italic, color: tokens.textSecondary),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            Align(
+              alignment: Alignment.centerRight,
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                alignment: WrapAlignment.end,
+                children: [
+                  OutlinedButton.icon(
+                    onPressed: () => _handleRejectReversal(req),
+                    icon: Icon(Icons.close, size: 14, color: tokens.textSecondary),
+                    label: Text('Reject', style: TextStyle(color: tokens.textSecondary, fontSize: 12, fontWeight: FontWeight.w600)),
+                    style: OutlinedButton.styleFrom(
+                      side: BorderSide(color: tokens.borderStrong),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                    ),
+                  ),
+                  ElevatedButton.icon(
+                    onPressed: () => _handleApproveReversal(req),
+                    icon: const Icon(Icons.check, size: 14),
+                    label: const Text('Approve Reversal', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: tokens.brandPrimaryDark,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 
   Widget _buildFlagTreasuryExpander(List<MasterTreasuryTransactionData> transactions) {
     final tokens = IcareSurfaceTokens.of(context);
-    return Container(
-      decoration: BoxDecoration(
-        color: tokens.surface,
+    return Material(
+      color: tokens.surface,
+      shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: tokens.borderSubtle),
+        side: BorderSide(color: tokens.borderSubtle),
       ),
+      clipBehavior: Clip.antiAlias,
       child: ExpansionTile(
         tilePadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
         leading: Container(
@@ -2549,6 +2630,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
             DropdownButtonFormField<String>(
               value: _selectedTreasuryTxId,
               isExpanded: true,
+              dropdownColor: tokens.surfaceElevated,
               decoration: const InputDecoration(
                 labelText: 'Select Treasury Entry to Flag',
                 border: OutlineInputBorder(),
@@ -2571,12 +2653,17 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
               child: ElevatedButton.icon(
                 onPressed: _isSubmittingReversal ? null : _handleFlagTreasuryReversal,
                 icon: _isSubmittingReversal
-                    ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                    : const Icon(Icons.flag_outlined, size: 18, color: Colors.white),
-                label: Text(_isSubmittingReversal ? 'Submitting Request...' : 'Submit Treasury Reversal Request', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 13)),
+                    ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Icon(Icons.flag_outlined, size: 18),
+                label: Text(
+                  _isSubmittingReversal ? 'Submitting Request...' : 'Submit Treasury Reversal Request',
+                  style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+                ),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFFDC2626),
+                  backgroundColor: tokens.isDark ? tokens.dangerBorder : tokens.dangerText,
                   foregroundColor: Colors.white,
+                  disabledBackgroundColor: tokens.surfaceHover,
+                  disabledForegroundColor: tokens.textMuted,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                 ),
               ),
@@ -2603,11 +2690,37 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
 
     return asyncCo.when(
       loading: () => const IcareTableSkeleton(rowCount: 8, hasFilterBar: false),
-      error: (err, _) => Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(color: tokens.dangerBg, borderRadius: BorderRadius.circular(8)),
-        child: Text('Error loading CO Cashbook aggregation: ${AppErrorDetails.from(err).message}', style: TextStyle(color: tokens.dangerText)),
-      ),
+      error: (err, _) {
+        final errDetails = AppErrorDetails.from(err);
+        return IcareCard(
+          topAccentColor: tokens.dangerDot,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.error_outline, size: 18, color: tokens.dangerDot),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      errDetails.title,
+                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: tokens.dangerText),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Text(errDetails.message, style: TextStyle(fontSize: 12.5, color: tokens.textSecondary)),
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                onPressed: () => ref.invalidate(coAggregationProvider),
+                icon: const Icon(Icons.refresh, size: 15),
+                label: const Text('Retry'),
+              ),
+            ],
+          ),
+        );
+      },
       data: (data) {
         if (_selectedOfficerTab2 == null && data.officers.isNotEmpty) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -2943,8 +3056,11 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
             Divider(height: 18, color: tokens.borderSubtle),
           ],
           if (isMobile) ...[
-            // Mobile: Date picker and chips row
-            Row(
+            // Mobile: Date picker and chips wrap cleanly on 360px
+            Wrap(
+              spacing: 6,
+              runSpacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
               children: [
                 OutlinedButton.icon(
                   onPressed: () async {
@@ -2970,7 +3086,6 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                   ),
                 ),
-                const SizedBox(width: 6),
                 InkWell(
                   onTap: () => setState(() => _selectedDateTab2 = today),
                   borderRadius: BorderRadius.circular(6),
@@ -2991,7 +3106,6 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                     ),
                   ),
                 ),
-                const SizedBox(width: 4),
                 InkWell(
                   onTap: () => setState(() => _selectedDateTab2 = yesterday),
                   borderRadius: BorderRadius.circular(6),
@@ -3051,48 +3165,11 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
               ),
             ],
             const SizedBox(height: 8),
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: isClosed
-                        ? tokens.infoBg
-                        : (data.isOpen ? tokens.successBg : tokens.warningBg),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
-                      color: isClosed
-                          ? tokens.infoBorder
-                          : (data.isOpen ? tokens.successBorder : tokens.warningBorder),
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        isClosed
-                            ? Icons.check_circle_outline
-                            : (data.isOpen ? Icons.lock_open_outlined : Icons.lock_outlined),
-                        size: 12,
-                        color: isClosed
-                            ? tokens.infoText
-                            : (data.isOpen ? tokens.successDot : tokens.warningDot),
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        isClosed ? 'Day Closed' : (data.isOpen ? 'Ledger Open' : 'Ledger Frozen'),
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                          color: isClosed
-                              ? tokens.infoText
-                              : (data.isOpen ? tokens.successText : tokens.warningText),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
+            IcareStatusBadge(
+              label: isClosed ? 'Day Closed' : (data.isOpen ? 'Ledger Open' : 'Ledger Frozen'),
+              variant: isClosed
+                  ? IcareBadgeVariant.info
+                  : (data.isOpen ? IcareBadgeVariant.success : IcareBadgeVariant.warning),
             ),
           ] else ...[
             // Desktop/Tablet: Single row
@@ -3172,77 +3249,49 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                     color: tokens.borderSubtle,
                   ),
                   const SizedBox(width: 14),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: tokens.surfaceSubtle,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: tokens.borderStrong),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.badge_outlined, size: 15, color: tokens.textMuted),
-                        const SizedBox(width: 6),
-                        DropdownButtonHideUnderline(
-                          child: DropdownButton<String>(
-                            dropdownColor: tokens.surfaceElevated,
-                            iconEnabledColor: tokens.textSecondary,
-                            value: _selectedOfficerTab2 ?? (data.officers.isNotEmpty ? data.officers[0].username : null),
-                            items: data.officers.map((o) {
-                              return DropdownMenuItem<String>(
-                                value: o.username,
-                                child: Text(o.display, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: tokens.textPrimary)),
-                              );
-                            }).toList(),
-                            onChanged: (val) {
-                              if (val != null) setState(() => _selectedOfficerTab2 = val);
-                            },
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 250),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: tokens.surfaceSubtle,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: tokens.borderStrong),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.badge_outlined, size: 15, color: tokens.textMuted),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: DropdownButtonHideUnderline(
+                              child: DropdownButton<String>(
+                                isExpanded: true,
+                                dropdownColor: tokens.surfaceElevated,
+                                iconEnabledColor: tokens.textSecondary,
+                                value: _selectedOfficerTab2 ?? (data.officers.isNotEmpty ? data.officers[0].username : null),
+                                items: data.officers.map((o) {
+                                  return DropdownMenuItem<String>(
+                                    value: o.username,
+                                    child: Text(o.display, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: tokens.textPrimary)),
+                                  );
+                                }).toList(),
+                                onChanged: (val) {
+                                  if (val != null) setState(() => _selectedOfficerTab2 = val);
+                                },
+                              ),
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
                 ],
                 const Spacer(),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                  decoration: BoxDecoration(
-                    color: isClosed
-                        ? tokens.infoBg
-                        : (data.isOpen ? tokens.successBg : tokens.warningBg),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(
-                      color: isClosed
-                          ? tokens.infoBorder
-                          : (data.isOpen ? tokens.successBorder : tokens.warningBorder),
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        isClosed
-                            ? Icons.check_circle_outline
-                            : (data.isOpen ? Icons.lock_open_outlined : Icons.lock_outlined),
-                        size: 13,
-                        color: isClosed
-                            ? tokens.infoText
-                            : (data.isOpen ? tokens.successDot : tokens.warningDot),
-                      ),
-                      const SizedBox(width: 5),
-                      Text(
-                        isClosed ? 'Day Closed' : (data.isOpen ? 'Ledger Open' : 'Ledger Frozen'),
-                        style: TextStyle(
-                          fontSize: 11.5,
-                          fontWeight: FontWeight.w700,
-                          color: isClosed
-                              ? tokens.infoText
-                              : (data.isOpen ? tokens.successText : tokens.warningText),
-                        ),
-                      ),
-                    ],
-                  ),
+                IcareStatusBadge(
+                  label: isClosed ? 'Day Closed' : (data.isOpen ? 'Ledger Open' : 'Ledger Frozen'),
+                  variant: isClosed
+                      ? IcareBadgeVariant.info
+                      : (data.isOpen ? IcareBadgeVariant.success : IcareBadgeVariant.warning),
                 ),
               ],
             ),
@@ -3309,8 +3358,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
               Text('Closing Balance', style: TextStyle(fontSize: 11, color: tokens.textMuted, fontWeight: FontWeight.w500)),
               Text(
                 _formatCurrency(closing),
-                style: TextStyle(
-                  fontFamily: 'monospace',
+                style: bmTabularStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w800,
                   color: isPos ? tokens.successText : tokens.dangerText,
@@ -3335,79 +3383,38 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
     final displayedOutflows = _tab2HideZeroRows ? activeOutflows : outflowItems;
     final maxLen = displayedInflows.length > displayedOutflows.length ? displayedInflows.length : displayedOutflows.length;
 
-    return Container(
-      decoration: BoxDecoration(
-        color: tokens.surface,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: tokens.borderSubtle),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: tokens.isDark ? 0.14 : 0.02),
-            blurRadius: 4,
-            offset: const Offset(0, 1),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (isMobile)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(14, 10, 14, 4),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.swap_horiz, size: 14, color: tokens.textMuted),
-                  const SizedBox(width: 4),
-                  Text('Scroll horizontally to view debit/credit columns', style: TextStyle(fontSize: 11, color: tokens.textMuted, fontStyle: FontStyle.italic)),
-                ],
-              ),
-            ),
-          Scrollbar(
-            thumbVisibility: isMobile,
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: DataTable(
-                headingRowColor: WidgetStateProperty.all(tokens.surfaceSubtle),
-                columns: [
-                  DataColumn(label: Text('Inflows (Left / Debit)', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: tokens.textPrimary))),
-                  DataColumn(label: Text('Amount (₦)', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: tokens.textPrimary))),
-                  DataColumn(label: Text('Outflows (Right / Credit)', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: tokens.textPrimary))),
-                  DataColumn(label: Text('Amount (₦)', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: tokens.textPrimary))),
-                ],
-                rows: [
-                  ...List.generate(maxLen, (idx) {
-                    final inf = idx < displayedInflows.length ? displayedInflows[idx] : null;
-                    final out = idx < displayedOutflows.length ? displayedOutflows[idx] : null;
+    return IcareDataTable(
+      minWidth: 620,
+      columns: [
+        DataColumn(label: Text('Inflows (Left / Debit)', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: tokens.textPrimary))),
+        DataColumn(label: Text('Amount (₦)', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: tokens.textPrimary))),
+        DataColumn(label: Text('Outflows (Right / Credit)', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: tokens.textPrimary))),
+        DataColumn(label: Text('Amount (₦)', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: tokens.textPrimary))),
+      ],
+      rows: [
+        ...List.generate(maxLen, (idx) {
+          final inf = idx < displayedInflows.length ? displayedInflows[idx] : null;
+          final out = idx < displayedOutflows.length ? displayedOutflows[idx] : null;
 
-                    return DataRow(
-                      color: WidgetStateProperty.resolveWith<Color?>((states) {
-                        if (idx.isOdd) return tokens.surfaceSubtle;
-                        return tokens.surface;
-                      }),
-                      cells: [
-                        DataCell(Text(inf?.key ?? '', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: tokens.textPrimary))),
-                        DataCell(Text(inf != null ? _formatCurrency(inf.value) : '', style: TextStyle(fontSize: 12, color: tokens.successText, fontWeight: FontWeight.w600, fontFamily: 'monospace'))),
-                        DataCell(Text(out?.key ?? '', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: tokens.textPrimary))),
-                        DataCell(Text(out != null ? _formatCurrency(out.value) : '', style: TextStyle(fontSize: 12, color: tokens.dangerText, fontWeight: FontWeight.w600, fontFamily: 'monospace'))),
-                      ],
-                    );
-                  }),
-                  DataRow(
-                    color: WidgetStateProperty.all(tokens.neutralBg),
-                    cells: [
-                      DataCell(Text('Total Debit (Opening + Receipts)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: tokens.successText))),
-                      DataCell(Text(_formatCurrency(data.totalInflows), style: TextStyle(fontSize: 12, color: tokens.successText, fontWeight: FontWeight.w800, fontFamily: 'monospace'))),
-                      DataCell(Text('Total Credit (Outflows)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: tokens.dangerText))),
-                      DataCell(Text(_formatCurrency(data.totalOutflows), style: TextStyle(fontSize: 12, color: tokens.dangerText, fontWeight: FontWeight.w800, fontFamily: 'monospace'))),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
+          return DataRow(
+            cells: [
+              DataCell(Text(inf?.key ?? '', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: tokens.textPrimary))),
+              DataCell(Text(inf != null ? _formatCurrency(inf.value) : '', style: bmTabularStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tokens.successText))),
+              DataCell(Text(out?.key ?? '', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: tokens.textPrimary))),
+              DataCell(Text(out != null ? _formatCurrency(out.value) : '', style: bmTabularStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tokens.dangerText))),
+            ],
+          );
+        }),
+        DataRow(
+          color: WidgetStateProperty.all(tokens.neutralBg),
+          cells: [
+            DataCell(Text('Total Debit (Opening + Receipts)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: tokens.successText))),
+            DataCell(Text(_formatCurrency(data.totalInflows), style: bmTabularStyle(fontSize: 12, fontWeight: FontWeight.w800, color: tokens.successText))),
+            DataCell(Text('Total Credit (Outflows)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: tokens.dangerText))),
+            DataCell(Text(_formatCurrency(data.totalOutflows), style: bmTabularStyle(fontSize: 12, fontWeight: FontWeight.w800, color: tokens.dangerText))),
+          ],
+        ),
+      ],
     );
   }
 
@@ -3623,11 +3630,14 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                   ElevatedButton.icon(
                     onPressed: _isExecutingEod ? null : () => _confirmAndExecuteEod(dateStr, data.closingBalance),
                     icon: _isExecutingEod
-                        ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                        : const Icon(Icons.shield_outlined, size: 16, color: Colors.white),
-                    label: const Text('Execute EOD Day Close', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: Colors.white)),
+                        ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                        : const Icon(Icons.shield_outlined, size: 16),
+                    label: const Text('Execute EOD Day Close', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: tokens.brandPrimaryDark,
+                      foregroundColor: Colors.white,
+                      disabledBackgroundColor: tokens.surfaceHover,
+                      disabledForegroundColor: tokens.textMuted,
                       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                     ),
@@ -3670,9 +3680,11 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                 'Other reason'
               ]);
 
-    showIcareDialog(
+    showIcareAdaptiveSheet<void>(
       context: context,
-      builder: (ctx) => StatefulBuilder(
+      fitContent: true,
+      desktopConstraints: const BoxConstraints(maxWidth: 500, maxHeight: 640),
+      builder: (ctx, isDialog) => StatefulBuilder(
         builder: (ctx, setDlgState) {
           final tokens = IcareSurfaceTokens.of(ctx);
           final statusColor = isZero
@@ -3685,21 +3697,44 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
               ? tokens.successBorder
               : (isPos ? tokens.infoBorder : tokens.warningBorder);
 
-          return AlertDialog(
-            backgroundColor: tokens.surfaceElevated,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            title: Row(
-              children: [
-                Icon(Icons.shield_outlined, color: tokens.textPrimary, size: 22),
-                const SizedBox(width: 8),
-                Text('Confirm Day Close', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: tokens.textPrimary)),
-              ],
-            ),
-            content: SingleChildScrollView(
+          return Material(
+            color: tokens.surfaceElevated,
+            child: SingleChildScrollView(
+              padding: EdgeInsets.fromLTRB(
+                20,
+                isDialog ? 20 : 12,
+                20,
+                20 + MediaQuery.viewInsetsOf(ctx).bottom,
+              ),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  if (!isDialog)
+                    Center(
+                      child: Container(
+                        width: 36,
+                        height: 4,
+                        margin: const EdgeInsets.only(bottom: 14),
+                        decoration: BoxDecoration(
+                          color: tokens.borderStrong,
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                    ),
+                  Row(
+                    children: [
+                      Icon(Icons.shield_outlined, color: tokens.textPrimary, size: 22),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Confirm Day Close',
+                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: tokens.textPrimary),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
                   Text(
                     'Are you ready to close business operations for $dateStr?',
                     style: TextStyle(fontSize: 13, color: tokens.textSecondary, height: 1.4),
@@ -3790,38 +3825,47 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                       ],
                     ),
                   ),
+                  const SizedBox(height: 18),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      OutlinedButton(
+                        onPressed: () => Navigator.of(ctx).pop(),
+                        style: OutlinedButton.styleFrom(
+                          side: BorderSide(color: tokens.borderStrong),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                        ),
+                        child: Text('Cancel', style: TextStyle(color: tokens.textSecondary, fontWeight: FontWeight.w600)),
+                      ),
+                      const SizedBox(width: 10),
+                      ElevatedButton(
+                        onPressed: () {
+                          final note = notesController.text.trim();
+                          Navigator.of(ctx).pop();
+                          _handleExecuteEod(
+                            dateStr,
+                            reasonTag: selectedTag,
+                            notes: note.isNotEmpty ? note : null,
+                          );
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: tokens.brandPrimaryDark,
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                        ),
+                        child: const Text('Confirm & Close Day', style: TextStyle(fontWeight: FontWeight.w700)),
+                      ),
+                    ],
+                  ),
                 ],
               ),
             ),
-            actions: [
-              OutlinedButton(
-                onPressed: () => Navigator.of(ctx).pop(),
-                style: OutlinedButton.styleFrom(
-                  side: BorderSide(color: tokens.borderStrong),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-                ),
-                child: Text('Cancel', style: TextStyle(color: tokens.textSecondary, fontWeight: FontWeight.w600)),
-              ),
-              ElevatedButton(
-                onPressed: () {
-                  Navigator.of(ctx).pop();
-                  _handleExecuteEod(
-                    dateStr,
-                    reasonTag: selectedTag,
-                    notes: notesController.text.trim().isNotEmpty ? notesController.text.trim() : null,
-                  );
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: tokens.brandPrimaryDark,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-                ),
-                child: const Text('Confirm & Close Day', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
-              ),
-            ],
           );
         },
       ),
-    );
+    ).whenComplete(() {
+      WidgetsBinding.instance.addPostFrameCallback((_) => notesController.dispose());
+    });
   }
 
   // ==========================================
@@ -3835,15 +3879,37 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
 
     return asyncMonthly.when(
       loading: () => const IcareTableSkeleton(rowCount: 8, hasFilterBar: false),
-      error: (err, _) => Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: tokens.dangerBg,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: tokens.dangerBorder),
-        ),
-        child: Text('Error loading Monthly Ledger: ${AppErrorDetails.from(err).message}', style: TextStyle(color: tokens.dangerText)),
-      ),
+      error: (err, _) {
+        final errDetails = AppErrorDetails.from(err);
+        return IcareCard(
+          topAccentColor: tokens.dangerDot,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.error_outline, size: 18, color: tokens.dangerDot),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      errDetails.title,
+                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: tokens.dangerText),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Text(errDetails.message, style: TextStyle(fontSize: 12.5, color: tokens.textSecondary)),
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                onPressed: () => ref.invalidate(monthlyLedgerProvider),
+                icon: const Icon(Icons.refresh, size: 15),
+                label: const Text('Retry'),
+              ),
+            ],
+          ),
+        );
+      },
       data: (data) {
         if (_selectedBranchTab3 == null && data.availableBranches.isNotEmpty) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -3952,69 +4018,63 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                 },
               ),
               const SizedBox(height: 16),
+              MasterCashbookMonthlyAnalyticsSection(rows: data.rows),
+              const SizedBox(height: 16),
 
               // Export Card
-              Container(
+              IcareCard(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                decoration: BoxDecoration(
-                  color: tokens.surface,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: tokens.borderSubtle),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: tokens.isDark ? 0.14 : 0.02),
-                      blurRadius: 4,
-                      offset: const Offset(0, 1),
-                    ),
-                  ],
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                child: Wrap(
+                  spacing: 12,
+                  runSpacing: 10,
+                  alignment: WrapAlignment.spaceBetween,
+                  crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
-                    Expanded(
-                      child: Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color: tokens.successBg,
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: tokens.successBorder),
-                            ),
-                            child: Icon(Icons.description_outlined, size: 20, color: tokens.successText),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: tokens.successBg,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: tokens.successBorder),
                           ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'Monthly Ledger Workbook Export',
-                                  style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700, color: tokens.textPrimary),
-                                ),
-                                Text(
-                                  'Complete 42-column Vault Cash Ledger matrix (.xlsx)',
-                                  style: TextStyle(fontSize: 11.5, color: tokens.textMuted),
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ],
-                            ),
+                          child: Icon(Icons.description_outlined, size: 20, color: tokens.successText),
+                        ),
+                        const SizedBox(width: 12),
+                        Flexible(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Monthly Ledger Workbook Export',
+                                style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700, color: tokens.textPrimary),
+                              ),
+                              Text(
+                                'Complete 42-column Vault Cash Ledger matrix (.xlsx)',
+                                style: TextStyle(fontSize: 11.5, color: tokens.textMuted),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
                           ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(width: 12),
                     ElevatedButton.icon(
                       onPressed: _isDownloadingExcel ? null : () => _handleDownloadExcel(currentBranch),
                       icon: _isDownloadingExcel
-                          ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                          : const Icon(Icons.file_download_outlined, size: 16, color: Colors.white),
+                          ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                          : const Icon(Icons.file_download_outlined, size: 16),
                       label: Text(
                         _isDownloadingExcel ? 'Generating...' : 'Export Excel',
-                        style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: Colors.white),
+                        style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700),
                       ),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: tokens.brandPrimaryDark,
+                        foregroundColor: Colors.white,
+                        disabledBackgroundColor: tokens.surfaceHover,
+                        disabledForegroundColor: tokens.textMuted,
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                       ),
@@ -4029,10 +4089,14 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text(
-                      _tab3DailyFeedView ? 'Daily Entries (${data.rows.length} days)' : 'Full Matrix Spreadsheet',
-                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: tokens.textPrimary),
+                    Expanded(
+                      child: Text(
+                        _tab3DailyFeedView ? 'Daily Entries (${data.rows.length} days)' : 'Full Matrix Spreadsheet',
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: tokens.textPrimary),
+                      ),
                     ),
+                    const SizedBox(width: 8),
                     OutlinedButton.icon(
                       onPressed: () => setState(() => _tab3DailyFeedView = !_tab3DailyFeedView),
                       icon: Icon(_tab3DailyFeedView ? Icons.table_chart_outlined : Icons.view_agenda_outlined, size: 14, color: tokens.textSecondary),
@@ -4078,6 +4142,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
     final tokens = IcareSurfaceTokens.of(context);
     final monthSelector = DropdownButtonFormField<int>(
       value: _selectedMonth,
+      isExpanded: true,
       dropdownColor: tokens.surfaceElevated,
       style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: tokens.textPrimary),
       decoration: InputDecoration(
@@ -4095,7 +4160,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
         final m = index + 1;
         return DropdownMenuItem<int>(
           value: m,
-          child: Text(DateFormat('MMMM').format(DateTime(2026, m, 1)), style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: tokens.textPrimary)),
+          child: Text(DateFormat('MMMM').format(DateTime(2026, m, 1)), overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: tokens.textPrimary)),
         );
       }),
       onChanged: (val) {
@@ -4117,7 +4182,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
         focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: tokens.brandPrimary, width: 1.5)),
         contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       ),
-      style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, fontFamily: 'monospace', color: tokens.textPrimary),
+      style: bmTabularStyle(fontSize: 13, fontWeight: FontWeight.w600, color: tokens.textPrimary),
       onChanged: (val) {
         final parsed = int.tryParse(val);
         if (parsed != null && parsed >= 2024 && parsed <= 2030) {
@@ -4179,12 +4244,14 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                 child: Icon(Icons.tune_outlined, size: 18, color: tokens.textPrimary),
               ),
               const SizedBox(width: 10),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Monthly Ledger Parameters', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: tokens.textPrimary)),
-                  Text('Historical Vault Cash Reserve review.', style: TextStyle(fontSize: 11.5, color: tokens.textMuted)),
-                ],
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Monthly Ledger Parameters', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: tokens.textPrimary)),
+                    Text('Historical Vault Cash Reserve review.', style: TextStyle(fontSize: 11.5, color: tokens.textMuted)),
+                  ],
+                ),
               ),
             ],
           ),
@@ -4221,21 +4288,16 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
       children: rows.map((r) {
         final netCash = r.totalInflows - r.totalOutflows;
         final isPos = netCash >= 0;
-        return Container(
-          margin: const EdgeInsets.only(bottom: 10),
-          decoration: BoxDecoration(
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 10),
+          child: Material(
             color: tokens.surface,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: tokens.borderSubtle),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: tokens.isDark ? 0.14 : 0.02),
-                blurRadius: 3,
-                offset: const Offset(0, 1),
-              ),
-            ],
-          ),
-          child: ExpansionTile(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+              side: BorderSide(color: tokens.borderSubtle),
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: ExpansionTile(
             shape: const Border(),
             iconColor: tokens.textMuted,
             collapsedIconColor: tokens.textMuted,
@@ -4249,16 +4311,20 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
               ),
               child: Text(
                 r.date.length >= 10 ? r.date.substring(5) : r.date,
-                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: tokens.textSecondary, fontFamily: 'monospace'),
+                style: bmTabularStyle(fontWeight: FontWeight.w700, fontSize: 12, color: tokens.textSecondary),
               ),
             ),
             title: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(
-                  'Close: ${_formatIntegerCurrency(r.closingBalance)}',
-                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: tokens.textPrimary, fontFamily: 'monospace'),
+                Expanded(
+                  child: Text(
+                    'Close: ${_formatIntegerCurrency(r.closingBalance)}',
+                    overflow: TextOverflow.ellipsis,
+                    style: bmTabularStyle(fontWeight: FontWeight.w700, fontSize: 13, color: tokens.textPrimary),
+                  ),
                 ),
+                const SizedBox(width: 8),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
                   decoration: BoxDecoration(
@@ -4268,10 +4334,9 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                   ),
                   child: Text(
                     '${isPos ? '+' : ''}${_formatIntegerCurrency(netCash)}',
-                    style: TextStyle(
+                    style: bmTabularStyle(
                       fontSize: 10.5,
                       fontWeight: FontWeight.w700,
-                      fontFamily: 'monospace',
                       color: isPos ? tokens.successText : tokens.dangerText,
                     ),
                   ),
@@ -4280,13 +4345,13 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
             ),
             subtitle: Padding(
               padding: const EdgeInsets.only(top: 4),
-              child: Row(
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 2,
                 children: [
-                  Text('In: ${_formatIntegerCurrency(r.totalInflows)}', style: TextStyle(fontSize: 11, color: tokens.successText, fontWeight: FontWeight.w600, fontFamily: 'monospace')),
-                  Text(' • ', style: TextStyle(color: tokens.textMuted)),
-                  Text('Out: ${_formatIntegerCurrency(r.totalOutflows)}', style: TextStyle(fontSize: 11, color: tokens.dangerText, fontWeight: FontWeight.w600, fontFamily: 'monospace')),
-                  Text(' • ', style: TextStyle(color: tokens.textMuted)),
-                  Text('Open: ${_formatIntegerCurrency(r.openingBalance)}', style: TextStyle(fontSize: 11, color: tokens.textMuted, fontFamily: 'monospace')),
+                  Text('In: ${_formatIntegerCurrency(r.totalInflows)}', style: bmTabularStyle(fontSize: 11, color: tokens.successText, fontWeight: FontWeight.w600)),
+                  Text('Out: ${_formatIntegerCurrency(r.totalOutflows)}', style: bmTabularStyle(fontSize: 11, color: tokens.dangerText, fontWeight: FontWeight.w600)),
+                  Text('Open: ${_formatIntegerCurrency(r.openingBalance)}', style: bmTabularStyle(fontSize: 11, color: tokens.textMuted, fontWeight: FontWeight.w500)),
                 ],
               ),
             ),
@@ -4297,7 +4362,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text('Savings Deposits', style: TextStyle(fontSize: 11.5, color: tokens.textMuted)),
-                  Text(_formatIntegerCurrency(r.savingsDeposit), style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, fontFamily: 'monospace', color: tokens.textPrimary)),
+                  Text(_formatIntegerCurrency(r.savingsDeposit), style: bmTabularStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: tokens.textPrimary)),
                 ],
               ),
               const SizedBox(height: 4),
@@ -4305,7 +4370,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text('Daily Collections (60d/120d)', style: TextStyle(fontSize: 11.5, color: tokens.textMuted)),
-                  Text(_formatIntegerCurrency(r.repDaily + r.rep120Days), style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, fontFamily: 'monospace', color: tokens.textPrimary)),
+                  Text(_formatIntegerCurrency(r.repDaily + r.rep120Days), style: bmTabularStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: tokens.textPrimary)),
                 ],
               ),
               const SizedBox(height: 4),
@@ -4313,7 +4378,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text('Bank Deposits', style: TextStyle(fontSize: 11.5, color: tokens.textMuted)),
-                  Text(_formatIntegerCurrency(r.bankDeposit), style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: tokens.dangerText, fontFamily: 'monospace')),
+                  Text(_formatIntegerCurrency(r.bankDeposit), style: bmTabularStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: tokens.dangerText)),
                 ],
               ),
               const SizedBox(height: 4),
@@ -4321,10 +4386,11 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text('Active Loan Disbursements', style: TextStyle(fontSize: 11.5, color: tokens.textMuted)),
-                  Text(_formatIntegerCurrency(r.disb60d + r.disb120d + r.disb12w + r.disb24w + r.disbMth), style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: tokens.dangerText, fontFamily: 'monospace')),
+                  Text(_formatIntegerCurrency(r.disb60d + r.disb120d + r.disb12w + r.disb24w + r.disbMth), style: bmTabularStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: tokens.dangerText)),
                 ],
               ),
             ],
+          ),
           ),
         );
       }).toList(),
@@ -4385,8 +4451,8 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
     final assetVariance = totalAssetReceipts - totalToAssets;
     final isAssetSettled = assetVariance.abs() < 0.01;
     final headerStyle = TextStyle(fontWeight: FontWeight.w700, fontSize: 11.5, color: tokens.textPrimary);
-    final cellStyle = TextStyle(fontSize: 11, fontFamily: 'monospace', color: tokens.textPrimary);
-    final totalStyle = TextStyle(fontSize: 11, fontWeight: FontWeight.w700, fontFamily: 'monospace', color: tokens.textPrimary);
+    final cellStyle = bmTabularStyle(fontSize: 11, fontWeight: FontWeight.w500, color: tokens.textPrimary);
+    final totalStyle = bmTabularStyle(fontSize: 11, fontWeight: FontWeight.w700, color: tokens.textPrimary);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -4402,24 +4468,9 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
               ],
             ),
           ),
-        Container(
-          decoration: BoxDecoration(
-            color: tokens.surface,
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: tokens.borderSubtle),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: tokens.isDark ? 0.14 : 0.02),
-                blurRadius: 4,
-                offset: const Offset(0, 1),
-              ),
-            ],
-          ),
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: DataTable(
-              headingRowColor: WidgetStateProperty.all(tokens.surfaceSubtle),
-              columns: [
+        IcareDataTable(
+          minWidth: 3200,
+          columns: [
                 DataColumn(label: Text('Date', style: headerStyle)),
                 DataColumn(label: Text('Opening Balance', style: headerStyle)),
                 DataColumn(label: Text('Savings Deposit', style: headerStyle)),
@@ -4478,7 +4529,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                       return tokens.surface;
                     }),
                     cells: [
-                      DataCell(Text(r.date, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, fontFamily: 'monospace', color: tokens.textPrimary))),
+                      DataCell(Text(r.date, style: bmTabularStyle(fontSize: 11, fontWeight: FontWeight.w600, color: tokens.textPrimary))),
                       DataCell(Text(_formatLedgerCell(r.openingBalance), style: cellStyle)),
                       DataCell(Text(_formatLedgerCell(r.savingsDeposit), style: cellStyle)),
                       DataCell(Text(_formatLedgerCell(r.repDaily), style: cellStyle)),
@@ -4506,7 +4557,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                       DataCell(Text(_formatLedgerCell(r.passbook), style: cellStyle)),
                       DataCell(Text(_formatLedgerCell(r.bankWithdrawal), style: cellStyle)),
                       DataCell(Text(_formatLedgerCell(r.adjustmentIn), style: cellStyle)),
-                      DataCell(Text(_formatLedgerCell(r.totalInflows), style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: tokens.successText, fontFamily: 'monospace'))),
+                      DataCell(Text(_formatLedgerCell(r.totalInflows), style: bmTabularStyle(fontSize: 11, fontWeight: FontWeight.w700, color: tokens.successText))),
                       DataCell(Text(_formatLedgerCell(r.disb60d), style: cellStyle)),
                       DataCell(Text(_formatLedgerCell(r.disb120d), style: cellStyle)),
                       DataCell(Text(_formatLedgerCell(r.disb12w), style: cellStyle)),
@@ -4523,8 +4574,8 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                       DataCell(Text(_formatLedgerCell(r.lapsReturns), style: cellStyle)),
                       DataCell(Text(_formatLedgerCell(r.bankDeposit), style: cellStyle)),
                       DataCell(Text(_formatLedgerCell(r.adjustmentOut), style: cellStyle)),
-                      DataCell(Text(_formatLedgerCell(r.totalOutflows), style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: tokens.dangerText, fontFamily: 'monospace'))),
-                      DataCell(Text(_formatLedgerCell(r.closingBalance), style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: tokens.textPrimary, fontFamily: 'monospace'))),
+                      DataCell(Text(_formatLedgerCell(r.totalOutflows), style: bmTabularStyle(fontSize: 11, fontWeight: FontWeight.w700, color: tokens.dangerText))),
+                      DataCell(Text(_formatLedgerCell(r.closingBalance), style: bmTabularStyle(fontSize: 11, fontWeight: FontWeight.w800, color: tokens.textPrimary))),
                     ],
                   );
                 }),
@@ -4560,7 +4611,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                     DataCell(Text(_formatLedgerCell(totalPassbook), style: totalStyle)),
                     DataCell(Text(_formatLedgerCell(totalBankWithdr), style: totalStyle)),
                     DataCell(Text(_formatLedgerCell(totalAdjIn), style: totalStyle)),
-                    DataCell(Text(_formatLedgerCell(totalInflows), style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: tokens.successText, fontFamily: 'monospace'))),
+                    DataCell(Text(_formatLedgerCell(totalInflows), style: bmTabularStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: tokens.successText))),
                     DataCell(Text(_formatLedgerCell(totalDisb60d), style: totalStyle)),
                     DataCell(Text(_formatLedgerCell(totalDisb120d), style: totalStyle)),
                     DataCell(Text(_formatLedgerCell(totalDisb12w), style: totalStyle)),
@@ -4577,14 +4628,12 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                     DataCell(Text(_formatLedgerCell(totalLapsRet), style: totalStyle)),
                     DataCell(Text(_formatLedgerCell(totalBankDep), style: totalStyle)),
                     DataCell(Text(_formatLedgerCell(totalAdjOut), style: totalStyle)),
-                    DataCell(Text(_formatLedgerCell(totalOutflows), style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: tokens.dangerText, fontFamily: 'monospace'))),
-                    DataCell(Text(_formatLedgerCell(monthClosing), style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: tokens.textPrimary, fontFamily: 'monospace'))),
+                    DataCell(Text(_formatLedgerCell(totalOutflows), style: bmTabularStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: tokens.dangerText))),
+                    DataCell(Text(_formatLedgerCell(monthClosing), style: bmTabularStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: tokens.textPrimary))),
                   ],
                 ),
               ],
             ),
-          ),
-        ),
         const SizedBox(height: 14),
         Container(
           padding: const EdgeInsets.all(14),
@@ -4637,10 +4686,9 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
                       isAssetSettled
                           ? 'Balanced'
                           : 'Variance: ${_formatCurrency(assetVariance)}',
-                      style: TextStyle(
+                      style: bmTabularStyle(
                         fontSize: 11.5,
                         fontWeight: FontWeight.w700,
-                        fontFamily: 'monospace',
                         color: isAssetSettled ? tokens.successText : tokens.warningText,
                       ),
                     ),
@@ -4693,88 +4741,16 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
     Color? valueColor,
   }) {
     final tokens = IcareSurfaceTokens.of(context);
-    return Container(
+    return SizedBox(
       width: width,
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      decoration: BoxDecoration(
-        color: tokens.surface,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: tokens.borderSubtle),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: tokens.isDark ? 0.14 : 0.02),
-            blurRadius: 4,
-            offset: const Offset(0, 1),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Expanded(
-                child: Row(
-                  children: [
-                    if (icon != null) ...[
-                      Container(
-                        padding: const EdgeInsets.all(5),
-                        decoration: BoxDecoration(
-                          color: iconBg ?? tokens.surfaceSubtle,
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: Icon(icon, size: 14, color: iconColor ?? tokens.textSecondary),
-                      ),
-                      const SizedBox(width: 8),
-                    ],
-                    Expanded(
-                      child: Text(
-                        label,
-                        style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: tokens.textMuted),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              if (delta != null)
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: isDeltaInverse ? tokens.dangerBg : tokens.successBg,
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: isDeltaInverse ? tokens.dangerBorder : tokens.successBorder),
-                  ),
-                  child: Text(
-                    delta,
-                    style: TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w700,
-                      color: isDeltaInverse ? tokens.dangerText : tokens.successText,
-                    ),
-                  ),
-                ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          FittedBox(
-            fit: BoxFit.scaleDown,
-            alignment: Alignment.centerLeft,
-            child: Text(
-              value,
-              maxLines: 1,
-              softWrap: false,
-              style: TextStyle(
-                fontFamily: 'monospace',
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-                color: valueColor ?? tokens.textPrimary,
-                letterSpacing: -0.3,
-              ),
-            ),
-          ),
-        ],
+      child: IcareMetricCard(
+        label: label,
+        value: value,
+        icon: icon,
+        delta: delta,
+        isInverseDelta: isDeltaInverse,
+        topBorderColor: iconColor ?? tokens.brandPrimary,
+        statusTextColor: valueColor,
       ),
     );
   }
@@ -4800,7 +4776,7 @@ class _MasterCashbookScreenState extends ConsumerState<MasterCashbookScreen> wit
         focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: tokens.brandPrimary, width: 1.5)),
         contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       ),
-      style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, fontFamily: 'monospace', color: tokens.textPrimary),
+      style: bmTabularStyle(fontSize: 13, fontWeight: FontWeight.w600, color: tokens.textPrimary),
     );
   }
 

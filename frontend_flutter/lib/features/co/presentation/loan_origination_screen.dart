@@ -1155,11 +1155,6 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
       'Edit Client & Guarantor'
     ];
 
-    final groupsCount = ref.watch(originationGroupsProvider).valueOrNull?.length ?? 0;
-    final pendingLoansList =
-        (ref.watch(pendingDisbursementsProvider).valueOrNull?['pending_loans'] as List<dynamic>?) ??
-            const [];
-    final stockedSkus = (_assetCatalogSummary['branch_stocked_skus'] as num?)?.toInt() ?? 0;
     final totalStockUnits = (_assetCatalogSummary['total_units_available'] as num?)?.toInt() ?? 0;
 
     return Column(
@@ -1191,21 +1186,6 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                 ),
               ),
             ],
-          ),
-          const SizedBox(height: 16),
-
-          CoOriginationFlowCard(
-            activeTab: activeTab,
-            groupsCount: groupsCount,
-            stockedSkus: stockedSkus,
-            totalStockUnits: totalStockUnits,
-            pendingLoans: pendingLoansList,
-            hasSelectedClient: _selectedAppClient != null,
-            hasSchedulePreview: _schedulePreview != null,
-            onSelectTab: (next) {
-              ref.read(loanOriginationTabProvider.notifier).state = next;
-              setState(() => _flashMessage = null);
-            },
           ),
           const SizedBox(height: 16),
 

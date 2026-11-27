@@ -368,22 +368,6 @@ class CoDashboardScreen extends ConsumerWidget {
         // LEVEL 5: Portfolio Health Grid & Live Operational Pipeline
         // ---------------------------------------------------------------------
         _buildPortfolioHealthGrid(context, data),
-        const SizedBox(height: 18),
-        CoDashboardFlowCard(
-          data: data,
-          onOpenCollections: isClosed
-              ? null
-              : () => ref.read(activeCoPageProvider.notifier).state = 'Collections',
-          onOpenCashbook: () =>
-              ref.read(activeCoPageProvider.notifier).state = 'CO Cashbook',
-          onSelectAttention: () {
-            if (isMobile) {
-              ref.read(coDashboardMobileTabProvider.notifier).state = 3;
-            } else {
-              ref.read(activeCoPageProvider.notifier).state = 'Portfolio';
-            }
-          },
-        ),
         const SizedBox(height: 24),
 
         if (isMobile) ...[

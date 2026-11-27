@@ -8,12 +8,16 @@ import '../../../../core/theme/icare_theme_tokens.dart';
 import '../../../../core/errors/app_error_formatter.dart';
 import '../../../../core/utils/currency_formatter.dart';
 import '../../../../core/utils/platform_file_picker.dart';
+import '../../../../core/widgets/icare_card.dart';
+import '../../../../core/widgets/icare_skeleton_loader.dart';
+import '../../../../core/widgets/icare_status_badge.dart';
 import '../../auth/presentation/login_screen.dart';
 import '../../../../core/auth/auth_controller.dart';
 import '../../../../core/auth/auth_state.dart';
 import '../../../../core/utils/app_url_helper.dart';
 import '../data/onboarding_api_service.dart';
 import 'credit_officer_portal_screen.dart';
+import 'widgets/onboarding_analytics_charts.dart';
 import 'package:frontend_flutter/core/theme/icare_motion.dart';
 
 class BranchOnboardingPortalScreen extends ConsumerStatefulWidget {
@@ -217,7 +221,7 @@ class _BranchOnboardingPortalScreenState
         _isLoading = false;
       });
     } catch (e) {
-      String msg = e.toString().replaceAll('Exception: ', '');
+      String msg = AppErrorDetails.from(e).message;
       if (e is DioException) {
         if (e.response?.data is Map && e.response?.data['detail'] != null) {
           msg = e.response?.data['detail'].toString() ?? msg;
@@ -330,30 +334,33 @@ class _BranchOnboardingPortalScreenState
       return;
     }
 
-    final confirmed = await showIcareDialog<bool>(
+    final confirmed = await showIcareAdaptiveSheet<bool>(
       context: context,
-      builder: (ctx) {
+      fitContent: true,
+      builder: (ctx, isDialog) {
         final tokens = IcareSurfaceTokens.of(ctx);
-        return AlertDialog(
-          backgroundColor: tokens.surfaceElevated,
-          title: Text(
-            'Submit Roster to Branch Manager',
-            style: TextStyle(
-              fontSize: 15,
-              fontWeight: FontWeight.bold,
-              color: tokens.textPrimary,
-            ),
-          ),
-          content: Column(
+        return Padding(
+          padding: EdgeInsets.fromLTRB(20, isDialog ? 24 : 12, 20, 24),
+          child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              Text(
+                'Submit Roster to Branch Manager',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: tokens.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 10),
               Text(
                 'Are you sure you want to submit your completed roster to your Branch Manager for review and branch sign-off?',
                 style: TextStyle(fontSize: 13, color: tokens.textPrimary),
               ),
               const SizedBox(height: 12),
               Container(
+                width: double.infinity,
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
                   color: tokens.surfaceSubtle,
@@ -398,23 +405,29 @@ class _BranchOnboardingPortalScreenState
                 'Once submitted, your roster will be locked for review by the Branch Manager.',
                 style: TextStyle(fontSize: 11.5, color: tokens.textMuted),
               ),
+              const SizedBox(height: 20),
+              Wrap(
+                alignment: WrapAlignment.end,
+                spacing: 10,
+                runSpacing: 8,
+                children: [
+                  TextButton(
+                    onPressed: () => Navigator.of(ctx).pop(false),
+                    style: TextButton.styleFrom(foregroundColor: tokens.textSecondary),
+                    child: const Text('Cancel'),
+                  ),
+                  ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: tokens.brandPrimaryDark,
+                      foregroundColor: Colors.white,
+                    ),
+                    onPressed: () => Navigator.of(ctx).pop(true),
+                    child: const Text('Confirm & Submit to BM'),
+                  ),
+                ],
+              ),
             ],
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(false),
-              style: TextButton.styleFrom(foregroundColor: tokens.textSecondary),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: tokens.brandPrimaryDark,
-                foregroundColor: Colors.white,
-              ),
-              onPressed: () => Navigator.of(ctx).pop(true),
-              child: const Text('Confirm & Submit to BM'),
-            ),
-          ],
         );
       },
     );
@@ -460,35 +473,49 @@ class _BranchOnboardingPortalScreenState
         ? '\n\nNote: $unsubmitted credit officer(s) have not yet marked their rosters as submitted to BM.'
         : '';
 
-    final confirm = await showIcareDialog<bool>(
+    final confirm = await showIcareAdaptiveSheet<bool>(
       context: context,
-      builder: (ctx) {
+      fitContent: true,
+      builder: (ctx, isDialog) {
         final tokens = IcareSurfaceTokens.of(ctx);
-        return AlertDialog(
-          backgroundColor: tokens.surfaceElevated,
-          title: Text(
-            'Confirm Submission to Area Manager',
-            style: TextStyle(color: tokens.textPrimary),
-          ),
-          content: Text(
-            'You are about to submit ${_groups.length} groups, ${_members.length} members, and ${_officers.length} credit officers to the Area Manager for final sign-off and database posting.$warningNotice',
-            style: TextStyle(fontSize: 13, color: tokens.textSecondary),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(false),
-              style: TextButton.styleFrom(foregroundColor: tokens.textSecondary),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: tokens.brandPrimaryDark,
-                foregroundColor: Colors.white,
+        return Padding(
+          padding: EdgeInsets.fromLTRB(20, isDialog ? 24 : 12, 20, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Confirm Submission to Area Manager',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: tokens.textPrimary),
               ),
-              onPressed: () => Navigator.of(ctx).pop(true),
-              child: const Text('Submit to Area Manager'),
-            ),
-          ],
+              const SizedBox(height: 10),
+              Text(
+                'You are about to submit ${_groups.length} groups, ${_members.length} members, and ${_officers.length} credit officers to the Area Manager for final sign-off and branch activation.$warningNotice',
+                style: TextStyle(fontSize: 13, color: tokens.textSecondary, height: 1.4),
+              ),
+              const SizedBox(height: 20),
+              Wrap(
+                alignment: WrapAlignment.end,
+                spacing: 10,
+                runSpacing: 8,
+                children: [
+                  TextButton(
+                    onPressed: () => Navigator.of(ctx).pop(false),
+                    style: TextButton.styleFrom(foregroundColor: tokens.textSecondary),
+                    child: const Text('Cancel'),
+                  ),
+                  ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: tokens.brandPrimaryDark,
+                      foregroundColor: Colors.white,
+                    ),
+                    onPressed: () => Navigator.of(ctx).pop(true),
+                    child: const Text('Submit to Area Manager'),
+                  ),
+                ],
+              ),
+            ],
+          ),
         );
       },
     );
@@ -523,23 +550,26 @@ class _BranchOnboardingPortalScreenState
 
   Future<void> _amApprovePackage() async {
     final notesCtrl = TextEditingController();
-    final confirm = await showIcareDialog<bool>(
+    final confirm = await showIcareAdaptiveSheet<bool>(
       context: context,
-      builder: (ctx) {
+      fitContent: true,
+      builder: (ctx, isDialog) {
         final tokens = IcareSurfaceTokens.of(ctx);
-        return AlertDialog(
-          backgroundColor: tokens.surfaceElevated,
-          title: Text(
-            'Confirm Area Manager Sign-Off',
-            style: TextStyle(color: tokens.textPrimary),
-          ),
-          content: Column(
+        final bottomInset = isDialog ? 0.0 : MediaQuery.viewInsetsOf(ctx).bottom;
+        return SingleChildScrollView(
+          padding: EdgeInsets.fromLTRB(20, isDialog ? 24 : 12, 20, 24 + bottomInset),
+          child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'You are about to commit ${_groups.length} groups, ${_members.length} members, and ${_officers.length} officers directly into the live core banking database. This operation is permanent.',
-                style: TextStyle(fontSize: 13, color: tokens.textSecondary),
+                'Confirm Area Manager Sign-Off',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: tokens.textPrimary),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                'You are about to activate ${_groups.length} groups, ${_members.length} members, and ${_officers.length} officers directly into live branch operations. This operation is permanent.',
+                style: TextStyle(fontSize: 13, color: tokens.textSecondary, height: 1.4),
               ),
               const SizedBox(height: 12),
               TextField(
@@ -551,26 +581,35 @@ class _BranchOnboardingPortalScreenState
                 ),
                 style: TextStyle(fontSize: 13, color: tokens.textPrimary),
               ),
+              const SizedBox(height: 20),
+              Wrap(
+                alignment: WrapAlignment.end,
+                spacing: 10,
+                runSpacing: 8,
+                children: [
+                  TextButton(
+                    onPressed: () => Navigator.of(ctx).pop(false),
+                    style: TextButton.styleFrom(foregroundColor: tokens.textSecondary),
+                    child: const Text('Cancel'),
+                  ),
+                  ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: tokens.brandPrimaryDark,
+                      foregroundColor: Colors.white,
+                    ),
+                    onPressed: () => Navigator.of(ctx).pop(true),
+                    child: const Text('Approve & Activate Branch'),
+                  ),
+                ],
+              ),
             ],
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(false),
-              style: TextButton.styleFrom(foregroundColor: tokens.textSecondary),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: tokens.brandPrimaryDark,
-                foregroundColor: Colors.white,
-              ),
-              onPressed: () => Navigator.of(ctx).pop(true),
-              child: const Text('Approve & Commit'),
-            ),
-          ],
         );
       },
     );
+
+    final notesText = notesCtrl.text.trim();
+    WidgetsBinding.instance.addPostFrameCallback((_) => notesCtrl.dispose());
 
     if (confirm != true) return;
 
@@ -579,13 +618,13 @@ class _BranchOnboardingPortalScreenState
       final api = ref.read(onboardingApiServiceProvider);
       final res = await api.amApprovePackage(
         _currentToken,
-        notes: notesCtrl.text.trim().isEmpty ? null : notesCtrl.text.trim(),
+        notes: notesText.isEmpty ? null : notesText,
       );
       setState(() {
         _isSaving = false;
         _sessionData?['status'] = 'approved';
       });
-      _showBanner(res['message']?.toString() ?? 'Branch onboarding successfully committed to live core database!', isSuccess: true);
+      _showBanner(res['message']?.toString() ?? 'Branch onboarding successfully activated in live branch operations!', isSuccess: true);
     } catch (e) {
       setState(() => _isSaving = false);
       _showBanner('Approval error: ${AppErrorDetails.from(e).message}', isSuccess: false);
@@ -666,25 +705,22 @@ class _BranchOnboardingPortalScreenState
 
     final formKey = GlobalKey<FormState>();
 
-    showIcareDialog(
+    showIcareAdaptiveSheet<void>(
       context: context,
-      barrierDismissible: false,
-      builder: (ctx) {
+      fitContent: true,
+      builder: (ctx, isDialog) {
         final tokens = IcareSurfaceTokens.of(ctx);
+        final bottomInset = isDialog ? 0.0 : MediaQuery.viewInsetsOf(ctx).bottom;
         return StatefulBuilder(
           builder: (context, setModalState) {
             final isMobileModal = MediaQuery.of(ctx).size.width < 500;
-            return Dialog(
-              backgroundColor: tokens.surfaceElevated,
-              insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              child: Container(
+            return SingleChildScrollView(
+              padding: EdgeInsets.fromLTRB(20, isDialog ? 24 : 12, 20, 24 + bottomInset),
+              child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 520),
-                padding: const EdgeInsets.all(20),
                 child: Form(
                   key: formKey,
-                  child: SingleChildScrollView(
-                    child: Column(
+                  child: Column(
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -770,6 +806,7 @@ class _BranchOnboardingPortalScreenState
                           const SizedBox(height: 14),
                           DropdownButtonFormField<String>(
                             initialValue: selectedDay,
+                            isExpanded: true,
                             dropdownColor: tokens.surfaceElevated,
                             style: TextStyle(fontSize: 13, color: tokens.textPrimary),
                             decoration: const InputDecoration(
@@ -815,6 +852,7 @@ class _BranchOnboardingPortalScreenState
                           ] else if (officerNames.isNotEmpty) ...[
                             DropdownButtonFormField<String>(
                               initialValue: selectedOfficerDropdown,
+                              isExpanded: true,
                               dropdownColor: tokens.surfaceElevated,
                               style: TextStyle(fontSize: 13, color: tokens.textPrimary),
                               decoration: const InputDecoration(
@@ -949,6 +987,7 @@ class _BranchOnboardingPortalScreenState
                               Expanded(
                                 child: DropdownButtonFormField<String>(
                                   initialValue: selectedDay,
+                                  isExpanded: true,
                                   dropdownColor: tokens.surfaceElevated,
                                   style: TextStyle(fontSize: 13, color: tokens.textPrimary),
                                   decoration: const InputDecoration(
@@ -1009,6 +1048,7 @@ class _BranchOnboardingPortalScreenState
                                     ] else if (officerNames.isNotEmpty) ...[
                                       DropdownButtonFormField<String>(
                                         initialValue: selectedOfficerDropdown,
+                                        isExpanded: true,
                                         dropdownColor: tokens.surfaceElevated,
                                         style: TextStyle(fontSize: 13, color: tokens.textPrimary),
                                         decoration: const InputDecoration(
@@ -1201,7 +1241,7 @@ class _BranchOnboardingPortalScreenState
                                 );
                               },
                               icon: Icon(isEditing ? Icons.check : Icons.add, size: 16),
-                              label: Text(isEditing ? 'Update Group' : 'Add Group', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                               label: Text(isEditing ? 'Update Group' : 'Add Group', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
                             ),
                           ],
                         ),
@@ -1209,56 +1249,82 @@ class _BranchOnboardingPortalScreenState
                     ),
                   ),
                 ),
-              ),
             );
           },
         );
       },
-    );
+    ).whenComplete(() {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        refCtrl.dispose();
+        nameCtrl.dispose();
+        leaderCtrl.dispose();
+        officerCtrl.dispose();
+        phoneCtrl.dispose();
+        savingsCtrl.dispose();
+      });
+    });
   }
 
   void _showMemberModal({Map<String, dynamic>? memberToEdit}) {
     final availableGroups = _scopedGroups;
     if (availableGroups.isEmpty) {
-      showIcareDialog(
+      showIcareAdaptiveSheet<void>(
         context: context,
-        builder: (ctx) {
+        fitContent: true,
+        builder: (ctx, isDialog) {
           final tokens = IcareSurfaceTokens.of(ctx);
-          return AlertDialog(
-            backgroundColor: tokens.surfaceElevated,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            title: Row(
+          return Padding(
+            padding: EdgeInsets.fromLTRB(20, isDialog ? 24 : 12, 20, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(Icons.info_outline, color: tokens.infoDot, size: 20),
-                const SizedBox(width: 8),
-                Text('Create a Group First', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: tokens.textPrimary)),
+                Row(
+                  children: [
+                    Icon(Icons.info_outline, color: tokens.infoDot, size: 20),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Create a Group First',
+                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: tokens.textPrimary),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  _scopedOfficer != null
+                      ? 'You do not have any solidarity groups created yet for your portfolio ($_scopedOfficer). Please add at least one solidarity group before registering members.'
+                      : 'Members must belong to a Solidarity Group. Please add at least one group before registering members.',
+                  style: TextStyle(fontSize: 13, color: tokens.textSecondary, height: 1.4),
+                ),
+                const SizedBox(height: 20),
+                Wrap(
+                  alignment: WrapAlignment.end,
+                  spacing: 10,
+                  runSpacing: 8,
+                  children: [
+                    TextButton(
+                      style: TextButton.styleFrom(foregroundColor: tokens.textSecondary),
+                      onPressed: () => Navigator.of(ctx).pop(),
+                      child: const Text('Cancel'),
+                    ),
+                    ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: tokens.brandPrimaryDark,
+                        foregroundColor: Colors.white,
+                      ),
+                      onPressed: () {
+                        Navigator.of(ctx).pop();
+                        _showGroupModal();
+                      },
+                      icon: const Icon(Icons.add, size: 16),
+                      label: const Text('Add Group Now'),
+                    ),
+                  ],
+                ),
               ],
             ),
-            content: Text(
-              _scopedOfficer != null
-                  ? 'You do not have any solidarity groups created yet for your portfolio ($_scopedOfficer). Please add at least one solidarity group before registering members.'
-                  : 'Members must belong to a Solidarity Group. Please add at least one group before registering members.',
-              style: TextStyle(fontSize: 13, color: tokens.textSecondary),
-            ),
-            actions: [
-              TextButton(
-                style: TextButton.styleFrom(foregroundColor: tokens.textSecondary),
-                onPressed: () => Navigator.of(ctx).pop(),
-                child: const Text('Cancel'),
-              ),
-              ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: tokens.brandPrimaryDark,
-                  foregroundColor: Colors.white,
-                ),
-                onPressed: () {
-                  Navigator.of(ctx).pop();
-                  _showGroupModal();
-                },
-                icon: const Icon(Icons.add, size: 16),
-                label: const Text('Add Group Now'),
-              ),
-            ],
           );
         },
       );
@@ -1313,25 +1379,29 @@ class _BranchOnboardingPortalScreenState
       text: existingCurBal > 0 ? existingCurBal.toStringAsFixed(2) : '',
     );
 
-    // Available loan products
-    final List<String> productOptions = _loanProducts.isNotEmpty
-        ? _loanProducts.map((p) => p['name']?.toString() ?? '').where((n) => n.isNotEmpty).toList()
-        : ['Daily 60 Days', 'Weekly 16 Weeks', 'Monthly 6 Months'];
+    // Available loan products from session metadata
+    final List<String> productOptions = _loanProducts
+        .map((p) => p['name']?.toString() ?? '')
+        .where((n) => n.isNotEmpty)
+        .toList();
 
-    String selectedProduct = isEditing
-        ? (memberToEdit['loan_type']?.toString() ?? productOptions.first)
-        : productOptions.first;
-    if (!productOptions.contains(selectedProduct)) {
-      selectedProduct = productOptions.first;
+    final existingLoanType = isEditing ? (memberToEdit['loan_type']?.toString() ?? '') : '';
+    if (existingLoanType.isNotEmpty && !productOptions.contains(existingLoanType)) {
+      productOptions.insert(0, existingLoanType);
     }
+
+    String selectedProduct = existingLoanType.isNotEmpty
+        ? existingLoanType
+        : (productOptions.isNotEmpty ? productOptions.first : '');
 
     final formKey = GlobalKey<FormState>();
 
-    showIcareDialog(
+    showIcareAdaptiveSheet<void>(
       context: context,
-      barrierDismissible: false,
-      builder: (ctx) {
+      fitContent: true,
+      builder: (ctx, isDialog) {
         final tokens = IcareSurfaceTokens.of(ctx);
+        final bottomInset = isDialog ? 0.0 : MediaQuery.viewInsetsOf(ctx).bottom;
         return StatefulBuilder(
           builder: (context, setModalState) {
             final isMobileModal = MediaQuery.of(ctx).size.width < 500;
@@ -1354,17 +1424,13 @@ class _BranchOnboardingPortalScreenState
             }
             final calcInstallment = prodInstallments > 0 ? (enteredCred / prodInstallments) : 0.0;
             final estRemainingCount = calcInstallment > 0 ? (enteredBal / calcInstallment).ceil() : 0;
-            return Dialog(
-              backgroundColor: tokens.surfaceElevated,
-              insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              child: Container(
+            return SingleChildScrollView(
+              padding: EdgeInsets.fromLTRB(20, isDialog ? 24 : 12, 20, 24 + bottomInset),
+              child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 560),
-                padding: const EdgeInsets.all(20),
                 child: Form(
                   key: formKey,
-                  child: SingleChildScrollView(
-                    child: Column(
+                  child: Column(
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -1416,6 +1482,7 @@ class _BranchOnboardingPortalScreenState
                         if (isMobileModal) ...[
                           DropdownButtonFormField<String>(
                             initialValue: selectedGroupRef,
+                            isExpanded: true,
                             dropdownColor: tokens.surfaceElevated,
                             style: TextStyle(fontSize: 13, color: tokens.textPrimary),
                             decoration: const InputDecoration(
@@ -1477,6 +1544,7 @@ class _BranchOnboardingPortalScreenState
                                 flex: 3,
                                 child: DropdownButtonFormField<String>(
                                   initialValue: selectedGroupRef,
+                                  isExpanded: true,
                                   dropdownColor: tokens.surfaceElevated,
                                   style: TextStyle(fontSize: 13, color: tokens.textPrimary),
                                   decoration: const InputDecoration(
@@ -1697,23 +1765,39 @@ class _BranchOnboardingPortalScreenState
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                DropdownButtonFormField<String>(
-                                  initialValue: selectedProduct,
-                                  dropdownColor: tokens.surfaceElevated,
-                                  style: TextStyle(fontSize: 13, color: tokens.textPrimary),
-                                  decoration: const InputDecoration(
-                                    labelText: 'Loan Product *',
-                                    labelStyle: TextStyle(fontSize: 12),
-                                    contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
-                                    border: OutlineInputBorder(),
+                                if (productOptions.isNotEmpty)
+                                  DropdownButtonFormField<String>(
+                                    initialValue: selectedProduct,
+                                    isExpanded: true,
+                                    dropdownColor: tokens.surfaceElevated,
+                                    style: TextStyle(fontSize: 13, color: tokens.textPrimary),
+                                    decoration: const InputDecoration(
+                                      labelText: 'Loan Product *',
+                                      labelStyle: TextStyle(fontSize: 12),
+                                      contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+                                      border: OutlineInputBorder(),
+                                    ),
+                                    items: productOptions.map((prod) {
+                                      return DropdownMenuItem(value: prod, child: Text(prod, style: TextStyle(fontSize: 13, color: tokens.textPrimary)));
+                                    }).toList(),
+                                    onChanged: (val) {
+                                      if (val != null) setModalState(() => selectedProduct = val);
+                                    },
+                                  )
+                                else
+                                  Container(
+                                    width: double.infinity,
+                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                    decoration: BoxDecoration(
+                                      color: tokens.warningBg,
+                                      borderRadius: BorderRadius.circular(6),
+                                      border: Border.all(color: tokens.warningBorder),
+                                    ),
+                                    child: Text(
+                                      'Loan products catalog unavailable; enter loan amounts below or refresh session.',
+                                      style: TextStyle(fontSize: 12, color: tokens.warningText),
+                                    ),
                                   ),
-                                  items: productOptions.map((prod) {
-                                    return DropdownMenuItem(value: prod, child: Text(prod, style: TextStyle(fontSize: 13, color: tokens.textPrimary)));
-                                  }).toList(),
-                                  onChanged: (val) {
-                                    if (val != null) setModalState(() => selectedProduct = val);
-                                  },
-                                ),
                                 const SizedBox(height: 12),
                                 if (isMobileModal) ...[
                                   TextFormField(
@@ -1916,7 +2000,11 @@ class _BranchOnboardingPortalScreenState
                                 final cleanCurBal = hasActiveLoan
                                     ? (double.tryParse(balanceCtrl.text.replaceAll(',', '').trim()) ?? 0.0)
                                     : 0.0;
-                                final cleanProd = hasActiveLoan ? selectedProduct : productOptions.first;
+                                final cleanProd = hasActiveLoan
+                                    ? (selectedProduct.isNotEmpty
+                                        ? selectedProduct
+                                        : (productOptions.isNotEmpty ? productOptions.first : ''))
+                                    : (productOptions.isNotEmpty ? productOptions.first : '');
 
                                 final finalPrincipal = cleanPrincipal > 0 ? cleanPrincipal : cleanActiveCred;
 
@@ -1959,7 +2047,7 @@ class _BranchOnboardingPortalScreenState
                                 );
                               },
                               icon: Icon(isEditing ? Icons.check : Icons.person_add_alt_1, size: 16),
-                              label: Text(isEditing ? 'Update Member' : 'Save Member', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                               label: Text(isEditing ? 'Update Member' : 'Save Member', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
                             ),
                           ],
                         ),
@@ -1967,59 +2055,84 @@ class _BranchOnboardingPortalScreenState
                     ),
                   ),
                 ),
-              ),
             );
           },
         );
       },
-    );
+    ).whenComplete(() {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        refCtrl.dispose();
+        nameCtrl.dispose();
+        phoneCtrl.dispose();
+        addressCtrl.dispose();
+        savingsCtrl.dispose();
+        principalCtrl.dispose();
+        creditCtrl.dispose();
+        balanceCtrl.dispose();
+      });
+    });
   }
 
   void _confirmDeleteMember(Map<String, dynamic> m) {
     final name = m['full_name'] ?? 'Client';
     final refCode = m['member_reference'] ?? '';
 
-    showIcareDialog(
+    showIcareAdaptiveSheet<void>(
       context: context,
-      builder: (ctx) {
+      fitContent: true,
+      builder: (ctx, isDialog) {
         final tokens = IcareSurfaceTokens.of(ctx);
-        return AlertDialog(
-          backgroundColor: tokens.surfaceElevated,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          title: Row(
+        return Padding(
+          padding: EdgeInsets.fromLTRB(20, isDialog ? 24 : 12, 20, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(Icons.delete_outline, color: tokens.dangerDot, size: 20),
-              const SizedBox(width: 8),
+              Row(
+                children: [
+                  Icon(Icons.delete_outline, color: tokens.dangerDot, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Remove Member',
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: tokens.textPrimary),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
               Text(
-                'Remove Member',
-                style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: tokens.textPrimary),
+                'Are you sure you want to remove "$name" ($refCode) from this branch onboarding package?',
+                style: TextStyle(fontSize: 13, color: tokens.textSecondary, height: 1.4),
+              ),
+              const SizedBox(height: 20),
+              Wrap(
+                alignment: WrapAlignment.end,
+                spacing: 10,
+                runSpacing: 8,
+                children: [
+                  TextButton(
+                    style: TextButton.styleFrom(foregroundColor: tokens.textSecondary),
+                    onPressed: () => Navigator.of(ctx).pop(),
+                    child: const Text('Cancel'),
+                  ),
+                  ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: tokens.dangerDot,
+                      foregroundColor: Colors.white,
+                    ),
+                    onPressed: () {
+                      Navigator.of(ctx).pop();
+                      setState(() => _members.remove(m));
+                      _saveDraft();
+                      _showBanner('Member "$name" removed.', isSuccess: true);
+                    },
+                    child: const Text('Delete Member'),
+                  ),
+                ],
               ),
             ],
           ),
-          content: Text(
-            'Are you sure you want to remove "$name" ($refCode) from this branch onboarding package?',
-            style: TextStyle(fontSize: 13, color: tokens.textSecondary),
-          ),
-          actions: [
-            TextButton(
-              style: TextButton.styleFrom(foregroundColor: tokens.textSecondary),
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFFDC2626),
-                foregroundColor: Colors.white,
-              ),
-              onPressed: () {
-                Navigator.of(ctx).pop();
-                setState(() => _members.remove(m));
-                _saveDraft();
-                _showBanner('Member "$name" removed.', isSuccess: true);
-              },
-              child: const Text('Delete Member'),
-            ),
-          ],
         );
       },
     );
@@ -2030,55 +2143,70 @@ class _BranchOnboardingPortalScreenState
     final gName = g['group_name'] ?? 'Group';
     final memberCount = _members.where((m) => m['group_reference'] == gRef).length;
 
-    showIcareDialog(
+    showIcareAdaptiveSheet<void>(
       context: context,
-      builder: (ctx) {
+      fitContent: true,
+      builder: (ctx, isDialog) {
         final tokens = IcareSurfaceTokens.of(ctx);
-        return AlertDialog(
-          backgroundColor: tokens.surfaceElevated,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          title: Row(
+        return Padding(
+          padding: EdgeInsets.fromLTRB(20, isDialog ? 24 : 12, 20, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(Icons.warning_amber_rounded, color: tokens.dangerDot, size: 20),
-              const SizedBox(width: 8),
+              Row(
+                children: [
+                  Icon(Icons.warning_amber_rounded, color: tokens.dangerDot, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Delete Solidarity Group',
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: tokens.textPrimary),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
               Text(
-                'Delete Solidarity Group',
-                style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: tokens.textPrimary),
+                memberCount > 0
+                    ? 'Warning: Group "$gName" ($gRef) currently has $memberCount member(s) registered. Deleting this group will also remove all $memberCount member(s) from the roster.\n\nAre you sure you want to proceed?'
+                    : 'Are you sure you want to delete group "$gName" ($gRef)?',
+                style: TextStyle(fontSize: 13, color: tokens.textSecondary, height: 1.4),
+              ),
+              const SizedBox(height: 20),
+              Wrap(
+                alignment: WrapAlignment.end,
+                spacing: 10,
+                runSpacing: 8,
+                children: [
+                  TextButton(
+                    style: TextButton.styleFrom(foregroundColor: tokens.textSecondary),
+                    onPressed: () => Navigator.of(ctx).pop(),
+                    child: const Text('Cancel'),
+                  ),
+                  ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: tokens.dangerDot,
+                      foregroundColor: Colors.white,
+                    ),
+                    onPressed: () {
+                      Navigator.of(ctx).pop();
+                      setState(() {
+                        _members.removeWhere((m) => m['group_reference'] == gRef);
+                        _groups.remove(g);
+                        if (_selectedGroupFilter == gRef) {
+                          _selectedGroupFilter = 'All';
+                        }
+                      });
+                      _saveDraft();
+                      _showBanner('Group "$gName" and assigned members removed.', isSuccess: true);
+                    },
+                    child: const Text('Delete Group'),
+                  ),
+                ],
               ),
             ],
           ),
-          content: Text(
-            memberCount > 0
-                ? 'Warning: Group "$gName" ($gRef) currently has $memberCount member(s) registered. Deleting this group will also remove all $memberCount member(s) from the roster.\n\nAre you sure you want to proceed?'
-                : 'Are you sure you want to delete group "$gName" ($gRef)?',
-            style: TextStyle(fontSize: 13, color: tokens.textSecondary),
-          ),
-          actions: [
-            TextButton(
-              style: TextButton.styleFrom(foregroundColor: tokens.textSecondary),
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFFDC2626),
-                foregroundColor: Colors.white,
-              ),
-              onPressed: () {
-                Navigator.of(ctx).pop();
-                setState(() {
-                  _members.removeWhere((m) => m['group_reference'] == gRef);
-                  _groups.remove(g);
-                  if (_selectedGroupFilter == gRef) {
-                    _selectedGroupFilter = 'All';
-                  }
-                });
-                _saveDraft();
-                _showBanner('Group "$gName" and assigned members removed.', isSuccess: true);
-              },
-              child: const Text('Delete Group'),
-            ),
-          ],
         );
       },
     );
@@ -2180,14 +2308,13 @@ class _BranchOnboardingPortalScreenState
     if (_isLoading) {
       return Scaffold(
         backgroundColor: tokens.canvas,
-        body: Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              CircularProgressIndicator(color: tokens.brandPrimary),
-              const SizedBox(height: 16),
-              Text('Connecting to Branch Onboarding Session...', style: TextStyle(color: tokens.textMuted)),
-            ],
+        body: const SingleChildScrollView(
+          padding: EdgeInsets.all(24),
+          child: Center(
+            child: SizedBox(
+              width: 1100,
+              child: IcareOnboardingSkeleton(cardCount: 3),
+            ),
           ),
         ),
       );
@@ -2589,38 +2716,21 @@ class _BranchOnboardingPortalScreenState
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 4,
+                      crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
                         Text(
-                          'ICARE Core Banking',
+                          'ICARE Onboarding Portal',
                           style: TextStyle(
                             color: tokens.textMuted,
                             fontWeight: FontWeight.w600,
                             fontSize: 11,
                           ),
                         ),
-                        const SizedBox(width: 6),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                          decoration: BoxDecoration(
-                            color: isSubmitted ? tokens.successBg : tokens.infoBg,
-                            borderRadius: BorderRadius.circular(4),
-                            border: Border.all(
-                              color: isSubmitted ? tokens.successBorder : tokens.infoBorder,
-                            ),
-                          ),
-                          child: Text(
-                            status.toUpperCase(),
-                            style: TextStyle(
-                              fontSize: 9.5,
-                              fontWeight: FontWeight.w700,
-                              color: isSubmitted ? tokens.successText : tokens.infoText,
-                            ),
-                          ),
-                        ),
-                        if (_scopedOfficer == null) ...[
-                          const SizedBox(width: 6),
+                        IcareStatusBadge.fromStatus(status),
+                        if (_scopedOfficer == null)
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
                             decoration: BoxDecoration(
@@ -2637,7 +2747,6 @@ class _BranchOnboardingPortalScreenState
                               ),
                             ),
                           ),
-                        ],
                       ],
                     ),
                     Text(
@@ -2658,13 +2767,16 @@ class _BranchOnboardingPortalScreenState
             ],
           );
 
-          final actionsSection = Row(
-            mainAxisSize: MainAxisSize.min,
+          final actionsSection = Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            alignment: WrapAlignment.end,
             children: [
               if (!isSubmitted) ...[
                 if (_lastSavedTime != null)
                   Padding(
-                    padding: const EdgeInsets.only(right: 8),
+                    padding: const EdgeInsets.only(right: 4),
                     child: Text(
                       'Saved ${DateFormat('HH:mm').format(_lastSavedTime!)}',
                       style: TextStyle(fontSize: 11, color: tokens.textMuted, fontFeatures: const [FontFeature.tabularFigures()]),
@@ -2683,8 +2795,7 @@ class _BranchOnboardingPortalScreenState
                       : const Icon(Icons.save_outlined, size: 14),
                   label: const Text('Save Draft', style: TextStyle(fontSize: 11.5)),
                 ),
-                if (_scopedOfficer != null) ...[
-                  const SizedBox(width: 6),
+                if (_scopedOfficer != null)
                   ElevatedButton.icon(
                     style: ElevatedButton.styleFrom(
                       backgroundColor: tokens.brandPrimaryDark,
@@ -2695,9 +2806,8 @@ class _BranchOnboardingPortalScreenState
                     onPressed: (_isSaving || isSubmitted) ? null : _submitScopedOfficerRoster,
                     icon: const Icon(Icons.send_outlined, size: 14),
                     label: const Text('Submit to BM', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
-                  ),
-                ] else ...[
-                  const SizedBox(width: 6),
+                  )
+                else
                   ElevatedButton.icon(
                     style: ElevatedButton.styleFrom(
                       backgroundColor: tokens.brandPrimaryDark,
@@ -2709,7 +2819,6 @@ class _BranchOnboardingPortalScreenState
                     icon: const Icon(Icons.send_outlined, size: 14),
                     label: const Text('Submit to AM', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
                   ),
-                ],
               ] else if (status.toLowerCase() == 'submitted') ...[
                 if (_scopedOfficer == null && _isAmOrAdmin) ...[
                   ElevatedButton.icon(
@@ -2742,22 +2851,7 @@ class _BranchOnboardingPortalScreenState
                   ),
                 ],
               ] else ...[
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: tokens.successBg,
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: tokens.successBorder),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.verified, size: 13, color: tokens.successDot),
-                      const SizedBox(width: 4),
-                      Text('Committed to Core Banking', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: tokens.successText)),
-                    ],
-                  ),
-                ),
+                IcareStatusBadge.fromStatus('approved'),
               ],
             ],
           );
@@ -2769,9 +2863,9 @@ class _BranchOnboardingPortalScreenState
               children: [
                 titleSection,
                 const SizedBox(height: 8),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [actionsSection],
+                SizedBox(
+                  width: double.infinity,
+                  child: actionsSection,
                 ),
               ],
             );
@@ -2828,7 +2922,7 @@ class _BranchOnboardingPortalScreenState
                   _buildMetricCardChip('Misc Savings', CurrencyFormatter.formatNaira(_miscSavings), Icons.account_balance_wallet_outlined, tokens.brandAccent),
 
                 if (_displayPrincipalLoan > 0)
-                  _buildMetricCardChip('Principal Disbursed', CurrencyFormatter.formatNaira(_displayPrincipalLoan), Icons.account_balance_outlined, const Color(0xFF6366F1)),
+                  _buildMetricCardChip('Principal Disbursed', CurrencyFormatter.formatNaira(_displayPrincipalLoan), Icons.account_balance_outlined, tokens.infoDot),
 
                 _buildMetricCardChip('Active Credit', CurrencyFormatter.formatNaira(_displayActiveCredit), Icons.credit_card_outlined, tokens.infoDot),
                 _buildMetricCardChip('Outstanding Balance', CurrencyFormatter.formatNaira(_displayCurrentBalance), Icons.account_balance_wallet_outlined, tokens.warningText),
@@ -2874,7 +2968,8 @@ class _BranchOnboardingPortalScreenState
             child: Icon(icon, size: 16, color: color),
           ),
           const SizedBox(width: 8),
-          Expanded(
+          Flexible(
+            fit: FlexFit.loose,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
@@ -3075,10 +3170,16 @@ class _BranchOnboardingPortalScreenState
               return Row(
                 children: [
                   if (officerDropdown != null) ...[
-                    officerDropdown,
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 200),
+                      child: officerDropdown,
+                    ),
                     const SizedBox(width: 8),
                   ],
-                  groupDropdown,
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 220),
+                    child: groupDropdown,
+                  ),
                   const SizedBox(width: 12),
                   Expanded(child: searchField),
                   if (addMemberBtn != null) ...[
@@ -3945,40 +4046,44 @@ class _BranchOnboardingPortalScreenState
               const SizedBox(height: 32),
 
               // 3. Credit Officers Section Header
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: tokens.surfaceSubtle,
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: tokens.borderSubtle),
+              SizedBox(
+                width: double.infinity,
+                child: Wrap(
+                  spacing: 12,
+                  runSpacing: 10,
+                  alignment: WrapAlignment.spaceBetween,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: tokens.surfaceSubtle,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: tokens.borderSubtle),
+                          ),
+                          child: Icon(Icons.badge_outlined, color: tokens.textSecondary, size: 20),
                         ),
-                        child: Icon(Icons.badge_outlined, color: tokens.textSecondary, size: 20),
-                      ),
-                      const SizedBox(width: 12),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
+                        const SizedBox(width: 12),
+                        Flexible(
+                          child: Text(
                             'Credit Officers Roster (${_officers.length})',
                             style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: tokens.textPrimary),
                           ),
-                        ],
-                      ),
-                    ],
-                  ),
-                  if (!isSubmitted)
-                    ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(backgroundColor: tokens.brandPrimaryDark, foregroundColor: Colors.white),
-                      onPressed: () => _openOfficerDialog(),
-                      icon: const Icon(Icons.person_add_alt, size: 16),
-                      label: const Text('Add Credit Officer', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                        ),
+                      ],
                     ),
-                ],
+                    if (!isSubmitted)
+                      ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(backgroundColor: tokens.brandPrimaryDark, foregroundColor: Colors.white),
+                        onPressed: () => _openOfficerDialog(),
+                        icon: const Icon(Icons.person_add_alt, size: 16),
+                        label: const Text('Add Credit Officer', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                      ),
+                  ],
+                ),
               ),
               const SizedBox(height: 16),
 
@@ -4154,77 +4259,87 @@ class _BranchOnboardingPortalScreenState
                           ],
                         );
 
-                        final linkAndMiscActions = Row(
-                          children: [
-                            OutlinedButton.icon(
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: tokens.textPrimary,
-                                side: BorderSide(color: tokens.borderStrong),
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                                visualDensity: VisualDensity.compact,
+                        final linkAndMiscActions = SizedBox(
+                          width: double.infinity,
+                          child: Wrap(
+                            spacing: 8,
+                            runSpacing: 6,
+                            alignment: WrapAlignment.spaceBetween,
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            children: [
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 6,
+                                children: [
+                                  OutlinedButton.icon(
+                                    style: OutlinedButton.styleFrom(
+                                      foregroundColor: tokens.textPrimary,
+                                      side: BorderSide(color: tokens.borderStrong),
+                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                      visualDensity: VisualDensity.compact,
+                                    ),
+                                    onPressed: () {
+                                      final origin = getAppPublicOrigin();
+                                      final coToken = off['token'] ?? off['co_token'];
+                                      final coUrl = (coToken != null && coToken.toString().startsWith('onb_co_'))
+                                          ? '$origin/#/onboarding/officer?token=$coToken'
+                                          : '$origin/#/onboarding?token=$_currentToken&officer=${Uri.encodeComponent(name.trim())}';
+                                      Clipboard.setData(ClipboardData(text: coUrl));
+                                      _showBanner('Dedicated officer link for $name copied to clipboard!', isSuccess: true);
+                                    },
+                                    icon: const Icon(Icons.link, size: 13),
+                                    label: const Text('Copy Officer Link', style: TextStyle(fontSize: 11)),
+                                  ),
+                                  if (off['status'] == 'submitted' && !isSubmitted)
+                                    OutlinedButton.icon(
+                                      style: OutlinedButton.styleFrom(
+                                        foregroundColor: tokens.warningText,
+                                        side: BorderSide(color: tokens.warningBorder),
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                        visualDensity: VisualDensity.compact,
+                                      ),
+                                      onPressed: () async {
+                                        final offId = off['id'] ?? off['officer_id'];
+                                        if (offId != null) {
+                                          try {
+                                            final api = ref.read(onboardingApiServiceProvider);
+                                            await api.unlockOfficer(_currentToken, offId.toString());
+                                            setState(() {
+                                              off['status'] = 'drafting';
+                                            });
+                                            _showBanner('Unlocked $name for roster edits.', isSuccess: true);
+                                          } catch (e) {
+                                            _showBanner('Failed to unlock officer: ${AppErrorDetails.from(e).message}', isSuccess: false);
+                                          }
+                                        }
+                                      },
+                                      icon: const Icon(Icons.lock_open_outlined, size: 13),
+                                      label: const Text('Unlock Roster', style: TextStyle(fontSize: 11)),
+                                    ),
+                                ],
                               ),
-                              onPressed: () {
-                                final origin = getAppPublicOrigin();
-                                final coToken = off['token'] ?? off['co_token'];
-                                final coUrl = (coToken != null && coToken.toString().startsWith('onb_co_'))
-                                    ? '$origin/#/onboarding/officer?token=$coToken'
-                                    : '$origin/#/onboarding?token=$_currentToken&officer=${Uri.encodeComponent(name.trim())}';
-                                Clipboard.setData(ClipboardData(text: coUrl));
-                                _showBanner('Dedicated officer link for $name copied to clipboard!', isSuccess: true);
-                              },
-                              icon: const Icon(Icons.link, size: 13),
-                              label: const Text('Copy Officer Link', style: TextStyle(fontSize: 11)),
-                            ),
-                            if (off['status'] == 'submitted' && !isSubmitted) ...[
-                              const SizedBox(width: 8),
-                              OutlinedButton.icon(
-                                style: OutlinedButton.styleFrom(
-                                  foregroundColor: tokens.warningText,
-                                  side: BorderSide(color: tokens.warningBorder),
-                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                  visualDensity: VisualDensity.compact,
+                              if (!isSubmitted && !isMiscMgr && _scopedOfficer == null)
+                                TextButton.icon(
+                                  style: TextButton.styleFrom(
+                                    foregroundColor: tokens.brandAccent,
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                    visualDensity: VisualDensity.compact,
+                                  ),
+                                  onPressed: () {
+                                    setState(() {
+                                      for (var o in _officers) {
+                                        o['is_misc_savings_manager'] = false;
+                                      }
+                                      off['is_misc_savings_manager'] = true;
+                                    });
+                                    _saveDraft();
+                                    _showBanner('$name designated as Misc Savings Manager.');
+                                  },
+                                  icon: const Icon(Icons.star_outline, size: 13),
+                                  label: const Text('Set as Misc Manager', style: TextStyle(fontSize: 11)),
                                 ),
-                                onPressed: () async {
-                                  final offId = off['id'] ?? off['officer_id'];
-                                  if (offId != null) {
-                                    try {
-                                      final api = ref.read(onboardingApiServiceProvider);
-                                      await api.unlockOfficer(_currentToken, offId.toString());
-                                      setState(() {
-                                        off['status'] = 'drafting';
-                                      });
-                                      _showBanner('Unlocked $name for roster edits.', isSuccess: true);
-                                    } catch (e) {
-                                      _showBanner('Failed to unlock officer: ${AppErrorDetails.from(e).message}', isSuccess: false);
-                                    }
-                                  }
-                                },
-                                icon: const Icon(Icons.lock_open_outlined, size: 13),
-                                label: const Text('Unlock Roster', style: TextStyle(fontSize: 11)),
-                              ),
                             ],
-                            const Spacer(),
-                            if (!isSubmitted && !isMiscMgr && _scopedOfficer == null)
-                              TextButton.icon(
-                                style: TextButton.styleFrom(
-                                  foregroundColor: tokens.brandAccent,
-                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                  visualDensity: VisualDensity.compact,
-                                ),
-                                onPressed: () {
-                                  setState(() {
-                                    for (var o in _officers) {
-                                      o['is_misc_savings_manager'] = false;
-                                    }
-                                    off['is_misc_savings_manager'] = true;
-                                  });
-                                  _saveDraft();
-                                  _showBanner('$name designated as Misc Savings Manager.');
-                                },
-                                icon: const Icon(Icons.star_outline, size: 13),
-                                label: const Text('Set as Misc Manager', style: TextStyle(fontSize: 11)),
-                              ),
-                          ],
+                          ),
                         );
 
                         if (isMobileCard) {
@@ -4434,19 +4549,22 @@ class _BranchOnboardingPortalScreenState
     final ctrl = TextEditingController(text: currentVal > 0 ? currentVal.toStringAsFixed(2) : '');
     final formKey = GlobalKey<FormState>();
 
-    showIcareDialog(
+    showIcareAdaptiveSheet<void>(
       context: context,
-      builder: (ctx) {
+      fitContent: true,
+      builder: (ctx, isDialog) {
         final tokens = IcareSurfaceTokens.of(ctx);
-        return AlertDialog(
-          backgroundColor: tokens.surfaceElevated,
-          title: Text(title, style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: tokens.textPrimary)),
-          content: Form(
+        final bottomInset = isDialog ? 0.0 : MediaQuery.viewInsetsOf(ctx).bottom;
+        return SingleChildScrollView(
+          padding: EdgeInsets.fromLTRB(20, isDialog ? 24 : 12, 20, 24 + bottomInset),
+          child: Form(
             key: formKey,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                Text(title, style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: tokens.textPrimary)),
+                const SizedBox(height: 8),
                 Text(ruleDescription, style: TextStyle(fontSize: 12, color: tokens.textMuted)),
                 const SizedBox(height: 14),
                 TextFormField(
@@ -4466,35 +4584,43 @@ class _BranchOnboardingPortalScreenState
                     return null;
                   },
                 ),
+                const SizedBox(height: 20),
+                Wrap(
+                  alignment: WrapAlignment.end,
+                  spacing: 10,
+                  runSpacing: 8,
+                  children: [
+                    TextButton(
+                      style: TextButton.styleFrom(foregroundColor: tokens.textSecondary),
+                      onPressed: () => Navigator.of(ctx).pop(),
+                      child: const Text('Cancel'),
+                    ),
+                    ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: tokens.brandPrimaryDark,
+                        foregroundColor: Colors.white,
+                      ),
+                      onPressed: () {
+                        if (formKey.currentState!.validate()) {
+                          final numVal = double.parse(ctrl.text.replaceAll(',', '').trim());
+                          onSave(numVal);
+                          Navigator.of(ctx).pop();
+                          _saveDraft();
+                          _showBanner('$title updated to ${CurrencyFormatter.formatNaira(numVal)}.');
+                        }
+                      },
+                      child: const Text('Save Fund'),
+                    ),
+                  ],
+                ),
               ],
             ),
           ),
-          actions: [
-            TextButton(
-              style: TextButton.styleFrom(foregroundColor: tokens.textSecondary),
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: tokens.brandPrimaryDark,
-                foregroundColor: Colors.white,
-              ),
-              onPressed: () {
-                if (formKey.currentState!.validate()) {
-                  final numVal = double.parse(ctrl.text.replaceAll(',', '').trim());
-                  onSave(numVal);
-                  Navigator.of(ctx).pop();
-                  _saveDraft();
-                  _showBanner('$title updated to ${CurrencyFormatter.formatNaira(numVal)}.');
-                }
-              },
-              child: const Text('Save Fund'),
-            ),
-          ],
         );
       },
-    );
+    ).whenComplete(() {
+      WidgetsBinding.instance.addPostFrameCallback((_) => ctrl.dispose());
+    });
   }
 
   void _openOfficerDialog({Map<String, dynamic>? officerToEdit}) {
@@ -4505,25 +4631,28 @@ class _BranchOnboardingPortalScreenState
 
     final formKey = GlobalKey<FormState>();
 
-    showIcareDialog(
+    showIcareAdaptiveSheet<void>(
       context: context,
-      builder: (ctx) {
+      fitContent: true,
+      builder: (ctx, isDialog) {
         final tokens = IcareSurfaceTokens.of(ctx);
+        final bottomInset = isDialog ? 0.0 : MediaQuery.viewInsetsOf(ctx).bottom;
         return StatefulBuilder(
-          builder: (context, setDialogState) => AlertDialog(
-            backgroundColor: tokens.surfaceElevated,
-            title: Text(
-              isEditing ? 'Edit Credit Officer' : 'Add Credit Officer',
-              style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: tokens.textPrimary),
-            ),
-            content: Form(
+          builder: (context, setDialogState) => SingleChildScrollView(
+            padding: EdgeInsets.fromLTRB(20, isDialog ? 24 : 12, 20, 24 + bottomInset),
+            child: Form(
               key: formKey,
-              child: Container(
+              child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 420),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    Text(
+                      isEditing ? 'Edit Credit Officer' : 'Add Credit Officer',
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: tokens.textPrimary),
+                    ),
+                    const SizedBox(height: 6),
                     Text(
                       'Enter credit officer credentials for branch field operations.',
                       style: TextStyle(fontSize: 12, color: tokens.textMuted),
@@ -4587,109 +4716,122 @@ class _BranchOnboardingPortalScreenState
                         ],
                       ),
                     ),
+                    const SizedBox(height: 20),
+                    Wrap(
+                      alignment: WrapAlignment.end,
+                      spacing: 10,
+                      runSpacing: 8,
+                      children: [
+                        TextButton(
+                          style: TextButton.styleFrom(foregroundColor: tokens.textSecondary),
+                          onPressed: () => Navigator.of(ctx).pop(),
+                          child: const Text('Cancel'),
+                        ),
+                        ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: tokens.brandPrimaryDark,
+                            foregroundColor: Colors.white,
+                          ),
+                          onPressed: () {
+                            if (formKey.currentState!.validate()) {
+                              final cleanName = nameCtrl.text.trim();
+                              final cleanPhone = phoneCtrl.text.trim();
+
+                              String? generatedCoId;
+                              setState(() {
+                                if (isMiscMgr) {
+                                  for (var o in _officers) {
+                                    o['is_misc_savings_manager'] = false;
+                                  }
+                                }
+
+                                if (isEditing) {
+                                  officerToEdit['name'] = cleanName;
+                                  officerToEdit['officer_name'] = cleanName;
+                                  officerToEdit['phone'] = cleanPhone;
+                                  officerToEdit['phone_number'] = cleanPhone;
+                                  officerToEdit['is_misc_savings_manager'] = isMiscMgr;
+                                } else {
+                                  final coId = 'onb_co_${DateTime.now().millisecondsSinceEpoch.toRadixString(16)}';
+                                  generatedCoId = coId;
+                                  _officers.add({
+                                    'id': coId,
+                                    'officer_id': coId,
+                                    'name': cleanName,
+                                    'officer_name': cleanName,
+                                    'phone': cleanPhone,
+                                    'phone_number': cleanPhone,
+                                    'role': 'Credit Officer',
+                                    'is_misc_savings_manager': isMiscMgr,
+                                    'token': coId,
+                                    'co_token': coId,
+                                    'status': 'drafting',
+                                  });
+                                }
+                              });
+
+                              Navigator.of(ctx).pop();
+                              _saveDraft();
+                              _showBanner(isEditing ? 'Officer updated successfully.' : 'Officer added successfully.');
+                              if (!isEditing && generatedCoId != null) {
+                                final origin = getAppPublicOrigin();
+                                final coUrl = '$origin/#/onboarding/officer?token=$generatedCoId';
+                                _showOfficerLinkModal(cleanName, coUrl);
+                              }
+                            }
+                          },
+                          child: Text(isEditing ? 'Save Changes' : 'Add Officer'),
+                        ),
+                      ],
+                    ),
                   ],
                 ),
               ),
             ),
-            actions: [
-              TextButton(
-                style: TextButton.styleFrom(foregroundColor: tokens.textSecondary),
-                onPressed: () => Navigator.of(ctx).pop(),
-                child: const Text('Cancel'),
-              ),
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: tokens.brandPrimaryDark,
-                  foregroundColor: Colors.white,
-                ),
-                onPressed: () {
-                  if (formKey.currentState!.validate()) {
-                    final cleanName = nameCtrl.text.trim();
-                    final cleanPhone = phoneCtrl.text.trim();
-
-                    String? generatedCoId;
-                    setState(() {
-                      if (isMiscMgr) {
-                        for (var o in _officers) {
-                          o['is_misc_savings_manager'] = false;
-                        }
-                      }
-
-                      if (isEditing) {
-                        officerToEdit['name'] = cleanName;
-                        officerToEdit['officer_name'] = cleanName;
-                        officerToEdit['phone'] = cleanPhone;
-                        officerToEdit['phone_number'] = cleanPhone;
-                        officerToEdit['is_misc_savings_manager'] = isMiscMgr;
-                      } else {
-                        final coId = 'onb_co_${DateTime.now().millisecondsSinceEpoch.toRadixString(16)}';
-                        generatedCoId = coId;
-                        _officers.add({
-                          'id': coId,
-                          'officer_id': coId,
-                          'name': cleanName,
-                          'officer_name': cleanName,
-                          'phone': cleanPhone,
-                          'phone_number': cleanPhone,
-                          'role': 'Credit Officer',
-                          'is_misc_savings_manager': isMiscMgr,
-                          'token': coId,
-                          'co_token': coId,
-                          'status': 'drafting',
-                        });
-                      }
-                    });
-
-                    Navigator.of(ctx).pop();
-                    _saveDraft();
-                    _showBanner(isEditing ? 'Officer updated successfully.' : 'Officer added successfully.');
-                    if (!isEditing && generatedCoId != null) {
-                      final origin = getAppPublicOrigin();
-                      final coUrl = '$origin/#/onboarding/officer?token=$generatedCoId';
-                      _showOfficerLinkModal(cleanName, coUrl);
-                    }
-                  }
-                },
-                child: Text(isEditing ? 'Save Changes' : 'Add Officer'),
-              ),
-            ],
           ),
         );
       },
-    );
+    ).whenComplete(() {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        nameCtrl.dispose();
+        phoneCtrl.dispose();
+      });
+    });
   }
 
   void _showOfficerLinkModal(String name, String coUrl) {
-    showIcareDialog(
+    showIcareAdaptiveSheet<void>(
       context: context,
-      builder: (ctx) {
+      fitContent: true,
+      builder: (ctx, isDialog) {
         final tokens = IcareSurfaceTokens.of(ctx);
-        return AlertDialog(
-          backgroundColor: tokens.surfaceElevated,
-          title: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(6),
-                decoration: BoxDecoration(
-                  color: tokens.infoBg,
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Icon(Icons.link, size: 18, color: tokens.infoDot),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  'Dedicated Link for $name',
-                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: tokens.textPrimary),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-            ],
-          ),
-          content: Column(
+        return Padding(
+          padding: EdgeInsets.fromLTRB(20, isDialog ? 24 : 12, 20, 24),
+          child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: tokens.infoBg,
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Icon(Icons.link, size: 18, color: tokens.infoDot),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Dedicated Link for $name',
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: tokens.textPrimary),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
               Text(
                 'A dedicated, cryptographically isolated onboarding workspace has been created for $name. Copy and deliver this link to the officer:',
                 style: TextStyle(fontSize: 12.5, color: tokens.textSecondary),
@@ -4707,9 +4849,9 @@ class _BranchOnboardingPortalScreenState
                   coUrl,
                   style: TextStyle(
                     fontSize: 12,
-                    fontFamily: 'monospace',
                     fontWeight: FontWeight.w600,
                     color: tokens.textPrimary,
+                    fontFeatures: const [FontFeature.tabularFigures()],
                   ),
                 ),
               ),
@@ -4718,28 +4860,34 @@ class _BranchOnboardingPortalScreenState
                 'When the officer opens this link, they will see strictly their own groups and members, with zero visibility into other officers.',
                 style: TextStyle(fontSize: 11, color: tokens.textMuted),
               ),
+              const SizedBox(height: 20),
+              Wrap(
+                alignment: WrapAlignment.end,
+                spacing: 10,
+                runSpacing: 8,
+                children: [
+                  TextButton(
+                    style: TextButton.styleFrom(foregroundColor: tokens.textSecondary),
+                    onPressed: () => Navigator.of(ctx).pop(),
+                    child: const Text('Close'),
+                  ),
+                  ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: tokens.brandPrimaryDark,
+                      foregroundColor: Colors.white,
+                    ),
+                    onPressed: () {
+                      Clipboard.setData(ClipboardData(text: coUrl));
+                      Navigator.of(ctx).pop();
+                      _showBanner('Dedicated officer link for $name copied to clipboard!', isSuccess: true);
+                    },
+                    icon: const Icon(Icons.copy, size: 14),
+                    label: const Text('Copy Officer Link'),
+                  ),
+                ],
+              ),
             ],
           ),
-          actions: [
-            TextButton(
-              style: TextButton.styleFrom(foregroundColor: tokens.textSecondary),
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: const Text('Close'),
-            ),
-            ElevatedButton.icon(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: tokens.brandPrimaryDark,
-                foregroundColor: Colors.white,
-              ),
-              onPressed: () {
-                Clipboard.setData(ClipboardData(text: coUrl));
-                Navigator.of(ctx).pop();
-                _showBanner('Dedicated officer link for $name copied to clipboard!', isSuccess: true);
-              },
-              icon: const Icon(Icons.copy, size: 14),
-              label: const Text('Copy Officer Link'),
-            ),
-          ],
         );
       },
     );
@@ -4747,36 +4895,53 @@ class _BranchOnboardingPortalScreenState
 
   void _confirmDeleteOfficer(Map<String, dynamic> officer) {
     final name = (officer['name'] ?? officer['officer_name'] ?? 'Officer').toString();
-    showIcareDialog(
+    showIcareAdaptiveSheet<void>(
       context: context,
-      builder: (ctx) {
+      fitContent: true,
+      builder: (ctx, isDialog) {
         final tokens = IcareSurfaceTokens.of(ctx);
-        return AlertDialog(
-          backgroundColor: tokens.surfaceElevated,
-          title: Text('Confirm Officer Removal', style: TextStyle(color: tokens.textPrimary)),
-          content: Text(
-            'Are you sure you want to remove credit officer "$name"? Any assigned groups will remain but will require re-assignment.',
-            style: TextStyle(fontSize: 13, color: tokens.textSecondary),
+        return Padding(
+          padding: EdgeInsets.fromLTRB(20, isDialog ? 24 : 12, 20, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Confirm Officer Removal',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: tokens.textPrimary),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                'Are you sure you want to remove credit officer "$name"? Any assigned groups will remain but will require re-assignment.',
+                style: TextStyle(fontSize: 13, color: tokens.textSecondary, height: 1.4),
+              ),
+              const SizedBox(height: 20),
+              Wrap(
+                alignment: WrapAlignment.end,
+                spacing: 10,
+                runSpacing: 8,
+                children: [
+                  TextButton(
+                    style: TextButton.styleFrom(foregroundColor: tokens.textSecondary),
+                    onPressed: () => Navigator.of(ctx).pop(),
+                    child: const Text('Cancel'),
+                  ),
+                  ElevatedButton(
+                    style: ElevatedButton.styleFrom(backgroundColor: tokens.dangerDot, foregroundColor: Colors.white),
+                    onPressed: () {
+                      setState(() {
+                        _officers.remove(officer);
+                      });
+                      Navigator.of(ctx).pop();
+                      _saveDraft();
+                      _showBanner('Officer "$name" removed.');
+                    },
+                    child: const Text('Remove Officer'),
+                  ),
+                ],
+              ),
+            ],
           ),
-          actions: [
-            TextButton(
-              style: TextButton.styleFrom(foregroundColor: tokens.textSecondary),
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFDC2626), foregroundColor: Colors.white),
-              onPressed: () {
-                setState(() {
-                  _officers.remove(officer);
-                });
-                Navigator.of(ctx).pop();
-                _saveDraft();
-                _showBanner('Officer "$name" removed.');
-              },
-              child: const Text('Remove Officer'),
-            ),
-          ],
         );
       },
     );
@@ -4910,13 +5075,16 @@ class _BranchOnboardingPortalScreenState
               Text('Review your branch data totals before submitting for administrative activation.', style: TextStyle(fontSize: 12.5, color: tokens.textMuted)),
               const SizedBox(height: 16),
 
-              Container(
+              OnboardingPortfolioChartsSection(
+                groups: _currentFilteredGroups,
+                members: _currentFilteredMembers,
+                miscSavings: _scopedOfficer == null ? _miscSavings : 0.0,
+                lapsSavings: _scopedOfficer == null ? _lapsSavings : 0.0,
+              ),
+              const SizedBox(height: 16),
+
+              IcareCard(
                 padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: tokens.surface,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: tokens.borderSubtle),
-                ),
                 child: Column(
                   children: [
                     if (_scopedOfficer != null) ...[
@@ -5070,7 +5238,7 @@ class _BranchOnboardingPortalScreenState
                         ),
                         const SizedBox(height: 6),
                         Text(
-                          'Branch Manager has verified officer rosters and combined balances. As Area Manager, you can complete the final review and commit all groups, members, savings, and loan portfolios into the live core database.',
+                          'Branch Manager has verified officer rosters and combined balances. As Area Manager, you can complete the final review and activate all groups, members, savings, and loan portfolios into live branch operations.',
                           style: TextStyle(fontSize: 12, color: tokens.successText),
                         ),
                         const SizedBox(height: 14),
@@ -5081,7 +5249,7 @@ class _BranchOnboardingPortalScreenState
                             style: ElevatedButton.styleFrom(backgroundColor: tokens.brandPrimaryDark, foregroundColor: Colors.white),
                             onPressed: _isSaving ? null : _amApprovePackage,
                             icon: const Icon(Icons.check_circle_outline, size: 18),
-                            label: const Text('Approve & Commit to Live Core Database', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                            label: const Text('Approve & Activate Branch', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
                           ),
                         ),
                       ],
@@ -5103,9 +5271,11 @@ class _BranchOnboardingPortalScreenState
                           children: [
                             Icon(Icons.hourglass_top_outlined, size: 18, color: tokens.infoDot),
                             const SizedBox(width: 8),
-                            Text(
-                              'Submitted to Area Manager',
-                              style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: tokens.infoText),
+                            Expanded(
+                              child: Text(
+                                'Submitted to Area Manager',
+                                style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: tokens.infoText),
+                              ),
                             ),
                           ],
                         ),
@@ -5171,7 +5341,10 @@ class _BranchOnboardingPortalScreenState
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(label, style: TextStyle(fontSize: 13, color: tokens.textSecondary)),
+        Flexible(
+          child: Text(label, style: TextStyle(fontSize: 13, color: tokens.textSecondary)),
+        ),
+        const SizedBox(width: 12),
         Text(value, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: tokens.textPrimary, fontFeatures: const [FontFeature.tabularFigures()])),
       ],
     );

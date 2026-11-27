@@ -5,7 +5,9 @@ import '../../../core/errors/app_error_formatter.dart';
 import '../../../core/theme/icare_motion.dart';
 import '../../../core/theme/icare_theme_tokens.dart';
 import '../../../core/utils/currency_formatter.dart';
+import '../../../core/widgets/icare_card.dart';
 import '../../../core/widgets/icare_skeleton_loader.dart';
+import '../../../core/widgets/icare_status_badge.dart';
 import '../data/datasources/admin_api_service.dart';
 import '../data/models/admin_dashboard_models.dart';
 import 'admin_branch_reconciliation_sheet.dart';
@@ -13,11 +15,13 @@ import 'admin_branch_reconciliation_sheet.dart';
 class AdminBranchDetailSheet extends ConsumerWidget {
   final String branchId;
   final String? initialBranchName;
+  final bool isDialog;
 
   const AdminBranchDetailSheet({
     super.key,
     required this.branchId,
     this.initialBranchName,
+    this.isDialog = false,
   });
 
   static Future<void> show(BuildContext context, {required String branchId, String? branchName}) {
@@ -26,9 +30,10 @@ class AdminBranchDetailSheet extends ConsumerWidget {
       mobileHeightFactor: 0.88,
       peekHeightFactor: 0.56,
       desktopConstraints: const BoxConstraints(maxWidth: 680, maxHeight: 720),
-      builder: (_, __) => AdminBranchDetailSheet(
+      builder: (_, isDialog) => AdminBranchDetailSheet(
         branchId: branchId,
         initialBranchName: branchName,
+        isDialog: isDialog,
       ),
     );
   }
@@ -41,23 +46,26 @@ class AdminBranchDetailSheet extends ConsumerWidget {
     return Container(
       decoration: BoxDecoration(
         color: tokens.canvas,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+        borderRadius: isDialog
+            ? BorderRadius.circular(14)
+            : const BorderRadius.vertical(top: Radius.circular(16)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Drag handle on mobile
-          Center(
-            child: Container(
-              margin: const EdgeInsets.only(top: 8, bottom: 4),
-              width: 36,
-              height: 4,
-              decoration: BoxDecoration(
-                color: tokens.borderStrong,
-                borderRadius: BorderRadius.circular(2),
+          // Drag handle on mobile sheet only
+          if (!isDialog)
+            Center(
+              child: Container(
+                margin: const EdgeInsets.only(top: 8, bottom: 4),
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: tokens.borderStrong,
+                  borderRadius: BorderRadius.circular(2),
+                ),
               ),
             ),
-          ),
 
           // Header Bar
           Padding(
@@ -242,8 +250,10 @@ class AdminBranchDetailSheet extends ConsumerWidget {
                 const SizedBox(height: 12),
                 Divider(height: 1, color: tokens.borderSubtle),
                 const SizedBox(height: 12),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                Wrap(
+                  spacing: 16,
+                  runSpacing: 8,
+                  alignment: WrapAlignment.spaceBetween,
                   children: [
                     _buildSubMetric(tokens, 'Collections Today', CurrencyFormatter.format(data.todayCollections)),
                     _buildSubMetric(tokens, 'Disbursed YTD', CurrencyFormatter.format(data.totalDisbursedYtd)),
@@ -281,13 +291,8 @@ class AdminBranchDetailSheet extends ConsumerWidget {
           const SizedBox(height: 16),
 
           // 3. Active Portfolio & Risk Health
-          Container(
+          IcareCard(
             padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: tokens.surface,
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: tokens.borderSubtle),
-            ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -349,23 +354,22 @@ class AdminBranchDetailSheet extends ConsumerWidget {
           const SizedBox(height: 16),
 
           // 4. Stationed Credit Officers
-          Container(
+          IcareCard(
             padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: tokens.surface,
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: tokens.borderSubtle),
-            ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text(
-                      'Field Credit Officers',
-                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: tokens.textPrimary),
+                    Expanded(
+                      child: Text(
+                        'Field Credit Officers',
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: tokens.textPrimary),
+                      ),
                     ),
+                    const SizedBox(width: 8),
                     Text(
                       '${data.officersCount} assigned',
                       style: TextStyle(fontSize: 12, color: tokens.textMuted, fontWeight: FontWeight.w500),
@@ -421,36 +425,18 @@ class AdminBranchDetailSheet extends ConsumerWidget {
   }
 
   Widget _buildStatusPill(IcareSurfaceTokens tokens, String status) {
-    Color bg = tokens.neutralBg;
-    Color fg = tokens.neutralText;
-    String label = 'Open';
-
-    final st = status.toUpperCase();
+    final st = status.toUpperCase().trim();
     if (st == 'OPEN') {
-      bg = tokens.successBg;
-      fg = tokens.successText;
-      label = 'Active Open';
+      return const IcareStatusBadge(label: 'Active Open', variant: IcareBadgeVariant.success);
     } else if (st == 'EOD_PENDING') {
-      bg = tokens.warningBg;
-      fg = tokens.warningText;
-      label = 'EOD Pending';
+      return const IcareStatusBadge(label: 'EOD Pending', variant: IcareBadgeVariant.warning);
+    } else if (st == 'BRANCH_CONFIRMED' || st == 'AREA_LOCKED') {
+      return const IcareStatusBadge(label: 'Reconciled', variant: IcareBadgeVariant.info);
     } else if (st == 'CLOSED') {
-      bg = tokens.neutralBg;
-      fg = tokens.neutralText;
-      label = 'Day Closed';
+      return const IcareStatusBadge(label: 'Day Closed', variant: IcareBadgeVariant.neutral);
     }
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: fg),
-      ),
-    );
+    final display = status.trim().isEmpty ? 'Unknown' : status.trim();
+    return IcareStatusBadge(label: display, variant: IcareBadgeVariant.neutral);
   }
 
   Widget _buildSubMetric(IcareSurfaceTokens tokens, String label, String value) {

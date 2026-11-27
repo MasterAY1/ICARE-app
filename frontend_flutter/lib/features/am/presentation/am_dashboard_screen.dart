@@ -8,6 +8,7 @@ import '../../../../core/utils/currency_formatter.dart';
 import '../../../core/theme/icare_motion.dart';
 import '../../../core/theme/icare_theme_tokens.dart';
 import '../../../core/widgets/icare_card.dart';
+import '../../../core/widgets/icare_data_table.dart';
 import '../../../core/widgets/icare_metric_card.dart';
 import '../../../core/widgets/icare_skeleton_loader.dart';
 import '../../../core/widgets/icare_status_badge.dart';
@@ -76,16 +77,9 @@ class AmDashboardScreen extends ConsumerStatefulWidget {
 }
 
 class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
-  final ScrollController _matrixScrollController = ScrollController();
   String? _flashMessage;
   bool _isProcessing = false;
   final Set<String> _deletingSessionIds = {};
-
-  @override
-  void dispose() {
-    _matrixScrollController.dispose();
-    super.dispose();
-  }
 
   // Approvals Hub Active Tab
   String _activeApprovalTab = 'Branch EOD Sign-Off';
@@ -731,12 +725,16 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
 
   void _showBranchHandoverModal(String branchId, String branchName) {
     final dateStr = DateFormat('yyyy-MM-dd').format(ref.read(amSelectedDateProvider));
-    showIcareModalSheet<void>(
+    showIcareAdaptiveSheet<void>(
       context: context,
-      builder: (ctx) => _BranchHandoverSheet(
+      fitContent: true,
+      desktopConstraints: const BoxConstraints(maxWidth: 680, maxHeight: 740),
+      desktopInsetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+      builder: (ctx, isDialog) => _BranchHandoverSheet(
         branchId: branchId,
         branchName: branchName,
         businessDate: dateStr,
+        isDialog: isDialog,
         onNavigate: (repType, bName) {
           if (repType == 'officer_portfolio') {
             Navigator.pop(ctx);
@@ -846,11 +844,6 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
         );
       },
       data: (data) {
-        final monthlyWorkflowAsync = ref.watch(amMonthlyWorkflowSubmissionsProvider);
-        final monthlyPendingCount = (monthlyWorkflowAsync.value ?? const [])
-            .where((b) => b.status == 'BM_SUBMITTED')
-            .length;
-
         return LayoutBuilder(
           builder: (context, constraints) {
             final isMobile = constraints.maxWidth < 600;
@@ -858,30 +851,45 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 if (_flashMessage != null) ...[
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                    decoration: BoxDecoration(
-                      color: tokens.infoBg,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: tokens.infoBorder),
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(Icons.info_outline, size: 18, color: tokens.infoDot),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text(_flashMessage!, style: TextStyle(fontSize: 12.5, color: tokens.infoText)),
-                        ),
-                        IconButton(
-                          icon: Icon(Icons.close, size: 16, color: tokens.infoText),
-                          onPressed: _clearFlash,
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(),
-                        ),
-                      ],
-                    ),
-                  ),
+                  () {
+                    final lowerFlash = _flashMessage!.toLowerCase();
+                    final isErrorFlash = lowerFlash.contains('failed') ||
+                        lowerFlash.contains('error') ||
+                        lowerFlash.contains('cannot') ||
+                        lowerFlash.contains('unable');
+                    final fBg = isErrorFlash ? tokens.dangerBg : tokens.infoBg;
+                    final fBorder = isErrorFlash ? tokens.dangerBorder : tokens.infoBorder;
+                    final fDot = isErrorFlash ? tokens.dangerDot : tokens.infoDot;
+                    final fText = isErrorFlash ? tokens.dangerText : tokens.infoText;
+                    return Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: fBg,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: fBorder),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            isErrorFlash ? Icons.error_outline : Icons.info_outline,
+                            size: 18,
+                            color: fDot,
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(_flashMessage!, style: TextStyle(fontSize: 12.5, color: fText, fontWeight: FontWeight.w600)),
+                          ),
+                          IconButton(
+                            icon: Icon(Icons.close, size: 16, color: fText),
+                            onPressed: _clearFlash,
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(),
+                          ),
+                        ],
+                      ),
+                    );
+                  }(),
                   const SizedBox(height: 16),
                 ],
 
@@ -898,28 +906,6 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                 // Content based on platform and mobile tab
                 if (!isMobile || _mobileSectionTab == 'Overview') ...[
                   _buildRegionalExecutiveKpiRow(data.regionalSummary),
-                  const SizedBox(height: 20),
-                  AmRegionalGovernanceFlowCard(
-                    regionalSummary: data.regionalSummary,
-                    branches: data.branchPerformance,
-                    approvalsHub: data.approvalsHub,
-                    monthlyPendingCount: monthlyPendingCount,
-                    onSelectApprovalTab: (tabPrefix) {
-                      final matchedTab = switch (tabPrefix) {
-                        'Branch EOD' => 'Branch EOD Sign-Off',
-                        'High-Value Loans' => 'High-Value Loans > ₦300k',
-                        'Inter-Branch Transfers' => 'Inter-Branch Transfers',
-                        'Monthly Reports' => 'Monthly Reports',
-                        _ => 'Branch EOD Sign-Off',
-                      };
-                      setState(() {
-                        _activeApprovalTab = matchedTab;
-                        if (isMobile) {
-                          _mobileSectionTab = 'Approvals';
-                        }
-                      });
-                    },
-                  ),
                   const SizedBox(height: 20),
                   AmBranchPerformanceCharts(
                     regionalSummary: data.regionalSummary,
@@ -1211,12 +1197,17 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
                         decoration: BoxDecoration(
-                          color: isSel ? tokens.brandPrimaryDark : tokens.textMuted,
+                          color: isSel ? tokens.brandPrimaryDark : tokens.surfaceElevated,
                           borderRadius: BorderRadius.circular(10),
+                          border: isSel ? null : Border.all(color: tokens.borderSubtle),
                         ),
                         child: Text(
                           s.badge!,
-                          style: const TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold, color: Colors.white),
+                          style: TextStyle(
+                            fontSize: 9.5,
+                            fontWeight: FontWeight.bold,
+                            color: isSel ? Colors.white : tokens.textSecondary,
+                          ),
                         ),
                       ),
                     ],
@@ -1524,7 +1515,7 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
         sessionId,
         notes: notesCtrl.text.trim().isEmpty ? null : notesCtrl.text.trim(),
       );
-      _showFlash(res['message']?.toString() ?? 'Branch successfully approved and committed to live core database!');
+      _showFlash(res['message']?.toString() ?? 'Branch successfully approved and activated cleanly!');
       ref.invalidate(adminOnboardingSessionsProvider);
     } catch (e) {
       _showFlash('Failed to approve onboarding package: ${AppErrorDetails.from(e).message}');
@@ -2036,7 +2027,6 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                   fontSize: 28,
                   fontWeight: FontWeight.w900,
                   color: Colors.white,
-                  fontFamily: 'monospace',
                   fontFeatures: [FontFeature.tabularFigures()],
                 ),
               ),
@@ -2381,7 +2371,6 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                               fontSize: 13,
                               fontWeight: FontWeight.bold,
                               color: tokens.textPrimary,
-                              fontFamily: 'monospace',
                               fontFeatures: const [FontFeature.tabularFigures()],
                             ),
                           ),
@@ -2398,7 +2387,6 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                               fontSize: 13,
                               fontWeight: FontWeight.bold,
                               color: e.cashVariance == 0 ? tokens.successText : tokens.dangerText,
-                              fontFamily: 'monospace',
                               fontFeatures: const [FontFeature.tabularFigures()],
                             ),
                           ),
@@ -2638,7 +2626,12 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                 const SizedBox(height: 4),
                 Text(
                   'Amount: ${CurrencyFormatter.format(l.loanAmount)}',
-                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: tokens.infoText, fontFamily: 'monospace'),
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                    color: tokens.infoText,
+                    fontFeatures: const [FontFeature.tabularFigures()],
+                  ),
                 ),
                 if (l.escalationReason.isNotEmpty) ...[
                   const SizedBox(height: 4),
@@ -3260,69 +3253,62 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
               ),
             )
           else
-            Scrollbar(
-              controller: _matrixScrollController,
-              thumbVisibility: true,
-              child: SingleChildScrollView(
-                controller: _matrixScrollController,
-                scrollDirection: Axis.horizontal,
-                child: DataTable(
-                  headingRowColor: WidgetStateProperty.all(tokens.surfaceSubtle),
-                  columns: [
-                    DataColumn(label: Text('Branch Name', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: tokens.textPrimary))),
-                    DataColumn(label: Text('Branch Manager', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: tokens.textPrimary))),
-                    DataColumn(label: Text('Expected (₦)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: tokens.textPrimary))),
-                    DataColumn(label: Text('Collected (₦)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: tokens.textPrimary))),
-                    DataColumn(label: Text('Compliance %', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: tokens.textPrimary))),
-                    DataColumn(label: Text('Vault Cash (₦)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: tokens.textPrimary))),
-                    DataColumn(label: Text('PAR %', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: tokens.textPrimary))),
-                    DataColumn(label: Text('Status', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: tokens.textPrimary))),
-                    DataColumn(label: Text('Actions', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: tokens.textPrimary))),
-                  ],
-                  rows: branches.map((b) {
-                    final isHealthy = b.compliancePct >= 85.0 && b.cashVariance == 0.0;
-                    return DataRow(
-                      cells: [
-                        DataCell(Text(b.branchName, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5, color: tokens.textPrimary))),
-                        DataCell(Text(b.bmName, style: TextStyle(fontSize: 12, color: tokens.textSecondary))),
-                        DataCell(Text(CurrencyFormatter.format(b.expectedCollection), style: TextStyle(fontSize: 12, color: tokens.textPrimary, fontFeatures: const [FontFeature.tabularFigures()]))),
-                        DataCell(Text(CurrencyFormatter.format(b.collected), style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: tokens.successText, fontFeatures: const [FontFeature.tabularFigures()]))),
-                        DataCell(
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: isHealthy ? tokens.successBg : tokens.dangerBg,
-                              borderRadius: BorderRadius.circular(4),
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: IcareDataTable(
+                minWidth: 880,
+                columns: [
+                  DataColumn(label: Text('Branch Name', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: tokens.textPrimary))),
+                  DataColumn(label: Text('Branch Manager', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: tokens.textPrimary))),
+                  DataColumn(label: Text('Expected (₦)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: tokens.textPrimary))),
+                  DataColumn(label: Text('Collected (₦)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: tokens.textPrimary))),
+                  DataColumn(label: Text('Compliance %', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: tokens.textPrimary))),
+                  DataColumn(label: Text('Vault Cash (₦)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: tokens.textPrimary))),
+                  DataColumn(label: Text('PAR %', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: tokens.textPrimary))),
+                  DataColumn(label: Text('Status', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: tokens.textPrimary))),
+                  DataColumn(label: Text('Actions', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: tokens.textPrimary))),
+                ],
+                rows: branches.map((b) {
+                  final isHealthy = b.compliancePct >= 85.0 && b.cashVariance == 0.0;
+                  return DataRow(
+                    cells: [
+                      DataCell(Text(b.branchName, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5, color: tokens.textPrimary))),
+                      DataCell(Text(b.bmName, style: TextStyle(fontSize: 12, color: tokens.textSecondary))),
+                      DataCell(Text(CurrencyFormatter.format(b.expectedCollection), style: TextStyle(fontSize: 12, color: tokens.textPrimary, fontFeatures: const [FontFeature.tabularFigures()]))),
+                      DataCell(Text(CurrencyFormatter.format(b.collected), style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: tokens.successText, fontFeatures: const [FontFeature.tabularFigures()]))),
+                      DataCell(
+                        IcareStatusBadge(
+                          label: '${b.compliancePct.toStringAsFixed(1)}%',
+                          variant: isHealthy ? IcareBadgeVariant.success : IcareBadgeVariant.danger,
+                          showDot: false,
+                        ),
+                      ),
+                      DataCell(Text(CurrencyFormatter.format(b.vaultCashAcct1000), style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: tokens.infoText, fontFeatures: const [FontFeature.tabularFigures()]))),
+                      DataCell(Text(b.par, style: TextStyle(fontSize: 12, fontFeatures: const [FontFeature.tabularFigures()], color: tokens.textPrimary))),
+                      DataCell(IcareStatusBadge.fromStatus(b.operationalStatus)),
+                      DataCell(
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            OutlinedButton.icon(
+                              onPressed: () => _navigateToBranchInspection(b.branchId, b.branchName),
+                              icon: const Icon(Icons.search, size: 12),
+                              label: const Text('Inspect', style: TextStyle(fontSize: 11)),
+                              style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4)),
                             ),
-                            child: Text('${b.compliancePct}%', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: isHealthy ? tokens.successText : tokens.dangerText, fontFeatures: const [FontFeature.tabularFigures()])),
-                          ),
+                            const SizedBox(width: 6),
+                            ElevatedButton.icon(
+                              onPressed: () => _showBranchHandoverModal(b.branchId, b.branchName),
+                              icon: const Icon(Icons.folder_open, size: 12),
+                              label: const Text('Reports', style: TextStyle(fontSize: 11)),
+                              style: ElevatedButton.styleFrom(backgroundColor: tokens.brandPrimaryDark, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4)),
+                            ),
+                          ],
                         ),
-                        DataCell(Text(CurrencyFormatter.format(b.vaultCashAcct1000), style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: tokens.infoText, fontFeatures: const [FontFeature.tabularFigures()]))),
-                        DataCell(Text(b.par, style: TextStyle(fontSize: 12, color: tokens.textPrimary))),
-                        DataCell(Text(b.operationalStatus, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: isHealthy ? tokens.successText : tokens.dangerText))),
-                        DataCell(
-                          Row(
-                            children: [
-                              OutlinedButton.icon(
-                                onPressed: () => _navigateToBranchInspection(b.branchId, b.branchName),
-                                icon: const Icon(Icons.search, size: 12),
-                                label: const Text('Inspect', style: TextStyle(fontSize: 11)),
-                                style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4)),
-                              ),
-                              const SizedBox(width: 6),
-                              ElevatedButton.icon(
-                                onPressed: () => _showBranchHandoverModal(b.branchId, b.branchName),
-                                icon: const Icon(Icons.folder_open, size: 12, color: Colors.white),
-                                label: const Text('Reports', style: TextStyle(fontSize: 11, color: Colors.white)),
-                                style: ElevatedButton.styleFrom(backgroundColor: tokens.brandPrimaryDark, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4)),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    );
-                  }).toList(),
-                ),
+                      ),
+                    ],
+                  );
+                }).toList(),
               ),
             ),
         ],
@@ -3403,7 +3389,12 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                 child: Text(
                   'Collection: ${CurrencyFormatter.format(b.collected)}',
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: tokens.textPrimary, fontFamily: 'monospace'),
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w700,
+                    color: tokens.textPrimary,
+                    fontFeatures: const [FontFeature.tabularFigures()],
+                  ),
                 ),
               ),
               const SizedBox(width: 8),
@@ -3456,7 +3447,6 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                             fontSize: 12.5,
                             fontWeight: FontWeight.bold,
                             color: tokens.infoText,
-                            fontFamily: 'monospace',
                             fontFeatures: const [FontFeature.tabularFigures()],
                           ),
                         ),
@@ -3485,7 +3475,7 @@ class _AmDashboardScreenState extends ConsumerState<AmDashboardScreen> {
                           fontSize: 12.5,
                           fontWeight: FontWeight.bold,
                           color: b.par == '0.0%' ? tokens.successText : tokens.dangerText,
-                          fontFamily: 'monospace',
+                          fontFeatures: const [FontFeature.tabularFigures()],
                         ),
                       ),
                     ],
@@ -3565,6 +3555,7 @@ class _BranchHandoverSheet extends ConsumerStatefulWidget {
   final String branchId;
   final String branchName;
   final String businessDate;
+  final bool isDialog;
   final void Function(String reportType, String branchName) onNavigate;
   final void Function(String reportType, String branchName) onDownload;
   final bool isProcessing;
@@ -3573,6 +3564,7 @@ class _BranchHandoverSheet extends ConsumerStatefulWidget {
     required this.branchId,
     required this.branchName,
     required this.businessDate,
+    this.isDialog = false,
     required this.onNavigate,
     required this.onDownload,
     required this.isProcessing,
@@ -3588,189 +3580,229 @@ class _BranchHandoverSheetState extends ConsumerState<_BranchHandoverSheet> {
   @override
   void initState() {
     super.initState();
-    _handoverFuture = ref.read(amApiServiceProvider).getBranchHandover(
-      branchId: widget.branchId,
-      businessDate: widget.businessDate,
-    );
+    _loadHandover();
+  }
+
+  void _loadHandover() {
+    setState(() {
+      _handoverFuture = ref.read(amApiServiceProvider).getBranchHandover(
+        branchId: widget.branchId,
+        businessDate: widget.businessDate,
+      );
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     final tokens = IcareSurfaceTokens.of(context);
     final maxH = MediaQuery.of(context).size.height * 0.85;
-    return SafeArea(
-      child: Center(
-        heightFactor: 1.0,
-        child: Container(
-          constraints: BoxConstraints(maxWidth: 680, maxHeight: maxH),
-          decoration: BoxDecoration(
-            color: tokens.surfaceElevated,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-          ),
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
-          child: FutureBuilder<BranchHandoverSummaryModel>(
-            future: _handoverFuture,
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return const SizedBox(
-                  height: 200,
-                  child: Center(child: CircularProgressIndicator()),
-                );
-              }
-              if (snapshot.hasError) {
-                return Padding(
-                  padding: const EdgeInsets.all(20),
-                  child: Text(
-                    'Error loading handover reports: ${AppErrorDetails.from(snapshot.error).message}',
-                    style: TextStyle(color: tokens.dangerText),
+    return Container(
+      constraints: BoxConstraints(maxWidth: 680, maxHeight: maxH),
+      decoration: BoxDecoration(
+        color: tokens.surfaceElevated,
+        borderRadius: widget.isDialog
+            ? BorderRadius.circular(14)
+            : const BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      padding: EdgeInsets.fromLTRB(20, widget.isDialog ? 20 : 12, 20, 20),
+      child: FutureBuilder<BranchHandoverSummaryModel>(
+        future: _handoverFuture,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const SingleChildScrollView(
+              child: IcareTableSkeleton(rowCount: 4, hasFilterBar: false),
+            );
+          }
+          if (snapshot.hasError) {
+            final errDetails = AppErrorDetails.from(snapshot.error);
+            return IcareCard(
+              padding: const EdgeInsets.all(20),
+              topAccentColor: tokens.dangerDot,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.error_outline, size: 36, color: tokens.dangerDot),
+                  const SizedBox(height: 10),
+                  Text(
+                    errDetails.title,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: tokens.dangerText, fontWeight: FontWeight.w800, fontSize: 14.5),
                   ),
-                );
-              }
-              final handover = snapshot.data!;
-              return SingleChildScrollView(
-                physics: const BouncingScrollPhysics(),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                  const SizedBox(height: 6),
+                  Text(
+                    errDetails.message,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: tokens.textSecondary, fontSize: 12.5),
+                  ),
+                  const SizedBox(height: 14),
+                  ElevatedButton.icon(
+                    onPressed: _loadHandover,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: tokens.brandPrimaryDark,
+                      foregroundColor: Colors.white,
+                    ),
+                    icon: const Icon(Icons.refresh, size: 15),
+                    label: const Text('Retry'),
+                  ),
+                ],
+              ),
+            );
+          }
+          final handover = snapshot.data!;
+          return SingleChildScrollView(
+            physics: const BouncingScrollPhysics(),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (!widget.isDialog)
+                  Center(
+                    child: Container(
+                      width: 36,
+                      height: 4,
+                      margin: const EdgeInsets.only(bottom: 12),
+                      decoration: BoxDecoration(
+                        color: tokens.borderStrong,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Expanded(
-                          child: Row(
-                            children: [
-                              Icon(Icons.description_outlined, color: tokens.brandPrimary, size: 22),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  'Branch Handover — ${widget.branchName}',
-                                  style: TextStyle(fontSize: 16.5, fontWeight: FontWeight.bold, color: tokens.textPrimary),
-                                  overflow: TextOverflow.ellipsis,
+                    Expanded(
+                      child: Row(
+                        children: [
+                          Icon(Icons.description_outlined, color: tokens.brandPrimary, size: 22),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Branch Handover — ${widget.branchName}',
+                              style: TextStyle(fontSize: 16.5, fontWeight: FontWeight.bold, color: tokens.textPrimary),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Branch Manager: ${handover.bmName} | Date: ${widget.businessDate}',
+                  style: TextStyle(fontSize: 12, color: tokens.textMuted),
+                ),
+                Divider(height: 24, color: tokens.borderSubtle),
+                Text(
+                  'Available Official Books (Read-Only)',
+                  style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold, color: tokens.textPrimary),
+                ),
+                const SizedBox(height: 12),
+                ...handover.availableReports.map((rep) => Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: IcareCard(
+                        padding: const EdgeInsets.all(12),
+                        backgroundColor: tokens.surfaceSubtle,
+                        child: LayoutBuilder(
+                          builder: (context, constraints) {
+                            final isNarrow = constraints.maxWidth < 450;
+                            final actionRow = Wrap(
+                              spacing: 8,
+                              runSpacing: 6,
+                              children: [
+                                OutlinedButton.icon(
+                                  onPressed: () => widget.onNavigate(rep.reportType, widget.branchName),
+                                  icon: const Icon(Icons.visibility_outlined, size: 14),
+                                  label: const Text('View', style: TextStyle(fontSize: 11.5)),
+                                  style: OutlinedButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                  ),
                                 ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.close),
-                          onPressed: () => Navigator.pop(context),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Branch Manager: ${handover.bmName} | Date: ${widget.businessDate}',
-                      style: TextStyle(fontSize: 12, color: tokens.textMuted),
-                    ),
-                    Divider(height: 24, color: tokens.borderSubtle),
-                    Text(
-                      'Available Official Books (Read-Only)',
-                      style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold, color: tokens.textPrimary),
-                    ),
-                    const SizedBox(height: 12),
-                    ...handover.availableReports.map((rep) => Container(
-                          margin: const EdgeInsets.only(bottom: 10),
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: tokens.surfaceSubtle,
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: tokens.borderSubtle),
-                          ),
-                          child: LayoutBuilder(
-                            builder: (context, constraints) {
-                              final isNarrow = constraints.maxWidth < 450;
-                              final actionRow = Row(
-                                mainAxisSize: isNarrow ? MainAxisSize.max : MainAxisSize.min,
-                                children: [
-                                  OutlinedButton.icon(
-                                    onPressed: () => widget.onNavigate(rep.reportType, widget.branchName),
-                                    icon: const Icon(Icons.visibility_outlined, size: 14),
-                                    label: const Text('View', style: TextStyle(fontSize: 11.5)),
-                                    style: OutlinedButton.styleFrom(
-                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                                    ),
+                                ElevatedButton.icon(
+                                  onPressed: widget.isProcessing
+                                      ? null
+                                      : () => widget.onDownload(rep.reportType, widget.branchName),
+                                  icon: const Icon(Icons.download, size: 14),
+                                  label: const Text('Download', style: TextStyle(fontSize: 11.5)),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: tokens.brandPrimaryDark,
+                                    foregroundColor: Colors.white,
+                                    disabledBackgroundColor: tokens.surfaceHover,
+                                    disabledForegroundColor: tokens.textMuted,
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                                   ),
-                                  const SizedBox(width: 8),
-                                  ElevatedButton.icon(
-                                    onPressed: widget.isProcessing
-                                        ? null
-                                        : () => widget.onDownload(rep.reportType, widget.branchName),
-                                    icon: const Icon(Icons.download, size: 14, color: Colors.white),
-                                    label: const Text('Download', style: TextStyle(fontSize: 11.5, color: Colors.white)),
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: tokens.brandPrimaryDark,
-                                      foregroundColor: Colors.white,
-                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                                    ),
-                                  ),
-                                ],
-                              );
+                                ),
+                              ],
+                            );
 
-                              if (isNarrow) {
-                                return Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Row(
-                                      children: [
-                                        Container(
-                                          padding: const EdgeInsets.all(8),
-                                          decoration: BoxDecoration(
-                                            color: tokens.brandSoftBg,
-                                            borderRadius: BorderRadius.circular(6),
-                                          ),
-                                          child: Icon(Icons.file_present_outlined, color: tokens.brandPrimary, size: 20),
-                                        ),
-                                        const SizedBox(width: 12),
-                                        Expanded(
-                                          child: Column(
-                                            crossAxisAlignment: CrossAxisAlignment.start,
-                                            children: [
-                                              Text(rep.title, style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: tokens.textPrimary)),
-                                              Text(rep.description, style: TextStyle(fontSize: 11, color: tokens.textMuted)),
-                                            ],
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 10),
-                                    actionRow,
-                                  ],
-                                );
-                              }
-
-                              return Row(
+                            if (isNarrow) {
+                              return Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Container(
-                                    padding: const EdgeInsets.all(8),
-                                    decoration: BoxDecoration(
-                                      color: tokens.brandSoftBg,
-                                      borderRadius: BorderRadius.circular(6),
-                                    ),
-                                    child: Icon(Icons.file_present_outlined, color: tokens.brandPrimary, size: 20),
+                                  Row(
+                                    children: [
+                                      Container(
+                                        padding: const EdgeInsets.all(8),
+                                        decoration: BoxDecoration(
+                                          color: tokens.brandSoftBg,
+                                          borderRadius: BorderRadius.circular(6),
+                                        ),
+                                        child: Icon(Icons.file_present_outlined, color: tokens.brandPrimary, size: 20),
+                                      ),
+                                      const SizedBox(width: 12),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text(rep.title, style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: tokens.textPrimary)),
+                                            Text(rep.description, style: TextStyle(fontSize: 11, color: tokens.textMuted)),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
                                   ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Text(rep.title, style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: tokens.textPrimary)),
-                                        Text(rep.description, style: TextStyle(fontSize: 11, color: tokens.textMuted)),
-                                      ],
-                                    ),
-                                  ),
-                                  const SizedBox(width: 10),
+                                  const SizedBox(height: 10),
                                   actionRow,
                                 ],
                               );
-                            },
-                          ),
-                        )),
-                  ],
-                ),
-              );
-            },
-          ),
-        ),
+                            }
+
+                            return Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.all(8),
+                                  decoration: BoxDecoration(
+                                    color: tokens.brandSoftBg,
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: Icon(Icons.file_present_outlined, color: tokens.brandPrimary, size: 20),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(rep.title, style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: tokens.textPrimary)),
+                                      Text(rep.description, style: TextStyle(fontSize: 11, color: tokens.textMuted)),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                actionRow,
+                              ],
+                            );
+                          },
+                        ),
+                      ),
+                    )),
+              ],
+            ),
+          );
+        },
       ),
     );
   }

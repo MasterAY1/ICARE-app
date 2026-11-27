@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/errors/app_error_formatter.dart';
 import '../../../core/theme/icare_motion.dart';
 import '../../../core/theme/icare_theme_tokens.dart';
+import '../../../core/widgets/icare_card.dart';
 import '../../../core/widgets/icare_skeleton_loader.dart';
 import '../../reports/data/datasources/reports_api_service.dart';
 import '../../reports/data/models/report_models.dart';
@@ -18,6 +20,7 @@ class AdminBranchReconciliationSheet extends ConsumerStatefulWidget {
   final String? initialBranchName;
   final int? initialYear;
   final int? initialMonth;
+  final bool isDialog;
 
   const AdminBranchReconciliationSheet({
     super.key,
@@ -25,6 +28,7 @@ class AdminBranchReconciliationSheet extends ConsumerStatefulWidget {
     this.initialBranchName,
     this.initialYear,
     this.initialMonth,
+    this.isDialog = false,
   });
 
   static Future<void> show(
@@ -40,11 +44,12 @@ class AdminBranchReconciliationSheet extends ConsumerStatefulWidget {
       enablePeekSnap: false,
       desktopConstraints: const BoxConstraints(maxWidth: 860, maxHeight: 820),
       desktopInsetPadding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
-      builder: (_, __) => AdminBranchReconciliationSheet(
+      builder: (_, isDialog) => AdminBranchReconciliationSheet(
         initialBranchId: branchId,
         initialBranchName: branchName,
         initialYear: initialYear,
         initialMonth: initialMonth,
+        isDialog: isDialog,
       ),
     );
   }
@@ -73,21 +78,24 @@ class _AdminBranchReconciliationSheetState extends ConsumerState<AdminBranchReco
     _selectedYear = widget.initialYear ?? DateTime.now().year;
     _selectedMonth = widget.initialMonth ?? DateTime.now().month;
 
-    final api = ref.read(reportsApiServiceProvider);
-    api.getReportsMeta().then((meta) {
-      if (mounted) {
-        setState(() {
-          _cachedMeta = meta;
-          _selectedBranchName ??= meta.branches.isNotEmpty ? meta.branches.first.name : null;
-          _loadReconciliation();
-        });
-      }
-      return meta;
-    });
-
     if (_selectedBranchName != null) {
       _loadReconciliation();
     }
+
+    final api = ref.read(reportsApiServiceProvider);
+    api.getReportsMeta().then((meta) {
+      if (!mounted) return;
+      final prevBranch = _selectedBranchName;
+      setState(() {
+        _cachedMeta = meta;
+        _selectedBranchName ??= meta.branches.isNotEmpty ? meta.branches.first.name : null;
+      });
+      if (prevBranch == null && _selectedBranchName != null) {
+        _loadReconciliation();
+      }
+    }).catchError((_) {
+      // Meta failure handled gracefully via branch dropdown remaining optional
+    });
   }
 
   void _loadReconciliation() {
@@ -104,20 +112,24 @@ class _AdminBranchReconciliationSheetState extends ConsumerState<AdminBranchReco
 
   @override
   Widget build(BuildContext context) {
-    final screenWidth = MediaQuery.of(context).size.width;
-    final isMobile = screenWidth < 768;
     final tokens = IcareSurfaceTokens.of(context);
 
-    return Container(
-      decoration: BoxDecoration(
-        color: tokens.canvas,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-      ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final screenWidth = constraints.maxWidth;
+        final isMobile = screenWidth < 680;
+        return Container(
+          decoration: BoxDecoration(
+            color: tokens.canvas,
+            borderRadius: widget.isDialog
+                ? BorderRadius.circular(14)
+                : const BorderRadius.vertical(top: Radius.circular(16)),
+          ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Drag handle on mobile
-          if (isMobile)
+          // Drag handle on mobile sheet only
+          if (!widget.isDialog && isMobile)
             Center(
               child: Container(
                 margin: const EdgeInsets.only(top: 8, bottom: 4),
@@ -199,34 +211,44 @@ class _AdminBranchReconciliationSheetState extends ConsumerState<AdminBranchReco
                         );
                       }
                       if (snapshot.hasError) {
+                        final errDetails = AppErrorDetails.from(snapshot.error);
                         return Center(
-                          child: Padding(
-                            padding: const EdgeInsets.all(24),
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(Icons.error_outline, size: 36, color: tokens.dangerDot),
-                                const SizedBox(height: 12),
-                                Text(
-                                  'Unable to load reconciliation baseline',
-                                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: tokens.textPrimary),
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 460),
+                            child: Padding(
+                              padding: const EdgeInsets.all(24),
+                              child: IcareCard(
+                                padding: const EdgeInsets.all(20),
+                                topAccentColor: tokens.dangerDot,
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.error_outline, size: 36, color: tokens.dangerDot),
+                                    const SizedBox(height: 12),
+                                    Text(
+                                      errDetails.title,
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14.5, color: tokens.dangerText),
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Text(
+                                      errDetails.message,
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(fontSize: 12.5, color: tokens.textSecondary),
+                                    ),
+                                    const SizedBox(height: 16),
+                                    ElevatedButton.icon(
+                                      onPressed: _loadReconciliation,
+                                      icon: const Icon(Icons.refresh, size: 15),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: tokens.brandPrimaryDark,
+                                        foregroundColor: Colors.white,
+                                      ),
+                                      label: const Text('Retry'),
+                                    ),
+                                  ],
                                 ),
-                                const SizedBox(height: 6),
-                                Text(
-                                  snapshot.error.toString(),
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(fontSize: 12, color: tokens.textMuted),
-                                ),
-                                const SizedBox(height: 16),
-                                ElevatedButton(
-                                  onPressed: _loadReconciliation,
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: tokens.brandPrimary,
-                                    foregroundColor: Colors.white,
-                                  ),
-                                  child: const Text('Retry'),
-                                ),
-                              ],
+                              ),
                             ),
                           ),
                         );
@@ -262,6 +284,8 @@ class _AdminBranchReconciliationSheetState extends ConsumerState<AdminBranchReco
           ),
         ],
       ),
+    );
+      },
     );
   }
 
@@ -309,6 +333,7 @@ class _AdminBranchReconciliationSheetState extends ConsumerState<AdminBranchReco
       child: DropdownButtonHideUnderline(
         child: DropdownButton<String>(
           value: currentVal,
+          isExpanded: true,
           dropdownColor: tokens.surfaceElevated,
           isDense: true,
           hint: Text('Select Branch', style: TextStyle(fontSize: 12, color: tokens.textMuted)),
@@ -319,9 +344,12 @@ class _AdminBranchReconciliationSheetState extends ConsumerState<AdminBranchReco
                 children: [
                   Icon(Icons.domain_outlined, size: 14, color: tokens.brandPrimary),
                   const SizedBox(width: 6),
-                  Text(
-                    b,
-                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tokens.textPrimary),
+                  Expanded(
+                    child: Text(
+                      b,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tokens.textPrimary),
+                    ),
                   ),
                 ],
               ),
@@ -368,14 +396,17 @@ class _AdminBranchReconciliationSheetState extends ConsumerState<AdminBranchReco
               });
             },
           ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            child: Text(
-              '${_monthNames[_selectedMonth - 1]} $_selectedYear',
-              style: TextStyle(
-                fontSize: 12.5,
-                fontWeight: FontWeight.w700,
-                color: tokens.textPrimary,
+          Flexible(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: Text(
+                '${_monthNames[_selectedMonth - 1]} $_selectedYear',
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                  color: tokens.textPrimary,
+                ),
               ),
             ),
           ),

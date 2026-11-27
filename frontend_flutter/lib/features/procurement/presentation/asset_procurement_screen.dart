@@ -7,8 +7,11 @@ import '../../../core/errors/app_error_formatter.dart';
 import '../../../core/theme/icare_motion.dart';
 import '../../../core/theme/icare_theme_tokens.dart';
 import '../../../core/utils/currency_formatter.dart';
+import '../../../core/widgets/icare_card.dart';
+import '../../../core/widgets/icare_metric_card.dart';
 import '../../../core/widgets/icare_skeleton_loader.dart';
 import '../data/datasources/procurement_api_service.dart';
+import 'widgets/procurement_analytics_charts.dart';
 
 /// Shared navigation & filter coordination providers so quick actions on
 /// ProcurementDashboardScreen can land directly on any Asset & Procurement tab.
@@ -239,6 +242,14 @@ class _AssetProcurementScreenState
         if (!_isLoading && _loadError == null) ...[
           _buildSummaryStrip(tokens),
           const SizedBox(height: 16),
+          ProcurementAnalyticsSection(
+            branchSummaries: (_overview['branch_summaries'] as List<dynamic>? ?? const [])
+                .whereType<Map>()
+                .map((e) => Map<String, dynamic>.from(e))
+                .toList(),
+            matrixItems: _matrixItems,
+          ),
+          const SizedBox(height: 16),
         ],
 
         _buildWorkspaceTabs(tokens, activeTab: activeTab, canEdit: canEdit),
@@ -247,10 +258,39 @@ class _AssetProcurementScreenState
         if (_isLoading)
           const IcareTableSkeleton(rowCount: 7, hasFilterBar: true)
         else if (_loadError != null)
-          _buildBanner(
-            'Unable to load asset inventory data: $_loadError',
-            isError: true,
-            tokens: tokens,
+          IcareCard(
+            padding: const EdgeInsets.all(20),
+            topAccentColor: tokens.dangerDot,
+            child: Wrap(
+              spacing: 12,
+              runSpacing: 10,
+              alignment: WrapAlignment.spaceBetween,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.error_outline, color: tokens.dangerDot, size: 22),
+                    const SizedBox(width: 10),
+                    Flexible(
+                      child: Text(
+                        'Unable to load asset inventory data: $_loadError',
+                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: tokens.dangerText),
+                      ),
+                    ),
+                  ],
+                ),
+                ElevatedButton.icon(
+                  onPressed: _loadData,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: tokens.brandPrimaryDark,
+                    foregroundColor: Colors.white,
+                  ),
+                  icon: const Icon(Icons.refresh, size: 15),
+                  label: const Text('Retry'),
+                ),
+              ],
+            ),
           )
         else
           _buildTabBody(
@@ -323,14 +363,18 @@ class _AssetProcurementScreenState
                             canEdit ? tokens.brandSoftText : tokens.infoText,
                       ),
                       const SizedBox(width: 6),
-                      Text(
-                        eyebrow,
-                        style: TextStyle(
-                          fontSize: 10.5,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: 0.7,
-                          color:
-                              canEdit ? tokens.brandSoftText : tokens.infoText,
+                      Flexible(
+                        child: Text(
+                          eyebrow,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 0.7,
+                            color:
+                                canEdit ? tokens.brandSoftText : tokens.infoText,
+                          ),
                         ),
                       ),
                     ],
@@ -554,62 +598,14 @@ class _AssetProcurementScreenState
     required String value,
     required String detail,
   }) {
-    return Container(
+    return SizedBox(
       width: width,
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
-      decoration: BoxDecoration(
-        color: tokens.surface,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: tokens.borderSubtle),
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(9),
-            decoration: BoxDecoration(
-              color: accent.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(9),
-            ),
-            child: Icon(icon, size: 20, color: accent),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 11.5,
-                    fontWeight: FontWeight.w700,
-                    color: tokens.textMuted,
-                  ),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  value,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 17,
-                    fontWeight: FontWeight.w800,
-                    color: tokens.textPrimary,
-                    fontFeatures: const [FontFeature.tabularFigures()],
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  detail,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 11, color: tokens.textSecondary),
-                ),
-              ],
-            ),
-          ),
-        ],
+      child: IcareMetricCard(
+        label: label,
+        value: value,
+        delta: detail,
+        icon: icon,
+        topBorderColor: accent,
       ),
     );
   }
@@ -1603,9 +1599,11 @@ class _AssetProcurementScreenState
     bool saving = false;
     String? modalErr;
 
-    await showIcareDialog<void>(
+    await showIcareAdaptiveSheet<void>(
       context: context,
-      builder: (ctx) => StatefulBuilder(
+      fitContent: true,
+      desktopConstraints: const BoxConstraints(maxWidth: 500, maxHeight: 620),
+      builder: (ctx, isDialog) => StatefulBuilder(
         builder: (ctx, setModal) {
           final dTokens = IcareSurfaceTokens.of(ctx);
           final bStocks = (pickedItem!['branch_stocks'] as Map?) ?? const {};
@@ -1623,217 +1621,251 @@ class _AssetProcurementScreenState
             stockedOptions.insert(0, pickedItem!);
           }
 
-          return AlertDialog(
-            backgroundColor: dTokens.surfaceElevated,
-            title: Text(
-              'Transfer Stock Between Branches',
-              style: TextStyle(
-                fontWeight: FontWeight.w800,
-                color: dTokens.textPrimary,
+          return Material(
+            color: dTokens.surfaceElevated,
+            child: SingleChildScrollView(
+              padding: EdgeInsets.fromLTRB(
+                20,
+                isDialog ? 20 : 12,
+                20,
+                20 + MediaQuery.viewInsetsOf(ctx).bottom,
               ),
-            ),
-            content: SizedBox(
-              width: 460,
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (modalErr != null) ...[
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(10),
-                        margin: const EdgeInsets.only(bottom: 10),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (!isDialog)
+                    Center(
+                      child: Container(
+                        width: 36,
+                        height: 4,
+                        margin: const EdgeInsets.only(bottom: 14),
                         decoration: BoxDecoration(
-                          color: dTokens.dangerBg,
-                          borderRadius: BorderRadius.circular(6),
-                          border: Border.all(color: dTokens.dangerBorder),
+                          color: dTokens.borderStrong,
+                          borderRadius: BorderRadius.circular(2),
                         ),
-                        child: Text(modalErr!,
-                            style: TextStyle(
-                                color: dTokens.dangerText, fontSize: 12)),
-                      ),
-                    ],
-                    DropdownButtonFormField<String>(
-                      value: pickedItem!['item_id']?.toString(),
-                      isExpanded: true,
-                      decoration: const InputDecoration(
-                        labelText: 'Asset SKU',
-                        border: OutlineInputBorder(),
-                      ),
-                      items: (stockedOptions.isEmpty
-                              ? _matrixItems
-                              : stockedOptions)
-                          .map((it) => DropdownMenuItem(
-                                value: it['item_id'].toString(),
-                                child: Text(
-                                  '${it['item_name']} (${it['sku_code']}) — ${it['total_available']} avail',
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ))
-                          .toList(),
-                      onChanged: (v) {
-                        if (v == null) return;
-                        final match = _matrixItems
-                            .firstWhere((e) => e['item_id'].toString() == v);
-                        setModal(() {
-                          pickedItem = match;
-                          fromId = bestSourceBranch(match);
-                          if (toId == fromId) {
-                            toId = branches
-                                .firstWhere((b) =>
-                                    b['branch_id'].toString() !=
-                                    fromId)['branch_id']
-                                .toString();
-                          }
-                        });
-                      },
-                    ),
-                    const SizedBox(height: 12),
-                    DropdownButtonFormField<String>(
-                      value: fromId,
-                      isExpanded: true,
-                      decoration: const InputDecoration(
-                        labelText: 'Source Branch',
-                        border: OutlineInputBorder(),
-                      ),
-                      items: branches.map((b) {
-                        final bid = b['branch_id'].toString();
-                        final av = ((bStocks[bid] as Map?)?['quantity_available']
-                                    as num?)
-                                ?.toInt() ??
-                            0;
-                        return DropdownMenuItem(
-                          value: bid,
-                          child: Text('${b['name']} ($av available)'),
-                        );
-                      }).toList(),
-                      onChanged: (v) {
-                        if (v == null) return;
-                        setModal(() {
-                          fromId = v;
-                          if (toId == fromId) {
-                            toId = branches
-                                .firstWhere((b) =>
-                                    b['branch_id'].toString() !=
-                                    fromId)['branch_id']
-                                .toString();
-                          }
-                        });
-                      },
-                    ),
-                    const SizedBox(height: 12),
-                    DropdownButtonFormField<String>(
-                      value: toId,
-                      isExpanded: true,
-                      decoration: const InputDecoration(
-                        labelText: 'Destination Branch',
-                        border: OutlineInputBorder(),
-                      ),
-                      items: branches
-                          .where((b) => b['branch_id'].toString() != fromId)
-                          .map((b) {
-                        final bid = b['branch_id'].toString();
-                        final av = ((bStocks[bid] as Map?)?['quantity_available']
-                                    as num?)
-                                ?.toInt() ??
-                            0;
-                        return DropdownMenuItem(
-                          value: bid,
-                          child: Text('${b['name']} ($av currently available)'),
-                        );
-                      }).toList(),
-                      onChanged: (v) {
-                        if (v != null) setModal(() => toId = v);
-                      },
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: qtyCtrl,
-                      keyboardType: TextInputType.number,
-                      decoration: InputDecoration(
-                        labelText: 'Quantity to Transfer (Max: $srcAvail)',
-                        border: const OutlineInputBorder(),
                       ),
                     ),
-                    const SizedBox(height: 10),
-                    TextField(
-                      controller: refCtrl,
-                      decoration: const InputDecoration(
-                        labelText: 'Waybill / Dispatch Reference (optional)',
-                        border: OutlineInputBorder(),
-                      ),
+                  Text(
+                    'Transfer Stock Between Branches',
+                    style: TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w800,
+                      color: dTokens.textPrimary,
                     ),
-                    const SizedBox(height: 10),
-                    TextField(
-                      controller: remCtrl,
-                      decoration: const InputDecoration(
-                        labelText: 'Remarks',
-                        border: OutlineInputBorder(),
+                  ),
+                  const SizedBox(height: 14),
+                  if (modalErr != null) ...[
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(10),
+                      margin: const EdgeInsets.only(bottom: 10),
+                      decoration: BoxDecoration(
+                        color: dTokens.dangerBg,
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: dTokens.dangerBorder),
                       ),
+                      child: Text(modalErr!,
+                          style: TextStyle(
+                              color: dTokens.dangerText, fontSize: 12)),
                     ),
                   ],
-                ),
+                  DropdownButtonFormField<String>(
+                    value: pickedItem!['item_id']?.toString(),
+                    isExpanded: true,
+                    dropdownColor: dTokens.surfaceElevated,
+                    decoration: const InputDecoration(
+                      labelText: 'Asset SKU',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: (stockedOptions.isEmpty
+                            ? _matrixItems
+                            : stockedOptions)
+                        .map((it) => DropdownMenuItem(
+                              value: it['item_id'].toString(),
+                              child: Text(
+                                '${it['item_name']} (${it['sku_code']}) — ${it['total_available']} avail',
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ))
+                        .toList(),
+                    onChanged: (v) {
+                      if (v == null) return;
+                      final match = _matrixItems
+                          .firstWhere((e) => e['item_id'].toString() == v);
+                      setModal(() {
+                        pickedItem = match;
+                        fromId = bestSourceBranch(match);
+                        if (toId == fromId) {
+                          toId = branches
+                              .firstWhere((b) =>
+                                  b['branch_id'].toString() !=
+                                  fromId)['branch_id']
+                              .toString();
+                        }
+                      });
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    value: fromId,
+                    isExpanded: true,
+                    dropdownColor: dTokens.surfaceElevated,
+                    decoration: const InputDecoration(
+                      labelText: 'Source Branch',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: branches.map((b) {
+                      final bid = b['branch_id'].toString();
+                      final av = ((bStocks[bid] as Map?)?['quantity_available']
+                                  as num?)
+                              ?.toInt() ??
+                          0;
+                      return DropdownMenuItem(
+                        value: bid,
+                        child: Text('${b['name']} ($av available)'),
+                      );
+                    }).toList(),
+                    onChanged: (v) {
+                      if (v == null) return;
+                      setModal(() {
+                        fromId = v;
+                        if (toId == fromId) {
+                          toId = branches
+                              .firstWhere((b) =>
+                                  b['branch_id'].toString() !=
+                                  fromId)['branch_id']
+                              .toString();
+                        }
+                      });
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    value: toId,
+                    isExpanded: true,
+                    dropdownColor: dTokens.surfaceElevated,
+                    decoration: const InputDecoration(
+                      labelText: 'Destination Branch',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: branches
+                        .where((b) => b['branch_id'].toString() != fromId)
+                        .map((b) {
+                      final bid = b['branch_id'].toString();
+                      final av = ((bStocks[bid] as Map?)?['quantity_available']
+                                  as num?)
+                              ?.toInt() ??
+                          0;
+                      return DropdownMenuItem(
+                        value: bid,
+                        child: Text('${b['name']} ($av currently available)'),
+                      );
+                    }).toList(),
+                    onChanged: (v) {
+                      if (v != null) setModal(() => toId = v);
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: qtyCtrl,
+                    keyboardType: TextInputType.number,
+                    decoration: InputDecoration(
+                      labelText: 'Quantity to Transfer (Max: $srcAvail)',
+                      border: const OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: refCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Waybill / Dispatch Reference (optional)',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: remCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Remarks',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      TextButton(
+                        onPressed: saving ? null : () => Navigator.of(ctx).pop(),
+                        child: const Text('Cancel'),
+                      ),
+                      const SizedBox(width: 8),
+                      ElevatedButton(
+                        onPressed: saving
+                            ? null
+                            : () async {
+                                final qty = int.tryParse(qtyCtrl.text.trim()) ?? 0;
+                                if (qty <= 0 || qty > srcAvail) {
+                                  setModal(() => modalErr =
+                                      'Enter a valid quantity between 1 and $srcAvail.');
+                                  return;
+                                }
+                                setModal(() {
+                                  saving = true;
+                                  modalErr = null;
+                                });
+                                try {
+                                  final api = ref.read(procurementApiServiceProvider);
+                                  final res = await api.transferStock({
+                                    'from_branch_id': fromId,
+                                    'to_branch_id': toId,
+                                    'item_id': pickedItem!['item_id'].toString(),
+                                    'quantity': qty,
+                                    'reference_code': refCtrl.text.trim(),
+                                    'remarks': remCtrl.text.trim(),
+                                  });
+                                  if (ctx.mounted) Navigator.of(ctx).pop();
+                                  _setFlash(
+                                    success:
+                                        'Transferred ${res['quantity']}x ${res['item_name']} from ${res['from_branch_name']} to ${res['to_branch_name']} (Ref: ${res['reference_code']}).',
+                                  );
+                                  await _loadData(silent: true);
+                                } catch (e) {
+                                  setModal(() {
+                                    saving = false;
+                                    modalErr = AppErrorDetails.from(e).message;
+                                  });
+                                }
+                              },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: dTokens.brandPrimaryDark,
+                          foregroundColor: Colors.white,
+                          disabledBackgroundColor: dTokens.surfaceHover,
+                          disabledForegroundColor: dTokens.textMuted,
+                        ),
+                        child: saving
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Text('Confirm Transfer'),
+                      ),
+                    ],
+                  ),
+                ],
               ),
             ),
-            actions: [
-              TextButton(
-                onPressed: saving ? null : () => Navigator.of(ctx).pop(),
-                child: const Text('Cancel'),
-              ),
-              ElevatedButton(
-                onPressed: saving
-                    ? null
-                    : () async {
-                        final qty = int.tryParse(qtyCtrl.text.trim()) ?? 0;
-                        if (qty <= 0 || qty > srcAvail) {
-                          setModal(() => modalErr =
-                              'Enter a valid quantity between 1 and $srcAvail.');
-                          return;
-                        }
-                        setModal(() {
-                          saving = true;
-                          modalErr = null;
-                        });
-                        try {
-                          final api = ref.read(procurementApiServiceProvider);
-                          final res = await api.transferStock({
-                            'from_branch_id': fromId,
-                            'to_branch_id': toId,
-                            'item_id': pickedItem!['item_id'].toString(),
-                            'quantity': qty,
-                            'reference_code': refCtrl.text.trim(),
-                            'remarks': remCtrl.text.trim(),
-                          });
-                          if (ctx.mounted) Navigator.of(ctx).pop();
-                          _setFlash(
-                            success:
-                                'Transferred ${res['quantity']}x ${res['item_name']} from ${res['from_branch_name']} to ${res['to_branch_name']} (Ref: ${res['reference_code']}).',
-                          );
-                          await _loadData(silent: true);
-                        } catch (e) {
-                          setModal(() {
-                            saving = false;
-                            modalErr = AppErrorDetails.from(e).message;
-                          });
-                        }
-                      },
-                child: saving
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Text('Confirm Transfer'),
-              ),
-            ],
           );
         },
       ),
-    );
-    qtyCtrl.dispose();
-    refCtrl.dispose();
-    remCtrl.dispose();
+    ).whenComplete(() {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        qtyCtrl.dispose();
+        refCtrl.dispose();
+        remCtrl.dispose();
+      });
+    });
   }
 
   Widget _buildGrnForm(IcareSurfaceTokens tokens) {
@@ -1864,6 +1896,7 @@ class _AssetProcurementScreenState
                 child: DropdownButtonFormField<String>(
                   value: _grnBranchId,
                   isExpanded: true,
+                  dropdownColor: tokens.surfaceElevated,
                   decoration: const InputDecoration(
                     labelText: 'Destination Branch',
                     border: OutlineInputBorder(),
@@ -1918,6 +1951,7 @@ class _AssetProcurementScreenState
                 child: DropdownButtonFormField<String>(
                   value: _grnPickItemId,
                   isExpanded: true,
+                  dropdownColor: tokens.surfaceElevated,
                   decoration: const InputDecoration(
                     labelText: 'Select Asset SKU to Add to Delivery',
                     border: OutlineInputBorder(),
@@ -2212,6 +2246,7 @@ class _AssetProcurementScreenState
                 child: DropdownButtonFormField<String>(
                   value: _woBranchId,
                   isExpanded: true,
+                  dropdownColor: tokens.surfaceElevated,
                   decoration: const InputDecoration(
                     labelText: 'Branch',
                     border: OutlineInputBorder(),
@@ -2228,11 +2263,12 @@ class _AssetProcurementScreenState
                   }),
                 ),
               ),
-              SizedBox(
-                width: 340,
+              ConstrainedBox(
+                constraints: const BoxConstraints(minWidth: 220, maxWidth: 340),
                 child: DropdownButtonFormField<String>(
                   value: _woItemId,
                   isExpanded: true,
+                  dropdownColor: tokens.surfaceElevated,
                   decoration: const InputDecoration(
                     labelText: 'Stocked SKU at Branch',
                     border: OutlineInputBorder(),
@@ -2331,8 +2367,10 @@ class _AssetProcurementScreenState
             icon: const Icon(Icons.report_problem_outlined, size: 17),
             label: Text(_isSubmitting ? 'Recording...' : 'Record Write-Off'),
             style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFFDC2626),
+              backgroundColor: tokens.isDark ? tokens.dangerBorder : tokens.dangerText,
               foregroundColor: Colors.white,
+              disabledBackgroundColor: tokens.surfaceHover,
+              disabledForegroundColor: tokens.textMuted,
               padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 13),
             ),
           ),
@@ -2381,9 +2419,11 @@ class _AssetProcurementScreenState
     bool saving = false;
     String? modalErr;
 
-    await showIcareDialog<void>(
+    await showIcareAdaptiveSheet<void>(
       context: context,
-      builder: (ctx) => StatefulBuilder(
+      fitContent: true,
+      desktopConstraints: const BoxConstraints(maxWidth: 520, maxHeight: 680),
+      builder: (ctx, isDialog) => StatefulBuilder(
         builder: (ctx, setModal) {
           final dTokens = IcareSurfaceTokens.of(ctx);
           final parsedCost =
@@ -2397,278 +2437,310 @@ class _AssetProcurementScreenState
           final marginPct =
               hasCost && parsedCost > 0 ? (margin / parsedCost) * 100.0 : 0.0;
 
-          return AlertDialog(
-            backgroundColor: dTokens.surfaceElevated,
-            title: Text(
-              isEdit ? 'Edit Cost & Selling Prices' : 'Create New Catalog SKU',
-              style: TextStyle(
-                fontWeight: FontWeight.w800,
-                color: dTokens.textPrimary,
+          return Material(
+            color: dTokens.surfaceElevated,
+            child: SingleChildScrollView(
+              padding: EdgeInsets.fromLTRB(
+                20,
+                isDialog ? 20 : 12,
+                20,
+                20 + MediaQuery.viewInsetsOf(ctx).bottom,
               ),
-            ),
-            content: SizedBox(
-              width: 480,
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (modalErr != null) ...[
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(10),
-                        margin: const EdgeInsets.only(bottom: 10),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (!isDialog)
+                    Center(
+                      child: Container(
+                        width: 36,
+                        height: 4,
+                        margin: const EdgeInsets.only(bottom: 14),
                         decoration: BoxDecoration(
-                          color: dTokens.dangerBg,
-                          borderRadius: BorderRadius.circular(6),
-                          border: Border.all(color: dTokens.dangerBorder),
+                          color: dTokens.borderStrong,
+                          borderRadius: BorderRadius.circular(2),
                         ),
-                        child: Text(modalErr!,
-                            style: TextStyle(
-                                color: dTokens.dangerText, fontSize: 12)),
-                      ),
-                    ],
-                    Row(
-                      children: [
-                        Expanded(
-                          flex: 2,
-                          child: TextField(
-                            controller: skuCtrl,
-                            readOnly: isEdit,
-                            decoration: InputDecoration(
-                              labelText: isEdit
-                                  ? 'SKU Code'
-                                  : 'SKU Code (auto if blank)',
-                              border: const OutlineInputBorder(),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          flex: 3,
-                          child: DropdownButtonFormField<String>(
-                            value: catValue,
-                            isExpanded: true,
-                            decoration: const InputDecoration(
-                              labelText: 'Category',
-                              border: OutlineInputBorder(),
-                            ),
-                            items: cats
-                                .map((c) => DropdownMenuItem(
-                                      value: c,
-                                      child: Text(c,
-                                          overflow: TextOverflow.ellipsis),
-                                    ))
-                                .toList(),
-                            onChanged: (v) {
-                              if (v != null) setModal(() => catValue = v);
-                            },
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                    TextField(
-                      controller: nameCtrl,
-                      decoration: const InputDecoration(
-                        labelText: 'Asset Item Name',
-                        border: OutlineInputBorder(),
                       ),
                     ),
-                    const SizedBox(height: 10),
-                    TextField(
-                      controller: supplierCtrl,
-                      decoration: const InputDecoration(
-                        labelText: 'Primary Supplier / Vendor (optional)',
-                        border: OutlineInputBorder(),
-                      ),
+                  Text(
+                    isEdit ? 'Edit Cost & Selling Prices' : 'Create New Catalog SKU',
+                    style: TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w800,
+                      color: dTokens.textPrimary,
                     ),
-                    const SizedBox(height: 10),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: TextField(
-                            controller: costCtrl,
-                            keyboardType: TextInputType.number,
-                            onChanged: (_) => setModal(() {}),
-                            decoration: const InputDecoration(
-                              labelText: 'Supplier Cost Price (₦)',
-                              helperText: 'Leave blank if Cost Pending',
-                              border: OutlineInputBorder(),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: TextField(
-                            controller: cashCtrl,
-                            keyboardType: TextInputType.number,
-                            onChanged: (_) => setModal(() {}),
-                            decoration: const InputDecoration(
-                              labelText: 'Cash & Carry Price (₦)',
-                              helperText: 'Auto-computes 60D & 120D',
-                              border: OutlineInputBorder(),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
+                  ),
+                  const SizedBox(height: 14),
+                  if (modalErr != null) ...[
                     Container(
                       width: double.infinity,
                       padding: const EdgeInsets.all(10),
+                      margin: const EdgeInsets.only(bottom: 10),
                       decoration: BoxDecoration(
-                        color: dTokens.surfaceSubtle,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: dTokens.borderSubtle),
+                        color: dTokens.dangerBg,
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: dTokens.dangerBorder),
                       ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Live Pricing & Profit Preview',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700,
-                              color: dTokens.textPrimary,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            'Easy Buy 60D (+12%): ${CurrencyFormatter.formatNaira(p60)}  •  Easy Buy 120D (+21%): ${CurrencyFormatter.formatNaira(p120)}',
-                            style: TextStyle(
-                                fontSize: 11.5, color: dTokens.textSecondary),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            hasCost
-                                ? 'Retail Profit / Unit: ${CurrencyFormatter.formatNaira(margin)} (${marginPct.toStringAsFixed(1)}%)  •  60D Total Profit: ${CurrencyFormatter.formatNaira(p60 - parsedCost)}'
-                                : 'Retail Margin: Cost Pending  •  Financing Markup: ${CurrencyFormatter.formatNaira(p60 - parsedCash)} (60D) / ${CurrencyFormatter.formatNaira(p120 - parsedCash)} (120D)',
-                            style: TextStyle(
-                              fontSize: 11.5,
-                              fontWeight: FontWeight.w600,
-                              color: hasCost
-                                  ? (margin >= 0
-                                      ? dTokens.successText
-                                      : dTokens.dangerText)
-                                  : dTokens.infoText,
-                            ),
-                          ),
-                        ],
-                      ),
+                      child: Text(modalErr!,
+                          style: TextStyle(
+                              color: dTokens.dangerText, fontSize: 12)),
                     ),
-                    if (!isEdit && _branches.isNotEmpty) ...[
-                      const SizedBox(height: 10),
-                      Row(
-                        children: [
-                          Expanded(
-                            flex: 3,
-                            child: DropdownButtonFormField<String>(
-                              value: initBranchId,
-                              isExpanded: true,
-                              decoration: const InputDecoration(
-                                labelText: 'Initial Stock Branch',
-                                border: OutlineInputBorder(),
-                              ),
-                              items: _branches
-                                  .map((b) => DropdownMenuItem(
-                                        value: b['branch_id'].toString(),
-                                        child: Text(b['name'].toString()),
-                                      ))
-                                  .toList(),
-                              onChanged: (v) =>
-                                  setModal(() => initBranchId = v),
-                            ),
+                  ],
+                  Row(
+                    children: [
+                      Expanded(
+                        flex: 2,
+                        child: TextField(
+                          controller: skuCtrl,
+                          readOnly: isEdit,
+                          decoration: InputDecoration(
+                            labelText: isEdit
+                                ? 'SKU Code'
+                                : 'SKU Code (auto if blank)',
+                            border: const OutlineInputBorder(),
                           ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            flex: 2,
-                            child: TextField(
-                              controller: initQtyCtrl,
-                              keyboardType: TextInputType.number,
-                              decoration: const InputDecoration(
-                                labelText: 'Opening Qty',
-                                border: OutlineInputBorder(),
-                              ),
-                            ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        flex: 3,
+                        child: DropdownButtonFormField<String>(
+                          value: catValue,
+                          isExpanded: true,
+                          dropdownColor: dTokens.surfaceElevated,
+                          decoration: const InputDecoration(
+                            labelText: 'Category',
+                            border: OutlineInputBorder(),
                           ),
-                        ],
+                          items: cats
+                              .map((c) => DropdownMenuItem(
+                                    value: c,
+                                    child: Text(c,
+                                        overflow: TextOverflow.ellipsis),
+                                  ))
+                              .toList(),
+                          onChanged: (v) {
+                            if (v != null) setModal(() => catValue = v);
+                          },
+                        ),
                       ),
                     ],
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: nameCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Asset Item Name',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: supplierCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Primary Supplier / Vendor (optional)',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: costCtrl,
+                          keyboardType: TextInputType.number,
+                          onChanged: (_) => setModal(() {}),
+                          decoration: const InputDecoration(
+                            labelText: 'Supplier Cost Price (₦)',
+                            helperText: 'Leave blank if Cost Pending',
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: TextField(
+                          controller: cashCtrl,
+                          keyboardType: TextInputType.number,
+                          onChanged: (_) => setModal(() {}),
+                          decoration: const InputDecoration(
+                            labelText: 'Cash & Carry Price (₦)',
+                            helperText: 'Auto-computes 60D & 120D',
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: dTokens.surfaceSubtle,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: dTokens.borderSubtle),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Live Pricing & Profit Preview',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: dTokens.textPrimary,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Easy Buy 60D (+12%): ${CurrencyFormatter.formatNaira(p60)}  •  Easy Buy 120D (+21%): ${CurrencyFormatter.formatNaira(p120)}',
+                          style: TextStyle(
+                              fontSize: 11.5, color: dTokens.textSecondary),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          hasCost
+                              ? 'Retail Profit / Unit: ${CurrencyFormatter.formatNaira(margin)} (${marginPct.toStringAsFixed(1)}%)  •  60D Total Profit: ${CurrencyFormatter.formatNaira(p60 - parsedCost)}'
+                              : 'Retail Margin: Cost Pending  •  Financing Markup: ${CurrencyFormatter.formatNaira(p60 - parsedCash)} (60D) / ${CurrencyFormatter.formatNaira(p120 - parsedCash)} (120D)',
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w600,
+                            color: hasCost
+                                ? (margin >= 0
+                                    ? dTokens.successText
+                                    : dTokens.dangerText)
+                                : dTokens.infoText,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (!isEdit && _branches.isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Expanded(
+                          flex: 3,
+                          child: DropdownButtonFormField<String>(
+                            value: initBranchId,
+                            isExpanded: true,
+                            dropdownColor: dTokens.surfaceElevated,
+                            decoration: const InputDecoration(
+                              labelText: 'Initial Stock Branch',
+                              border: OutlineInputBorder(),
+                            ),
+                            items: _branches
+                                .map((b) => DropdownMenuItem(
+                                      value: b['branch_id'].toString(),
+                                      child: Text(b['name'].toString()),
+                                    ))
+                                .toList(),
+                            onChanged: (v) =>
+                                setModal(() => initBranchId = v),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          flex: 2,
+                          child: TextField(
+                            controller: initQtyCtrl,
+                            keyboardType: TextInputType.number,
+                            decoration: const InputDecoration(
+                              labelText: 'Opening Qty',
+                              border: OutlineInputBorder(),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ],
-                ),
+                  const SizedBox(height: 18),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      TextButton(
+                        onPressed: saving ? null : () => Navigator.of(ctx).pop(),
+                        child: const Text('Cancel'),
+                      ),
+                      const SizedBox(width: 8),
+                      ElevatedButton(
+                        onPressed: saving
+                            ? null
+                            : () async {
+                                if (nameCtrl.text.trim().isEmpty) {
+                                  setModal(() => modalErr = 'Item name is required.');
+                                  return;
+                                }
+                                setModal(() {
+                                  saving = true;
+                                  modalErr = null;
+                                });
+                                try {
+                                  final api = ref.read(procurementApiServiceProvider);
+                                  await api.upsertCatalogItem({
+                                    if (isEdit)
+                                      'item_id': existingItem['item_id'].toString(),
+                                    if (skuCtrl.text.trim().isNotEmpty)
+                                      'sku_code': skuCtrl.text.trim(),
+                                    'category': catValue,
+                                    'item_name': nameCtrl.text.trim(),
+                                    'unit_cost_price': parsedCost,
+                                    'cash_and_carry_price': parsedCash,
+                                    if (supplierCtrl.text.trim().isNotEmpty)
+                                      'supplier_name': supplierCtrl.text.trim(),
+                                    if (!isEdit && initBranchId != null)
+                                      'initial_branch_id': initBranchId,
+                                    if (!isEdit)
+                                      'initial_quantity':
+                                          int.tryParse(initQtyCtrl.text.trim()) ?? 0,
+                                  });
+                                  if (ctx.mounted) Navigator.of(ctx).pop();
+                                  _setFlash(
+                                    success: isEdit
+                                        ? 'Updated pricing for ${nameCtrl.text.trim()}.'
+                                        : 'Created new catalog SKU: ${nameCtrl.text.trim()}.',
+                                  );
+                                  await _loadData(silent: true);
+                                } catch (e) {
+                                  setModal(() {
+                                    saving = false;
+                                    modalErr = AppErrorDetails.from(e).message;
+                                  });
+                                }
+                              },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: dTokens.brandPrimaryDark,
+                          foregroundColor: Colors.white,
+                          disabledBackgroundColor: dTokens.surfaceHover,
+                          disabledForegroundColor: dTokens.textMuted,
+                        ),
+                        child: saving
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : Text(isEdit ? 'Save Pricing' : 'Create SKU'),
+                      ),
+                    ],
+                  ),
+                ],
               ),
             ),
-            actions: [
-              TextButton(
-                onPressed: saving ? null : () => Navigator.of(ctx).pop(),
-                child: const Text('Cancel'),
-              ),
-              ElevatedButton(
-                onPressed: saving
-                    ? null
-                    : () async {
-                        if (nameCtrl.text.trim().isEmpty) {
-                          setModal(() => modalErr = 'Item name is required.');
-                          return;
-                        }
-                        setModal(() {
-                          saving = true;
-                          modalErr = null;
-                        });
-                        try {
-                          final api = ref.read(procurementApiServiceProvider);
-                          await api.upsertCatalogItem({
-                            if (isEdit)
-                              'item_id': existingItem['item_id'].toString(),
-                            if (skuCtrl.text.trim().isNotEmpty)
-                              'sku_code': skuCtrl.text.trim(),
-                            'category': catValue,
-                            'item_name': nameCtrl.text.trim(),
-                            'unit_cost_price': parsedCost,
-                            'cash_and_carry_price': parsedCash,
-                            if (supplierCtrl.text.trim().isNotEmpty)
-                              'supplier_name': supplierCtrl.text.trim(),
-                            if (!isEdit && initBranchId != null)
-                              'initial_branch_id': initBranchId,
-                            if (!isEdit)
-                              'initial_quantity':
-                                  int.tryParse(initQtyCtrl.text.trim()) ?? 0,
-                          });
-                          if (ctx.mounted) Navigator.of(ctx).pop();
-                          _setFlash(
-                            success: isEdit
-                                ? 'Updated pricing for ${nameCtrl.text.trim()}.'
-                                : 'Created new catalog SKU: ${nameCtrl.text.trim()}.',
-                          );
-                          await _loadData(silent: true);
-                        } catch (e) {
-                          setModal(() {
-                            saving = false;
-                            modalErr = AppErrorDetails.from(e).message;
-                          });
-                        }
-                      },
-                child: saving
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : Text(isEdit ? 'Save Pricing' : 'Create SKU'),
-              ),
-            ],
           );
         },
       ),
-    );
-
-    skuCtrl.dispose();
-    nameCtrl.dispose();
-    supplierCtrl.dispose();
-    costCtrl.dispose();
-    cashCtrl.dispose();
-    initQtyCtrl.dispose();
+    ).whenComplete(() {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        skuCtrl.dispose();
+        nameCtrl.dispose();
+        supplierCtrl.dispose();
+        costCtrl.dispose();
+        cashCtrl.dispose();
+        initQtyCtrl.dispose();
+      });
+    });
   }
 
   Widget _paginationSummaryPill(
@@ -2734,6 +2806,7 @@ class _AssetProcurementScreenState
               width: 90,
               child: DropdownButtonFormField<int>(
                 value: pageSize,
+                isExpanded: true,
                 isDense: true,
                 dropdownColor: tokens.surfaceElevated,
                 decoration: const InputDecoration(
@@ -2754,8 +2827,10 @@ class _AssetProcurementScreenState
             ),
           ],
         ),
-        Row(
-          mainAxisSize: MainAxisSize.min,
+        Wrap(
+          spacing: 8,
+          runSpacing: 6,
+          crossAxisAlignment: WrapCrossAlignment.center,
           children: [
             Text(
               'Page ${page + 1} of $totalPages',
@@ -2765,13 +2840,11 @@ class _AssetProcurementScreenState
                 color: tokens.textSecondary,
               ),
             ),
-            const SizedBox(width: 10),
             OutlinedButton.icon(
               onPressed: page > 0 ? () => onPageChanged(page - 1) : null,
               icon: const Icon(Icons.chevron_left, size: 17),
               label: const Text('Prev'),
             ),
-            const SizedBox(width: 6),
             OutlinedButton.icon(
               onPressed:
                   page + 1 < totalPages ? () => onPageChanged(page + 1) : null,
@@ -2791,7 +2864,7 @@ class _AssetProcurementScreenState
 
 /// Wraps a DataTable so it stretches cleanly to 100% of its card width on wide
 /// viewports and scrolls horizontally only when needed on narrower viewports.
-class ProcurementFullWidthTable extends StatelessWidget {
+class ProcurementFullWidthTable extends StatefulWidget {
   final IcareSurfaceTokens tokens;
   final Widget child;
 
@@ -2802,21 +2875,40 @@ class ProcurementFullWidthTable extends StatelessWidget {
   });
 
   @override
+  State<ProcurementFullWidthTable> createState() =>
+      _ProcurementFullWidthTableState();
+}
+
+class _ProcurementFullWidthTableState extends State<ProcurementFullWidthTable> {
+  final ScrollController _horizontalCtrl = ScrollController();
+
+  @override
+  void dispose() {
+    _horizontalCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: tokens.borderSubtle),
+        border: Border.all(color: widget.tokens.borderSubtle),
       ),
       clipBehavior: Clip.antiAlias,
       child: LayoutBuilder(
         builder: (context, constraints) {
-          return SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: ConstrainedBox(
-              constraints: BoxConstraints(minWidth: constraints.maxWidth),
-              child: child,
+          return Scrollbar(
+            controller: _horizontalCtrl,
+            thumbVisibility: true,
+            child: SingleChildScrollView(
+              controller: _horizontalCtrl,
+              scrollDirection: Axis.horizontal,
+              child: ConstrainedBox(
+                constraints: BoxConstraints(minWidth: constraints.maxWidth),
+                child: widget.child,
+              ),
             ),
           );
         },
@@ -2843,44 +2935,37 @@ class ProcurementSectionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
+    return IcareCard(
       padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: tokens.surface,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: tokens.borderSubtle),
-      ),
+      topAccentColor: tokens.brandPrimary,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          Wrap(
+            spacing: 12,
+            runSpacing: 8,
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: TextStyle(
-                        fontSize: 15.5,
-                        fontWeight: FontWeight.w800,
-                        color: tokens.textPrimary,
-                      ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: TextStyle(
+                      fontSize: 15.5,
+                      fontWeight: FontWeight.w800,
+                      color: tokens.textPrimary,
                     ),
-                    const SizedBox(height: 3),
-                    Text(
-                      subtitle,
-                      style: TextStyle(fontSize: 12, color: tokens.textMuted),
-                    ),
-                  ],
-                ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    subtitle,
+                    style: TextStyle(fontSize: 12, color: tokens.textMuted),
+                  ),
+                ],
               ),
-              if (trailing != null) ...[
-                const SizedBox(width: 12),
-                trailing!,
-              ],
+              if (trailing != null) trailing!,
             ],
           ),
           const SizedBox(height: 14),

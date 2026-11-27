@@ -898,16 +898,6 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
             branchName: branchName,
           ),
           const SizedBox(height: 14),
-          CoCashbookFlowCard(
-            openingBalance: openingBalance.toDouble(),
-            totalInflows: totalInflows.toDouble(),
-            totalOutflows: totalOutflows.toDouble(),
-            closingBalance: closingBalance.toDouble(),
-            isOpen: isOpen,
-            openReason: openReason,
-            onSelectMobileTab: (idx) => setState(() => _mobileCashbookTab = idx),
-          ),
-          const SizedBox(height: 14),
 
           // 3. Tactile 4-Pill Segmented Operational Hub Bar
           _buildMobileCashbookPills(
@@ -937,16 +927,6 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
           _buildSuspendedBanner(openReason),
           const SizedBox(height: 14),
         ],
-
-        CoCashbookFlowCard(
-          openingBalance: openingBalance.toDouble(),
-          totalInflows: totalInflows.toDouble(),
-          totalOutflows: totalOutflows.toDouble(),
-          closingBalance: closingBalance.toDouble(),
-          isOpen: isOpen,
-          openReason: openReason,
-        ),
-        const SizedBox(height: 14),
 
         // 1. Summary KPI Metric Cards
         _buildSummaryKpiCards(openingBalance, totalInflows, totalOutflows, closingBalance),

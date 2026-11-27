@@ -323,7 +323,7 @@ void main() {
   group('AM Dashboard Redesign & Zero-Hardcode Verification', () {
     for (final width in <double>[360, 800, 1280]) {
       testWidgets(
-        'renders AmDashboardScreen cleanly with charts & flow pipeline at ${width.toInt()}px width',
+        'renders AmDashboardScreen cleanly with charts & approvals hub without flow card at ${width.toInt()}px width',
         (tester) async {
           tester.view.physicalSize = Size(width, 1100);
           tester.view.devicePixelRatio = 1.0;
@@ -364,7 +364,7 @@ void main() {
           expect(tester.takeException(), isNull);
           expect(
             find.text('Regional Supervision & EOD Governance Flow'),
-            findsOneWidget,
+            findsNothing,
           );
           expect(
             find.text('Branch Comparative Performance Analytics'),
@@ -384,9 +384,14 @@ void main() {
           await tester.pumpAndSettle();
           expect(find.text('Physical Vault Cash'), findsOneWidget);
 
-          // Tap Governance Stage 02 to select High-Value Loans Approval Tab
-          await tester.ensureVisible(find.text('Credit > ₦300k'));
-          await tester.tap(find.text('Credit > ₦300k'));
+          // Switch to Approvals hub (via mobile switcher if compact) and select High-Value Loans tab
+          if (width < 600) {
+            await tester.ensureVisible(find.text('Approvals').first);
+            await tester.tap(find.text('Approvals').first);
+            await tester.pumpAndSettle();
+          }
+          await tester.ensureVisible(find.textContaining('High-Value Loans').first);
+          await tester.tap(find.textContaining('High-Value Loans').first);
           await tester.pumpAndSettle();
           expect(find.text('Chinedu Okafor'), findsWidgets);
 

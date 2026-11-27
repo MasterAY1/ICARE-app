@@ -13,6 +13,10 @@ import '../../../core/auth/auth_controller.dart';
 import '../../../core/auth/auth_state.dart';
 import '../../../core/theme/icare_theme_tokens.dart';
 import '../../../core/errors/app_error_formatter.dart';
+import '../../../core/widgets/icare_card.dart';
+import '../../../core/widgets/icare_metric_card.dart';
+import '../../../core/widgets/icare_status_badge.dart';
+import 'widgets/am_subpage_charts.dart';
 
 class AmPortfolioScreen extends ConsumerStatefulWidget {
   const AmPortfolioScreen({super.key});
@@ -99,36 +103,40 @@ class _AmPortfolioScreenState extends ConsumerState<AmPortfolioScreen> {
     final isBm = role == 'branch manager' || role == 'bm';
     final branchName = user?.branch.isNotEmpty == true ? user!.branch : 'Branch';
 
-    final screenWidth = MediaQuery.of(context).size.width;
-    final isMobile = screenWidth < 600;
-    final isTablet = screenWidth >= 600 && screenWidth < 1000;
-    final isDesktop = screenWidth >= 1000;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final screenWidth = constraints.maxWidth;
+        final isMobile = screenWidth < 680;
+        final isTablet = screenWidth >= 680 && screenWidth < 1000;
+        final isDesktop = screenWidth >= 1000;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // 1. Executive Command Header
-        _buildExecutiveHeader(isMobile, isBm, branchName),
-        const SizedBox(height: 16),
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // 1. Executive Command Header
+            _buildExecutiveHeader(isMobile, isBm, branchName),
+            const SizedBox(height: 16),
 
-        AnimatedSwitcher(
-          duration: const Duration(milliseconds: 280),
-          switchInCurve: Curves.easeOutCubic,
-          switchOutCurve: Curves.easeInCubic,
-          child: _isLoading
-              ? IcareAmPortfolioSkeleton(
-                  key: const ValueKey('am_portfolio_skeleton'),
-                  isMobile: isMobile,
-                  isTablet: isTablet,
-                  isDesktop: isDesktop,
-                )
-              : _errorMessage != null
-                  ? _buildErrorState()
-                  : _dashboardData != null
-                      ? _buildPortfolioContent(isMobile, isTablet, isDesktop, isBm, branchName)
-                      : const SizedBox.shrink(key: ValueKey('am_portfolio_empty')),
-        ),
-      ],
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 280),
+              switchInCurve: Curves.easeOutCubic,
+              switchOutCurve: Curves.easeInCubic,
+              child: _isLoading
+                  ? IcareAmPortfolioSkeleton(
+                      key: const ValueKey('am_portfolio_skeleton'),
+                      isMobile: isMobile,
+                      isTablet: isTablet,
+                      isDesktop: isDesktop,
+                    )
+                  : _errorMessage != null
+                      ? _buildErrorState()
+                      : _dashboardData != null
+                          ? _buildPortfolioContent(isMobile, isTablet, isDesktop, isBm, branchName)
+                          : const SizedBox.shrink(key: ValueKey('am_portfolio_empty')),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -138,8 +146,11 @@ class _AmPortfolioScreenState extends ConsumerState<AmPortfolioScreen> {
       key: const ValueKey('am_portfolio_content'),
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // 2. Portfolio Share Segmented Bar
-        _buildPortfolioShareBar(_dashboardData!.branchPerformance, isMobile),
+        // 2. Live Regional Portfolio Analytics (Donut + Branch Comparison BarChart)
+        AmPortfolioAllocationChart(
+          branches: _dashboardData!.branchPerformance,
+          periodLabel: _selectedPeriod,
+        ),
         const SizedBox(height: 18),
 
         // 3. 6 Regional KPI Summary Cards
@@ -150,26 +161,28 @@ class _AmPortfolioScreenState extends ConsumerState<AmPortfolioScreen> {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  isBm ? '$branchName Portfolio Operations' : 'Branch Performance Matrix',
-                  style: TextStyle(
-                    fontSize: 17,
-                    fontWeight: FontWeight.w800,
-                    color: tokens.textPrimary,
-                    letterSpacing: -0.2,
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    isBm ? '$branchName Portfolio Operations' : 'Branch Performance Matrix',
+                    style: TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w800,
+                      color: tokens.textPrimary,
+                      letterSpacing: -0.2,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  isBm
-                      ? 'Capital deployment, active credit progress, and officer productivity for $branchName.'
-                      : 'Capital deployment, active credit progress, and officer productivity.',
-                  style: TextStyle(fontSize: 12, color: tokens.textMuted),
-                ),
-              ],
+                  const SizedBox(height: 3),
+                  Text(
+                    isBm
+                        ? 'Capital deployment, active credit progress, and officer productivity for $branchName.'
+                        : 'Capital deployment, active credit progress, and officer productivity.',
+                    style: TextStyle(fontSize: 12, color: tokens.textMuted),
+                  ),
+                ],
+              ),
             ),
             IconButton(
               tooltip: 'Refresh Portfolio',
@@ -194,80 +207,80 @@ class _AmPortfolioScreenState extends ConsumerState<AmPortfolioScreen> {
   // 1. Executive Header with Period Selector
   Widget _buildExecutiveHeader(bool isMobile, bool isBm, String branchName) {
     final tokens = IcareSurfaceTokens.of(context);
-    return Container(
-      width: double.infinity,
+    final rawArea = _dashboardData?.regionalSummary.areaName.trim() ?? '';
+    final regionBadgeLabel = isBm
+        ? '${branchName.toUpperCase()} BRANCH'
+        : (rawArea.isNotEmpty ? rawArea.toUpperCase() : 'REGIONAL');
+
+    return IcareCard(
       padding: EdgeInsets.all(isMobile ? 16 : 20),
-      decoration: BoxDecoration(
-        color: tokens.surface,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: tokens.borderSubtle),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: tokens.isDark ? 0.18 : 0.03),
-            blurRadius: 4,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
+      topAccentColor: tokens.brandPrimary,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: isBm ? tokens.infoBg : tokens.brandSoftBg,
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: isBm ? tokens.infoBorder : tokens.brandSoftBorder),
+              Expanded(
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: isBm ? tokens.infoBg : tokens.brandSoftBg,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: isBm ? tokens.infoBorder : tokens.brandSoftBorder),
+                      ),
+                      child: Icon(
+                        Icons.account_balance,
+                        color: isBm ? tokens.infoText : tokens.brandPrimary,
+                        size: 22,
+                      ),
                     ),
-                    child: Icon(
-                      Icons.account_balance,
-                      color: isBm ? tokens.infoText : tokens.brandPrimary,
-                      size: 22,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            isBm ? '$branchName Branch Portfolio' : 'Regional Command Center',
-                            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: tokens.textPrimary),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 4,
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            children: [
+                              Text(
+                                isBm ? '$branchName Branch Portfolio' : 'Regional Command Center',
+                                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: tokens.textPrimary),
+                              ),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: isBm ? tokens.brandPrimary : tokens.brandPrimaryDark,
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: Text(
+                                  regionBadgeLabel,
+                                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 10, letterSpacing: 0.5),
+                                ),
+                              ),
+                            ],
                           ),
-                          const SizedBox(width: 8),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: isBm
-                                  ? (tokens.isDark ? const Color(0xFF1D4ED8) : const Color(0xFF2563EB))
-                                  : tokens.brandPrimaryDark,
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                            child: Text(
-                              isBm ? '${branchName.toUpperCase()} BRANCH' : 'AREA 1',
-                              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 10, letterSpacing: 0.5),
-                            ),
+                          const SizedBox(height: 2),
+                          Text(
+                            isBm
+                                ? 'Branch credit portfolio, capital deployment, and officer productivity'
+                                : 'Consolidated regional branch supervision',
+                            style: TextStyle(fontSize: 12, color: tokens.textMuted),
                           ),
                         ],
                       ),
-                      const SizedBox(height: 2),
-                      Text(
-                        isBm
-                            ? 'Branch credit portfolio, capital deployment, and officer productivity'
-                            : 'Consolidated regional branch supervision',
-                        style: TextStyle(fontSize: 12, color: tokens.textMuted),
-                      ),
-                    ],
-                  ),
-                ],
+                    ),
+                  ],
+                ),
               ),
-              if (!isMobile) _buildPeriodSelector(),
+              if (!isMobile) ...[
+                const SizedBox(width: 12),
+                _buildPeriodSelector(),
+              ],
             ],
           ),
           if (isMobile) ...[
@@ -289,15 +302,16 @@ class _AmPortfolioScreenState extends ConsumerState<AmPortfolioScreen> {
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: tokens.borderSubtle),
       ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
+      child: Wrap(
+        spacing: 2,
+        runSpacing: 4,
         children: periods.map((p) {
           final isSelected = _selectedPeriod == p;
           return InkWell(
             onTap: () => _onPeriodChanged(p),
             borderRadius: BorderRadius.circular(6),
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
               decoration: BoxDecoration(
                 color: isSelected ? tokens.surface : Colors.transparent,
                 borderRadius: BorderRadius.circular(6),
@@ -320,176 +334,81 @@ class _AmPortfolioScreenState extends ConsumerState<AmPortfolioScreen> {
     );
   }
 
-  // 2. Portfolio Share Segmented Bar
-  Widget _buildPortfolioShareBar(List<BranchPerformanceItemModel> branches, bool isMobile) {
-    if (branches.isEmpty) return const SizedBox.shrink();
-    final tokens = IcareSurfaceTokens.of(context);
-
-    // Palette for branches
-    final palette = [
-      tokens.brandPrimary,
-      tokens.infoDot,
-      tokens.isDark ? const Color(0xFFA78BFA) : const Color(0xFF7C3AED),
-      tokens.warningDot,
-    ];
-
-    double totalActiveCredit = branches.fold(0.0, (sum, b) => sum + (b.activeCreditDisbursedAmount > 0 ? b.activeCreditDisbursedAmount : 1.0));
-    if (totalActiveCredit <= 0) totalActiveCredit = 1.0;
-
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: tokens.surface,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: tokens.borderSubtle),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                'Regional Loan Book Distribution',
-                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: tokens.textPrimary),
-              ),
-              Text(
-                'Period: $_selectedPeriod',
-                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: tokens.textMuted),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(6),
-            child: SizedBox(
-              height: 10,
-              child: Row(
-                children: branches.asMap().entries.map((entry) {
-                  final idx = entry.key;
-                  final b = entry.value;
-                  final vol = b.activeCreditDisbursedAmount > 0 ? b.activeCreditDisbursedAmount : 1.0;
-                  final flex = ((vol / totalActiveCredit) * 1000).toInt().clamp(1, 1000);
-                  final color = palette[idx % palette.length];
-                  return Expanded(
-                    flex: flex,
-                    child: Container(color: color),
-                  );
-                }).toList(),
-              ),
-            ),
-          ),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 16,
-            runSpacing: 8,
-            children: branches.asMap().entries.map((entry) {
-              final idx = entry.key;
-              final b = entry.value;
-              final vol = b.activeCreditDisbursedAmount;
-              final pct = totalActiveCredit > 0 ? (vol / totalActiveCredit * 100).toStringAsFixed(1) : '0.0';
-              final color = palette[idx % palette.length];
-              return Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(width: 8, height: 8, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
-                  const SizedBox(width: 6),
-                  Text(
-                    '${b.branchName}: $pct% (${CurrencyFormatter.formatNaira(vol)})',
-                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: tokens.textSecondary),
-                  ),
-                ],
-              );
-            }).toList(),
-          ),
-        ],
-      ),
-    );
-  }
-
   // 3. 6 Regional KPI Summary Cards
   Widget _buildRegionalKpis(RegionalSummaryModel reg, bool isMobile, bool isTablet, bool isDesktop) {
     final tokens = IcareSurfaceTokens.of(context);
-    final borrowerPurple = tokens.isDark ? const Color(0xFFA78BFA) : const Color(0xFF7C3AED);
     final kpis = [
-      _KpiItem('Active Portfolio', CurrencyFormatter.formatNaira(reg.outstandingPortfolio), 'Total Outstanding Principal', Icons.account_balance_wallet_outlined, tokens.brandPrimary, tokens.brandSoftBg),
-      _KpiItem('Total Savings Reserve', CurrencyFormatter.formatNaira(reg.totalSavings), 'Client Savings Reserves', Icons.savings_outlined, tokens.infoDot, tokens.infoBg),
-      _KpiItem('Active Borrowers', '${reg.activeClients}', 'Clients with active credit', Icons.people_outline, borrowerPurple, borrowerPurple.withValues(alpha: tokens.isDark ? 0.18 : 0.09)),
-      _KpiItem('Regional PAR > 30d', reg.par, 'Delinquency Rate', Icons.warning_amber_rounded, tokens.dangerDot, tokens.dangerBg),
-      _KpiItem('Collection Compliance', '${reg.compliancePct.toStringAsFixed(1)}%', 'Period Collection Rate', Icons.verified_outlined, tokens.successDot, tokens.successBg),
-      _KpiItem('Vault Cash Reserve', CurrencyFormatter.formatNaira(reg.vaultCashAcct1000), 'Consolidated Physical Cash', Icons.store_mall_directory_outlined, tokens.warningDot, tokens.warningBg),
+      IcareMetricCard(
+        label: 'Active Portfolio',
+        value: CurrencyFormatter.formatNaira(reg.outstandingPortfolio),
+        delta: 'Outstanding Principal',
+        icon: Icons.account_balance_wallet_outlined,
+        isFullEmerald: true,
+      ),
+      IcareMetricCard(
+        label: 'Total Savings Reserve',
+        value: CurrencyFormatter.formatNaira(reg.totalSavings),
+        delta: 'Client Savings Reserves',
+        icon: Icons.savings_outlined,
+        topBorderColor: tokens.infoDot,
+      ),
+      IcareMetricCard(
+        label: 'Active Borrowers',
+        value: '${reg.activeClients}',
+        delta: 'Active credit clients',
+        icon: Icons.people_outline,
+        topBorderColor: tokens.brandPrimaryLight,
+      ),
+      IcareMetricCard(
+        label: 'Regional PAR > 30d',
+        value: reg.par,
+        delta: 'Delinquency Rate',
+        isInverseDelta: true,
+        icon: Icons.warning_amber_rounded,
+        topBorderColor: tokens.dangerDot,
+      ),
+      IcareMetricCard(
+        label: 'Collection Compliance',
+        value: '${reg.compliancePct.toStringAsFixed(1)}%',
+        delta: 'Period Collection Rate',
+        icon: Icons.verified_outlined,
+        topBorderColor: tokens.successDot,
+      ),
+      IcareMetricCard(
+        label: 'Vault Cash Reserve',
+        value: CurrencyFormatter.formatNaira(reg.vaultCashAcct1000),
+        delta: 'Physical Cash Held',
+        icon: Icons.store_mall_directory_outlined,
+        topBorderColor: tokens.warningDot,
+      ),
     ];
 
-    final crossAxisCount = isDesktop ? 6 : (isTablet ? 3 : 2);
-    return GridView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      itemCount: kpis.length,
-      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: crossAxisCount,
-        crossAxisSpacing: 10,
-        mainAxisSpacing: 10,
-        childAspectRatio: isDesktop ? 1.55 : (isTablet ? 1.55 : 1.40),
-      ),
-      itemBuilder: (_, index) => _buildKpiCard(kpis[index]),
-    );
-  }
-
-  Widget _buildKpiCard(_KpiItem kpi) {
-    final tokens = IcareSurfaceTokens.of(context);
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: tokens.surface,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: tokens.borderSubtle),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: tokens.isDark ? 0.16 : 0.025), blurRadius: 3, offset: const Offset(0, 1))],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Expanded(
-                child: Text(
-                  kpi.label,
-                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: tokens.textMuted),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.all(5),
-                decoration: BoxDecoration(color: kpi.bgColor, borderRadius: BorderRadius.circular(6)),
-                child: Icon(kpi.icon, size: 14, color: kpi.accentColor),
-              ),
-            ],
-          ),
-          FittedBox(
-            fit: BoxFit.scaleDown,
-            alignment: Alignment.centerLeft,
-            child: Text(
-              kpi.value,
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w800,
-                color: tokens.textPrimary,
-                letterSpacing: -0.3,
-                fontFeatures: const [FontFeature.tabularFigures()],
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final w = constraints.maxWidth;
+        final cols = w >= 1100 ? 6 : (w >= 650 ? 3 : 2);
+        final rows = <Widget>[];
+        for (int i = 0; i < kpis.length; i += cols) {
+          final slice = kpis.sublist(i, (i + cols).clamp(0, kpis.length));
+          rows.add(
+            IntrinsicHeight(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  for (int c = 0; c < cols; c++) ...[
+                    if (c > 0) const SizedBox(width: 10),
+                    Expanded(
+                      child: c < slice.length ? slice[c] : const SizedBox.shrink(),
+                    ),
+                  ],
+                ],
               ),
             ),
-          ),
-          Text(
-            kpi.caption,
-            style: TextStyle(fontSize: 10, color: tokens.textLight),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ],
-      ),
+          );
+          if (i + cols < kpis.length) rows.add(const SizedBox(height: 10));
+        }
+        return Column(children: rows);
+      },
     );
   }
 
@@ -497,38 +416,50 @@ class _AmPortfolioScreenState extends ConsumerState<AmPortfolioScreen> {
   Widget _buildBranchCardsGrid(List<BranchPerformanceItemModel> branches, bool isMobile, bool isTablet, bool isDesktop) {
     final tokens = IcareSurfaceTokens.of(context);
     if (branches.isEmpty) {
-      return Container(
-        width: double.infinity,
+      return IcareCard(
         padding: const EdgeInsets.all(32),
-        decoration: BoxDecoration(
-          color: tokens.surface,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: tokens.borderSubtle),
-        ),
         child: Center(
           child: Text('No supervised branches found for this Area Manager.', style: TextStyle(color: tokens.textMuted)),
         ),
       );
     }
 
-    if (isMobile) {
-      return Column(
-        children: branches.map((b) => Padding(padding: const EdgeInsets.only(bottom: 16), child: _buildBranchCard(b))).toList(),
-      );
-    }
-
-    final crossAxisCount = isDesktop ? 3 : 2;
-    return GridView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      itemCount: branches.length,
-      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: crossAxisCount,
-        crossAxisSpacing: 16,
-        mainAxisSpacing: 16,
-        childAspectRatio: isDesktop ? 0.88 : 0.95,
-      ),
-      itemBuilder: (_, index) => _buildBranchCard(branches[index]),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final w = constraints.maxWidth;
+        final cols = w >= 1080 ? 3 : (w >= 640 ? 2 : 1);
+        if (cols == 1) {
+          return Column(
+            children: branches
+                .map((b) => Padding(
+                      padding: const EdgeInsets.only(bottom: 14),
+                      child: _buildBranchCard(b),
+                    ))
+                .toList(),
+          );
+        }
+        final rows = <Widget>[];
+        for (int i = 0; i < branches.length; i += cols) {
+          final slice = branches.sublist(i, (i + cols).clamp(0, branches.length));
+          rows.add(
+            IntrinsicHeight(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  for (int c = 0; c < cols; c++) ...[
+                    if (c > 0) const SizedBox(width: 14),
+                    Expanded(
+                      child: c < slice.length ? _buildBranchCard(slice[c]) : const SizedBox.shrink(),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          );
+          if (i + cols < branches.length) rows.add(const SizedBox(height: 14));
+        }
+        return Column(children: rows);
+      },
     );
   }
 
@@ -536,42 +467,26 @@ class _AmPortfolioScreenState extends ConsumerState<AmPortfolioScreen> {
   Widget _buildBranchCard(BranchPerformanceItemModel b) {
     final tokens = IcareSurfaceTokens.of(context);
     final isClosed = b.isClosed;
-    final statusColor = isClosed
-        ? tokens.dangerText
+    final statusVariant = isClosed
+        ? IcareBadgeVariant.danger
         : (b.eodStatus == 'BRANCH_CONFIRMED' || b.eodStatus == 'AREA_LOCKED'
-            ? tokens.successText
-            : tokens.brandPrimary);
-    final statusBg = isClosed
-        ? tokens.dangerBg
-        : (b.eodStatus == 'BRANCH_CONFIRMED' || b.eodStatus == 'AREA_LOCKED'
-            ? tokens.successBg
-            : tokens.brandSoftBg);
-    final statusBorder = isClosed
-        ? tokens.dangerBorder
-        : (b.eodStatus == 'BRANCH_CONFIRMED' || b.eodStatus == 'AREA_LOCKED'
-            ? tokens.successBorder
-            : tokens.brandSoftBorder);
+            ? IcareBadgeVariant.success
+            : IcareBadgeVariant.info);
     final statusLabel = isClosed ? 'Branch Closed' : (b.eodStatus == 'BRANCH_CONFIRMED' ? 'EOD Confirmed' : 'Active Operations');
+    final topAccent = isClosed
+        ? tokens.dangerDot
+        : (b.eodStatus == 'BRANCH_CONFIRMED' || b.eodStatus == 'AREA_LOCKED'
+            ? tokens.successDot
+            : tokens.brandPrimary);
 
     final isNetPositive = b.netLoanCount >= 0;
     final netColor = isNetPositive ? tokens.successText : tokens.warningText;
     final netBg = isNetPositive ? tokens.successBg : tokens.warningBg;
     final netBorder = isNetPositive ? tokens.successBorder : tokens.warningBorder;
 
-    return Container(
+    return IcareCard(
       padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: tokens.surface,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: tokens.borderSubtle),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: tokens.isDark ? 0.2 : 0.03),
-            blurRadius: 6,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
+      topAccentColor: topAccent,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -580,45 +495,41 @@ class _AmPortfolioScreenState extends ConsumerState<AmPortfolioScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Row(
-                children: [
-                  Container(
-                    width: 38,
-                    height: 38,
-                    decoration: BoxDecoration(
-                      color: tokens.surfaceHover,
-                      borderRadius: BorderRadius.circular(8),
+              Expanded(
+                child: Row(
+                  children: [
+                    Container(
+                      width: 38,
+                      height: 38,
+                      decoration: BoxDecoration(
+                        color: tokens.surfaceHover,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Icon(Icons.location_city, color: tokens.textPrimary, size: 20),
                     ),
-                    child: Icon(Icons.location_city, color: tokens.textPrimary, size: 20),
-                  ),
-                  const SizedBox(width: 10),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        '${b.branchName} Branch',
-                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: tokens.textPrimary),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '${b.branchName} Branch',
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: tokens.textPrimary),
+                          ),
+                          Text(
+                            'BM: ${b.bmName}',
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(fontSize: 11.5, color: tokens.textMuted),
+                          ),
+                        ],
                       ),
-                      Text(
-                        'BM: ${b.bmName}',
-                        style: TextStyle(fontSize: 11.5, color: tokens.textMuted),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
-                decoration: BoxDecoration(
-                  color: statusBg,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: statusBorder),
-                ),
-                child: Text(
-                  statusLabel,
-                  style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: statusColor),
+                    ),
+                  ],
                 ),
               ),
+              const SizedBox(width: 8),
+              IcareStatusBadge(label: statusLabel, variant: statusVariant),
             ],
           ),
           Divider(height: 18, color: tokens.borderSubtle),
@@ -634,25 +545,36 @@ class _AmPortfolioScreenState extends ConsumerState<AmPortfolioScreen> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Row(
-                  children: [
-                    Icon(Icons.account_balance_wallet_outlined, size: 16, color: tokens.brandPrimary),
-                    const SizedBox(width: 8),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Principal Cash Disbursed',
-                          style: TextStyle(fontSize: 10.5, color: tokens.textMuted, fontWeight: FontWeight.w500),
+                Expanded(
+                  child: Row(
+                    children: [
+                      Icon(Icons.account_balance_wallet_outlined, size: 16, color: tokens.brandPrimary),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Principal Cash Disbursed',
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(fontSize: 10.5, color: tokens.textMuted, fontWeight: FontWeight.w500),
+                            ),
+                            Text(
+                              CurrencyFormatter.formatNaira(b.principalDisbursedAmount),
+                              style: TextStyle(
+                                fontSize: 13.5,
+                                fontWeight: FontWeight.w800,
+                                color: tokens.textPrimary,
+                                fontFeatures: const [FontFeature.tabularFigures()],
+                              ),
+                            ),
+                          ],
                         ),
-                        Text(
-                          CurrencyFormatter.formatNaira(b.principalDisbursedAmount),
-                          style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800, color: tokens.textPrimary),
-                        ),
-                      ],
-                    ),
-                  ],
+                      ),
+                    ],
+                  ),
                 ),
+                const SizedBox(width: 8),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2.5),
                   decoration: BoxDecoration(
@@ -798,8 +720,8 @@ class _AmPortfolioScreenState extends ConsumerState<AmPortfolioScreen> {
                 flex: 3,
                 child: ElevatedButton.icon(
                   onPressed: () => _showOfficerProductivitySheet(b),
-                  icon: const Icon(Icons.people_outline, size: 15, color: Colors.white),
-                  label: const Text('Inspect Officers', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white)),
+                  icon: const Icon(Icons.people_outline, size: 15),
+                  label: const Text('Inspect Officers', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: tokens.brandPrimaryDark,
                     foregroundColor: Colors.white,
@@ -928,37 +850,44 @@ class _AmPortfolioScreenState extends ConsumerState<AmPortfolioScreen> {
     final tokens = IcareSurfaceTokens.of(context);
     return Center(
       key: const ValueKey('am_portfolio_error'),
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          children: [
-            Icon(Icons.error_outline, size: 48, color: tokens.dangerDot),
-            const SizedBox(height: 12),
-            Text(
-              'Failed to load Regional Portfolio: $_errorMessage',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: tokens.dangerText, fontSize: 14),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 460),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: IcareCard(
+            padding: const EdgeInsets.all(24),
+            topAccentColor: tokens.dangerDot,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.error_outline, size: 44, color: tokens.dangerDot),
+                const SizedBox(height: 12),
+                Text(
+                  'Failed to load Regional Portfolio',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: tokens.dangerText, fontSize: 15, fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  _errorMessage ?? 'Please tap Retry to reload.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: tokens.textSecondary, fontSize: 13),
+                ),
+                const SizedBox(height: 16),
+                ElevatedButton.icon(
+                  onPressed: _loadPortfolioData,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: tokens.brandPrimaryDark,
+                    foregroundColor: Colors.white,
+                  ),
+                  icon: const Icon(Icons.refresh, size: 16),
+                  label: const Text('Retry'),
+                ),
+              ],
             ),
-            const SizedBox(height: 16),
-            ElevatedButton.icon(
-              onPressed: _loadPortfolioData,
-              icon: const Icon(Icons.refresh, size: 16),
-              label: const Text('Retry'),
-            ),
-          ],
+          ),
         ),
       ),
     );
   }
-}
-
-class _KpiItem {
-  final String label;
-  final String value;
-  final String caption;
-  final IconData icon;
-  final Color accentColor;
-  final Color bgColor;
-
-  _KpiItem(this.label, this.value, this.caption, this.icon, this.accentColor, this.bgColor);
 }

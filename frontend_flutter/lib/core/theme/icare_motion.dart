@@ -229,21 +229,33 @@ Future<T?> showIcareAdaptiveSheet<T>({
         barrierDismissible: true,
         transitionDuration: sheetDuration,
         builder: (sheetCtx) => Sheet(
-          initialOffset: fitContent
-              ? const SheetOffset(1)
-              : SheetOffset.proportionalToViewport(mobileHeightFactor),
+          initialOffset: const SheetOffset(1),
           snapGrid: snapGrid,
           physics: const BouncingSheetPhysics(),
           scrollConfiguration: const SheetScrollConfiguration(
             scrollSyncMode: SheetScrollHandlingBehavior.onlyFromTop,
           ),
-          decoration: MaterialSheetDecoration(
-            size: fitContent ? SheetSize.fit : SheetSize.stretch,
+          decoration: const MaterialSheetDecoration(
+            size: SheetSize.fit,
             color: Colors.transparent,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
             clipBehavior: Clip.antiAlias,
           ),
-          child: builder(sheetCtx, false),
+          child: Builder(
+            builder: (innerCtx) {
+              final safeContent = SafeArea(
+                top: false,
+                child: builder(innerCtx, false),
+              );
+              if (fitContent) return safeContent;
+              final maxSheetHeight =
+                  MediaQuery.sizeOf(innerCtx).height * mobileHeightFactor;
+              return ConstrainedBox(
+                constraints: BoxConstraints(maxHeight: maxSheetHeight),
+                child: safeContent,
+              );
+            },
+          ),
         ),
       ),
     );

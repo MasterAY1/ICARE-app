@@ -677,7 +677,7 @@ class IcareAmPortfolioSkeleton extends StatelessWidget {
         crossAxisCount: crossAxisCount,
         crossAxisSpacing: 10,
         mainAxisSpacing: 10,
-        childAspectRatio: desktop ? 1.55 : 1.65,
+        childAspectRatio: desktop ? 1.55 : (tablet ? 1.45 : 1.25),
       ),
       itemBuilder: (ctx, __) {
         final tokens = IcareSurfaceTokens.of(ctx);
@@ -696,7 +696,8 @@ class IcareAmPortfolioSkeleton extends StatelessWidget {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  SkeletonShimmerBox(width: 70, height: 11, borderRadius: 3),
+                  Flexible(child: SkeletonShimmerBox(width: 70, height: 11, borderRadius: 3)),
+                  SizedBox(width: 6),
                   SkeletonShimmerBox(width: 26, height: 26, borderRadius: 6),
                 ],
               ),
@@ -749,7 +750,7 @@ class IcareAmPortfolioSkeleton extends StatelessWidget {
         crossAxisCount: crossAxisCount,
         crossAxisSpacing: 16,
         mainAxisSpacing: 16,
-        childAspectRatio: desktop ? 0.88 : 0.95,
+        childAspectRatio: desktop ? 0.88 : 0.72,
       ),
       itemBuilder: (_, __) => const _BranchCardSkeleton(),
     );
@@ -808,16 +809,18 @@ class _BranchCardSkeleton extends StatelessWidget {
           const Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              SkeletonShimmerBox(width: 90, height: 26, borderRadius: 6),
-              SkeletonShimmerBox(width: 80, height: 22, borderRadius: 6),
+              Flexible(child: SkeletonShimmerBox(width: 90, height: 26, borderRadius: 6)),
+              SizedBox(width: 8),
+              Flexible(child: SkeletonShimmerBox(width: 80, height: 22, borderRadius: 6)),
             ],
           ),
           const SizedBox(height: 8),
           const Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              SkeletonShimmerBox(width: 70, height: 18, borderRadius: 4),
-              SkeletonShimmerBox(width: 60, height: 18, borderRadius: 4),
+              Flexible(child: SkeletonShimmerBox(width: 70, height: 18, borderRadius: 4)),
+              SizedBox(width: 8),
+              Flexible(child: SkeletonShimmerBox(width: 60, height: 18, borderRadius: 4)),
             ],
           ),
           const SizedBox(height: 14),
@@ -828,8 +831,9 @@ class _BranchCardSkeleton extends StatelessWidget {
           const Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              SkeletonShimmerBox(width: 100, height: 11, borderRadius: 3),
-              SkeletonShimmerBox(width: 100, height: 11, borderRadius: 3),
+              Flexible(child: SkeletonShimmerBox(width: 100, height: 11, borderRadius: 3)),
+              SizedBox(width: 8),
+              Flexible(child: SkeletonShimmerBox(width: 100, height: 11, borderRadius: 3)),
             ],
           ),
           const SizedBox(height: 14),
@@ -845,26 +849,34 @@ class _BranchCardSkeleton extends StatelessWidget {
             child: const Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
-                Column(
-                  children: [
-                    SkeletonShimmerBox(width: 48, height: 10, borderRadius: 3),
-                    SizedBox(height: 4),
-                    SkeletonShimmerBox(width: 65, height: 14, borderRadius: 3),
-                  ],
+                Expanded(
+                  child: Column(
+                    children: [
+                      SkeletonShimmerBox(width: 48, height: 10, borderRadius: 3),
+                      SizedBox(height: 4),
+                      SkeletonShimmerBox(width: 65, height: 14, borderRadius: 3),
+                    ],
+                  ),
                 ),
-                Column(
-                  children: [
-                    SkeletonShimmerBox(width: 48, height: 10, borderRadius: 3),
-                    SizedBox(height: 4),
-                    SkeletonShimmerBox(width: 65, height: 14, borderRadius: 3),
-                  ],
+                SizedBox(width: 6),
+                Expanded(
+                  child: Column(
+                    children: [
+                      SkeletonShimmerBox(width: 48, height: 10, borderRadius: 3),
+                      SizedBox(height: 4),
+                      SkeletonShimmerBox(width: 65, height: 14, borderRadius: 3),
+                    ],
+                  ),
                 ),
-                Column(
-                  children: [
-                    SkeletonShimmerBox(width: 48, height: 10, borderRadius: 3),
-                    SizedBox(height: 4),
-                    SkeletonShimmerBox(width: 65, height: 14, borderRadius: 3),
-                  ],
+                SizedBox(width: 6),
+                Expanded(
+                  child: Column(
+                    children: [
+                      SkeletonShimmerBox(width: 48, height: 10, borderRadius: 3),
+                      SizedBox(height: 4),
+                      SkeletonShimmerBox(width: 65, height: 14, borderRadius: 3),
+                    ],
+                  ),
                 ),
               ],
             ),
@@ -918,14 +930,17 @@ class IcareOnboardingSkeleton extends StatelessWidget {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Row(
-                      children: [
-                        SkeletonShimmerBox(width: 80, height: 24, borderRadius: 4),
-                        SizedBox(width: 8),
-                        SkeletonShimmerBox(width: 140, height: 18, borderRadius: 4),
-                      ],
+                    Expanded(
+                      child: Row(
+                        children: [
+                          SkeletonShimmerBox(width: 72, height: 24, borderRadius: 4),
+                          SizedBox(width: 8),
+                          Expanded(child: SkeletonShimmerBox(width: 140, height: 18, borderRadius: 4)),
+                        ],
+                      ),
                     ),
-                    SkeletonShimmerBox(width: 75, height: 22, borderRadius: 12),
+                    SizedBox(width: 8),
+                    SkeletonShimmerBox(width: 68, height: 22, borderRadius: 12),
                   ],
                 ),
                 SizedBox(height: 14),
@@ -933,9 +948,9 @@ class IcareOnboardingSkeleton extends StatelessWidget {
                 // Contact details row
                 Row(
                   children: [
-                    SkeletonShimmerBox(width: 120, height: 12, borderRadius: 3),
-                    SizedBox(width: 16),
-                    SkeletonShimmerBox(width: 100, height: 12, borderRadius: 3),
+                    Flexible(child: SkeletonShimmerBox(width: 120, height: 12, borderRadius: 3)),
+                    SizedBox(width: 12),
+                    Flexible(child: SkeletonShimmerBox(width: 100, height: 12, borderRadius: 3)),
                   ],
                 ),
                 SizedBox(height: 14),
@@ -944,37 +959,48 @@ class IcareOnboardingSkeleton extends StatelessWidget {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        SkeletonShimmerBox(width: 50, height: 10, borderRadius: 2),
-                        SizedBox(height: 4),
-                        SkeletonShimmerBox(width: 65, height: 16, borderRadius: 3),
-                      ],
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          SkeletonShimmerBox(width: 50, height: 10, borderRadius: 2),
+                          SizedBox(height: 4),
+                          SkeletonShimmerBox(width: 65, height: 16, borderRadius: 3),
+                        ],
+                      ),
                     ),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        SkeletonShimmerBox(width: 50, height: 10, borderRadius: 2),
-                        SizedBox(height: 4),
-                        SkeletonShimmerBox(width: 65, height: 16, borderRadius: 3),
-                      ],
+                    SizedBox(width: 6),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          SkeletonShimmerBox(width: 50, height: 10, borderRadius: 2),
+                          SizedBox(height: 4),
+                          SkeletonShimmerBox(width: 65, height: 16, borderRadius: 3),
+                        ],
+                      ),
                     ),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        SkeletonShimmerBox(width: 50, height: 10, borderRadius: 2),
-                        SizedBox(height: 4),
-                        SkeletonShimmerBox(width: 75, height: 16, borderRadius: 3),
-                      ],
+                    SizedBox(width: 6),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          SkeletonShimmerBox(width: 50, height: 10, borderRadius: 2),
+                          SizedBox(height: 4),
+                          SkeletonShimmerBox(width: 75, height: 16, borderRadius: 3),
+                        ],
+                      ),
                     ),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        SkeletonShimmerBox(width: 50, height: 10, borderRadius: 2),
-                        SizedBox(height: 4),
-                        SkeletonShimmerBox(width: 75, height: 16, borderRadius: 3),
-                      ],
+                    SizedBox(width: 6),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          SkeletonShimmerBox(width: 50, height: 10, borderRadius: 2),
+                          SizedBox(height: 4),
+                          SkeletonShimmerBox(width: 75, height: 16, borderRadius: 3),
+                        ],
+                      ),
                     ),
                   ],
                 ),

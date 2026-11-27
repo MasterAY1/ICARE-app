@@ -15,6 +15,11 @@ import '../../shared/presentation/co_app_scaffold.dart';
 import 'master_cashbook_screen.dart';
 import '../../co/presentation/withdrawal_operations_screen.dart';
 import 'package:frontend_flutter/core/theme/icare_motion.dart';
+import '../../../core/widgets/icare_card.dart';
+import '../../../core/widgets/icare_data_table.dart';
+import '../../../core/widgets/icare_metric_card.dart';
+import '../../../core/widgets/icare_status_badge.dart';
+import 'widgets/bm_analytics_charts.dart';
 
 final bmDashboardDataProvider = FutureProvider.autoDispose<BmDashboardDataModel>((ref) async {
   // Retain data in memory for 60 seconds after unmount to prevent tab-switching refetches
@@ -140,90 +145,102 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                     err.type == DioExceptionType.sendTimeout ||
                     err.type == DioExceptionType.receiveTimeout ||
                     err.type == DioExceptionType.unknown));
+        final errDetails = AppErrorDetails.from(err);
 
         return Center(
-          child: Container(
-            constraints: const BoxConstraints(maxWidth: 500),
-            margin: const EdgeInsets.all(24),
-            padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(
-              color: tokens.surface,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(
-                color: isConnectionError ? tokens.warningBorder : tokens.dangerBorder,
-              ),
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  isConnectionError ? Icons.cloud_off : Icons.error_outline,
-                  color: isConnectionError ? tokens.warningDot : tokens.dangerDot,
-                  size: 48,
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  isConnectionError
-                      ? 'Offline Mode — No Local Cache Available'
-                      : 'Failed to Load Branch Manager Dashboard',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: isConnectionError ? tokens.warningText : tokens.dangerText,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  isConnectionError
-                      ? 'You are currently working offline, but no cached BM dashboard was found on this device. Please connect to the internet once to load current branch operations.'
-                      : err.toString(),
-                  textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 13, color: tokens.textMuted),
-                ),
-                const SizedBox(height: 16),
-                ElevatedButton(
-                  onPressed: _invalidateAllCashbookAndDashboardProviders,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: isConnectionError ? const Color(0xFFB45309) : tokens.brandPrimaryDark,
-                    foregroundColor: Colors.white,
-                  ),
-                  child: const Text('Retry', style: TextStyle(color: Colors.white)),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-      data: (data) {
-        final isMobile = MediaQuery.of(context).size.width < 600;
-        return Column(
-          children: [
-            if (!isOnline)
-              Container(
-                width: double.infinity,
-                margin: const EdgeInsets.only(bottom: 12),
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                decoration: BoxDecoration(
-                  color: tokens.warningBg,
-                  borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: tokens.warningBorder),
-                ),
-                child: Row(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 480),
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: IcareCard(
+                padding: const EdgeInsets.all(24),
+                topAccentColor: isConnectionError ? tokens.warningDot : tokens.dangerDot,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.cloud_off, size: 16, color: tokens.warningDot),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'Offline Mode Active — Displaying locally cached branch overview and approvals queue. New financial authorizations require an active server connection.',
-                        style: TextStyle(color: tokens.warningText, fontSize: 11.5, fontWeight: FontWeight.w600),
+                    Icon(
+                      isConnectionError ? Icons.cloud_off : Icons.error_outline,
+                      color: isConnectionError ? tokens.warningDot : tokens.dangerDot,
+                      size: 44,
+                    ),
+                    const SizedBox(height: 14),
+                    Text(
+                      isConnectionError
+                          ? 'Offline Mode — No Local Cache Available'
+                          : errDetails.title,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                        color: isConnectionError ? tokens.warningText : tokens.dangerText,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      isConnectionError
+                          ? 'You are currently working offline, but no cached BM dashboard was found on this device. Please connect to the internet once to load current branch operations.'
+                          : errDetails.message,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 13, color: tokens.textSecondary),
+                    ),
+                    if (!isConnectionError && errDetails.action.isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        errDetails.action,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(fontSize: 12, color: tokens.textMuted),
+                      ),
+                    ],
+                    const SizedBox(height: 16),
+                    ElevatedButton.icon(
+                      onPressed: _invalidateAllCashbookAndDashboardProviders,
+                      icon: const Icon(Icons.refresh, size: 16),
+                      label: const Text('Retry', style: TextStyle(fontWeight: FontWeight.w700)),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: isConnectionError ? tokens.warningText : tokens.brandPrimaryDark,
+                        foregroundColor: Colors.white,
                       ),
                     ),
                   ],
                 ),
               ),
-            _buildDashboardContent(data, isMobile),
-          ],
+            ),
+          ),
+        );
+      },
+      data: (data) {
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            final isMobile = constraints.maxWidth < 680;
+            return Column(
+              children: [
+                if (!isOnline)
+                  Container(
+                    width: double.infinity,
+                    margin: const EdgeInsets.only(bottom: 12),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: tokens.warningBg,
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: tokens.warningBorder),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.cloud_off, size: 16, color: tokens.warningDot),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Offline Mode Active — Displaying locally cached branch overview and approvals queue. New financial authorizations require an active server connection.',
+                            style: TextStyle(color: tokens.warningText, fontSize: 11.5, fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                _buildDashboardContent(data, isMobile),
+              ],
+            );
+          },
         );
       },
     );
@@ -298,10 +315,14 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(
-                  'Performance & Risk Dashboard',
-                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800, color: tokens.textPrimary),
+                Expanded(
+                  child: Text(
+                    'Performance & Risk Dashboard',
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800, color: tokens.textPrimary),
+                  ),
                 ),
+                const SizedBox(width: 12),
                 Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -357,9 +378,13 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                     children: [
                       Icon(Icons.event_outlined, size: 12, color: tokens.textSecondary),
                       const SizedBox(width: 4),
-                      Text(
-                        'Operations Date: ${data.meetingDay}, ${data.businessDate}',
-                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: tokens.textPrimary),
+                      Flexible(
+                        child: Text(
+                          'Operations Date: ${data.meetingDay}, ${data.businessDate}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: tokens.textPrimary),
+                        ),
                       ),
                     ],
                   ),
@@ -445,6 +470,8 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
             if (_mobileSectionTab == 'Overview' || _mobileSectionTab == 'All') ...[
               _buildBranchSummary(data.branchSummary),
               const SizedBox(height: 14),
+              BmDashboardAnalyticsSection(data: data),
+              const SizedBox(height: 14),
               _buildBranchCashPosition(data.branchCashPosition),
               const SizedBox(height: 16),
             ],
@@ -457,15 +484,19 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
             _buildApprovalsHub(data, hasLoans, hasWrs, hasCorrs, isMobile),
             const SizedBox(height: 24),
 
-            // 3. Section A: Branch Summary (app.py L3108-3114)
+            // 3. Section A: Branch Summary
             _buildBranchSummary(data.branchSummary),
+            const SizedBox(height: 20),
+
+            // 3.5 Live BM Comparative Analytics
+            BmDashboardAnalyticsSection(data: data),
             const SizedBox(height: 24),
 
-            // 4. Section B: Officer Collection Status Grid (app.py L3116-3126)
+            // 4. Section B: Officer Collection Status Grid
             _buildOfficerCollectionStatus(data.officerCollectionStatus, isMobile),
             const SizedBox(height: 24),
 
-            // 5. Section C: Branch Cash Position (Master Cashbook) (app.py L3128-3138)
+            // 5. Section C: Branch Cash Position (Master Cashbook)
             _buildBranchCashPosition(data.branchCashPosition),
             const SizedBox(height: 32),
           ],
@@ -573,6 +604,7 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
   // HERO VAULT & OPERATIONS COMMAND CARD
   // ==========================================
   Widget _buildHeroCard(BmDashboardDataModel data, bool isMobile) {
+    final tokens = IcareSurfaceTokens.of(context);
     final closingCash = data.branchCashPosition.closingBalance;
     final isBalanced = data.branchCashPosition.status == 'Balanced';
     final collectionToday = data.branchSummary.collectionToday;
@@ -582,17 +614,18 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
       width: double.infinity,
       padding: EdgeInsets.all(isMobile ? 16 : 22),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFF1E3A8A), Color(0xFF2563EB)],
+        gradient: LinearGradient(
+          colors: [tokens.brandPrimaryDark, tokens.brandPrimary],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
         borderRadius: BorderRadius.circular(12),
-        boxShadow: const [
+        border: Border.all(color: tokens.brandPrimaryLight.withValues(alpha: 0.3)),
+        boxShadow: [
           BoxShadow(
-            color: Color(0x1E1E3A8A),
+            color: tokens.brandPrimaryDark.withValues(alpha: tokens.isDark ? 0.35 : 0.16),
             blurRadius: 10,
-            offset: Offset(0, 4),
+            offset: const Offset(0, 4),
           ),
         ],
       ),
@@ -602,39 +635,45 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Row(
-                children: [
-                  Container(
-                    width: 8,
-                    height: 8,
-                    decoration: BoxDecoration(
-                      color: isBalanced ? const Color(0xFF34D399) : const Color(0xFFFBBF24),
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                          color: (isBalanced ? const Color(0xFF34D399) : const Color(0xFFFBBF24)).withValues(alpha: 0.6),
-                          blurRadius: 6,
-                          spreadRadius: 1,
+              Expanded(
+                child: Row(
+                  children: [
+                    Container(
+                      width: 8,
+                      height: 8,
+                      decoration: BoxDecoration(
+                        color: isBalanced ? const Color(0xFF34D399) : const Color(0xFFFBBF24),
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: (isBalanced ? const Color(0xFF34D399) : const Color(0xFFFBBF24)).withValues(alpha: 0.6),
+                            blurRadius: 6,
+                            spreadRadius: 1,
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        '${data.branchName.toUpperCase()} BRANCH · VAULT POSITION',
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.85),
+                          fontSize: 11,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0.6,
                         ),
-                      ],
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    '${data.branchName.toUpperCase()} BRANCH · VAULT POSITION',
-                    style: const TextStyle(
-                      color: Color(0xFF93C5FD),
-                      fontSize: 11,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 0.6,
-                    ),
-                  ),
-                ],
+                  ],
+                ),
               ),
+              const SizedBox(width: 8),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
-                  color: isBalanced ? const Color(0x2610B981) : const Color(0x26EF4444),
+                  color: isBalanced ? const Color(0x2E10B981) : const Color(0x2EEF4444),
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(
                     color: isBalanced ? const Color(0xFF34D399) : const Color(0xFFF87171),
@@ -647,7 +686,7 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                     Icon(
                       isBalanced ? Icons.verified_user : Icons.warning_amber_rounded,
                       size: 11,
-                      color: isBalanced ? const Color(0xFF6EE7B7) : const Color(0xFFFCA5A5),
+                      color: isBalanced ? const Color(0xFFA7F3D0) : const Color(0xFFFECACA),
                     ),
                     const SizedBox(width: 4),
                     Text(
@@ -655,7 +694,7 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                       style: TextStyle(
                         fontSize: 10.5,
                         fontWeight: FontWeight.w700,
-                        color: isBalanced ? const Color(0xFF6EE7B7) : const Color(0xFFFCA5A5),
+                        color: isBalanced ? const Color(0xFFA7F3D0) : const Color(0xFFFECACA),
                       ),
                     ),
                   ],
@@ -664,61 +703,67 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
             ],
           ),
           const SizedBox(height: 12),
-          Text(
-            CurrencyFormatter.format(closingCash),
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 28,
-              fontWeight: FontWeight.w900,
-              fontFamily: 'monospace',
-              fontFeatures: [FontFeature.tabularFigures()],
-              letterSpacing: -0.5,
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(
+              CurrencyFormatter.format(closingCash),
+              style: bmTabularStyle(
+                color: Colors.white,
+                fontSize: 28,
+                fontWeight: FontWeight.w900,
+                letterSpacing: -0.5,
+              ),
             ),
           ),
           const SizedBox(height: 14),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.10),
+              color: Colors.white.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
             ),
             child: Row(
               children: [
                 Expanded(
                   child: Row(
                     children: [
-                      const Icon(Icons.payments_outlined, size: 14, color: Color(0xFF93C5FD)),
+                      Icon(Icons.payments_outlined, size: 14, color: Colors.white.withValues(alpha: 0.82)),
                       const SizedBox(width: 6),
-                      Text(
-                        'Today: ${CurrencyFormatter.format(collectionToday)}',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 11.5,
-                          fontWeight: FontWeight.w600,
-                          fontFeatures: [FontFeature.tabularFigures()],
+                      Flexible(
+                        child: Text(
+                          'Today: ${CurrencyFormatter.format(collectionToday)}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: bmTabularStyle(
+                            color: Colors.white,
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
-                        overflow: TextOverflow.ellipsis,
                       ),
                     ],
                   ),
                 ),
-                Container(width: 1, height: 14, color: Colors.white.withValues(alpha: 0.2)),
+                Container(width: 1, height: 14, color: Colors.white.withValues(alpha: 0.22)),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Row(
                     children: [
-                      const Icon(Icons.savings_outlined, size: 14, color: Color(0xFF93C5FD)),
+                      Icon(Icons.savings_outlined, size: 14, color: Colors.white.withValues(alpha: 0.82)),
                       const SizedBox(width: 6),
-                      Text(
-                        'Savings: ${CurrencyFormatter.format(activeSavings)}',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 11.5,
-                          fontWeight: FontWeight.w600,
-                          fontFeatures: [FontFeature.tabularFigures()],
+                      Flexible(
+                        child: Text(
+                          'Savings: ${CurrencyFormatter.format(activeSavings)}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: bmTabularStyle(
+                            color: Colors.white,
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
-                        overflow: TextOverflow.ellipsis,
                       ),
                     ],
                   ),
@@ -738,38 +783,30 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
     final tokens = IcareSurfaceTokens.of(context);
     final tabs = ['Loan Disbursements', 'Withdrawals', 'Error Corrections'];
 
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: tokens.surface,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: tokens.borderSubtle),
-        boxShadow: tokens.isDark
-            ? null
-            : const [
-                BoxShadow(color: Color(0x040F172A), blurRadius: 4, offset: Offset(0, 1)),
-              ],
-      ),
+    return IcareCard(
+      padding: EdgeInsets.all(isMobile ? 16 : 20),
+      topAccentColor: tokens.brandPrimary,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Branch Approvals Hub',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: tokens.textPrimary),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    'Operational disbursement authorization, withdrawals, and error corrections.',
-                    style: TextStyle(fontSize: 12.5, color: tokens.textMuted),
-                  ),
-                ],
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Branch Approvals Hub',
+                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: tokens.textPrimary),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Disbursement authorization, withdrawals, and error corrections.',
+                      style: TextStyle(fontSize: 12.5, color: tokens.textMuted),
+                    ),
+                  ],
+                ),
               ),
               IconButton(
                 icon: Icon(Icons.refresh, size: 18, color: tokens.textMuted),
@@ -887,8 +924,10 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
             style: TextStyle(fontSize: 12, color: tokens.textMuted),
           ),
           const SizedBox(height: 16),
-          Row(
-            mainAxisSize: MainAxisSize.min,
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            alignment: WrapAlignment.center,
             children: [
               OutlinedButton.icon(
                 onPressed: _invalidateAllCashbookAndDashboardProviders,
@@ -899,7 +938,6 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 ),
               ),
-              const SizedBox(width: 8),
               OutlinedButton.icon(
                 onPressed: () {
                   ref.read(activeCoPageProvider.notifier).state = 'Audit Ledger';
@@ -934,6 +972,7 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
     final endItem = (currentPage * pageSize).clamp(1, totalCount);
 
     return Container(
+      width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       margin: const EdgeInsets.only(top: 14),
       decoration: BoxDecoration(
@@ -941,12 +980,15 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: tokens.borderSubtle),
       ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      child: Wrap(
+        spacing: 10,
+        runSpacing: 8,
+        alignment: WrapAlignment.spaceBetween,
+        crossAxisAlignment: WrapCrossAlignment.center,
         children: [
           Text(
             'Showing $startItem-$endItem of $totalCount items',
-            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: tokens.textMuted),
+            style: bmTabularStyle(fontSize: 12, fontWeight: FontWeight.w500, color: tokens.textMuted),
           ),
           Row(
             mainAxisSize: MainAxisSize.min,
@@ -958,7 +1000,7 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                   minimumSize: const Size(32, 32),
                   side: BorderSide(color: tokens.borderStrong),
                 ),
-                child: Icon(Icons.chevron_left, size: 18, color: tokens.textSecondary),
+                child: const Icon(Icons.chevron_left, size: 18),
               ),
               const SizedBox(width: 8),
               Container(
@@ -970,7 +1012,7 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                 ),
                 child: Text(
                   'Page $currentPage of $totalPages',
-                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tokens.textPrimary),
+                  style: bmTabularStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tokens.textPrimary),
                 ),
               ),
               const SizedBox(width: 8),
@@ -981,7 +1023,7 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                   minimumSize: const Size(32, 32),
                   side: BorderSide(color: tokens.borderStrong),
                 ),
-                child: Icon(Icons.chevron_right, size: 18, color: tokens.textSecondary),
+                child: const Icon(Icons.chevron_right, size: 18),
               ),
             ],
           ),
@@ -1153,8 +1195,14 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                   },
                 ),
                 const SizedBox(width: 4),
-                Text('All (${filtered.length})', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: tokens.textPrimary)),
-                const Spacer(),
+                Flexible(
+                  child: Text(
+                    'All (${filtered.length})',
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: tokens.textPrimary),
+                  ),
+                ),
+                const SizedBox(width: 8),
                 InkWell(
                   onTap: () async {
                     final picked = await showDatePicker(
@@ -1182,15 +1230,16 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                 ElevatedButton(
                   onPressed: loanBatchDisabled ? null : () => _executeBatchApproveLoans(filtered),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF1D4ED8),
+                    backgroundColor: tokens.brandPrimary,
                     foregroundColor: Colors.white,
                     disabledBackgroundColor: tokens.surfaceHover,
+                    disabledForegroundColor: tokens.textMuted,
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                     minimumSize: const Size(0, 30),
                   ),
                   child: Text(
                     _isProcessing ? '...' : 'Approve (${_selectedLoanIds.length})',
-                    style: TextStyle(color: loanBatchDisabled ? tokens.textMuted : Colors.white, fontWeight: FontWeight.w600, fontSize: 11.5),
+                    style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 11.5),
                   ),
                 ),
               ],
@@ -1235,14 +1284,15 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
               ElevatedButton(
                 onPressed: loanBatchDisabled ? null : () => _executeBatchApproveLoans(filtered),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF1D4ED8),
+                  backgroundColor: tokens.brandPrimary,
                   foregroundColor: Colors.white,
                   disabledBackgroundColor: tokens.surfaceHover,
+                  disabledForegroundColor: tokens.textMuted,
                   padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                 ),
                 child: Text(
                   _isProcessing ? 'Processing...' : 'Approve Selected Loans',
-                  style: TextStyle(color: loanBatchDisabled ? tokens.textMuted : Colors.white, fontWeight: FontWeight.w600, fontSize: 13),
+                  style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
                 ),
               ),
             ],
@@ -1309,54 +1359,61 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                           ),
                           Text(
                             CurrencyFormatter.format(pl.loanAmount),
-                            style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800, color: tokens.textPrimary, fontFamily: 'monospace'),
+                            style: bmTabularStyle(fontSize: 13.5, fontWeight: FontWeight.w800, color: tokens.textPrimary),
                           ),
                         ],
                       ),
                       const SizedBox(height: 6),
-                      // Compact action line: Officer tag + Date Chip + Reject + Approve in ONE row!
                       Row(
                         children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(color: tokens.surfaceHover, borderRadius: BorderRadius.circular(4)),
-                            child: Text(pl.officer, style: TextStyle(fontSize: 10.5, color: tokens.textSecondary)),
-                          ),
-                          const SizedBox(width: 6),
-                          InkWell(
-                            onTap: () async {
-                              final picked = await showDatePicker(
-                                context: context,
-                                initialDate: cardDate,
-                                firstDate: DateTime(2025),
-                                lastDate: DateTime(2030),
-                              );
-                              if (picked != null) {
-                                setState(() => _loanDatesMap[pl.loanId] = picked);
-                              }
-                            },
-                            borderRadius: BorderRadius.circular(4),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                              decoration: BoxDecoration(
-                                color: tokens.infoBg,
-                                borderRadius: BorderRadius.circular(4),
-                                border: Border.all(color: tokens.infoBorder),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(Icons.calendar_today_outlined, size: 10, color: tokens.infoDot),
-                                  const SizedBox(width: 3),
-                                  Text(
-                                    DateFormat('MM/dd').format(cardDate),
-                                    style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: tokens.infoText),
+                          Expanded(
+                            child: Row(
+                              children: [
+                                Flexible(
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(color: tokens.surfaceHover, borderRadius: BorderRadius.circular(4)),
+                                    child: Text(pl.officer, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 10.5, color: tokens.textSecondary)),
                                   ),
-                                ],
-                              ),
+                                ),
+                                const SizedBox(width: 6),
+                                InkWell(
+                                  onTap: () async {
+                                    final picked = await showDatePicker(
+                                      context: context,
+                                      initialDate: cardDate,
+                                      firstDate: DateTime(2025),
+                                      lastDate: DateTime(2030),
+                                    );
+                                    if (picked != null) {
+                                      setState(() => _loanDatesMap[pl.loanId] = picked);
+                                    }
+                                  },
+                                  borderRadius: BorderRadius.circular(4),
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                                    decoration: BoxDecoration(
+                                      color: tokens.infoBg,
+                                      borderRadius: BorderRadius.circular(4),
+                                      border: Border.all(color: tokens.infoBorder),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(Icons.calendar_today_outlined, size: 10, color: tokens.infoDot),
+                                        const SizedBox(width: 3),
+                                        Text(
+                                          DateFormat('MM/dd').format(cardDate),
+                                          style: bmTabularStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: tokens.infoText),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
-                          const Spacer(),
+                          const SizedBox(width: 6),
                           OutlinedButton(
                             onPressed: _isProcessing ? null : () => _rejectSingleLoan(pl.loanId, pl.clientName),
                             style: OutlinedButton.styleFrom(
@@ -1370,12 +1427,14 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                           ElevatedButton(
                             onPressed: _isProcessing ? null : () => _approveSingleLoan(pl.loanId, pl.clientName, cardDate),
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF1D4ED8),
+                              backgroundColor: tokens.brandPrimary,
                               foregroundColor: Colors.white,
+                              disabledBackgroundColor: tokens.surfaceHover,
+                              disabledForegroundColor: tokens.textMuted,
                               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                               minimumSize: const Size(0, 28),
                             ),
-                            child: const Text('Approve', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
+                            child: const Text('Approve', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
                           ),
                         ],
                       ),
@@ -1413,12 +1472,14 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                         children: [
                           Row(
                             children: [
-                              Text(pl.clientName, style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: tokens.textPrimary)),
+                              Flexible(
+                                child: Text(pl.clientName, overflow: TextOverflow.ellipsis, style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: tokens.textPrimary)),
+                              ),
                               const SizedBox(width: 8),
                               Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                 decoration: BoxDecoration(color: tokens.surfaceHover, borderRadius: BorderRadius.circular(4)),
-                                child: Text(pl.clientCode, style: TextStyle(fontSize: 11, fontFamily: 'monospace', color: tokens.textSecondary)),
+                                child: Text(pl.clientCode, style: bmTabularStyle(fontSize: 11, fontWeight: FontWeight.w600, color: tokens.textSecondary)),
                               ),
                             ],
                           ),
@@ -1432,7 +1493,7 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(CurrencyFormatter.format(pl.loanAmount), style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: tokens.textPrimary)),
+                          Text(CurrencyFormatter.format(pl.loanAmount), style: bmTabularStyle(fontSize: 14, fontWeight: FontWeight.w800, color: tokens.textPrimary)),
                           Text('Requested Principal', style: TextStyle(fontSize: 11, color: tokens.textMuted)),
                         ],
                       ),
@@ -1461,11 +1522,13 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                     ElevatedButton(
                       onPressed: _isProcessing ? null : () => _approveSingleLoan(pl.loanId, pl.clientName, cardDate),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF1D4ED8),
+                        backgroundColor: tokens.brandPrimary,
                         foregroundColor: Colors.white,
+                        disabledBackgroundColor: tokens.surfaceHover,
+                        disabledForegroundColor: tokens.textMuted,
                         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                       ),
-                      child: const Text('Approve', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+                      child: const Text('Approve', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
                     ),
                     const SizedBox(width: 8),
                     OutlinedButton(
@@ -1655,8 +1718,14 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                   },
                 ),
                 const SizedBox(width: 4),
-                Text('All (${filtered.length})', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: tokens.textPrimary)),
-                const Spacer(),
+                Flexible(
+                  child: Text(
+                    'All (${filtered.length})',
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: tokens.textPrimary),
+                  ),
+                ),
+                const SizedBox(width: 8),
                 InkWell(
                   onTap: () async {
                     final picked = await showDatePicker(
@@ -1684,15 +1753,16 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                 ElevatedButton(
                   onPressed: wrBatchDisabled ? null : () => _executeBatchApproveWithdrawals(filtered),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF1D4ED8),
+                    backgroundColor: tokens.brandPrimary,
                     foregroundColor: Colors.white,
                     disabledBackgroundColor: tokens.surfaceHover,
+                    disabledForegroundColor: tokens.textMuted,
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                     minimumSize: const Size(0, 30),
                   ),
                   child: Text(
                     _isProcessing ? '...' : 'Approve (${_selectedWrIds.length})',
-                    style: TextStyle(color: wrBatchDisabled ? tokens.textMuted : Colors.white, fontWeight: FontWeight.w600, fontSize: 11.5),
+                    style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 11.5),
                   ),
                 ),
               ],
@@ -1737,14 +1807,15 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
               ElevatedButton(
                 onPressed: wrBatchDisabled ? null : () => _executeBatchApproveWithdrawals(filtered),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF1D4ED8),
+                  backgroundColor: tokens.brandPrimary,
                   foregroundColor: Colors.white,
                   disabledBackgroundColor: tokens.surfaceHover,
+                  disabledForegroundColor: tokens.textMuted,
                   padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                 ),
                 child: Text(
                   _isProcessing ? 'Processing...' : 'Approve Selected Withdrawals',
-                  style: TextStyle(color: wrBatchDisabled ? tokens.textMuted : Colors.white, fontWeight: FontWeight.w600, fontSize: 13),
+                  style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
                 ),
               ),
             ],
@@ -1822,15 +1893,21 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                           ),
                           Text(
                             CurrencyFormatter.format(wr.amount),
-                            style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800, color: tokens.dangerText, fontFamily: 'monospace'),
+                            style: bmTabularStyle(fontSize: 13.5, fontWeight: FontWeight.w800, color: tokens.dangerText),
                           ),
                         ],
                       ),
                       const SizedBox(height: 6),
                       Row(
                         children: [
-                          Text('Req: ${wr.requestedBy}', style: TextStyle(fontSize: 10.5, color: tokens.textLight)),
-                          const Spacer(),
+                          Expanded(
+                            child: Text(
+                              'Req: ${wr.requestedBy}',
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(fontSize: 10.5, color: tokens.textLight),
+                            ),
+                          ),
+                          const SizedBox(width: 6),
                           InkWell(
                             onTap: () async {
                               final picked = await showDatePicker(
@@ -1855,12 +1932,12 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                                 children: [
                                   Icon(Icons.calendar_today_outlined, size: 10, color: tokens.textSecondary),
                                   const SizedBox(width: 4),
-                                  Text(DateFormat('MM/dd').format(cardDate), style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: tokens.textPrimary)),
+                                  Text(DateFormat('MM/dd').format(cardDate), style: bmTabularStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: tokens.textPrimary)),
                                 ],
                               ),
                             ),
                           ),
-                          const SizedBox(width: 8),
+                          const SizedBox(width: 6),
                           OutlinedButton(
                             onPressed: _isProcessing ? null : () => _promptRejectWithdrawal(wr.id, wr.clientName),
                             style: OutlinedButton.styleFrom(
@@ -1874,12 +1951,14 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                           ElevatedButton(
                             onPressed: _isProcessing ? null : () => _approveSingleWithdrawal(wr.id, wr.clientName, wr.amount, cardDate),
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF1D4ED8),
+                              backgroundColor: tokens.brandPrimary,
                               foregroundColor: Colors.white,
+                              disabledBackgroundColor: tokens.surfaceHover,
+                              disabledForegroundColor: tokens.textMuted,
                               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                               minimumSize: const Size(0, 28),
                             ),
-                            child: const Text('Approve', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
+                            child: const Text('Approve', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
                           ),
                         ],
                       ),
@@ -1917,7 +1996,13 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                         children: [
                           Row(
                             children: [
-                              Text(wr.clientName, style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: tokens.textPrimary)),
+                              Flexible(
+                                child: Text(
+                                  wr.clientName,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: tokens.textPrimary),
+                                ),
+                              ),
                               const SizedBox(width: 8),
                               Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -1970,11 +2055,13 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                     ElevatedButton(
                       onPressed: _isProcessing ? null : () => _approveSingleWithdrawal(wr.id, wr.clientName, wr.amount, cardDate),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF1D4ED8),
+                        backgroundColor: tokens.brandPrimary,
                         foregroundColor: Colors.white,
+                        disabledBackgroundColor: tokens.surfaceHover,
+                        disabledForegroundColor: tokens.textMuted,
                         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                       ),
-                      child: const Text('Approve', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+                      child: const Text('Approve', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
                     ),
                     const SizedBox(width: 8),
                     OutlinedButton(
@@ -2164,20 +2251,27 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                   },
                 ),
                 const SizedBox(width: 4),
-                Text('All (${filtered.length})', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: tokens.textPrimary)),
-                const Spacer(),
+                Expanded(
+                  child: Text(
+                    'All (${filtered.length})',
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: tokens.textPrimary),
+                  ),
+                ),
+                const SizedBox(width: 8),
                 ElevatedButton(
                   onPressed: corrBatchDisabled ? null : () => _executeBatchApproveCorrections(filtered),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF1D4ED8),
+                    backgroundColor: tokens.brandPrimary,
                     foregroundColor: Colors.white,
                     disabledBackgroundColor: tokens.surfaceHover,
+                    disabledForegroundColor: tokens.textMuted,
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                     minimumSize: const Size(0, 30),
                   ),
                   child: Text(
                     _isProcessing ? '...' : 'Approve (${_selectedCorrIds.length})',
-                    style: TextStyle(color: corrBatchDisabled ? tokens.textMuted : Colors.white, fontWeight: FontWeight.w600, fontSize: 11.5),
+                    style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 11.5),
                   ),
                 ),
               ],
@@ -2203,14 +2297,15 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
               ElevatedButton(
                 onPressed: corrBatchDisabled ? null : () => _executeBatchApproveCorrections(filtered),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF1D4ED8),
+                  backgroundColor: tokens.brandPrimary,
                   foregroundColor: Colors.white,
                   disabledBackgroundColor: tokens.surfaceHover,
+                  disabledForegroundColor: tokens.textMuted,
                   padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                 ),
                 child: Text(
                   _isProcessing ? 'Processing...' : 'Approve Selected Reversals',
-                  style: TextStyle(color: corrBatchDisabled ? tokens.textMuted : Colors.white, fontWeight: FontWeight.w600, fontSize: 13),
+                  style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
                 ),
               ),
             ],
@@ -2271,11 +2366,17 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                               children: [
                                 Row(
                                   children: [
-                                    Text('[${corr.recordType}] #$rRef', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12.5, color: tokens.textPrimary)),
-                                    const Spacer(),
+                                    Expanded(
+                                      child: Text(
+                                        '[${corr.recordType}] #$rRef',
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12.5, color: tokens.textPrimary),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 6),
                                     Text(
                                       CurrencyFormatter.format(corr.amount),
-                                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5, color: tokens.dangerText, fontFamily: 'monospace'),
+                                      style: bmTabularStyle(fontWeight: FontWeight.w800, fontSize: 12.5, color: tokens.dangerText),
                                     ),
                                   ],
                                 ),
@@ -2283,6 +2384,7 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                                   const SizedBox(height: 2),
                                   Text(
                                     '${corr.clientName!} ${corr.clientCode != null && corr.clientCode!.isNotEmpty ? "(${corr.clientCode})" : ""}',
+                                    overflow: TextOverflow.ellipsis,
                                     style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: tokens.textPrimary),
                                   ),
                                 ],
@@ -2297,18 +2399,20 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                             ),
                           ),
                           const SizedBox(width: 6),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(color: tokens.warningBg, borderRadius: BorderRadius.circular(10)),
-                            child: Text('Pending', style: TextStyle(color: tokens.warningText, fontSize: 10, fontWeight: FontWeight.w600)),
-                          ),
+                          const IcareStatusBadge(label: 'Pending', variant: IcareBadgeVariant.warning, showDot: false),
                         ],
                       ),
                       const SizedBox(height: 6),
                       Row(
                         children: [
-                          Text('By: ${corr.requestedBy}', style: TextStyle(fontSize: 10.5, color: tokens.textLight)),
-                          const Spacer(),
+                          Expanded(
+                            child: Text(
+                              'By: ${corr.requestedBy}',
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(fontSize: 10.5, color: tokens.textLight),
+                            ),
+                          ),
+                          const SizedBox(width: 6),
                           OutlinedButton(
                             onPressed: _isProcessing ? null : () => _rejectSingleCorrection(corr),
                             style: OutlinedButton.styleFrom(
@@ -2322,12 +2426,14 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                           ElevatedButton(
                             onPressed: _isProcessing ? null : () => _approveSingleCorrection(corr),
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF1D4ED8),
+                              backgroundColor: tokens.brandPrimary,
                               foregroundColor: Colors.white,
+                              disabledBackgroundColor: tokens.surfaceHover,
+                              disabledForegroundColor: tokens.textMuted,
                               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                               minimumSize: const Size(0, 28),
                             ),
-                            child: const Text('Approve', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
+                            child: const Text('Approve', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
                           ),
                         ],
                       ),
@@ -2363,27 +2469,26 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Row(
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 4,
+                            crossAxisAlignment: WrapCrossAlignment.center,
                             children: [
                               Text('[${corr.recordType}]', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: tokens.textPrimary)),
-                              const SizedBox(width: 8),
                               Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                 decoration: BoxDecoration(color: tokens.surfaceHover, borderRadius: BorderRadius.circular(4)),
-                                child: Text('Ref: #$rRef', style: TextStyle(fontSize: 11, fontFamily: 'monospace', color: tokens.textSecondary)),
+                                child: Text('Ref: #$rRef', style: bmTabularStyle(fontSize: 11, fontWeight: FontWeight.w600, color: tokens.textSecondary)),
                               ),
-                              const SizedBox(width: 10),
                               Text(
                                 CurrencyFormatter.format(corr.amount),
-                                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5, color: tokens.dangerText, fontFamily: 'monospace'),
+                                style: bmTabularStyle(fontWeight: FontWeight.w800, fontSize: 13.5, color: tokens.dangerText),
                               ),
-                              if (corr.clientName != null && corr.clientName!.isNotEmpty) ...[
-                                const SizedBox(width: 8),
+                              if (corr.clientName != null && corr.clientName!.isNotEmpty)
                                 Text(
                                   '• ${corr.clientName!} ${corr.clientCode != null && corr.clientCode!.isNotEmpty ? "(${corr.clientCode})" : ""}',
                                   style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: tokens.textPrimary),
                                 ),
-                              ],
                             ],
                           ),
                           const SizedBox(height: 4),
@@ -2393,15 +2498,13 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                         ],
                       ),
                     ),
-                    Expanded(
+                    const Expanded(
                       flex: 2,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                        decoration: BoxDecoration(color: tokens.warningBg, borderRadius: BorderRadius.circular(9999)),
-                        child: Text(
-                          'Pending Approval',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(color: tokens.warningText, fontSize: 11, fontWeight: FontWeight.w600),
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: IcareStatusBadge(
+                          label: 'Pending Approval',
+                          variant: IcareBadgeVariant.warning,
                         ),
                       ),
                     ),
@@ -2409,11 +2512,13 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                     ElevatedButton(
                       onPressed: _isProcessing ? null : () => _approveSingleCorrection(corr),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF1D4ED8),
+                        backgroundColor: tokens.brandPrimary,
                         foregroundColor: Colors.white,
+                        disabledBackgroundColor: tokens.surfaceHover,
+                        disabledForegroundColor: tokens.textMuted,
                         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                       ),
-                      child: const Text('Approve', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+                      child: const Text('Approve', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
                     ),
                     const SizedBox(width: 8),
                     OutlinedButton(
@@ -2546,67 +2651,14 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
   }) {
     final tokens = IcareSurfaceTokens.of(context);
     final cardAccent = accentColor ?? (isGrand ? tokens.successDot : tokens.infoDot);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      decoration: BoxDecoration(
-        color: tokens.surface,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(
-          color: isGrand ? tokens.successBorder : tokens.borderSubtle,
-          width: 1.0,
-        ),
-        boxShadow: tokens.isDark
-            ? null
-            : const [
-                BoxShadow(color: Color(0x040F172A), blurRadius: 4, offset: Offset(0, 1)),
-              ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Expanded(
-                child: Text(
-                  label,
-                  style: TextStyle(fontSize: 11.5, color: tokens.textMuted, fontWeight: FontWeight.w600),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              if (icon != null) ...[
-                const SizedBox(width: 4),
-                Icon(icon, size: 16, color: cardAccent),
-              ],
-            ],
-          ),
-          const SizedBox(height: 6),
-          FittedBox(
-            fit: BoxFit.scaleDown,
-            alignment: Alignment.centerLeft,
-            child: Text(
-              value,
-              maxLines: 1,
-              softWrap: false,
-              style: TextStyle(
-                fontSize: 19,
-                fontWeight: FontWeight.w800,
-                color: deltaColor ?? (isGrand ? tokens.successText : tokens.textPrimary),
-                fontFamily: 'monospace',
-                fontFeatures: const [FontFeature.tabularFigures()],
-              ),
-            ),
-          ),
-          if (subtitle != null && subtitle.isNotEmpty) ...[
-            const SizedBox(height: 3),
-            Text(
-              subtitle,
-              style: TextStyle(fontSize: 11, color: tokens.textLight, fontWeight: FontWeight.w500),
-              overflow: TextOverflow.ellipsis,
-            ),
-          ],
-        ],
-      ),
+    return IcareMetricCard(
+      label: label,
+      value: value,
+      delta: subtitle,
+      icon: icon,
+      topBorderColor: cardAccent,
+      isFullEmerald: isGrand,
+      statusTextColor: isGrand ? null : deltaColor,
     );
   }
 
@@ -2615,18 +2667,9 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
   // ==========================================
   Widget _buildOfficerCollectionStatus(List<OfficerCollectionStatusModel> officers, bool isMobile) {
     final tokens = IcareSurfaceTokens.of(context);
-    return Container(
-      width: double.infinity,
-      decoration: BoxDecoration(
-        color: tokens.surface,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: tokens.borderSubtle),
-        boxShadow: tokens.isDark
-            ? null
-            : const [
-                BoxShadow(color: Color(0x040F172A), blurRadius: 4, offset: Offset(0, 1)),
-              ],
-      ),
+    return IcareCard(
+      padding: EdgeInsets.zero,
+      topAccentColor: tokens.infoDot,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -2635,33 +2678,33 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(6),
-                      decoration: BoxDecoration(
-                        color: tokens.infoBg,
-                        borderRadius: BorderRadius.circular(6),
+                Expanded(
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: BoxDecoration(
+                          color: tokens.infoBg,
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Icon(Icons.badge_outlined, size: 16, color: tokens.infoDot),
                       ),
-                      child: Icon(Icons.badge_outlined, size: 16, color: tokens.infoDot),
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      'Officer Collection Status',
-                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: tokens.textPrimary),
-                    ),
-                  ],
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Officer Collection Status',
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: tokens.textPrimary),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: tokens.surfaceHover,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Text(
-                    '${officers.length} Officers',
-                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: tokens.textSecondary),
-                  ),
+                const SizedBox(width: 8),
+                IcareStatusBadge(
+                  label: '${officers.length} Officers',
+                  variant: IcareBadgeVariant.neutral,
+                  showDot: false,
                 ),
               ],
             ),
@@ -2680,88 +2723,62 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
               ),
             )
           else
-            Scrollbar(
-              thumbVisibility: true,
-              child: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: DataTable(
-                  headingRowColor: WidgetStateProperty.all(tokens.surfaceSubtle),
-                  dataRowMinHeight: 48,
-                  dataRowMaxHeight: 64,
-                  columns: [
-                    DataColumn(label: Text('Officer', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: tokens.textPrimary))),
-                    DataColumn(label: Text('Scheduled Groups', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: tokens.textPrimary))),
-                    DataColumn(label: Text('Expected', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: tokens.textPrimary))),
-                    DataColumn(label: Text('Collected', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: tokens.textPrimary))),
-                    DataColumn(label: Text('Outstanding', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: tokens.textPrimary))),
-                    DataColumn(label: Text('Compliance %', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: tokens.textPrimary))),
-                    DataColumn(label: Text('Closing Balance', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: tokens.textPrimary))),
-                    DataColumn(label: Text('Status', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: tokens.textPrimary))),
-                  ],
-                  rows: officers.map((o) {
-                    final isAttention = o.status == 'Requires Attention';
-                    final isNormal = o.status == 'Normal';
-
-                    return DataRow(
-                      cells: [
-                        DataCell(
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Text(o.officer, style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: tokens.textPrimary)),
-                              Text(o.officerName, style: TextStyle(fontSize: 11, color: tokens.textMuted)),
-                            ],
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: IcareDataTable(
+                minWidth: 780,
+                columns: [
+                  DataColumn(label: Text('Officer', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: tokens.textPrimary))),
+                  DataColumn(label: Text('Scheduled Groups', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: tokens.textPrimary))),
+                  DataColumn(label: Text('Expected', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: tokens.textPrimary))),
+                  DataColumn(label: Text('Collected', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: tokens.textPrimary))),
+                  DataColumn(label: Text('Outstanding', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: tokens.textPrimary))),
+                  DataColumn(label: Text('Compliance %', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: tokens.textPrimary))),
+                  DataColumn(label: Text('Closing Balance', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: tokens.textPrimary))),
+                  DataColumn(label: Text('Status', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: tokens.textPrimary))),
+                ],
+                rows: officers.map((o) {
+                  return DataRow(
+                    cells: [
+                      DataCell(
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(o.officer, style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: tokens.textPrimary)),
+                            Text(o.officerName, style: TextStyle(fontSize: 11, color: tokens.textMuted)),
+                          ],
+                        ),
+                      ),
+                      DataCell(
+                        SizedBox(
+                          width: 220,
+                          child: Text(
+                            o.scheduledGroups,
+                            style: TextStyle(fontSize: 11.5, color: tokens.textSecondary),
+                            overflow: TextOverflow.ellipsis,
+                            maxLines: 2,
                           ),
                         ),
-                        DataCell(
-                          SizedBox(
-                            width: 220,
-                            child: Text(
-                              o.scheduledGroups,
-                              style: TextStyle(fontSize: 11.5, color: tokens.textSecondary),
-                              overflow: TextOverflow.ellipsis,
-                              maxLines: 2,
-                            ),
+                      ),
+                      DataCell(Text(CurrencyFormatter.format(o.expected), style: bmTabularStyle(fontSize: 12.5, fontWeight: FontWeight.w500, color: tokens.textPrimary))),
+                      DataCell(Text(CurrencyFormatter.format(o.collected), style: bmTabularStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: tokens.successText))),
+                      DataCell(Text(CurrencyFormatter.format(o.outstanding), style: bmTabularStyle(fontSize: 12.5, fontWeight: FontWeight.w500, color: tokens.dangerText))),
+                      DataCell(
+                        Text(
+                          '${o.compliancePct.toStringAsFixed(1)}%',
+                          style: bmTabularStyle(
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w700,
+                            color: o.compliancePct >= 80 ? tokens.successText : tokens.dangerText,
                           ),
                         ),
-                        DataCell(Text(CurrencyFormatter.format(o.expected), style: TextStyle(fontFamily: 'monospace', fontSize: 12.5, color: tokens.textPrimary, fontFeatures: const [FontFeature.tabularFigures()]))),
-                        DataCell(Text(CurrencyFormatter.format(o.collected), style: TextStyle(fontFamily: 'monospace', fontSize: 12.5, color: tokens.successText, fontWeight: FontWeight.w600, fontFeatures: const [FontFeature.tabularFigures()]))),
-                        DataCell(Text(CurrencyFormatter.format(o.outstanding), style: TextStyle(fontFamily: 'monospace', fontSize: 12.5, color: tokens.dangerText, fontFeatures: const [FontFeature.tabularFigures()]))),
-                        DataCell(
-                          Text(
-                            '${o.compliancePct.toStringAsFixed(1)}%',
-                            style: TextStyle(
-                              fontFamily: 'monospace',
-                              fontSize: 12.5,
-                              fontWeight: FontWeight.w700,
-                              color: o.compliancePct >= 80 ? tokens.successText : tokens.dangerText,
-                              fontFeatures: const [FontFeature.tabularFigures()],
-                            ),
-                          ),
-                        ),
-                        DataCell(Text(CurrencyFormatter.format(o.closingBalance), style: TextStyle(fontFamily: 'monospace', fontSize: 12.5, fontWeight: FontWeight.w700, color: tokens.textPrimary, fontFeatures: const [FontFeature.tabularFigures()]))),
-                        DataCell(
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: isNormal ? tokens.successBg : (isAttention ? tokens.warningBg : tokens.surfaceHover),
-                              borderRadius: BorderRadius.circular(9999),
-                            ),
-                            child: Text(
-                              o.status,
-                              style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w600,
-                                color: isNormal ? tokens.successText : (isAttention ? tokens.warningText : tokens.textSecondary),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    );
-                  }).toList(),
-                ),
+                      ),
+                      DataCell(Text(CurrencyFormatter.format(o.closingBalance), style: bmTabularStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: tokens.textPrimary))),
+                      DataCell(IcareStatusBadge.fromStatus(o.status)),
+                    ],
+                  );
+                }).toList(),
               ),
             ),
         ],
@@ -2771,24 +2788,15 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
 
   Widget _buildMobileOfficerStatusCard(OfficerCollectionStatusModel o) {
     final tokens = IcareSurfaceTokens.of(context);
-    final isNormal = o.status == 'Normal';
-    final isAttention = o.status == 'Requires Attention';
     final isHighCompliance = o.compliancePct >= 80.0;
     final isExpanded = _expandedOfficer == o.officer;
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      decoration: BoxDecoration(
-        color: tokens.surface,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: isExpanded ? tokens.infoBorder : tokens.borderSubtle),
-        boxShadow: (isExpanded && !tokens.isDark)
-            ? const [BoxShadow(color: Color(0x0C2563EB), blurRadius: 6, offset: Offset(0, 2))]
-            : null,
-      ),
-      child: InkWell(
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: IcareCard(
+        padding: EdgeInsets.zero,
+        border: Border.all(color: isExpanded ? tokens.brandPrimary : tokens.borderSubtle),
         onTap: () => setState(() => _expandedOfficer = isExpanded ? null : o.officer),
-        borderRadius: BorderRadius.circular(8),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
           child: Column(
@@ -2822,17 +2830,27 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                         const SizedBox(height: 1),
                         Row(
                           children: [
-                            Text(o.officer, style: TextStyle(fontSize: 10.5, color: tokens.textMuted, fontFamily: 'monospace')),
+                            Flexible(
+                              child: Text(
+                                o.officer,
+                                overflow: TextOverflow.ellipsis,
+                                style: bmTabularStyle(fontSize: 10.5, fontWeight: FontWeight.w500, color: tokens.textMuted),
+                              ),
+                            ),
                             Text(' • ', style: TextStyle(color: tokens.borderStrong, fontSize: 10)),
-                            Text(
-                              '${CurrencyFormatter.format(o.collected)} / ${CurrencyFormatter.format(o.expected)}',
-                              style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: tokens.textSecondary),
+                            Flexible(
+                              child: Text(
+                                '${CurrencyFormatter.format(o.collected)} / ${CurrencyFormatter.format(o.expected)}',
+                                overflow: TextOverflow.ellipsis,
+                                style: bmTabularStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: tokens.textSecondary),
+                              ),
                             ),
                           ],
                         ),
                       ],
                     ),
                   ),
+                  const SizedBox(width: 6),
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                     decoration: BoxDecoration(
@@ -2841,7 +2859,7 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                     ),
                     child: Text(
                       '${o.compliancePct.toStringAsFixed(0)}%',
-                      style: TextStyle(
+                      style: bmTabularStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.w800,
                         color: isHighCompliance ? tokens.successText : tokens.dangerText,
@@ -2901,7 +2919,7 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                             const SizedBox(height: 1),
                             Text(
                               CurrencyFormatter.format(o.expected),
-                              style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, fontFamily: 'monospace', color: tokens.textPrimary),
+                              style: bmTabularStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: tokens.textPrimary),
                             ),
                           ],
                         ),
@@ -2914,7 +2932,7 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                             const SizedBox(height: 1),
                             Text(
                               CurrencyFormatter.format(o.collected),
-                              style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, fontFamily: 'monospace', color: tokens.successText),
+                              style: bmTabularStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: tokens.successText),
                             ),
                           ],
                         ),
@@ -2927,7 +2945,7 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                             const SizedBox(height: 1),
                             Text(
                               CurrencyFormatter.format(o.outstanding),
-                              style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, fontFamily: 'monospace', color: tokens.dangerText),
+                              style: bmTabularStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: tokens.dangerText),
                             ),
                           ],
                         ),
@@ -2941,27 +2959,15 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: isNormal ? tokens.successBg : (isAttention ? tokens.warningBg : tokens.surfaceHover),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Text(
-                        o.status,
-                        style: TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w700,
-                          color: isNormal ? tokens.successText : (isAttention ? tokens.warningText : tokens.textSecondary),
-                        ),
-                      ),
-                    ),
+                    Flexible(child: IcareStatusBadge.fromStatus(o.status)),
+                    const SizedBox(width: 8),
                     Row(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
                         Text('Closing: ', style: TextStyle(fontSize: 10.5, color: tokens.textMuted)),
                         Text(
                           CurrencyFormatter.format(o.closingBalance),
-                          style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, fontFamily: 'monospace', color: tokens.textPrimary),
+                          style: bmTabularStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: tokens.textPrimary),
                         ),
                       ],
                     ),
@@ -3031,51 +3037,32 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(6),
-                    decoration: BoxDecoration(
-                      color: tokens.brandSoftBg,
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Icon(Icons.account_balance_outlined, size: 16, color: tokens.brandPrimary),
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    'Branch Cash Position (Master Cashbook)',
-                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: tokens.textPrimary),
-                  ),
-                ],
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: isBalanced ? tokens.successBg : tokens.dangerBg,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: isBalanced ? tokens.successBorder : tokens.dangerBorder,
-                  ),
-                ),
+              Expanded(
                 child: Row(
-                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(
-                      isBalanced ? Icons.check_circle_outline : Icons.error_outline,
-                      size: 13,
-                      color: isBalanced ? tokens.successText : tokens.dangerText,
+                    Container(
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: tokens.brandSoftBg,
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Icon(Icons.account_balance_outlined, size: 16, color: tokens.brandPrimary),
                     ),
-                    const SizedBox(width: 4),
-                    Text(
-                      cp.status,
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                        color: isBalanced ? tokens.successText : tokens.dangerText,
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Branch Cash Position (Master Cashbook)',
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: tokens.textPrimary),
                       ),
                     ),
                   ],
                 ),
+              ),
+              const SizedBox(width: 8),
+              IcareStatusBadge(
+                label: cp.status,
+                variant: isBalanced ? IcareBadgeVariant.success : IcareBadgeVariant.danger,
               ),
             ],
           ),
@@ -3183,6 +3170,21 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
   // ACTION HANDLERS
   // ==========================================
 
+  void _showErrorSnackBar(dynamic error, {String prefix = ''}) {
+    if (!mounted) return;
+    final tokens = IcareSurfaceTokens.of(context);
+    final msg = AppErrorDetails.from(error).message;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          '$prefix$msg',
+          style: TextStyle(color: tokens.dangerText, fontWeight: FontWeight.w600),
+        ),
+        backgroundColor: tokens.dangerBg,
+      ),
+    );
+  }
+
   Future<void> _approveSingleLoan(String loanId, String clientName, DateTime date) async {
     setState(() => _isProcessing = true);
     try {
@@ -3191,8 +3193,7 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
       _showFlash(res['message']?.toString() ?? 'Loan approved & disbursed for $clientName!');
       _invalidateAllCashbookAndDashboardProviders();
     } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Approval failed: ${AppErrorDetails.from(e).message}'), backgroundColor: const Color(0xFFDC2626)));
+      _showErrorSnackBar(e, prefix: 'Approval failed: ');
     } finally {
       if (mounted) setState(() => _isProcessing = false);
     }
@@ -3206,8 +3207,7 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
       _showFlash(res['message']?.toString() ?? 'Loan rejected for $clientName.');
       _invalidateAllCashbookAndDashboardProviders();
     } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Rejection failed: ${AppErrorDetails.from(e).message}'), backgroundColor: const Color(0xFFDC2626)));
+      _showErrorSnackBar(e, prefix: 'Rejection failed: ');
     } finally {
       if (mounted) setState(() => _isProcessing = false);
     }
@@ -3231,8 +3231,7 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
       _selectedLoanIds.clear();
       _invalidateAllCashbookAndDashboardProviders();
     } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Batch approval failed: ${AppErrorDetails.from(e).message}'), backgroundColor: const Color(0xFFDC2626)));
+      _showErrorSnackBar(e, prefix: 'Batch approval failed: ');
     } finally {
       if (mounted) setState(() => _isProcessing = false);
     }
@@ -3246,8 +3245,7 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
       _showFlash(res['message']?.toString() ?? 'Withdrawal of ${CurrencyFormatter.format(amount)} for $clientName approved!');
       _invalidateAllCashbookAndDashboardProviders();
     } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Approval failed: ${AppErrorDetails.from(e).message}'), backgroundColor: const Color(0xFFDC2626)));
+      _showErrorSnackBar(e, prefix: 'Approval failed: ');
     } finally {
       if (mounted) setState(() => _isProcessing = false);
     }
@@ -3255,39 +3253,79 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
 
   Future<void> _promptRejectWithdrawal(String id, String clientName) async {
     final reasonCtrl = TextEditingController();
-    final shouldReject = await showIcareDialog<bool>(
+    final shouldReject = await showIcareAdaptiveSheet<bool>(
       context: context,
-      builder: (ctx) {
+      fitContent: true,
+      desktopConstraints: const BoxConstraints(maxWidth: 440, maxHeight: 420),
+      builder: (ctx, isDialog) {
         final tokens = IcareSurfaceTokens.of(ctx);
-        return AlertDialog(
-          backgroundColor: tokens.surfaceElevated,
-          title: Text('Reject Withdrawal for $clientName', style: TextStyle(color: tokens.textPrimary)),
-          content: TextField(
-            controller: reasonCtrl,
-            decoration: const InputDecoration(labelText: 'Rejection Reason', hintText: 'Why is this being rejected?'),
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-            ElevatedButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFDC2626), foregroundColor: Colors.white),
-              child: const Text('Confirm Rejection', style: TextStyle(color: Colors.white)),
+        final dangerFill = tokens.isDark ? tokens.dangerBorder : tokens.dangerText;
+        return Material(
+          color: tokens.surfaceElevated,
+          child: SingleChildScrollView(
+            padding: EdgeInsets.fromLTRB(
+              20,
+              isDialog ? 20 : 12,
+              20,
+              20 + MediaQuery.viewInsetsOf(ctx).bottom,
             ),
-          ],
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (!isDialog)
+                  Center(
+                    child: Container(
+                      width: 36,
+                      height: 4,
+                      margin: const EdgeInsets.only(bottom: 14),
+                      decoration: BoxDecoration(
+                        color: tokens.borderStrong,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                Text(
+                  'Reject Withdrawal for $clientName',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: tokens.textPrimary),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: reasonCtrl,
+                  decoration: const InputDecoration(labelText: 'Rejection Reason', hintText: 'Why is this being rejected?'),
+                ),
+                const SizedBox(height: 18),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+                    const SizedBox(width: 8),
+                    ElevatedButton(
+                      onPressed: () => Navigator.pop(ctx, true),
+                      style: ElevatedButton.styleFrom(backgroundColor: dangerFill, foregroundColor: Colors.white),
+                      child: const Text('Confirm Rejection'),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
         );
       },
     );
+
+    final rejectionText = reasonCtrl.text.trim();
+    reasonCtrl.dispose();
 
     if (shouldReject == true) {
       setState(() => _isProcessing = true);
       try {
         final api = ref.read(bmApiServiceProvider);
-        final res = await api.rejectWithdrawal(withdrawalId: id, reason: reasonCtrl.text.trim().isEmpty ? 'Rejected by BM' : reasonCtrl.text.trim());
+        final res = await api.rejectWithdrawal(withdrawalId: id, reason: rejectionText.isEmpty ? 'Rejected by BM' : rejectionText);
         _showFlash(res['message']?.toString() ?? 'Withdrawal request rejected.');
         _invalidateAllCashbookAndDashboardProviders();
       } catch (e) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Rejection failed: ${AppErrorDetails.from(e).message}'), backgroundColor: const Color(0xFFDC2626)));
+        _showErrorSnackBar(e, prefix: 'Rejection failed: ');
       } finally {
         if (mounted) setState(() => _isProcessing = false);
       }
@@ -3312,8 +3350,7 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
       _selectedWrIds.clear();
       _invalidateAllCashbookAndDashboardProviders();
     } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Batch approval failed: ${AppErrorDetails.from(e).message}'), backgroundColor: const Color(0xFFDC2626)));
+      _showErrorSnackBar(e, prefix: 'Batch approval failed: ');
     } finally {
       if (mounted) setState(() => _isProcessing = false);
     }
@@ -3321,57 +3358,82 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
 
   Future<void> _approveSingleCorrection(PendingCorrectionApprovalModel corr) async {
     final amtStr = CurrencyFormatter.format(corr.amount);
-    final confirm = await showIcareDialog<bool>(
+    final confirm = await showIcareAdaptiveSheet<bool>(
       context: context,
-      builder: (ctx) {
+      fitContent: true,
+      desktopConstraints: const BoxConstraints(maxWidth: 460, maxHeight: 540),
+      builder: (ctx, isDialog) {
         final tokens = IcareSurfaceTokens.of(ctx);
-        return AlertDialog(
-          backgroundColor: tokens.surfaceElevated,
-          title: Text('Confirm Reversal — [${corr.recordType}]', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: tokens.textPrimary)),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (corr.clientName != null && corr.clientName!.isNotEmpty) ...[
-                Text('Client: ${corr.clientName!} ${corr.clientCode != null && corr.clientCode!.isNotEmpty ? "(${corr.clientCode})" : ""}',
-                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: tokens.textPrimary)),
-                const SizedBox(height: 4),
-              ],
-              Text('Amount to Reverse: $amtStr', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: tokens.dangerText)),
-              const SizedBox(height: 6),
-              Text('Reason: ${corr.reason}', style: TextStyle(fontSize: 12, fontStyle: FontStyle.italic, color: tokens.textSecondary)),
-              const SizedBox(height: 12),
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: tokens.warningBg,
-                  borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: tokens.warningBorder),
-                ),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Icon(Icons.info_outline, size: 16, color: tokens.warningDot),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'Approving this reversal will adjust $amtStr from Vault Cash. Ensure physical cash has been counted and aligned.',
-                        style: TextStyle(fontSize: 11.5, color: tokens.warningText),
+        return Material(
+          color: tokens.surfaceElevated,
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (!isDialog)
+                  Center(
+                    child: Container(
+                      width: 36,
+                      height: 4,
+                      margin: const EdgeInsets.only(bottom: 14),
+                      decoration: BoxDecoration(
+                        color: tokens.borderStrong,
+                        borderRadius: BorderRadius.circular(2),
                       ),
+                    ),
+                  ),
+                Text('Confirm Reversal — [${corr.recordType}]', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16, color: tokens.textPrimary)),
+                const SizedBox(height: 12),
+                if (corr.clientName != null && corr.clientName!.isNotEmpty) ...[
+                  Text(
+                    'Client: ${corr.clientName!} ${corr.clientCode != null && corr.clientCode!.isNotEmpty ? "(${corr.clientCode})" : ""}',
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: tokens.textPrimary),
+                  ),
+                  const SizedBox(height: 4),
+                ],
+                Text('Amount to Reverse: $amtStr', style: bmTabularStyle(fontSize: 14, fontWeight: FontWeight.w800, color: tokens.dangerText)),
+                const SizedBox(height: 6),
+                Text('Reason: ${corr.reason}', style: TextStyle(fontSize: 12, fontStyle: FontStyle.italic, color: tokens.textSecondary)),
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: tokens.warningBg,
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: tokens.warningBorder),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(Icons.info_outline, size: 16, color: tokens.warningDot),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Approving this reversal will adjust $amtStr from Vault Cash. Ensure physical cash has been counted and aligned.',
+                          style: TextStyle(fontSize: 11.5, color: tokens.warningText),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 18),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+                    const SizedBox(width: 8),
+                    ElevatedButton(
+                      onPressed: () => Navigator.pop(ctx, true),
+                      style: ElevatedButton.styleFrom(backgroundColor: tokens.brandPrimaryDark, foregroundColor: Colors.white),
+                      child: const Text('Approve Reversal', style: TextStyle(fontWeight: FontWeight.bold)),
                     ),
                   ],
                 ),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-            ElevatedButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              style: ElevatedButton.styleFrom(backgroundColor: tokens.brandPrimaryDark, foregroundColor: Colors.white),
-              child: const Text('Approve Reversal', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+              ],
             ),
-          ],
+          ),
         );
       },
     );
@@ -3382,11 +3444,10 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
     try {
       final api = ref.read(bmApiServiceProvider);
       final res = await api.approveCorrection(correctionId: corr.id);
-      _showFlash(res['message']?.toString() ?? 'Reversal approved and executed atomically!');
+      _showFlash(res['message']?.toString() ?? 'Reversal approved and posted cleanly!');
       _invalidateAllCashbookAndDashboardProviders();
     } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Approval failed: ${AppErrorDetails.from(e).message}'), backgroundColor: const Color(0xFFDC2626)));
+      _showErrorSnackBar(e, prefix: 'Approval failed: ');
     } finally {
       if (mounted) setState(() => _isProcessing = false);
     }
@@ -3394,42 +3455,76 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
 
   Future<void> _rejectSingleCorrection(PendingCorrectionApprovalModel corr) async {
     final reasonCtrl = TextEditingController();
-    final confirm = await showIcareDialog<bool>(
+    final confirm = await showIcareAdaptiveSheet<bool>(
       context: context,
-      builder: (ctx) {
+      fitContent: true,
+      desktopConstraints: const BoxConstraints(maxWidth: 460, maxHeight: 460),
+      builder: (ctx, isDialog) {
         final tokens = IcareSurfaceTokens.of(ctx);
-        return AlertDialog(
-          backgroundColor: tokens.surfaceElevated,
-          title: Text('Reject Reversal Request', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: tokens.textPrimary)),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('Are you sure you want to reject this reversal request for [${corr.recordType}] (#${corr.recordId.length >= 8 ? corr.recordId.substring(0, 8) : corr.recordId})?',
-                  style: TextStyle(fontSize: 13, color: tokens.textSecondary)),
-              const SizedBox(height: 12),
-              TextField(
-                controller: reasonCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'Rejection Reason (Optional)',
-                  hintText: 'e.g. Transaction verified as valid.',
-                  border: OutlineInputBorder(),
-                  isDense: true,
-                ),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-            ElevatedButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFDC2626), foregroundColor: Colors.white),
-              child: const Text('Reject Request', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        final dangerFill = tokens.isDark ? tokens.dangerBorder : tokens.dangerText;
+        return Material(
+          color: tokens.surfaceElevated,
+          child: SingleChildScrollView(
+            padding: EdgeInsets.fromLTRB(
+              20,
+              isDialog ? 20 : 12,
+              20,
+              20 + MediaQuery.viewInsetsOf(ctx).bottom,
             ),
-          ],
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (!isDialog)
+                  Center(
+                    child: Container(
+                      width: 36,
+                      height: 4,
+                      margin: const EdgeInsets.only(bottom: 14),
+                      decoration: BoxDecoration(
+                        color: tokens.borderStrong,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                Text('Reject Reversal Request', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16, color: tokens.textPrimary)),
+                const SizedBox(height: 10),
+                Text(
+                  'Are you sure you want to reject this reversal request for [${corr.recordType}] (#${corr.recordId.length >= 8 ? corr.recordId.substring(0, 8) : corr.recordId})?',
+                  style: TextStyle(fontSize: 13, color: tokens.textSecondary),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: reasonCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Rejection Reason (Optional)',
+                    hintText: 'e.g. Transaction verified as valid.',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                ),
+                const SizedBox(height: 18),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+                    const SizedBox(width: 8),
+                    ElevatedButton(
+                      onPressed: () => Navigator.pop(ctx, true),
+                      style: ElevatedButton.styleFrom(backgroundColor: dangerFill, foregroundColor: Colors.white),
+                      child: const Text('Reject Request', style: TextStyle(fontWeight: FontWeight.bold)),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
         );
       },
     );
+
+    final rejectionText = reasonCtrl.text.trim();
+    reasonCtrl.dispose();
 
     if (confirm != true) return;
 
@@ -3438,13 +3533,12 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
       final api = ref.read(bmApiServiceProvider);
       final res = await api.rejectCorrection(
         correctionId: corr.id,
-        reason: reasonCtrl.text.trim().isNotEmpty ? reasonCtrl.text.trim() : 'Rejected by BM',
+        reason: rejectionText.isNotEmpty ? rejectionText : 'Rejected by BM',
       );
       _showFlash(res['message']?.toString() ?? 'Reversal rejected.');
       _invalidateAllCashbookAndDashboardProviders();
     } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Rejection failed: ${AppErrorDetails.from(e).message}'), backgroundColor: const Color(0xFFDC2626)));
+      _showErrorSnackBar(e, prefix: 'Rejection failed: ');
     } finally {
       if (mounted) setState(() => _isProcessing = false);
     }
@@ -3455,51 +3549,76 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
     final totalAmount = selectedCorrs.fold<double>(0.0, (sum, c) => sum + c.amount);
     final amtStr = CurrencyFormatter.format(totalAmount);
 
-    final confirm = await showIcareDialog<bool>(
+    final confirm = await showIcareAdaptiveSheet<bool>(
       context: context,
-      builder: (ctx) {
+      fitContent: true,
+      desktopConstraints: const BoxConstraints(maxWidth: 460, maxHeight: 460),
+      builder: (ctx, isDialog) {
         final tokens = IcareSurfaceTokens.of(ctx);
-        return AlertDialog(
-          backgroundColor: tokens.surfaceElevated,
-          title: Text('Approve ${selectedCorrs.length} Reversals', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: tokens.textPrimary)),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('You are about to batch approve ${selectedCorrs.length} reversal requests totaling $amtStr.',
-                  style: TextStyle(fontSize: 13, color: tokens.textPrimary)),
-              const SizedBox(height: 12),
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: tokens.warningBg,
-                  borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: tokens.warningBorder),
-                ),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Icon(Icons.info_outline, size: 16, color: tokens.warningDot),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'Batch approval will atomically adjust $amtStr from Vault Cash. Please verify all physical cash receipts before proceeding.',
-                        style: TextStyle(fontSize: 11.5, color: tokens.warningText),
+        return Material(
+          color: tokens.surfaceElevated,
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (!isDialog)
+                  Center(
+                    child: Container(
+                      width: 36,
+                      height: 4,
+                      margin: const EdgeInsets.only(bottom: 14),
+                      decoration: BoxDecoration(
+                        color: tokens.borderStrong,
+                        borderRadius: BorderRadius.circular(2),
                       ),
+                    ),
+                  ),
+                Text('Approve ${selectedCorrs.length} Reversals', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16, color: tokens.textPrimary)),
+                const SizedBox(height: 12),
+                Text(
+                  'You are about to batch approve ${selectedCorrs.length} reversal requests totaling $amtStr.',
+                  style: TextStyle(fontSize: 13, color: tokens.textPrimary),
+                ),
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: tokens.warningBg,
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: tokens.warningBorder),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(Icons.info_outline, size: 16, color: tokens.warningDot),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Batch approval will adjust $amtStr from Vault Cash. Please verify all physical cash receipts before proceeding.',
+                          style: TextStyle(fontSize: 11.5, color: tokens.warningText),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 18),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+                    const SizedBox(width: 8),
+                    ElevatedButton(
+                      onPressed: () => Navigator.pop(ctx, true),
+                      style: ElevatedButton.styleFrom(backgroundColor: tokens.brandPrimaryDark, foregroundColor: Colors.white),
+                      child: const Text('Confirm Batch Approval', style: TextStyle(fontWeight: FontWeight.bold)),
                     ),
                   ],
                 ),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-            ElevatedButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              style: ElevatedButton.styleFrom(backgroundColor: tokens.brandPrimaryDark, foregroundColor: Colors.white),
-              child: const Text('Confirm Batch Approval', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+              ],
             ),
-          ],
+          ),
         );
       },
     );
@@ -3514,8 +3633,7 @@ class _BmDashboardScreenState extends ConsumerState<BmDashboardScreen> {
       _selectedCorrIds.clear();
       _invalidateAllCashbookAndDashboardProviders();
     } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Batch approval failed: ${AppErrorDetails.from(e).message}'), backgroundColor: const Color(0xFFDC2626)));
+      _showErrorSnackBar(e, prefix: 'Batch approval failed: ');
     } finally {
       if (mounted) setState(() => _isProcessing = false);
     }

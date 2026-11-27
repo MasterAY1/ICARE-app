@@ -925,16 +925,7 @@ class _WithdrawalOperationsScreenState extends ConsumerState<WithdrawalOperation
         ),
 
         if (!isOnline) _buildOfflineNoticeBanner(IcareSurfaceTokens.of(context), isManager: isManager),
-
-        // Interactive Withdrawal & Governance Flow Pipeline
-        CoWithdrawalFlowCard(
-          activeTab: activeTab,
-          isManager: isManager,
-          isOnline: isOnline,
-          pendingCount: pendingCount,
-          onSelectTab: (t) => ref.read(withdrawalTabProvider.notifier).state = t,
-        ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 8),
 
         // 2. Flash Banner
         if (_flashMessage != null) ...[

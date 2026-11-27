@@ -1,11 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/errors/app_error_formatter.dart';
 import '../../../core/theme/icare_theme_tokens.dart';
 import '../../../core/utils/currency_formatter.dart';
+import '../../../core/widgets/icare_card.dart';
+import '../../../core/widgets/icare_data_table.dart';
+import '../../../core/widgets/icare_metric_card.dart';
 import '../../../core/widgets/icare_skeleton_loader.dart';
+import '../../../core/widgets/icare_status_badge.dart';
+import '../../shared/presentation/co_app_scaffold.dart';
 import '../data/datasources/admin_api_service.dart';
 import '../data/models/admin_dashboard_models.dart';
+import 'widgets/admin_portfolio_charts.dart';
 
 final adminPortfolioYearProvider = StateProvider.autoDispose<int>((ref) => DateTime.now().year);
 
@@ -15,28 +22,37 @@ class AdminPortfolioScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final year = ref.watch(adminPortfolioYearProvider);
+    ref.listen<int>(globalRefreshSignalProvider, (prev, next) {
+      if (next != prev) {
+        ref.invalidate(institutionPerformanceProvider(year));
+      }
+    });
+
     final perfAsync = ref.watch(institutionPerformanceProvider(year));
     final screenWidth = MediaQuery.of(context).size.width;
     final isMobile = screenWidth < 768;
     final tokens = IcareSurfaceTokens.of(context);
 
-    return SingleChildScrollView(
-      padding: EdgeInsets.symmetric(horizontal: isMobile ? 12 : 24, vertical: 16),
+    return Padding(
+      padding: EdgeInsets.symmetric(horizontal: isMobile ? 4 : 8, vertical: 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // 1. Executive Screen Header
           _buildScreenHeader(context, ref, tokens, year, isMobile),
-          const SizedBox(height: 20),
+          const SizedBox(height: 18),
 
           perfAsync.when(
-            loading: () => const IcareSkeletonLoader(height: 140),
-            error: (err, _) => _buildErrorBanner(
-              tokens,
-              'Unable to load institutional portfolio',
-              'The backend service may be synchronizing. Please retry.',
-              () => ref.invalidate(institutionPerformanceProvider(year)),
-            ),
+            loading: () => const IcareDashboardSkeleton(),
+            error: (err, _) {
+              final details = AppErrorDetails.from(err);
+              return _buildErrorBanner(
+                tokens,
+                details.title,
+                details.message,
+                () => ref.invalidate(institutionPerformanceProvider(year)),
+              );
+            },
             data: (data) {
               final branches = data.branchRankings;
               final summary = data.summary;
@@ -46,15 +62,23 @@ class AdminPortfolioScreen extends ConsumerWidget {
                 children: [
                   // 2. Executive KPI Summary Cards
                   _buildKpiRibbon(tokens, summary, isMobile),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 20),
 
-                  // 3. Visual Cross-Branch Comparison Matrix (Charts & Progress Bars)
+                  // 2.5 Live Institutional Charts
+                  AdminPortfolioChartsSection(
+                    branches: branches,
+                    summary: summary,
+                    year: year,
+                  ),
+                  const SizedBox(height: 20),
+
+                  // 3. Visual Cross-Branch Comparison Matrix
                   _buildBranchComparisonMatrix(tokens, branches, summary, isMobile),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 20),
 
                   // 4. Authoritative Cross-Branch Comparative Table
                   _buildComparativeLeagueTable(tokens, branches, isMobile),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 20),
 
                   // 5. Branch Top Performing Officers Spotlight
                   _buildTopOfficersSpotlight(tokens, branches, isMobile),
@@ -72,96 +96,102 @@ class AdminPortfolioScreen extends ConsumerWidget {
   // =========================================================================
   Widget _buildScreenHeader(
       BuildContext context, WidgetRef ref, IcareSurfaceTokens tokens, int year, bool isMobile) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      decoration: BoxDecoration(
-        color: tokens.surface,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: tokens.borderSubtle),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Icon(Icons.pie_chart_outline, size: 18, color: tokens.brandPrimary),
-                    const SizedBox(width: 8),
-                    Flexible(
-                      child: Text(
-                        'Institutional Portfolio Analytics',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w800,
-                          color: tokens.textPrimary,
-                          letterSpacing: -0.3,
-                        ),
-                      ),
+    final controls = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        ConstrainedBox(
+          constraints: const BoxConstraints(minWidth: 112, maxWidth: 140),
+          child: Container(
+            height: 34,
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            decoration: BoxDecoration(
+              color: tokens.surfaceSubtle,
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: tokens.borderStrong),
+            ),
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<int>(
+                value: year,
+                isExpanded: true,
+                dropdownColor: tokens.surfaceElevated,
+                isDense: true,
+                icon: Icon(Icons.arrow_drop_down, size: 18, color: tokens.textSecondary),
+                items: ({
+                  DateTime.now().year,
+                  DateTime.now().year - 1,
+                  DateTime.now().year - 2,
+                  year,
+                }.toList()
+                      ..sort((a, b) => b.compareTo(a)))
+                    .map((y) {
+                  return DropdownMenuItem<int>(
+                    value: y,
+                    child: Text(
+                      'Cycle $y',
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tokens.textPrimary),
                     ),
-                  ],
-                ),
-                if (!isMobile) ...[
-                  const SizedBox(height: 4),
-                  Text(
-                    'Cross-branch comparative performance, capital deployment, loan book dynamics, and savings liquidity.',
-                    style: TextStyle(fontSize: 12, color: tokens.textMuted),
-                  ),
-                ],
-              ],
+                  );
+                }).toList(),
+                onChanged: (val) {
+                  if (val != null) {
+                    ref.read(adminPortfolioYearProvider.notifier).state = val;
+                  }
+                },
+              ),
             ),
           ),
+        ),
+        const SizedBox(width: 8),
+        IconButton(
+          onPressed: () => ref.invalidate(institutionPerformanceProvider(year)),
+          icon: Icon(Icons.refresh, size: 18, color: tokens.textSecondary),
+          tooltip: 'Refresh Portfolio',
+          visualDensity: VisualDensity.compact,
+        ),
+      ],
+    );
+
+    return IcareCard(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      topAccentColor: tokens.brandPrimary,
+      child: Wrap(
+        spacing: 12,
+        runSpacing: 10,
+        alignment: WrapAlignment.spaceBetween,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
           Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Container(
-                height: 34,
-                padding: const EdgeInsets.symmetric(horizontal: 10),
-                decoration: BoxDecoration(
-                  color: tokens.surfaceSubtle,
-                  borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: tokens.borderStrong),
-                ),
-                child: DropdownButtonHideUnderline(
-                  child: DropdownButton<int>(
-                    value: year,
-                    dropdownColor: tokens.surfaceElevated,
-                    isDense: true,
-                    icon: Icon(Icons.arrow_drop_down, size: 18, color: tokens.textSecondary),
-                    items: ({
-                      DateTime.now().year,
-                      DateTime.now().year - 1,
-                      DateTime.now().year - 2,
-                      year,
-                    }.toList()
-                          ..sort((a, b) => b.compareTo(a)))
-                        .map((y) {
-                      return DropdownMenuItem<int>(
-                        value: y,
-                        child: Text(
-                          'Cycle $y',
-                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tokens.textPrimary),
-                        ),
-                      );
-                    }).toList(),
-                    onChanged: (val) {
-                      if (val != null) {
-                        ref.read(adminPortfolioYearProvider.notifier).state = val;
-                      }
-                    },
-                  ),
-                ),
-              ),
+              Icon(Icons.pie_chart_outline, size: 18, color: tokens.brandPrimary),
               const SizedBox(width: 8),
-              IconButton(
-                onPressed: () => ref.invalidate(institutionPerformanceProvider(year)),
-                icon: Icon(Icons.refresh, size: 18, color: tokens.textSecondary),
-                tooltip: 'Refresh Portfolio',
-                visualDensity: VisualDensity.compact,
+              Flexible(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Institutional Portfolio Analytics',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                        color: tokens.textPrimary,
+                        letterSpacing: -0.3,
+                      ),
+                    ),
+                    if (!isMobile) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        'Cross-branch comparative performance, capital deployment, and liquidity.',
+                        style: TextStyle(fontSize: 12, color: tokens.textMuted),
+                      ),
+                    ],
+                  ],
+                ),
               ),
             ],
           ),
+          controls,
         ],
       ),
     );
@@ -243,56 +273,16 @@ class AdminPortfolioScreen extends ConsumerWidget {
     required double width,
     bool isAlert = false,
   }) {
-    return Container(
+    return SizedBox(
       width: width,
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: tokens.surface,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: isAlert ? tokens.dangerBorder : tokens.borderSubtle),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: tokens.isDark ? 0.18 : 0.02),
-            blurRadius: 4,
-            offset: const Offset(0, 1),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Flexible(
-                child: Text(
-                  title,
-                  style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: tokens.textMuted, letterSpacing: 0.3),
-                ),
-              ),
-              Icon(icon, size: 16, color: iconColor),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Text(
-            value,
-            softWrap: false,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w800,
-              color: isAlert ? tokens.dangerText : tokens.textPrimary,
-              fontFeatures: const [FontFeature.tabularFigures()],
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            subtitle,
-            softWrap: false,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(fontSize: 11, color: tokens.textMuted),
-          ),
-        ],
+      child: IcareMetricCard(
+        label: title,
+        value: value,
+        delta: subtitle,
+        isInverseDelta: isAlert,
+        icon: icon,
+        topBorderColor: isAlert ? tokens.dangerDot : iconColor,
+        statusTextColor: isAlert ? tokens.dangerText : null,
       ),
     );
   }
@@ -311,13 +301,9 @@ class AdminPortfolioScreen extends ConsumerWidget {
     final maxDisb = branches.map((b) => b.disbPrincipal).fold(0.0, (m, v) => v > m ? v : m);
     final maxActive = branches.map((b) => b.activeCreditBook).fold(0.0, (m, v) => v > m ? v : m);
 
-    return Container(
+    return IcareCard(
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: tokens.surface,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: tokens.borderSubtle),
-      ),
+      topAccentColor: tokens.brandPrimary,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -349,45 +335,46 @@ class AdminPortfolioScreen extends ConsumerWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 4,
+                    alignment: WrapAlignment.spaceBetween,
+                    crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
-                      Flexible(
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: tokens.surfaceHover,
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                              child: Text(
-                                '#${b.rank}',
-                                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: tokens.textSecondary),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Flexible(
-                              child: Text(
-                                b.branchName,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: tokens.textPrimary),
-                              ),
-                            ),
-                            const SizedBox(width: 6),
-                            Flexible(
-                              child: Text(
-                                '(${b.bmName})',
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(fontSize: 11, color: tokens.textMuted),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: 8),
                       Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: tokens.surfaceHover,
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(
+                              '#${b.rank}',
+                              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: tokens.textSecondary),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Flexible(
+                            child: Text(
+                              b.branchName,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: tokens.textPrimary),
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Flexible(
+                            child: Text(
+                              '(${b.bmName})',
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(fontSize: 11, color: tokens.textMuted),
+                            ),
+                          ),
+                        ],
+                      ),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
                         children: [
                           Text(
                             CurrencyFormatter.formatNaira(b.disbPrincipal),
@@ -398,21 +385,11 @@ class AdminPortfolioScreen extends ConsumerWidget {
                               fontFeatures: const [FontFeature.tabularFigures()],
                             ),
                           ),
-                          const SizedBox(width: 12),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: b.parPct <= 5.0 ? tokens.successBg : tokens.dangerBg,
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                            child: Text(
-                              'PAR ${b.parPct.toStringAsFixed(1)}%',
-                              style: TextStyle(
-                                fontSize: 10.5,
-                                fontWeight: FontWeight.w700,
-                                color: b.parPct <= 5.0 ? tokens.successText : tokens.dangerText,
-                              ),
-                            ),
+                          const SizedBox(width: 10),
+                          IcareStatusBadge(
+                            label: 'PAR ${b.parPct.toStringAsFixed(1)}%',
+                            variant: b.parPct <= 5.0 ? IcareBadgeVariant.success : IcareBadgeVariant.danger,
+                            showDot: false,
                           ),
                         ],
                       ),
@@ -452,18 +429,21 @@ class AdminPortfolioScreen extends ConsumerWidget {
           }),
 
           Divider(height: 20, color: tokens.borderSubtle),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.end,
+          Wrap(
+            spacing: 16,
+            runSpacing: 6,
+            alignment: WrapAlignment.end,
             children: [
               Row(
+                mainAxisSize: MainAxisSize.min,
                 children: [
                   CircleAvatar(radius: 4, backgroundColor: tokens.brandPrimary),
                   const SizedBox(width: 6),
                   Text('Disbursed Principal', style: TextStyle(fontSize: 11, color: tokens.textSecondary)),
                 ],
               ),
-              const SizedBox(width: 16),
               Row(
+                mainAxisSize: MainAxisSize.min,
                 children: [
                   CircleAvatar(radius: 4, backgroundColor: tokens.infoDot),
                   const SizedBox(width: 6),
@@ -483,12 +463,9 @@ class AdminPortfolioScreen extends ConsumerWidget {
   Widget _buildComparativeLeagueTable(
       IcareSurfaceTokens tokens, List<BranchPerformanceItemModel> branches, bool isMobile) {
     final colStyle = TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: tokens.textSecondary);
-    return Container(
-      decoration: BoxDecoration(
-        color: tokens.surface,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: tokens.borderSubtle),
-      ),
+    return IcareCard(
+      padding: EdgeInsets.zero,
+      topAccentColor: tokens.infoDot,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -498,23 +475,21 @@ class AdminPortfolioScreen extends ConsumerWidget {
               children: [
                 Icon(Icons.table_chart_outlined, size: 16, color: tokens.textSecondary),
                 const SizedBox(width: 8),
-                Text(
-                  'Branch Performance & Portfolio Dynamics',
-                  style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700, color: tokens.textPrimary),
+                Expanded(
+                  child: Text(
+                    'Branch Performance & Portfolio Dynamics',
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700, color: tokens.textPrimary),
+                  ),
                 ),
               ],
             ),
           ),
           Divider(height: 1, color: tokens.borderSubtle),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: DataTable(
-              headingRowHeight: 40,
-              dataRowMinHeight: 48,
-              dataRowMaxHeight: 52,
-              horizontalMargin: 16,
-              columnSpacing: 18,
-              headingRowColor: WidgetStateProperty.all(tokens.surfaceSubtle),
+          Padding(
+            padding: const EdgeInsets.all(12),
+            child: IcareDataTable(
+              minWidth: 880,
               columns: [
                 DataColumn(label: Text('Rank', style: colStyle)),
                 DataColumn(label: Text('Branch', style: colStyle)),
@@ -628,20 +603,10 @@ class AdminPortfolioScreen extends ConsumerWidget {
                       ),
                     ),
                     DataCell(
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: b.parPct <= 5.0 ? tokens.successBg : tokens.dangerBg,
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: Text(
-                          '${b.parPct.toStringAsFixed(1)}%',
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700,
-                            color: b.parPct <= 5.0 ? tokens.successText : tokens.dangerText,
-                          ),
-                        ),
+                      IcareStatusBadge(
+                        label: '${b.parPct.toStringAsFixed(1)}%',
+                        variant: b.parPct <= 5.0 ? IcareBadgeVariant.success : IcareBadgeVariant.danger,
+                        showDot: false,
                       ),
                     ),
                     DataCell(
@@ -669,13 +634,8 @@ class AdminPortfolioScreen extends ConsumerWidget {
   // =========================================================================
   Widget _buildTopOfficersSpotlight(
       IcareSurfaceTokens tokens, List<BranchPerformanceItemModel> branches, bool isMobile) {
-    return Container(
+    return IcareCard(
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: tokens.surface,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: tokens.borderSubtle),
-      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -683,9 +643,11 @@ class AdminPortfolioScreen extends ConsumerWidget {
             children: [
               Icon(Icons.workspace_premium_outlined, size: 18, color: tokens.brandPrimary),
               const SizedBox(width: 8),
-              Text(
-                'Branch Lead Field Officers',
-                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: tokens.textPrimary),
+              Expanded(
+                child: Text(
+                  'Branch Lead Field Officers',
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: tokens.textPrimary),
+                ),
               ),
             ],
           ),
@@ -751,44 +713,49 @@ class AdminPortfolioScreen extends ConsumerWidget {
 
   Widget _buildErrorBanner(
       IcareSurfaceTokens tokens, String title, String detail, VoidCallback onRetry) {
-    return Container(
+    return IcareCard(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      decoration: BoxDecoration(
-        color: tokens.dangerBg,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: tokens.dangerBorder),
-      ),
-      child: Row(
+      topAccentColor: tokens.dangerDot,
+      child: Wrap(
+        spacing: 12,
+        runSpacing: 10,
+        alignment: WrapAlignment.spaceBetween,
+        crossAxisAlignment: WrapCrossAlignment.center,
         children: [
-          Icon(Icons.info_outline, color: tokens.dangerDot, size: 20),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  title,
-                  style: TextStyle(
-                    fontSize: 13.5,
-                    fontWeight: FontWeight.w600,
-                    color: tokens.dangerText,
-                  ),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.error_outline, color: tokens.dangerDot, size: 20),
+              const SizedBox(width: 12),
+              Flexible(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      title,
+                      style: TextStyle(
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w700,
+                        color: tokens.dangerText,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      detail,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: tokens.textSecondary,
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  detail,
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: tokens.dangerText,
-                  ),
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
-          const SizedBox(width: 12),
-          OutlinedButton(
+          OutlinedButton.icon(
             onPressed: onRetry,
+            icon: const Icon(Icons.refresh, size: 14),
             style: OutlinedButton.styleFrom(
               foregroundColor: tokens.dangerText,
               side: BorderSide(color: tokens.dangerBorder),
@@ -796,7 +763,7 @@ class AdminPortfolioScreen extends ConsumerWidget {
               minimumSize: Size.zero,
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
             ),
-            child: const Text('Retry', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+            label: const Text('Retry', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
           ),
         ],
       ),
