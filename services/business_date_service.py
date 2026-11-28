@@ -1,7 +1,11 @@
 import uuid
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 from interfaces.unit_of_work import UnitOfWork
+try:
+    from zoneinfo import ZoneInfo
+except ImportError:
+    ZoneInfo = None
 
 import holidays
 
@@ -162,7 +166,22 @@ class BusinessDateService:
             return True, "Valid date"
         
         target_d = target_date.date() if hasattr(target_date, 'date') and not isinstance(target_date, date) else target_date
-        
+        today_wat = cls.get_nigeria_today()
+
+        # 0. Strict Future-Date Block & Live Non-Working Day Freeze (Nigeria WAT)
+        if target_d > today_wat:
+            return (False, f"Future operational date ({target_d.isoformat()}) cannot be posted before {today_wat.isoformat()}")
+
+        if today_wat.weekday() >= 5:
+            day_name = "Saturday" if today_wat.weekday() == 5 else "Sunday"
+            return (False, f"Operations are closed today ({day_name}, {today_wat.isoformat()} — weekend non-working day)")
+
+        if target_d != today_wat:
+            today_closures = cls.get_branch_closures(uow, branch_name_or_id) if uow else []
+            today_work, today_reason = cls.is_working_day(today_wat, custom_closures=today_closures)
+            if not today_work:
+                return (False, f"Operations are closed today ({today_reason})")
+
         cache_key = (str(branch_name_or_id).strip().lower() if branch_name_or_id else "", target_d.isoformat())
         if cache_key in cls._operational_cache:
             return cls._operational_cache[cache_key]
@@ -258,48 +277,56 @@ class BusinessDateService:
             curr -= timedelta(days=1)
 
     @staticmethod
+    def _nigeria_tz():
+        if ZoneInfo is not None:
+            try:
+                return ZoneInfo("Africa/Lagos")
+            except Exception:
+                pass
+        return timezone(timedelta(hours=1), name="WAT")
+
+    @classmethod
+    def get_nigeria_now(cls) -> datetime:
+        """Returns current wall-clock datetime in Nigeria (Africa/Lagos, UTC+1)."""
+        return datetime.now(cls._nigeria_tz())
+
+    @classmethod
+    def get_nigeria_today(cls) -> date:
+        """Returns authoritative current calendar date in Nigeria (Africa/Lagos, UTC+1)."""
+        return cls.get_nigeria_now().date()
+
+    @staticmethod
     def get_business_date(uow: UnitOfWork, branch_name_or_id: str) -> date:
         """
-        Fetch active operational business date for the branch.
-        If today is a weekend, holiday, or closed, advances to the next valid open working day.
+        Determines the active operational business date using Nigeria (Africa/Lagos, WAT) wall-clock time.
+        Rules:
+        - Never returns a future calendar date (> today_wat).
+        - If today_wat is a non-working day (weekend, holiday, or branch closure), returns today_wat
+          so UI and API explicitly reflect the weekend/closed date with operations suspended.
+        - On working days, honors an unclosed earlier working date (within 30 days) or clamps pre-staged future dates to today_wat.
         """
-        today = datetime.now().date()
-        
-        if branch_name_or_id:
+        today_wat = BusinessDateService.get_nigeria_today()
+        closures = BusinessDateService.get_branch_closures(uow, branch_name_or_id) if uow else []
+        is_today_work, _ = BusinessDateService.is_working_day(today_wat, custom_closures=closures)
+        if not is_today_work:
+            return today_wat
+
+        if branch_name_or_id and uow:
             try:
                 res = uow.client.table("branches").select("branch_id, cashbook_defaults").eq("name", branch_name_or_id).execute()
                 if not res.data:
                     res = uow.client.table("branches").select("branch_id, cashbook_defaults").eq("branch_id", branch_name_or_id).execute()
-                    
+
                 if res.data:
                     defaults = res.data[0].get("cashbook_defaults") or {}
                     if isinstance(defaults, dict) and defaults.get("business_date"):
-                        stored_date = date.fromisoformat(defaults["business_date"])
-                        # If stored date is valid and within a reasonable operational cycle (past 30 days to next 7 days), return it
-                        if (today - timedelta(days=30)) <= stored_date <= (today + timedelta(days=7)):
-                            if stored_date <= today:
-                                return stored_date
-                            # Prevent unclosed future-date drift when today or an intermediate working day is still open
-                            closures = BusinessDateService.get_branch_closures(uow, branch_name_or_id) if uow else []
-                            all_intermediate_closed = True
-                            check_d = today
-                            while check_d < stored_date:
-                                is_work, _ = BusinessDateService.is_working_day(check_d, custom_closures=closures)
-                                if is_work:
-                                    is_open, _ = BusinessDateService.is_operational_open(uow, branch_name_or_id, check_d)
-                                    if is_open:
-                                        all_intermediate_closed = False
-                                        break
-                                check_d += timedelta(days=1)
-                            if all_intermediate_closed:
-                                return stored_date
+                        stored_date = date.fromisoformat(str(defaults["business_date"])[:10])
+                        if (today_wat - timedelta(days=30)) <= stored_date <= today_wat:
+                            return stored_date
             except Exception:
                 pass
 
-        # If today is weekend, holiday, or branch closure, return next valid working day
-        closures = BusinessDateService.get_branch_closures(uow, branch_name_or_id) if uow else []
-        next_open = BusinessDateService.get_next_working_day(today, custom_closures=closures)
-        return next_open
+        return today_wat
 
     @staticmethod
     def set_business_date(uow: UnitOfWork, branch_name_or_id: str, new_date: date) -> bool:

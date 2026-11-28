@@ -21,7 +21,10 @@ class CoApiService {
   /// GET /api/v1/co/dashboard
   Future<CoDashboardData> getCoDashboardData([String? dateStr]) async {
     final path = dateStr != null ? '/api/v1/co/dashboard?date=$dateStr' : '/api/v1/co/dashboard';
-    final response = await _client.get(path);
+    final response = await _client.get(
+      path,
+      options: Options(extra: {'bypass_offline_cache': true}),
+    );
     final data = response.data;
     if (data is Map<String, dynamic>) {
       return CoDashboardData.fromJson(data);
@@ -153,8 +156,13 @@ class CoApiService {
   }
 
   /// GET /api/v1/co/collections/single-client-options
-  Future<Map<String, dynamic>> getSingleClientOptions() async {
-    final response = await _client.get('/api/v1/co/collections/single-client-options');
+  Future<Map<String, dynamic>> getSingleClientOptions({String? date}) async {
+    final queryParams = <String, dynamic>{};
+    if (date != null && date.isNotEmpty) queryParams['date'] = date;
+    final response = await _client.get(
+      '/api/v1/co/collections/single-client-options',
+      queryParameters: queryParams.isNotEmpty ? queryParams : null,
+    );
     return response.data as Map<String, dynamic>;
   }
 

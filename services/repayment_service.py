@@ -373,20 +373,41 @@ class RepaymentService:
             raise ValueError(f"Repayment {original_repayment_id} has already been reversed by record #{existing_rev[0]['id'][:8]}.")
 
         # 1. Operational data: Compensating negative record
+        from services.business_date_service import BusinessDateService
+        now_wat = BusinessDateService.get_nigeria_now()
+        today_wat = now_wat.date()
+
         new_id = str(uuid.uuid4())
         comp_record = orig.copy()
+        for rel_key in ("branches", "app_users", "clients", "loans", "groups"):
+            comp_record.pop(rel_key, None)
+
         comp_record["id"] = new_id
+        comp_record["idempotency_key"] = f"REV-{original_repayment_id}"
         comp_record["amount_paid"] = -abs(orig_amount)
-        
+
         if comp_record.get("savings_amount"):
             comp_record["savings_amount"] = -abs(float(comp_record["savings_amount"]))
         if comp_record.get("withdrawal_amount"):
             comp_record["withdrawal_amount"] = -abs(float(comp_record["withdrawal_amount"]))
-            
-        comp_record["note"] = f"REVERSAL of {original_repayment_id}. Reason: {reason}"
-        comp_record["created_at"] = datetime.now().isoformat()
 
-        rev_dt = reversal_date if reversal_date else datetime.now()
+        comp_record["note"] = f"REVERSAL of {original_repayment_id}. Reason: {reason}"
+        comp_record["created_at"] = now_wat.isoformat()
+
+        if reversal_date:
+            rev_dt = reversal_date
+        else:
+            rev_dt = now_wat
+            orig_raw_date = orig.get("payment_date") or orig.get("date")
+            if orig_raw_date:
+                try:
+                    orig_date = date.fromisoformat(str(orig_raw_date)[:10])
+                    # When reversing an erroneously future-dated unclosed entry, post reversal on the same future date so it nets cleanly
+                    if orig_date > today_wat and not BusinessDateService.is_date_closed(uow, orig.get("branch_id"), orig_date):
+                        rev_dt = orig.get("date") or orig_date.isoformat()
+                except Exception:
+                    pass
+
         rev_dt_str = rev_dt.isoformat() if hasattr(rev_dt, 'isoformat') else str(rev_dt)
         if "payment_date" in comp_record:
             comp_record["payment_date"] = rev_dt_str[:10]
@@ -518,7 +539,7 @@ class RepaymentService:
         try:
             branch_val = orig.get("branch_id")
             officer_val = orig.get("officer_id")
-            rebuild_date = rev_dt.date() if hasattr(rev_dt, 'date') and callable(rev_dt.date) else (date.fromisoformat(str(rev_dt)[:10]) if rev_dt else date.today())
+            rebuild_date = rev_dt.date() if hasattr(rev_dt, 'date') and callable(rev_dt.date) else (date.fromisoformat(str(rev_dt)[:10]) if rev_dt else today_wat)
             uow.cashbook.rebuild_projection(branch_val, rebuild_date, officer_id=officer_val)
 
             orig_raw_date = orig.get("payment_date") or orig.get("date")

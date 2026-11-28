@@ -117,6 +117,12 @@ class CorrectionService:
         if req["status"] != "Pending":
             raise ValueError(f"Request {request_id} is already {req['status']}.")
 
+        approver_uuid = CorrectionService._resolve_user_id(uow, approved_by)
+
+        # Four-Eyes Principle Guard (BR-ERR-001): Check before claiming Processing so self-approval never orphans lock
+        if req.get("requested_by") and approver_uuid and str(req.get("requested_by")) == str(approver_uuid):
+            raise ValueError("Four-Eyes Principle violation: The initiator of a correction request cannot approve their own request.")
+
         # Atomic status lock: transition status from Pending to Processing
         claim_res = uow.client.table("correction_requests").update({
             "status": "Processing",
@@ -128,29 +134,23 @@ class CorrectionService:
             cur_st = chk.data[0]["status"] if chk.data else "Not Found"
             raise ValueError(f"Correction request {request_id} cannot be approved (Status: {cur_st}).")
 
-        approver_uuid = CorrectionService._resolve_user_id(uow, approved_by)
-
-        # Four-Eyes Principle Guard (BR-ERR-001): Initiator cannot self-approve
-        if req.get("requested_by") and approver_uuid and str(req.get("requested_by")) == str(approver_uuid):
-            raise ValueError("Four-Eyes Principle violation: The initiator of a correction request cannot approve their own request.")
-
-        # Guard: Check if another request for the same record_id was already approved
-        other_approved = uow.client.table("correction_requests").select("id").eq("record_id", req["record_id"]).eq("status", "Approved").neq("id", request_id).execute()
-        if other_approved.data:
-            uow.client.table("correction_requests").update({
-                "status": "Rejected",
-                "approved_by": approver_uuid,
-                "approval_date": datetime.now().isoformat(),
-                "updated_at": datetime.now().isoformat()
-            }).eq("id", request_id).execute()
-            raise ValueError(f"Transaction {req['record_id'][:8]} was already reversed by approved request #{other_approved.data[0]['id'][:8]}. This duplicate request has been auto-rejected.")
-
         savings_record_types = [
             "Savings", "SavingsDeposit", "SavingsWithdrawal",
             "individual_savings", "group_savings", "GroupSavings",
             "internal_savings", "MiscSavings", "laps_savings", "LapsSavings",
         ]
         try:
+            # Guard: Check if another request for the same record_id was already approved
+            other_approved = uow.client.table("correction_requests").select("id").eq("record_id", req["record_id"]).eq("status", "Approved").neq("id", request_id).execute()
+            if other_approved.data:
+                uow.client.table("correction_requests").update({
+                    "status": "Rejected",
+                    "approved_by": approver_uuid,
+                    "approval_date": datetime.now().isoformat(),
+                    "updated_at": datetime.now().isoformat()
+                }).eq("id", request_id).execute()
+                raise ValueError(f"Transaction {req['record_id'][:8]} was already reversed by approved request #{other_approved.data[0]['id'][:8]}. This duplicate request has been auto-rejected.")
+
             rec_type = CorrectionService._normalize_record_type(req.get("record_type"))
             if rec_type in ["Repayment", "Loan"]:
                 # Delegate to RepaymentService to execute reversal

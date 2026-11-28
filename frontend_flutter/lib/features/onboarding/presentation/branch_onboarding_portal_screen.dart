@@ -83,6 +83,8 @@ class _BranchOnboardingPortalScreenState
   double _lapsSavings = 0.0;
   final TextEditingController _miscSavingsCtrl = TextEditingController();
   final TextEditingController _lapsSavingsCtrl = TextEditingController();
+  final TextEditingController _bmNameCtrl = TextEditingController();
+  final TextEditingController _bmPhoneCtrl = TextEditingController();
   String _selectedGroupFilter = 'All';
   final TextEditingController _searchCtrl = TextEditingController();
 
@@ -147,6 +149,8 @@ class _BranchOnboardingPortalScreenState
     _tokenCtrl.dispose();
     _miscSavingsCtrl.dispose();
     _lapsSavingsCtrl.dispose();
+    _bmNameCtrl.dispose();
+    _bmPhoneCtrl.dispose();
     super.dispose();
   }
 
@@ -198,6 +202,15 @@ class _BranchOnboardingPortalScreenState
           [];
       final miscVal = (payload['misc_savings'] as num?)?.toDouble() ?? 0.0;
       final lapsVal = (payload['laps_savings'] as num?)?.toDouble() ?? 0.0;
+      final payloadBm = payload['branch_manager'] is Map
+          ? Map<String, dynamic>.from(payload['branch_manager'] as Map)
+          : const <String, dynamic>{};
+      final initBmName = (session['contact_person']?.toString().trim().isNotEmpty == true)
+          ? session['contact_person'].toString().trim()
+          : (payloadBm['name']?.toString().trim() ?? '');
+      final initBmPhone = (session['contact_phone']?.toString().trim().isNotEmpty == true)
+          ? session['contact_phone'].toString().trim()
+          : (payloadBm['phone']?.toString().trim() ?? '');
 
       final sessionScopedOfficer = data['scoped_officer']?.toString();
       if ((_scopedOfficer == null || _scopedOfficer!.isEmpty) && sessionScopedOfficer != null && sessionScopedOfficer.isNotEmpty) {
@@ -218,6 +231,8 @@ class _BranchOnboardingPortalScreenState
         _lapsSavings = lapsVal;
         _miscSavingsCtrl.text = miscVal > 0 ? miscVal.toStringAsFixed(2) : '';
         _lapsSavingsCtrl.text = lapsVal > 0 ? lapsVal.toStringAsFixed(2) : '';
+        _bmNameCtrl.text = initBmName;
+        _bmPhoneCtrl.text = initBmPhone;
         _isLoading = false;
       });
     } catch (e) {
@@ -251,15 +266,29 @@ class _BranchOnboardingPortalScreenState
 
     try {
       final api = ref.read(onboardingApiServiceProvider);
+      final isBranchWide = _scopedOfficer == null;
+      final bmName = _bmNameCtrl.text.trim();
+      final bmPhone = _bmPhoneCtrl.text.trim();
       final payload = {
         'officers': _officers,
         'groups': _groups,
         'members': _members,
         'misc_savings': _miscSavings,
         'laps_savings': _lapsSavings,
+        if (isBranchWide && (bmName.isNotEmpty || bmPhone.isNotEmpty))
+          'branch_manager': {
+            'name': bmName,
+            'phone': bmPhone,
+          },
       };
 
-      final res = await api.saveDraft(_currentToken, payload, scopedOfficer: _scopedOfficer);
+      final res = await api.saveDraft(
+        _currentToken,
+        payload,
+        scopedOfficer: _scopedOfficer,
+        contactPerson: isBranchWide && bmName.isNotEmpty ? bmName : null,
+        contactPhone: isBranchWide && bmPhone.isNotEmpty ? bmPhone : null,
+      );
       setState(() {
         _isSaving = false;
         _lastSavedTime = DateTime.now();
@@ -468,6 +497,17 @@ class _BranchOnboardingPortalScreenState
   }
 
   Future<void> _submitPackage() async {
+    final bmName = _bmNameCtrl.text.trim();
+    final bmPhone = _bmPhoneCtrl.text.trim();
+    if (bmName.isEmpty) {
+      _tabController.animateTo(0);
+      _showBanner(
+        'Please enter the Branch Manager Full Name on the first tab before submitting so manager access can be provisioned.',
+        isSuccess: false,
+      );
+      return;
+    }
+
     final unsubmitted = _officers.where((o) => (o['status'] ?? 'draft') != 'submitted').length;
     final warningNotice = unsubmitted > 0
         ? '\n\nNote: $unsubmitted credit officer(s) have not yet marked their rosters as submitted to BM.'
@@ -524,7 +564,7 @@ class _BranchOnboardingPortalScreenState
 
     setState(() => _isSaving = true);
     try {
-      // 1. Ensure latest draft is saved
+      // 1. Ensure latest draft is saved with Branch Manager profile
       final api = ref.read(onboardingApiServiceProvider);
       final payload = {
         'officers': _officers,
@@ -532,14 +572,29 @@ class _BranchOnboardingPortalScreenState
         'members': _members,
         'misc_savings': _miscSavings,
         'laps_savings': _lapsSavings,
+        'branch_manager': {
+          'name': bmName,
+          'phone': bmPhone,
+        },
       };
-      await api.saveDraft(_currentToken, payload);
+      await api.saveDraft(
+        _currentToken,
+        payload,
+        contactPerson: bmName,
+        contactPhone: bmPhone.isNotEmpty ? bmPhone : null,
+      );
 
       // 2. Submit to AM
-      final res = await api.bmSubmitPackage(_currentToken);
+      final res = await api.bmSubmitPackage(
+        _currentToken,
+        contactPerson: bmName,
+        contactPhone: bmPhone.isNotEmpty ? bmPhone : null,
+      );
       setState(() {
         _isSaving = false;
         _sessionData?['status'] = 'submitted';
+        _sessionData?['contact_person'] = bmName;
+        if (bmPhone.isNotEmpty) _sessionData?['contact_phone'] = bmPhone;
       });
       _showBanner(res['message']?.toString() ?? 'Branch package successfully submitted to Area Manager!', isSuccess: true);
     } catch (e) {
@@ -616,15 +671,25 @@ class _BranchOnboardingPortalScreenState
     setState(() => _isSaving = true);
     try {
       final api = ref.read(onboardingApiServiceProvider);
+      final bmName = _bmNameCtrl.text.trim();
+      final bmPhone = _bmPhoneCtrl.text.trim();
       final res = await api.amApprovePackage(
         _currentToken,
         notes: notesText.isEmpty ? null : notesText,
+        contactPerson: bmName.isNotEmpty ? bmName : null,
+        contactPhone: bmPhone.isNotEmpty ? bmPhone : null,
       );
       setState(() {
         _isSaving = false;
         _sessionData?['status'] = 'approved';
       });
-      _showBanner(res['message']?.toString() ?? 'Branch onboarding successfully activated in live branch operations!', isSuccess: true);
+      final bmUser = res['bm_username']?.toString();
+      final offCount = res['officers_provisioned'];
+      final baseMsg = res['message']?.toString() ?? 'Branch onboarding successfully activated in live branch operations!';
+      final detailMsg = bmUser != null && bmUser.isNotEmpty
+          ? '$baseMsg Manager login: $bmUser (Officers provisioned: ${offCount ?? _officers.length}).'
+          : baseMsg;
+      _showBanner(detailMsg, isSuccess: true);
     } catch (e) {
       setState(() => _isSaving = false);
       _showBanner('Approval error: ${AppErrorDetails.from(e).message}', isSuccess: false);
@@ -3947,6 +4012,121 @@ class _BranchOnboardingPortalScreenState
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // 0. Branch Manager Profile & Login Account Card
+              Builder(
+                builder: (context) {
+                  final bNameRaw = (_sessionData?['branch_name'] ?? _sessionData?['branch_code'] ?? 'BRANCH').toString();
+                  final bSlug = bNameRaw
+                      .trim()
+                      .replaceAll(RegExp(r'[^A-Za-z0-9]+'), '_')
+                      .replaceAll(RegExp(r'^_+|_+$'), '');
+                  final expectedBmUsername = 'BM_${bSlug.isNotEmpty ? bSlug : 'BRANCH'}';
+
+                  return Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(16),
+                    margin: const EdgeInsets.only(bottom: 24),
+                    decoration: BoxDecoration(
+                      color: tokens.surface,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: _bmNameCtrl.text.trim().isEmpty && !isSubmitted
+                            ? tokens.warningBorder
+                            : tokens.borderSubtle,
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: tokens.infoBg,
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: tokens.infoBorder),
+                              ),
+                              child: Icon(Icons.manage_accounts_outlined, color: tokens.infoDot, size: 20),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Branch Manager Account Setup',
+                                    style: TextStyle(fontSize: 15.5, fontWeight: FontWeight.bold, color: tokens.textPrimary),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    'Provisions the Branch Manager login ($expectedBmUsername) and branch supervision permissions alongside your Credit Officers.',
+                                    style: TextStyle(fontSize: 12, color: tokens.textMuted),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 14),
+                        LayoutBuilder(
+                          builder: (ctx, box) {
+                            final isWideFields = box.maxWidth >= 600;
+                            final nameField = TextField(
+                              controller: _bmNameCtrl,
+                              enabled: !isSubmitted,
+                              textCapitalization: TextCapitalization.words,
+                              onChanged: (_) => setState(() {}),
+                              style: TextStyle(color: tokens.textPrimary, fontSize: 13.5),
+                              decoration: InputDecoration(
+                                labelText: 'Branch Manager Full Name *',
+                                hintText: 'e.g. Mrs Oritoke Adebayo',
+                                filled: true,
+                                fillColor: tokens.surfaceSubtle,
+                                border: const OutlineInputBorder(),
+                                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                              ),
+                            );
+                            final phoneField = TextField(
+                              controller: _bmPhoneCtrl,
+                              enabled: !isSubmitted,
+                              keyboardType: TextInputType.phone,
+                              onChanged: (_) => setState(() {}),
+                              style: TextStyle(color: tokens.textPrimary, fontSize: 13.5),
+                              decoration: InputDecoration(
+                                labelText: 'Branch Manager Phone Number',
+                                hintText: 'e.g. 08127382706',
+                                filled: true,
+                                fillColor: tokens.surfaceSubtle,
+                                border: const OutlineInputBorder(),
+                                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                              ),
+                            );
+
+                            if (isWideFields) {
+                              return Row(
+                                children: [
+                                  Expanded(flex: 3, child: nameField),
+                                  const SizedBox(width: 12),
+                                  Expanded(flex: 2, child: phoneField),
+                                ],
+                              );
+                            }
+                            return Column(
+                              children: [
+                                nameField,
+                                const SizedBox(height: 10),
+                                phoneField,
+                              ],
+                            );
+                          },
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+
               // 1. Branch Pooled Reserves Header
               Row(
                 children: [
@@ -5110,6 +5290,13 @@ class _BranchOnboardingPortalScreenState
                       Divider(height: 16, color: tokens.borderSubtle),
                       _buildReviewRow('Total Current Balance', CurrencyFormatter.formatNaira(_displayCurrentBalance)),
                     ] else ...[
+                      _buildReviewRow(
+                        'Branch Manager Account',
+                        _bmNameCtrl.text.trim().isNotEmpty
+                            ? '${_bmNameCtrl.text.trim()}${_bmPhoneCtrl.text.trim().isNotEmpty ? ' (${_bmPhoneCtrl.text.trim()})' : ''}'
+                            : 'Required — enter on first tab',
+                      ),
+                      Divider(height: 16, color: tokens.borderSubtle),
                       _buildReviewRow('Credit Officers Provisioned', '${_officers.length} officers'),
                       Divider(height: 16, color: tokens.borderSubtle),
                       _buildReviewRow('Solidarity Groups', '${_groups.length} groups created'),
@@ -5340,12 +5527,22 @@ class _BranchOnboardingPortalScreenState
     final tokens = IcareSurfaceTokens.of(context);
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Flexible(
+          flex: 2,
           child: Text(label, style: TextStyle(fontSize: 13, color: tokens.textSecondary)),
         ),
         const SizedBox(width: 12),
-        Text(value, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: tokens.textPrimary, fontFeatures: const [FontFeature.tabularFigures()])),
+        Flexible(
+          flex: 3,
+          child: Text(
+            value,
+            textAlign: TextAlign.end,
+            softWrap: true,
+            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: tokens.textPrimary, fontFeatures: const [FontFeature.tabularFigures()]),
+          ),
+        ),
       ],
     );
   }

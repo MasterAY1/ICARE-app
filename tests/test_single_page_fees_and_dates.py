@@ -105,7 +105,7 @@ def test_business_date_future_drift_falls_back_when_today_open():
         assert resolved == date(2026, 11, 27)
 
 
-def test_business_date_allows_next_working_day_when_today_is_closed():
+def test_business_date_clamps_to_closed_today_and_never_jumps_to_future_monday():
     mock_uow = MagicMock()
 
     def table_side_effect(name):
@@ -122,11 +122,28 @@ def test_business_date_allows_next_working_day_when_today_is_closed():
     with patch("services.business_date_service.datetime") as mock_dt, \
          patch(
              "services.business_date_service.BusinessDateService.is_working_day",
-             side_effect=lambda d, custom_closures=None: (d.weekday() < 5, "Working Day"),
+             side_effect=lambda d, custom_closures=None: (d.weekday() < 5, "Working Day" if d.weekday() < 5 else "Weekend"),
          ):
-        mock_dt.now.return_value = datetime(2026, 11, 27, 9, 0, 0)
-        resolved = BusinessDateService.get_business_date(mock_uow, BRANCH_UUID)
-        assert resolved == date(2026, 11, 30)
+        # Friday after EOD close -> clamps at Friday 2026-11-27 (not Monday 2026-11-30)
+        mock_dt.now.return_value = datetime(2026, 11, 27, 17, 0, 0)
+        resolved_fri = BusinessDateService.get_business_date(mock_uow, BRANCH_UUID)
+        assert resolved_fri == date(2026, 11, 27)
+        BusinessDateService.invalidate_operational_cache()
+        open_mon_on_fri, _ = BusinessDateService.is_operational_open(mock_uow, BRANCH_UUID, date(2026, 11, 30))
+        assert open_mon_on_fri is False
+
+        # Saturday -> returns Saturday 2026-11-28 and operations remain closed
+        mock_dt.now.return_value = datetime(2026, 11, 28, 9, 0, 0)
+        resolved_sat = BusinessDateService.get_business_date(mock_uow, BRANCH_UUID)
+        assert resolved_sat == date(2026, 11, 28)
+        BusinessDateService.invalidate_operational_cache()
+        open_sat, _ = BusinessDateService.is_operational_open(mock_uow, BRANCH_UUID, date(2026, 11, 28))
+        assert open_sat is False
+
+        # Monday arrives -> activates Monday 2026-11-30
+        mock_dt.now.return_value = datetime(2026, 11, 30, 8, 30, 0)
+        resolved_mon = BusinessDateService.get_business_date(mock_uow, BRANCH_UUID)
+        assert resolved_mon == date(2026, 11, 30)
 
 
 def test_unpaid_loan_guard_skips_savings_and_fee_only_but_keeps_explicit_mark():
@@ -198,6 +215,7 @@ def test_group_batch_savings_only_without_loan_posts_cleanly():
     )
 
     with patch("api.routes.co.collections._resolve_target_date", return_value=date(2026, 11, 27)), \
+         patch("services.business_date_service.BusinessDateService.get_nigeria_today", return_value=date(2026, 11, 27)), \
          patch("services.rate_limiter.get_financial_rate_limiter") as mock_lim, \
          patch("services.collection_batch_service.save_repayments", side_effect=fake_save_repayments):
         mock_lim.return_value.check_rate_limit.return_value = (False, 0)
@@ -255,6 +273,7 @@ def test_single_client_all_five_fees_submission_and_misc_fee_audit_and_recon():
     )
 
     with patch("api.routes.co.collections._resolve_target_date", return_value=date(2026, 11, 27)), \
+         patch("services.business_date_service.BusinessDateService.get_nigeria_today", return_value=date(2026, 11, 27)), \
          patch("services.rate_limiter.get_financial_rate_limiter") as mock_lim, \
          patch("services.collection_batch_service.save_repayments", side_effect=fake_save_batch):
         mock_lim.return_value.check_rate_limit.return_value = (False, 0)

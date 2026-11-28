@@ -94,7 +94,7 @@ class _StubCoApi extends CoApiService {
       };
 
   @override
-  Future<Map<String, dynamic>> getSingleClientOptions() async => {
+  Future<Map<String, dynamic>> getSingleClientOptions({String? date}) async => {
         'date': '2026-11-27',
         'is_open': true,
         'open_reason': 'Working Day',

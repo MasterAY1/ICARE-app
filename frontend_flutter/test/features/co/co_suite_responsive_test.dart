@@ -322,7 +322,7 @@ class _FakeCoApiService extends CoApiService {
       };
 
   @override
-  Future<Map<String, dynamic>> getSingleClientOptions() async => {
+  Future<Map<String, dynamic>> getSingleClientOptions({String? date}) async => {
         'clients': [
           {
             'client_id': 'c-1',

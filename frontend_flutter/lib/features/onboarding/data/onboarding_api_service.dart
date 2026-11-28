@@ -32,6 +32,8 @@ class OnboardingApiService {
     String token,
     Map<String, dynamic> payload, {
     String? scopedOfficer,
+    String? contactPerson,
+    String? contactPhone,
   }) async {
     final response = await _client.post(
       '/api/v1/onboarding/session/$token/save-draft',
@@ -39,6 +41,10 @@ class OnboardingApiService {
         'payload': payload,
         if (scopedOfficer != null && scopedOfficer.trim().isNotEmpty)
           'scoped_officer': scopedOfficer.trim(),
+        if (contactPerson != null && contactPerson.trim().isNotEmpty)
+          'contact_person': contactPerson.trim(),
+        if (contactPhone != null && contactPhone.trim().isNotEmpty)
+          'contact_phone': contactPhone.trim(),
       },
     );
     return response.data as Map<String, dynamic>;
@@ -154,16 +160,43 @@ class OnboardingApiService {
   }
 
   /// POST /api/v1/onboarding/session/{token}/bm-submit
-  Future<Map<String, dynamic>> bmSubmitPackage(String branchToken) async {
-    final response = await _client.post('/api/v1/onboarding/session/$branchToken/bm-submit');
+  Future<Map<String, dynamic>> bmSubmitPackage(
+    String branchToken, {
+    String? contactPerson,
+    String? contactPhone,
+  }) async {
+    final hasBmMeta = (contactPerson != null && contactPerson.trim().isNotEmpty) ||
+        (contactPhone != null && contactPhone.trim().isNotEmpty);
+    final response = await _client.post(
+      '/api/v1/onboarding/session/$branchToken/bm-submit',
+      data: hasBmMeta
+          ? {
+              if (contactPerson != null && contactPerson.trim().isNotEmpty)
+                'contact_person': contactPerson.trim(),
+              if (contactPhone != null && contactPhone.trim().isNotEmpty)
+                'contact_phone': contactPhone.trim(),
+            }
+          : null,
+    );
     return response.data as Map<String, dynamic>;
   }
 
   /// POST /api/v1/onboarding/session/{token}/am-approve
-  Future<Map<String, dynamic>> amApprovePackage(String branchToken, {String? notes}) async {
+  Future<Map<String, dynamic>> amApprovePackage(
+    String branchToken, {
+    String? notes,
+    String? contactPerson,
+    String? contactPhone,
+  }) async {
     final response = await _client.post(
       '/api/v1/onboarding/session/$branchToken/am-approve',
-      data: {'approval_notes': notes},
+      data: {
+        'approval_notes': notes,
+        if (contactPerson != null && contactPerson.trim().isNotEmpty)
+          'contact_person': contactPerson.trim(),
+        if (contactPhone != null && contactPhone.trim().isNotEmpty)
+          'contact_phone': contactPhone.trim(),
+      },
     );
     return response.data as Map<String, dynamic>;
   }
@@ -203,10 +236,21 @@ class OnboardingApiService {
   }
 
   /// POST /api/v1/onboarding/admin/sessions/{session_id}/approve
-  Future<Map<String, dynamic>> approveAdminSession(String sessionId, {String? notes}) async {
+  Future<Map<String, dynamic>> approveAdminSession(
+    String sessionId, {
+    String? notes,
+    String? contactPerson,
+    String? contactPhone,
+  }) async {
     final response = await _client.post(
       '/api/v1/onboarding/admin/sessions/$sessionId/approve',
-      data: {'approval_notes': notes},
+      data: {
+        'approval_notes': notes,
+        if (contactPerson != null && contactPerson.trim().isNotEmpty)
+          'contact_person': contactPerson.trim(),
+        if (contactPhone != null && contactPhone.trim().isNotEmpty)
+          'contact_phone': contactPhone.trim(),
+      },
     );
     return response.data as Map<String, dynamic>;
   }

@@ -56,7 +56,7 @@ def _resolve_target_date(uow: SupabaseUnitOfWork, branch_id: Optional[str], date
             return biz
     except Exception:
         pass
-    return date.today()
+    return BusinessDateService.get_nigeria_today()
 
 
 def _resolve_late_entry_authorization(current_user: CurrentUser, is_late_entry: bool) -> bool:
@@ -472,6 +472,7 @@ def get_single_client_options(
     Returns active clients and their active loans for Single Client Quick Entry (app.py L5252-5333).
     """
     target_date = _resolve_target_date(uow, current_user.branch_id, date_str)
+    is_open, open_reason = BusinessDateService.is_operational_open(uow, current_user.branch_id, target_date)
     officer_id = uow.loans._resolve_officer_id(current_user.username) or current_user.id
     res_c = uow.client.table("clients").select(
         "client_id, client_code, name, status, group_id, groups(name), client_memberships(group_id, groups(name)), client_statuses(name)"
@@ -480,7 +481,12 @@ def get_single_client_options(
     client_items = []
     all_c = res_c.data or []
     if not all_c:
-        return SingleClientOptionsResponse(clients=[])
+        return SingleClientOptionsResponse(
+            date=target_date.isoformat(),
+            is_open=is_open,
+            open_reason=open_reason,
+            clients=[],
+        )
 
     client_ids = [c["client_id"] for c in all_c]
 
@@ -690,7 +696,12 @@ def get_single_client_options(
             today_collected_total=t_tot
         ))
 
-    return SingleClientOptionsResponse(clients=client_items)
+    return SingleClientOptionsResponse(
+        date=target_date.isoformat(),
+        is_open=is_open,
+        open_reason=open_reason,
+        clients=client_items,
+    )
 
 
 @router.post("/single-submit", response_model=SingleClientSubmitResponse)
@@ -715,7 +726,13 @@ def submit_single_client(
             headers={"Retry-After": str(retry_after)}
         )
 
-    # Enforce strict BR-DATE-002 operational date freeze (no client-controlled offline bypasses)
+    # Enforce strict BR-DATE-002 operational date freeze (never allow future-date posting)
+    today_wat = BusinessDateService.get_nigeria_today()
+    if target_date > today_wat:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Cannot submit collections for future date ({target_date.isoformat()}). Active calendar date is {today_wat.isoformat()}."
+        )
     allow_closed = _resolve_late_entry_authorization(current_user, bool(getattr(payload, "is_late_entry", False)))
     is_open, open_reason = BusinessDateService.is_operational_open(uow, current_user.branch_id, target_date)
     if not is_open and not allow_closed:
@@ -998,6 +1015,12 @@ def submit_batch_collections(
         except Exception:
             pass
 
+    today_wat = BusinessDateService.get_nigeria_today()
+    if target_date > today_wat:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Cannot submit batch collections for future date ({target_date.isoformat()}). Active calendar date is {today_wat.isoformat()}."
+        )
     allow_closed = _resolve_late_entry_authorization(current_user, bool(getattr(payload, "is_late_entry", False)))
     is_open, open_reason = BusinessDateService.is_operational_open(uow, target_branch_id or current_user.branch_id, target_date)
     if not is_open and not allow_closed:

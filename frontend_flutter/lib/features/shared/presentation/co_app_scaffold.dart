@@ -59,6 +59,12 @@ class CoAppScaffold extends ConsumerWidget {
     final haptics = ref.read(themeControllerProvider).hapticsEnabled;
     IcareFluidMotion.selectionHaptic(haptics);
     ref.read(activeCoPageProvider.notifier).state = nextPage;
+    if (nextPage == 'Dashboard') {
+      ref.invalidate(coDashboardProvider);
+      ref.invalidate(bmDashboardDataProvider);
+      ref.invalidate(amDashboardDataProvider);
+      ref.read(globalRefreshSignalProvider.notifier).state++;
+    }
   }
 
   Widget _buildTransitionedActiveView(
@@ -348,6 +354,19 @@ class CoAppScaffold extends ConsumerWidget {
     final isProcurement = IcareRoleUtils.isProcurement(role);
     final isAdmin = IcareRoleUtils.isAdmin(role);
     final isAm = IcareRoleUtils.isAm(role);
+
+    ref.listen<AsyncValue<SyncResult>>(offlineSyncEventsProvider, (_, next) {
+      final res = next.valueOrNull;
+      if (res != null && res.syncedCount > 0) {
+        ref.invalidate(collectionSheetFutureProvider);
+        ref.invalidate(singleClientOptionsProvider);
+        ref.invalidate(collectionsHistoryProvider);
+        ref.invalidate(coDashboardProvider);
+        ref.invalidate(coCashbookDataProvider);
+        ref.invalidate(portfolioDataProvider);
+        ref.read(globalRefreshSignalProvider.notifier).state++;
+      }
+    });
 
     ref.listen<bool>(isOnlineProvider, (previous, next) async {
       if (previous == false && next == true) {
@@ -1941,12 +1960,15 @@ class _SyncDialogState extends ConsumerState<_SyncDialog> {
     ref.invalidate(singleClientOptionsProvider);
     ref.invalidate(collectionsHistoryProvider);
     ref.invalidate(coDashboardProvider);
+    ref.invalidate(coCashbookDataProvider);
+    ref.invalidate(portfolioDataProvider);
     ref.invalidate(individualOptionsProvider);
     ref.invalidate(groupOptionsProvider);
     ref.invalidate(lapsOptionsProvider);
     ref.invalidate(miscBalanceProvider);
     ref.invalidate(dailyWithdrawalsProvider);
     ref.invalidate(pendingApprovalsProvider);
+    ref.read(globalRefreshSignalProvider.notifier).state++;
   }
 
   ({String typeLabel, double totalAmount, String amountDetail}) _summarizePayload(Map<String, dynamic> item) {

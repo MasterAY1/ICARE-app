@@ -15,6 +15,10 @@ import '../../../core/theme/icare_theme_tokens.dart';
 import '../../../core/errors/app_error_formatter.dart';
 import '../../../core/offline/offline_database_service.dart';
 import '../data/datasources/co_api_service.dart';
+import '../../shared/presentation/co_app_scaffold.dart';
+import 'co_dashboard_screen.dart';
+import 'daily_cashbook_screen.dart';
+import 'portfolio_overview_screen.dart';
 import 'widgets/asset_catalog_picker_card.dart';
 import 'widgets/co_origination_charts.dart';
 import 'widgets/co_shared_widgets.dart';
@@ -205,6 +209,25 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
     } catch (_) {
       // Non-fatal fallback keeps local date
     }
+  }
+
+  DateTime _safeWorkingInitialDate(DateTime candidate, DateTime firstDate, DateTime lastDate) {
+    var d = candidate;
+    if (d.isAfter(lastDate)) d = lastDate;
+    if (d.isBefore(firstDate)) d = firstDate;
+    while (d.weekday >= DateTime.saturday && d.isAfter(firstDate)) {
+      d = d.subtract(const Duration(days: 1));
+    }
+    return d;
+  }
+
+  void _invalidateOriginationDashboards({bool includeCashbook = false}) {
+    ref.invalidate(coDashboardProvider);
+    ref.invalidate(portfolioDataProvider);
+    if (includeCashbook) {
+      ref.invalidate(coCashbookDataProvider);
+    }
+    ref.read(globalRefreshSignalProvider.notifier).state++;
   }
 
   @override
@@ -681,6 +704,7 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
         _wizardStep = 1;
       });
       ref.invalidate(originationGroupsProvider);
+      _invalidateOriginationDashboards();
 
     } catch (e) {
       _showErrorSnack(AppErrorDetails.from(e).message);
@@ -880,6 +904,7 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
       _loadBranchAssetCatalog();
       ref.read(loanOriginationTabProvider.notifier).state = 'Pending Disbursements';
       ref.invalidate(pendingDisbursementsProvider);
+      _invalidateOriginationDashboards();
     } catch (e) {
       _showErrorSnack(AppErrorDetails.from(e).message);
     } finally {
@@ -915,6 +940,7 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
       });
       _loadBranchAssetCatalog();
       ref.invalidate(pendingDisbursementsProvider);
+      _invalidateOriginationDashboards(includeCashbook: true);
     } catch (e) {
       _showErrorSnack(AppErrorDetails.from(e).message);
     } finally {
@@ -985,6 +1011,7 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
       });
       _loadBranchAssetCatalog();
       ref.invalidate(pendingDisbursementsProvider);
+      _invalidateOriginationDashboards(includeCashbook: true);
     } catch (e) {
       _showErrorSnack(AppErrorDetails.from(e).message);
     } finally {
@@ -1676,11 +1703,13 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
                   // Registration Date Picker
                   InkWell(
                     onTap: () async {
+                      final now = DateTime.now();
+                      final safeInit = _regDate.isAfter(now) ? now : _regDate;
                       final picked = await showDatePicker(
                         context: context,
-                        initialDate: _regDate,
+                        initialDate: safeInit,
                         firstDate: DateTime(2020),
-                        lastDate: DateTime(2035),
+                        lastDate: now,
                       );
                       if (picked != null) setState(() {
                         _regDate = picked;
@@ -3429,11 +3458,15 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
               children: [
                 InkWell(
                   onTap: () async {
+                    final now = DateTime.now();
+                    final firstDt = DateTime(2020);
+                    final safeInit = _safeWorkingInitialDate(_appDate, firstDt, now);
                     final picked = await showDatePicker(
                       context: context,
-                      initialDate: _appDate,
-                      firstDate: DateTime(2020),
-                      lastDate: DateTime(2035),
+                      initialDate: safeInit,
+                      firstDate: firstDt,
+                      lastDate: now,
+                      selectableDayPredicate: (d) => d.weekday < DateTime.saturday,
                     );
                     if (picked != null) {
                       setState(() {
@@ -3761,11 +3794,15 @@ class _LoanOriginationScreenState extends ConsumerState<LoanOriginationScreen> {
 
                     InkWell(
                       onTap: () async {
+                        final now = DateTime.now();
+                        final firstDt = DateTime(2020);
+                        final safeInit = _safeWorkingInitialDate(_disbDate, firstDt, now);
                         final picked = await showDatePicker(
                           context: context,
-                          initialDate: _disbDate,
-                          firstDate: DateTime(2020),
-                          lastDate: DateTime(2035),
+                          initialDate: safeInit,
+                          firstDate: firstDt,
+                          lastDate: now,
+                          selectableDayPredicate: (d) => d.weekday < DateTime.saturday,
                         );
                         if (picked != null) setState(() {
                           _disbDate = picked;

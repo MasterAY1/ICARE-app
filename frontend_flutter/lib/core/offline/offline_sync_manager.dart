@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 import 'package:dio/dio.dart';
@@ -62,12 +63,18 @@ final offlineSyncManagerProvider = Provider<OfflineSyncManager>((ref) {
   final coApi = ref.watch(coApiServiceProvider);
   final notifier = ref.watch(pendingOutboxCountProvider.notifier);
   final quarantinedNotifier = ref.watch(quarantinedOutboxCountProvider.notifier);
-  return OfflineSyncManager(
+  final mgr = OfflineSyncManager(
     dbService,
     coApi,
     notifier,
     quarantinedNotifier: quarantinedNotifier,
   );
+  ref.onDispose(mgr.dispose);
+  return mgr;
+});
+
+final offlineSyncEventsProvider = StreamProvider.autoDispose<SyncResult>((ref) {
+  return ref.watch(offlineSyncManagerProvider).onSyncCompleted;
 });
 
 /// High-level manager orchestrating synchronization between local SQLite storage
@@ -77,6 +84,16 @@ class OfflineSyncManager {
   final CoApiService _api;
   final PendingOutboxNotifier _outboxNotifier;
   final QuarantinedOutboxNotifier? _quarantinedNotifier;
+  final StreamController<SyncResult> _syncCompletedController =
+      StreamController<SyncResult>.broadcast();
+
+  Stream<SyncResult> get onSyncCompleted => _syncCompletedController.stream;
+
+  void dispose() {
+    if (!_syncCompletedController.isClosed) {
+      _syncCompletedController.close();
+    }
+  }
 
   bool _isSyncing = false;
   bool get isSyncing => _isSyncing;
@@ -660,25 +677,28 @@ class OfflineSyncManager {
 
       await _refreshCounters();
 
-      if (failedCount > 0) {
-        final summaryMsg = errorMessages.isNotEmpty
-            ? errorMessages.first
-            : 'Synced $syncedCount batches. $failedCount batch(es) failed.';
-        return SyncResult(
-          success: false,
-          syncedCount: syncedCount,
-          failedCount: failedCount,
-          message: summaryMsg,
-          errors: errorMessages,
-        );
+      final result = failedCount > 0
+          ? SyncResult(
+              success: false,
+              syncedCount: syncedCount,
+              failedCount: failedCount,
+              message: errorMessages.isNotEmpty
+                  ? errorMessages.first
+                  : 'Synced $syncedCount batches. $failedCount batch(es) failed.',
+              errors: errorMessages,
+            )
+          : SyncResult(
+              success: true,
+              syncedCount: syncedCount,
+              failedCount: 0,
+              message: 'Successfully synchronized $syncedCount batch(es) to the central ledger.',
+            );
+
+      if ((syncedCount > 0 || failedCount > 0) && !_syncCompletedController.isClosed) {
+        _syncCompletedController.add(result);
       }
 
-      return SyncResult(
-        success: true,
-        syncedCount: syncedCount,
-        failedCount: 0,
-        message: 'Successfully synchronized $syncedCount batch(es) to the central ledger.',
-      );
+      return result;
     } finally {
       _isSyncing = false;
       await _refreshCounters();

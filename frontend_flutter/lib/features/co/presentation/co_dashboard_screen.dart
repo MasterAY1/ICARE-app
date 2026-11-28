@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -22,6 +23,14 @@ import '../data/models/co_dashboard_models.dart';
 import '../../shared/presentation/co_app_scaffold.dart';
 import 'widgets/co_dashboard_charts.dart';
 
+CoDashboardData _markOfflineSnapshot(Map<String, dynamic> cached) {
+  final copy = Map<String, dynamic>.from(cached);
+  final wel = Map<String, dynamic>.from((copy['welcome'] as Map?) ?? {});
+  wel['is_offline_snapshot'] = true;
+  copy['welcome'] = wel;
+  return CoDashboardData.fromJson(copy);
+}
+
 final coDashboardProvider = FutureProvider.autoDispose<CoDashboardData>((ref) async {
   final api = ref.watch(coApiServiceProvider);
   final isOnline = ref.watch(isOnlineProvider);
@@ -32,14 +41,14 @@ final coDashboardProvider = FutureProvider.autoDispose<CoDashboardData>((ref) as
   if (!isOnline) {
     final cached = await dbService.getCachedDashboardData(role: 'co');
     if (cached != null) {
-      return CoDashboardData.fromJson(cached);
+      return _markOfflineSnapshot(cached);
     }
   }
 
-  // 2. Attempt online network fetch
+  // 2. Attempt live online network fetch (bypass_offline_cache set in CoApiService)
   try {
     final data = await api.getCoDashboardData();
-    // Cache the fresh dashboard data
+    // Cache fresh live dashboard data (without snapshot flag)
     dbService.cacheDashboardData(data.toJson(), role: 'co').ignore();
 
     // Opportunistically pre-cache active business date meeting collection sheets and single-client options
@@ -65,7 +74,7 @@ final coDashboardProvider = FutureProvider.autoDispose<CoDashboardData>((ref) as
     // 3. Fallback to cache on network drop / DioException
     final cached = await dbService.getCachedDashboardData(role: 'co');
     if (cached != null) {
-      return CoDashboardData.fromJson(cached);
+      return _markOfflineSnapshot(cached);
     }
     // If no cache exists, rethrow so the error UI displays a clean explanation
     rethrow;
@@ -87,17 +96,115 @@ final coDashboardAttentionShowAllProvider = StateProvider.autoDispose<bool>((ref
 /// Incorporates Emerald Hero Vault Card (Account 1000), Quick Action Shortcuts,
 /// 2x2 Portfolio Health Grid, and Mobile Native Meeting Cards.
 /// Strict Zero-Emoji Governance (Rule 10) & Institutional Ledger Parity.
-class CoDashboardScreen extends ConsumerWidget {
+class CoDashboardScreen extends ConsumerStatefulWidget {
   const CoDashboardScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<CoDashboardScreen> createState() => _CoDashboardScreenState();
+}
+
+class _CoDashboardScreenState extends ConsumerState<CoDashboardScreen> with WidgetsBindingObserver {
+  Timer? _pollTimer;
+  bool _isAppResumed = true;
+  bool _isRefreshing = false;
+  CoDashboardData? _lastLiveData;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _pollTimer = Timer.periodic(const Duration(seconds: 20), (_) {
+      if (!mounted || !_isAppResumed || _isRefreshing) return;
+      if (ref.read(isOnlineProvider)) {
+        _silentRefresh();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _pollTimer?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _isAppResumed = state == AppLifecycleState.resumed;
+    if (_isAppResumed && mounted && ref.read(isOnlineProvider)) {
+      _silentRefresh();
+    }
+  }
+
+  void _silentRefresh() {
+    if (!mounted || _isRefreshing) return;
+    _isRefreshing = true;
+    ref.invalidate(coDashboardProvider);
+    Future.delayed(const Duration(milliseconds: 500), () {
+      if (mounted) _isRefreshing = false;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final tokens = IcareSurfaceTokens.of(context);
+    ref.listen<int>(globalRefreshSignalProvider, (prev, next) {
+      if (prev != null && prev != next) {
+        _silentRefresh();
+      }
+    });
     final dashboardAsync = ref.watch(coDashboardProvider);
     final isOnline = ref.watch(isOnlineProvider);
 
+    Widget buildDataBody(CoDashboardData data) {
+      _lastLiveData = data;
+      final isSnapshot = !isOnline || data.welcome['is_offline_snapshot'] == true;
+      return Column(
+        children: [
+          if (isSnapshot)
+            Container(
+              width: double.infinity,
+              margin: const EdgeInsets.only(bottom: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: tokens.warningBg,
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: tokens.warningBorder),
+              ),
+              child: Row(
+                children: [
+                  Icon(!isOnline ? Icons.cloud_off : Icons.history, size: 16, color: tokens.warningDot),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      !isOnline
+                          ? 'Offline Mode Active — Displaying locally cached dashboard. Field collections and meeting sheets are available offline and will queue automatically for synchronization.'
+                          : 'Offline Snapshot — Live server unreachable. Displaying most recent cached figures.',
+                      style: TextStyle(color: tokens.warningText, fontSize: 11.5, fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                  if (isOnline)
+                    TextButton(
+                      onPressed: () => ref.invalidate(coDashboardProvider),
+                      style: TextButton.styleFrom(
+                        foregroundColor: tokens.warningText,
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      child: const Text('Retry', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700)),
+                    ),
+                ],
+              ),
+            ),
+          _buildDashboardContent(context, ref, data),
+        ],
+      );
+    }
+
     return dashboardAsync.when(
-      loading: () => const IcareDashboardSkeleton(),
+      skipLoadingOnRefresh: true,
+      loading: () => _lastLiveData != null ? buildDataBody(_lastLiveData!) : const IcareDashboardSkeleton(),
       error: (err, stack) {
         final isConnectionError = !isOnline ||
             (err is DioException &&
@@ -165,34 +272,7 @@ class CoDashboardScreen extends ConsumerWidget {
           ),
         );
       },
-      data: (data) => Column(
-        children: [
-          if (!isOnline)
-            Container(
-              width: double.infinity,
-              margin: const EdgeInsets.only(bottom: 12),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(
-                color: tokens.warningBg,
-                borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: tokens.warningBorder),
-              ),
-              child: Row(
-                children: [
-                  Icon(Icons.cloud_off, size: 16, color: tokens.warningDot),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'Offline Mode Active — Displaying locally cached dashboard. Field collections and meeting sheets are available offline and will queue automatically for synchronization.',
-                      style: TextStyle(color: tokens.warningText, fontSize: 11.5, fontWeight: FontWeight.w600),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          _buildDashboardContent(context, ref, data),
-        ],
-      ),
+      data: (data) => buildDataBody(data),
     );
   }
 

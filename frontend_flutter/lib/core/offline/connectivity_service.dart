@@ -144,8 +144,8 @@ class ConnectivityService {
       final healthRes = await _healthClient.get(
         _healthUrl,
         options: Options(
-          sendTimeout: const Duration(seconds: 4),
-          receiveTimeout: const Duration(seconds: 4),
+          sendTimeout: const Duration(seconds: 10),
+          receiveTimeout: const Duration(seconds: 10),
         ),
       );
       final isHealthy = healthRes.statusCode == 200;

@@ -7,7 +7,7 @@ import time
 from typing import Dict, Any, List, Optional, Tuple
 from database.repositories.unit_of_work import SupabaseUnitOfWork
 from services.loan_product_engine import LoanProductEngine
-from services.business_date_service import get_nigerian_holidays
+from services.business_date_service import BusinessDateService, get_nigerian_holidays
 from services.savings_service import SavingsService
 from auth.password import hash_password
 
@@ -268,14 +268,22 @@ class OnboardingService:
         return validation_summary, aggregates
 
     @staticmethod
-    def save_draft(uow: SupabaseUnitOfWork, token: str, payload: Dict[str, Any], scoped_officer: Optional[str] = None) -> Dict[str, Any]:
+    def save_draft(
+        uow: SupabaseUnitOfWork,
+        token: str,
+        payload: Dict[str, Any],
+        scoped_officer: Optional[str] = None,
+        contact_person: Optional[str] = None,
+        contact_phone: Optional[str] = None,
+    ) -> Dict[str, Any]:
         """
         Saves updated groups, members, and officers draft payload.
         If scoped_officer is specified, merges that officer's groups and members
         with the existing branch payload without clobbering other officers' data.
         Auto-extends link expiration by 14 days and returns updated validation summary.
         """
-        select_cols = "id, status, payload" if (scoped_officer and str(scoped_officer).strip()) else "id, status"
+        is_scoped = bool(scoped_officer and str(scoped_officer).strip())
+        select_cols = "id, status, payload, contact_person, contact_phone"
         s_res = uow.client.table("branch_onboarding_sessions").select(select_cols).eq("token", token).execute()
         if not s_res.data:
             raise ValueError("Onboarding session not found.")
@@ -284,11 +292,11 @@ class OnboardingService:
         if session["status"] == "approved":
             raise ValueError("This onboarding session has already been approved and committed.")
 
-        final_payload = payload
-        if scoped_officer and str(scoped_officer).strip():
+        final_payload = dict(payload or {})
+        existing_payload = session.get("payload") or {}
+        if is_scoped:
             target_officer = str(scoped_officer).strip()
             target_low = target_officer.lower()
-            existing_payload = session.get("payload") or {}
 
             # Keep other officers' groups
             other_groups = [
@@ -346,6 +354,26 @@ class OnboardingService:
                 "misc_savings": float(misc_s or 0.0),
                 "laps_savings": float(laps_s or 0.0),
             }
+            if existing_payload.get("branch_manager"):
+                final_payload["branch_manager"] = existing_payload["branch_manager"]
+
+        # Synchronize Branch Manager metadata cleanly when provided on branch-wide save
+        payload_bm = final_payload.get("branch_manager") if isinstance(final_payload.get("branch_manager"), dict) else {}
+        resolved_bm_name = (
+            (contact_person or "").strip()
+            or (None if is_scoped else str(payload_bm.get("name") or payload_bm.get("full_name") or "").strip())
+            or (session.get("contact_person") or "").strip()
+        )
+        resolved_bm_phone = (
+            (contact_phone or "").strip()
+            or (None if is_scoped else str(payload_bm.get("phone") or payload_bm.get("phone_number") or "").strip())
+            or (session.get("contact_phone") or "").strip()
+        )
+        if resolved_bm_name or resolved_bm_phone:
+            final_payload["branch_manager"] = {
+                "name": resolved_bm_name,
+                "phone": resolved_bm_phone,
+            }
 
         # Auto-provision dedicated officer tokens for any officers missing them
         for off in final_payload.get("officers", []):
@@ -377,6 +405,12 @@ class OnboardingService:
             "expires_at": new_expires_at.isoformat(),
             "updated_at": now.isoformat()
         }
+        if not is_scoped or contact_person is not None:
+            if resolved_bm_name:
+                update_data["contact_person"] = resolved_bm_name
+        if not is_scoped or contact_phone is not None:
+            if resolved_bm_phone:
+                update_data["contact_phone"] = resolved_bm_phone
 
         uow.client.table("branch_onboarding_sessions").update(update_data).eq("token", token).execute()
 
@@ -763,7 +797,12 @@ class OnboardingService:
         }
 
     @staticmethod
-    def bm_submit_session(uow: SupabaseUnitOfWork, branch_token: str) -> Dict[str, Any]:
+    def bm_submit_session(
+        uow: SupabaseUnitOfWork,
+        branch_token: str,
+        contact_person: Optional[str] = None,
+        contact_phone: Optional[str] = None,
+    ) -> Dict[str, Any]:
         """
         Branch Manager confirms total combined officer balances and submits package to Area Manager.
         """
@@ -775,7 +814,21 @@ class OnboardingService:
         if session["status"] == "approved":
             raise ValueError("This onboarding session has already been approved.")
 
-        payload = session.get("payload") or {}
+        payload = dict(session.get("payload") or {})
+        payload_bm = payload.get("branch_manager") if isinstance(payload.get("branch_manager"), dict) else {}
+        resolved_bm_name = (
+            (contact_person or "").strip()
+            or (session.get("contact_person") or "").strip()
+            or str(payload_bm.get("name") or payload_bm.get("full_name") or "").strip()
+        )
+        resolved_bm_phone = (
+            (contact_phone or "").strip()
+            or (session.get("contact_phone") or "").strip()
+            or str(payload_bm.get("phone") or payload_bm.get("phone_number") or "").strip()
+        )
+        if resolved_bm_name or resolved_bm_phone:
+            payload["branch_manager"] = {"name": resolved_bm_name, "phone": resolved_bm_phone}
+
         p_res = uow.client.table("loan_products").select("name").execute()
         products_map = {p["name"].strip().lower(): True for p in (p_res.data or [])}
 
@@ -785,11 +838,18 @@ class OnboardingService:
             raise ValueError(f"Cannot submit with validation errors: {first_err}")
 
         now = datetime.datetime.now(datetime.timezone.utc)
-        uow.client.table("branch_onboarding_sessions").update({
+        submit_update = {
             "status": "submitted",
             "submitted_at": now.isoformat(),
-            "updated_at": now.isoformat()
-        }).eq("id", session["id"]).execute()
+            "updated_at": now.isoformat(),
+            "payload": payload,
+        }
+        if resolved_bm_name:
+            submit_update["contact_person"] = resolved_bm_name
+        if resolved_bm_phone:
+            submit_update["contact_phone"] = resolved_bm_phone
+
+        uow.client.table("branch_onboarding_sessions").update(submit_update).eq("id", session["id"]).execute()
 
         return {
             "status": "success",
@@ -798,7 +858,14 @@ class OnboardingService:
         }
 
     @staticmethod
-    def am_approve_session(uow: SupabaseUnitOfWork, branch_token: str, approved_by_id: Optional[str] = None, approval_notes: Optional[str] = None) -> Dict[str, Any]:
+    def am_approve_session(
+        uow: SupabaseUnitOfWork,
+        branch_token: str,
+        approved_by_id: Optional[str] = None,
+        approval_notes: Optional[str] = None,
+        contact_person: Optional[str] = None,
+        contact_phone: Optional[str] = None,
+    ) -> Dict[str, Any]:
         """
         Area Manager reviews the BM-confirmed branch package and commits it to the live core banking database.
         """
@@ -811,7 +878,9 @@ class OnboardingService:
             uow=uow,
             session_id=session["id"],
             approved_by_id=approved_by_id,
-            approval_notes=approval_notes or "Approved and committed by Area Manager."
+            approval_notes=approval_notes or "Approved and committed by Area Manager.",
+            contact_person=contact_person,
+            contact_phone=contact_phone,
         )
 
     @staticmethod
@@ -1063,7 +1132,9 @@ class OnboardingService:
         uow: SupabaseUnitOfWork,
         session_id: str,
         approved_by_id: Optional[str] = None,
-        approval_notes: Optional[str] = None
+        approval_notes: Optional[str] = None,
+        contact_person: Optional[str] = None,
+        contact_phone: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Executes atomic migration of approved onboarding session into live core banking tables:
@@ -1088,26 +1159,8 @@ class OnboardingService:
         branch_code = session["branch_code"]
         branch_id = session.get("branch_id")
 
-        # 1. Ensure branch exists in branches table
-        if not branch_id:
-            b_check = uow.client.table("branches").select("branch_id").eq("code", branch_code).execute()
-            if b_check.data:
-                branch_id = b_check.data[0]["branch_id"]
-            else:
-                branch_id = str(uuid.uuid4())
-                uow.client.table("branches").insert({
-                    "branch_id": branch_id,
-                    "name": branch_name,
-                    "code": branch_code,
-                    "is_active": True
-                }).execute()
-
-        # 2. Pre-fetch Loan Products map
-        p_res = uow.client.table("loan_products").select("*").execute()
-        product_map = {p["name"].strip().lower(): p for p in (p_res.data or [])}
-
-        # 3. Calendar & Holiday Setup for Schedule Generation
-        base_eval_date = datetime.date.today()
+        # Determine initial operational business date & schedule calendar in Nigeria WAT (FP-008)
+        base_eval_date = BusinessDateService.get_nigeria_today()
         ng_holidays = get_nigerian_holidays(years=[base_eval_date.year, base_eval_date.year + 1, base_eval_date.year + 2])
         day_map = {"monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3, "friday": 4, "saturday": 5, "sunday": 6}
 
@@ -1120,6 +1173,33 @@ class OnboardingService:
                 curr += datetime.timedelta(days=1)
             return curr
 
+        operational_start_date = get_next_working_day(base_eval_date)
+
+        # 1. Ensure branch exists in branches table with non-empty operational date defaults
+        if not branch_id:
+            b_check = uow.client.table("branches").select("branch_id, cashbook_defaults").eq("code", branch_code).execute()
+            if b_check.data:
+                branch_id = b_check.data[0]["branch_id"]
+                existing_defaults = b_check.data[0].get("cashbook_defaults") or {}
+                if not isinstance(existing_defaults, dict) or not existing_defaults.get("business_date"):
+                    merged_defaults = dict(existing_defaults) if isinstance(existing_defaults, dict) else {}
+                    merged_defaults["business_date"] = operational_start_date.isoformat()
+                    uow.client.table("branches").update({"cashbook_defaults": merged_defaults}).eq("branch_id", branch_id).execute()
+            else:
+                branch_id = str(uuid.uuid4())
+                uow.client.table("branches").insert({
+                    "branch_id": branch_id,
+                    "name": branch_name,
+                    "code": branch_code,
+                    "is_active": True,
+                    "cashbook_defaults": {"business_date": operational_start_date.isoformat()},
+                }).execute()
+
+        # 2. Pre-fetch Loan Products map
+        p_res = uow.client.table("loan_products").select("*").execute()
+        product_map = {p["name"].strip().lower(): p for p in (p_res.data or [])}
+
+        # 3. Calendar helpers for schedule generation
         def add_months(d: datetime.date, num_months: int) -> datetime.date:
             import calendar
             m = d.month - 1 + num_months
@@ -1171,6 +1251,8 @@ class OnboardingService:
         default_pwd_hash = hash_password("password123")
         designated_misc_officer_id = None
         designated_misc_officer_name = None
+        co_user_ids = set()
+        provisioned_officer_usernames = []
 
         for off_key, off_info in all_officer_names.items():
             off_name = off_info["name"]
@@ -1179,9 +1261,23 @@ class OnboardingService:
 
             if off_key in officer_map:
                 u_id = officer_map[off_key]
+                co_user_ids.add(u_id)
+                matched_eu = next((eu for eu in existing_users if eu.get("id") == u_id), None)
+                if matched_eu and matched_eu.get("username"):
+                    provisioned_officer_usernames.append(matched_eu["username"])
             else:
                 co_counter += 1
-                username = f"{branch_code}_CO{co_counter}"
+                base_co_username = f"{branch_code}_CO{co_counter}"
+                username = base_co_username
+                for suffix_idx in range(co_counter, co_counter + 25):
+                    cand_co = f"{branch_code}_CO{suffix_idx}"
+                    chk_co = uow.client.table("app_users").select("id").ilike("username", cand_co).execute()
+                    chk_rows = chk_co.data if isinstance(chk_co.data, list) else []
+                    if not chk_rows:
+                        username = cand_co
+                        co_counter = suffix_idx
+                        break
+
                 u_id = str(uuid.uuid4())
                 now_str = datetime.datetime.now(datetime.timezone.utc).isoformat()
 
@@ -1208,6 +1304,8 @@ class OnboardingService:
 
                 officer_map[off_key] = u_id
                 officer_map[username.lower()] = u_id
+                co_user_ids.add(u_id)
+                provisioned_officer_usernames.append(username)
 
             if is_mgr and not designated_misc_officer_id:
                 designated_misc_officer_id = u_id
@@ -1229,36 +1327,107 @@ class OnboardingService:
             designated_misc_officer_id = first_officer_id
             designated_misc_officer_name = first_officer_name
 
-        # 3.6. Provision Branch Manager (BM) user if contact_person is defined
-        bm_contact_name = (session.get("contact_person") or "").strip()
-        bm_contact_phone = (session.get("contact_phone") or "").strip()
-        if bm_contact_name:
-            bm_role_res = uow.client.table("roles").select("role_id").eq("name", "Branch Manager").execute()
-            bm_role_id = bm_role_res.data[0]["role_id"] if bm_role_res.data else "3ea1496a-0498-4a1d-872a-1c7ecdf77b06"
-            bm_username = f"BM_{branch_name.replace(' ', '_')}"
+        # 3.6. Unconditionally provision/verify Branch Manager (BM) user & Branch Manager role
+        payload_bm = payload.get("branch_manager") if isinstance(payload.get("branch_manager"), dict) else {}
+        bm_contact_name = (
+            (contact_person or "").strip()
+            or (session.get("contact_person") or "").strip()
+            or str(payload_bm.get("name") or payload_bm.get("full_name") or "").strip()
+            or f"{branch_name} Branch Manager"
+        )
+        bm_contact_phone = (
+            (contact_phone or "").strip()
+            or (session.get("contact_phone") or "").strip()
+            or str(payload_bm.get("phone") or payload_bm.get("phone_number") or "").strip()
+        )
+        bm_role_res = uow.client.table("roles").select("role_id").eq("name", "Branch Manager").execute()
+        bm_role_rows = bm_role_res.data if isinstance(bm_role_res.data, list) else []
+        bm_role_id = bm_role_rows[0]["role_id"] if bm_role_rows else "3ea1496a-0498-4a1d-872a-1c7ecdf77b06"
 
-            # Check if BM already provisioned
-            ex_bm = uow.client.table("app_users").select("id").eq("branch_id", branch_id).ilike("username", bm_username).execute()
-            if not ex_bm.data:
-                ex_bm_fn = uow.client.table("app_users").select("id").eq("branch_id", branch_id).ilike("full_name", bm_contact_name).execute()
-                if not ex_bm_fn.data:
-                    new_bm_id = str(uuid.uuid4())
-                    now_str = datetime.datetime.now(datetime.timezone.utc).isoformat()
-                    uow.client.table("app_users").insert({
-                        "id": new_bm_id,
-                        "username": bm_username,
-                        "full_name": bm_contact_name,
-                        "branch_id": branch_id,
-                        "password_hash": default_pwd_hash,
-                        "is_active": True,
-                        "created_at": now_str,
-                        "updated_at": now_str,
-                        "extra_fields": {"phone": bm_contact_phone} if bm_contact_phone else {}
-                    }).execute()
-                    uow.client.table("user_roles").insert({
-                        "user_id": new_bm_id,
-                        "role_id": bm_role_id
-                    }).execute()
+        clean_branch_slug = re.sub(r"[^A-Za-z0-9]+", "_", str(branch_name or branch_code).strip()).strip("_") or str(branch_code)
+        base_bm_username = f"BM_{clean_branch_slug}"
+
+        bm_user_id = None
+        bm_username_final = None
+        bm_provisioned = False
+
+        # Check if any existing user on this branch already holds the Branch Manager role
+        branch_user_ids = [eu["id"] for eu in existing_users if isinstance(eu, dict) and eu.get("id")]
+        if branch_user_ids:
+            try:
+                ur_bm_existing = uow.client.table("user_roles").select("user_id").eq("role_id", bm_role_id).in_("user_id", branch_user_ids).execute()
+                ur_rows = ur_bm_existing.data if isinstance(ur_bm_existing.data, list) else []
+                if ur_rows:
+                    bm_user_id = ur_rows[0]["user_id"]
+                    matched_eu = next((eu for eu in existing_users if eu.get("id") == bm_user_id), None)
+                    bm_username_final = matched_eu.get("username") if matched_eu else base_bm_username
+            except Exception:
+                pass
+
+        # Otherwise reuse non-CO matching branch BM user or find a globally unique BM_<Branch> username
+        if not bm_user_id:
+            for eu in existing_users:
+                if not isinstance(eu, dict):
+                    continue
+                eu_id = eu.get("id")
+                eu_un = str(eu.get("username") or "").strip()
+                eu_fn = str(eu.get("full_name") or "").strip()
+                if eu_id and eu_id not in co_user_ids and (
+                    eu_un.lower() == base_bm_username.lower()
+                    or (bm_contact_name and eu_fn.lower() == bm_contact_name.lower() and not eu_un.upper().startswith(f"{str(branch_code).upper()}_CO"))
+                ):
+                    bm_user_id = eu_id
+                    bm_username_final = eu_un or base_bm_username
+                    break
+
+        if not bm_user_id:
+            for suffix in range(1, 26):
+                cand = base_bm_username if suffix == 1 else f"{base_bm_username}_{suffix}"
+                global_chk = uow.client.table("app_users").select("id, branch_id, username").ilike("username", cand).execute()
+                g_rows = global_chk.data if isinstance(global_chk.data, list) else []
+                if not g_rows:
+                    bm_username_final = cand
+                    break
+                same_branch = next(
+                    (r for r in g_rows if isinstance(r, dict) and str(r.get("branch_id") or "") == str(branch_id) and r.get("id") not in co_user_ids),
+                    None
+                )
+                if same_branch:
+                    bm_user_id = same_branch["id"]
+                    bm_username_final = same_branch.get("username") or cand
+                    break
+            if not bm_username_final:
+                bm_username_final = f"{base_bm_username}_{uuid.uuid4().hex[:4]}"
+
+        if not bm_user_id:
+            bm_user_id = str(uuid.uuid4())
+            now_str = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            uow.client.table("app_users").insert({
+                "id": bm_user_id,
+                "username": bm_username_final,
+                "full_name": bm_contact_name,
+                "branch_id": branch_id,
+                "password_hash": default_pwd_hash,
+                "is_active": True,
+                "created_at": now_str,
+                "updated_at": now_str,
+                "extra_fields": {"phone": bm_contact_phone} if bm_contact_phone else {}
+            }).execute()
+            bm_provisioned = True
+
+        # Ensure Branch Manager role mapping exists even if user existed without a role row
+        try:
+            role_chk = uow.client.table("user_roles").select("user_id").eq("user_id", bm_user_id).eq("role_id", bm_role_id).execute()
+            has_role = isinstance(role_chk.data, list) and len(role_chk.data) > 0
+        except Exception:
+            has_role = False
+
+        if not has_role:
+            uow.client.table("user_roles").insert({
+                "user_id": bm_user_id,
+                "role_id": bm_role_id
+            }).execute()
+            bm_provisioned = True
 
         # Persist officer assignments list into branches.officer_assignments
         try:
@@ -1491,7 +1660,7 @@ class OnboardingService:
                 loan_id = str(uuid.uuid4())
                 uow.client.table("loans").insert({
                     "loan_id": loan_id, "client_id": c_id, "date": base_eval_date.isoformat(),
-                    "disbursement_date": base_eval_date.isoformat(), "start_date": base_eval_date.isoformat(),
+                    "disbursement_date": base_eval_date.isoformat(), "start_date": operational_start_date.isoformat(),
                     "loan_amount": float(m.get("principal_loan") or a_cred),
                     "active_credit": a_cred, "total_due": c_bal, "loan_repay": expected_inst,
                     "status": "Active", "branch_id": branch_id, "officer_id": m_officer_id, "product_id": prod["product_id"],
@@ -1525,22 +1694,22 @@ class OnboardingService:
                         if days_ahead < 0:
                             days_ahead += 7
                         first_meeting = base_eval_date + datetime.timedelta(days=days_ahead)
-                        current_anchor = first_meeting
+                        current_anchor = get_next_working_day(first_meeting)
                     else:
-                        current_anchor = base_eval_date
+                        current_anchor = operational_start_date
 
                     for i in range(1, remaining_count + 1):
                         if cycle == "Daily":
-                            if i == 1 and is_working_day(base_eval_date):
-                                current_due_date = base_eval_date
-                                current_anchor = base_eval_date
+                            if i == 1:
+                                current_due_date = operational_start_date
+                                current_anchor = operational_start_date
                             else:
                                 current_anchor += datetime.timedelta(days=1)
                                 current_anchor = get_next_working_day(current_anchor)
                                 current_due_date = current_anchor
                         elif cycle == "Weekly":
                             if i == 1:
-                                current_due_date = current_anchor
+                                current_due_date = get_next_working_day(current_anchor)
                             else:
                                 current_anchor += datetime.timedelta(weeks=1)
                                 while not is_working_day(current_anchor):
@@ -1608,14 +1777,19 @@ class OnboardingService:
 
         # 7. Update Session Status to Approved
         now = datetime.datetime.now(datetime.timezone.utc)
-        uow.client.table("branch_onboarding_sessions").update({
+        approve_update = {
             "status": "approved",
             "branch_id": branch_id,
             "approved_at": now.isoformat(),
             "approved_by": approved_by_id,
             "approval_notes": approval_notes or "Approved and committed to core banking ledger.",
             "updated_at": now.isoformat()
-        }).eq("id", session_id).execute()
+        }
+        if not (session.get("contact_person") or "").strip() and bm_contact_name:
+            approve_update["contact_person"] = bm_contact_name
+        if not (session.get("contact_phone") or "").strip() and bm_contact_phone:
+            approve_update["contact_phone"] = bm_contact_phone
+        uow.client.table("branch_onboarding_sessions").update(approve_update).eq("id", session_id).execute()
 
         # 7.5. Automatically assign Area Manager to this newly committed branch
         candidates = []
@@ -1658,6 +1832,10 @@ class OnboardingService:
             "loans_created": loans_created,
             "schedules_created": schedules_created,
             "officers_provisioned": len(all_officer_names),
+            "officer_usernames": provisioned_officer_usernames,
+            "bm_provisioned": bm_provisioned,
+            "bm_username": bm_username_final,
+            "bm_full_name": bm_contact_name,
             "misc_savings_posted": misc_sav_val,
             "laps_savings_posted": laps_sav_val
         }

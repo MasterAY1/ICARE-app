@@ -30,10 +30,19 @@ class CreateSessionRequest(BaseModel):
 class SaveDraftRequest(BaseModel):
     payload: Dict[str, Any] = Field(..., description="Onboarding payload containing officers, groups, and members")
     scoped_officer: Optional[str] = Field(None, description="Optional credit officer scope for isolated, multi-officer draft merging")
+    contact_person: Optional[str] = Field(None, description="Branch Manager full name")
+    contact_phone: Optional[str] = Field(None, description="Branch Manager phone number")
+
+
+class BmSubmitRequest(BaseModel):
+    contact_person: Optional[str] = Field(None, description="Branch Manager full name")
+    contact_phone: Optional[str] = Field(None, description="Branch Manager phone number")
 
 
 class ApproveSessionRequest(BaseModel):
     approval_notes: Optional[str] = Field(None, description="Optional sign-off notes or audit comment")
+    contact_person: Optional[str] = Field(None, description="Optional Branch Manager full name override for legacy drafts")
+    contact_phone: Optional[str] = Field(None, description="Optional Branch Manager phone number override")
 
 
 class RejectSessionRequest(BaseModel):
@@ -86,7 +95,14 @@ def save_onboarding_draft(
     Automatically extends link validity by 14 days from active edit time.
     """
     try:
-        return OnboardingService.save_draft(uow, token, req.payload, scoped_officer=req.scoped_officer)
+        return OnboardingService.save_draft(
+            uow,
+            token,
+            req.payload,
+            scoped_officer=req.scoped_officer,
+            contact_person=req.contact_person,
+            contact_phone=req.contact_phone,
+        )
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
@@ -261,6 +277,7 @@ def unlock_officer_roster(
 @router.post("/session/{token}/bm-submit", summary="Branch Manager confirms totals and submits to Area Manager")
 def bm_submit_session(
     token: str,
+    req: Optional[BmSubmitRequest] = Body(default=None),
     uow: SupabaseUnitOfWork = Depends(get_uow)
 ):
     """
@@ -268,7 +285,12 @@ def bm_submit_session(
     submitting the package for Area Manager final review and commitment.
     """
     try:
-        return OnboardingService.bm_submit_session(uow, token)
+        return OnboardingService.bm_submit_session(
+            uow,
+            token,
+            contact_person=req.contact_person if req else None,
+            contact_phone=req.contact_phone if req else None,
+        )
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
@@ -375,7 +397,9 @@ def am_approve_session(
             uow=uow,
             branch_token=token,
             approved_by_id=current_user.id,
-            approval_notes=req.approval_notes
+            approval_notes=req.approval_notes,
+            contact_person=req.contact_person,
+            contact_phone=req.contact_phone,
         )
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
@@ -446,7 +470,9 @@ def approve_onboarding_session(
             uow=uow,
             session_id=session_id,
             approved_by_id=current_user.id,
-            approval_notes=req.approval_notes
+            approval_notes=req.approval_notes,
+            contact_person=req.contact_person,
+            contact_phone=req.contact_phone,
         )
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))

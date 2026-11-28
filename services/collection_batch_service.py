@@ -21,6 +21,7 @@ from services.repayment_service import RepaymentService
 from services.schedule_service import ScheduleService
 from services.collection_performance_service import CollectionPerformanceService
 from services.posting_engine import FinancialPostingEngine
+from services.business_date_service import BusinessDateService
 from domain.entities.event_store import DomainEvent
 
 logger = logging.getLogger(__name__)
@@ -277,7 +278,7 @@ def save_repayment(
                 db_data.get('date') or
                 db_data.get('payment_date')
             )
-            p_date_str = str(raw_date).split('T')[0] if raw_date else datetime.now().strftime("%Y-%m-%d")
+            p_date_str = str(raw_date).split('T')[0] if raw_date else BusinessDateService.get_nigeria_today().isoformat()
             p_date = datetime.strptime(p_date_str, "%Y-%m-%d").date()
             db_data['date'] = p_date_str
             db_data['payment_date'] = p_date_str

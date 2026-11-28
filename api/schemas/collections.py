@@ -73,6 +73,9 @@ class SingleClientOption(BaseModel):
 
 
 class SingleClientOptionsResponse(BaseModel):
+    date: str = ""
+    is_open: bool = True
+    open_reason: str = "Working Day"
     clients: List[SingleClientOption] = []
 
 

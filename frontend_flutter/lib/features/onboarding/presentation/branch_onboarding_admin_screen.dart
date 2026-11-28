@@ -242,13 +242,14 @@ Widget _buildFormView({
         ),
         const SizedBox(height: 14),
 
-        // Coordinator Name Field
+        // Branch Manager Name Field
         TextFormField(
           controller: personCtrl,
           style: TextStyle(color: tokens.textPrimary),
+          textCapitalization: TextCapitalization.words,
           decoration: const InputDecoration(
-            labelText: 'Coordinator / Branch Manager (Optional)',
-            hintText: 'e.g. Adebayo Adeleke',
+            labelText: 'Branch Manager Full Name',
+            hintText: 'e.g. Mrs Oritoke Adebayo (creates manager account on activation)',
             prefixIcon: Icon(Icons.person_outline, size: 16),
             border: OutlineInputBorder(),
             contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
@@ -498,6 +499,10 @@ class _BranchOnboardingAdminScreenState extends ConsumerState<BranchOnboardingAd
   Future<void> _handleApprove(Map<String, dynamic> session) async {
     final branchName = session['branch_name'] ?? 'Branch';
     final sessionId = session['id']?.toString() ?? '';
+    final existingBmName = session['contact_person']?.toString().trim() ?? '';
+    final existingBmPhone = session['contact_phone']?.toString().trim() ?? '';
+    final bmNameCtrl = TextEditingController(text: existingBmName);
+    final bmPhoneCtrl = TextEditingController(text: existingBmPhone);
     final notesCtrl = TextEditingController();
 
     final confirmed = await showIcareAdaptiveSheet<bool>(
@@ -522,10 +527,36 @@ class _BranchOnboardingAdminScreenState extends ConsumerState<BranchOnboardingAd
               ),
               const SizedBox(height: 10),
               Text(
-                'This action will permanently activate all staged solidarity groups, members, savings balances, loans, and schedules into live branch operations.',
+                'This action will permanently activate all staged solidarity groups, members, savings balances, loans, schedules, Branch Manager account, and Credit Officer logins into live branch operations.',
                 style: TextStyle(fontSize: 13, height: 1.4, color: dialogTokens.textSecondary),
               ),
               const SizedBox(height: 16),
+              TextField(
+                controller: bmNameCtrl,
+                textCapitalization: TextCapitalization.words,
+                style: TextStyle(color: dialogTokens.textPrimary),
+                decoration: InputDecoration(
+                  labelText: 'Branch Manager Full Name',
+                  hintText: 'e.g. Mrs Oritoke Adebayo',
+                  helperText: existingBmName.isEmpty
+                      ? 'Confirm manager name to provision the Branch Manager login (fallback name used if left blank).'
+                      : null,
+                  border: const OutlineInputBorder(),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: bmPhoneCtrl,
+                keyboardType: TextInputType.phone,
+                style: TextStyle(color: dialogTokens.textPrimary),
+                decoration: const InputDecoration(
+                  labelText: 'Branch Manager Phone Number (Optional)',
+                  border: OutlineInputBorder(),
+                  contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                ),
+              ),
+              const SizedBox(height: 12),
               TextField(
                 controller: notesCtrl,
                 style: TextStyle(color: dialogTokens.textPrimary),
@@ -561,20 +592,36 @@ class _BranchOnboardingAdminScreenState extends ConsumerState<BranchOnboardingAd
       },
     );
 
+    final bmNameText = bmNameCtrl.text.trim();
+    final bmPhoneText = bmPhoneCtrl.text.trim();
     final notesText = notesCtrl.text.trim();
-    WidgetsBinding.instance.addPostFrameCallback((_) => notesCtrl.dispose());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      bmNameCtrl.dispose();
+      bmPhoneCtrl.dispose();
+      notesCtrl.dispose();
+    });
 
     if (confirmed != true) return;
 
     try {
       final api = ref.read(onboardingApiServiceProvider);
-      await api.approveAdminSession(sessionId, notes: notesText.isEmpty ? null : notesText);
+      final res = await api.approveAdminSession(
+        sessionId,
+        notes: notesText.isEmpty ? null : notesText,
+        contactPerson: bmNameText.isEmpty ? null : bmNameText,
+        contactPhone: bmPhoneText.isEmpty ? null : bmPhoneText,
+      );
       if (mounted) {
         final tokens = IcareSurfaceTokens.of(context);
+        final bmUser = res['bm_username']?.toString();
+        final offCount = res['officers_provisioned'];
+        final detail = bmUser != null && bmUser.isNotEmpty
+            ? 'Branch $branchName activated! Manager account: $bmUser (${offCount ?? 0} officers).'
+            : 'Branch $branchName successfully activated into live operations!';
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              'Branch $branchName successfully activated into live operations!',
+              detail,
               style: TextStyle(color: tokens.successText, fontWeight: FontWeight.w600),
             ),
             backgroundColor: tokens.successBg,

@@ -13,6 +13,7 @@ import 'widgets/co_cashbook_charts.dart';
 import 'widgets/co_shared_widgets.dart';
 import '../data/datasources/co_api_service.dart';
 import '../../shared/presentation/co_app_scaffold.dart';
+import 'co_dashboard_screen.dart';
 import 'providers/co_collections_navigation_provider.dart';
 
 /// Riverpod family provider using composite String key "$dateStr||$officer" to guarantee value equality and eliminate infinite refetches
@@ -302,7 +303,11 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
       );
       _lastLoadedKey = null;
       ref.invalidate(coCashbookDataProvider(_currentKey));
+      ref.invalidate(coDashboardProvider);
+      ref.read(globalRefreshSignalProvider.notifier).state++;
       ref.invalidate(clientFeesProvider(_currentKey));
+      ref.invalidate(coDashboardProvider);
+      ref.read(globalRefreshSignalProvider.notifier).state++;
     } catch (e) {
       _showBanner(
         'Error updating End of Day inputs: ${AppErrorDetails.from(e).message}',
@@ -363,6 +368,8 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
         _selectedRevOptionType = null;
       });
       ref.invalidate(coCashbookDataProvider(_currentKey));
+      ref.invalidate(coDashboardProvider);
+      ref.read(globalRefreshSignalProvider.notifier).state++;
     } catch (e) {
       _showBanner(
         'Failed to submit reversal request: ${AppErrorDetails.from(e).message}',
@@ -791,6 +798,8 @@ class _DailyCashbookScreenState extends ConsumerState<DailyCashbookScreen> {
       onPressed: () {
         _lastLoadedKey = null;
         ref.invalidate(coCashbookDataProvider(_currentKey));
+      ref.invalidate(coDashboardProvider);
+      ref.read(globalRefreshSignalProvider.notifier).state++;
         ref.invalidate(clientFeesProvider(_currentKey));
       },
       icon: Icon(Icons.refresh, size: 16, color: tokens.textPrimary),

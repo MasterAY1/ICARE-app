@@ -185,11 +185,15 @@ final collectionSheetFutureProvider = FutureProvider.autoDispose<Map<String, dyn
 
 });
 
-final singleClientOptionsProvider = FutureProvider<Map<String, dynamic>>((ref) async {
+final singleClientOptionsProvider = FutureProvider.autoDispose<Map<String, dynamic>>((ref) async {
 
   final api = ref.watch(coApiServiceProvider);
 
-  return api.getSingleClientOptions();
+  final backdated = ref.watch(collectionsDateProvider);
+
+  final dateStr = backdated != null ? DateFormat('yyyy-MM-dd').format(backdated) : null;
+
+  return api.getSingleClientOptions(date: dateStr);
 
 });
 
@@ -613,6 +617,7 @@ class _DailyCollectionsScreenState extends ConsumerState<DailyCollectionsScreen>
     ref.invalidate(coDashboardProvider);
     ref.invalidate(coCashbookDataProvider);
     ref.invalidate(portfolioDataProvider);
+    ref.read(globalRefreshSignalProvider.notifier).state++;
   }
 
   /// Displays the 4-phase animated collection confirmation, posting, and receipt modal
@@ -794,7 +799,20 @@ class _DailyCollectionsScreenState extends ConsumerState<DailyCollectionsScreen>
 
   /// Launches 4-phase animated confirmation flow modal for single client collection
 
-  void _submitSingleClient(Map<String, dynamic> clientObj, String dateStr, [double expRep = 0.0]) {
+  void _submitSingleClient(
+    Map<String, dynamic> clientObj,
+    String dateStr, [
+    double expRep = 0.0,
+    bool canPost = true,
+    String openReason = 'Operations Suspended',
+  ]) {
+    if (!canPost) {
+      _showNotification(
+        'Operations suspended ($openReason). Collections cannot be posted today.',
+        isSuccess: false,
+      );
+      return;
+    }
 
     final savVal = double.tryParse(_scPersonalSavCtrl.text.replaceAll(',', '').trim()) ?? 0.0;
 
@@ -1147,6 +1165,10 @@ class _DailyCollectionsScreenState extends ConsumerState<DailyCollectionsScreen>
 
       ref.invalidate(reversalOptionsProvider);
 
+      ref.invalidate(coDashboardProvider);
+
+      ref.read(globalRefreshSignalProvider.notifier).state++;
+
     } catch (e) {
 
       _showNotification('Failed to submit reversal request: ${AppErrorDetails.from(e).message}', isSuccess: false);
@@ -1433,11 +1455,16 @@ class _DailyCollectionsScreenState extends ConsumerState<DailyCollectionsScreen>
           children: [
             InkWell(
               onTap: () async {
+                final now = DateTime.now();
+                final firstDt = now.subtract(const Duration(days: 365));
+                final safeInit = activeDate.isAfter(now)
+                    ? now
+                    : (activeDate.isBefore(firstDt) ? firstDt : activeDate);
                 final picked = await showDatePicker(
                   context: context,
-                  initialDate: activeDate,
-                  firstDate: DateTime.now().subtract(const Duration(days: 365)),
-                  lastDate: DateTime.now(),
+                  initialDate: safeInit,
+                  firstDate: firstDt,
+                  lastDate: now,
                 );
                 if (picked != null) {
                   ref.read(collectionsDateProvider.notifier).state = picked;
@@ -3822,17 +3849,51 @@ Status: CONFIRMED & POSTED TO LEDGER''';
       ),
       data: (data) {
         final clients = (data['clients'] as List<dynamic>?) ?? [];
+        final isOpen = data['is_open'] != false;
+        final openReason = data['open_reason']?.toString() ?? 'Branch Operations Suspended';
+        final isLateEntry = _canAuthorizeLateEntry(ref.watch(authControllerProvider)) &&
+            ref.read(collectionsLateEntryProvider);
+        final canPostClientTx = isOpen || isLateEntry;
+
         if (clients.isEmpty) {
-          return Container(
-            padding: const EdgeInsets.all(32),
-            decoration: BoxDecoration(
-              color: tokens.surface,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: tokens.borderSubtle),
-            ),
-            child: Center(
-              child: Text('No registered active clients found.', style: TextStyle(color: tokens.textMuted)),
-            ),
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (!canPostClientTx)
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(14),
+                  margin: const EdgeInsets.only(bottom: 14),
+                  decoration: BoxDecoration(
+                    color: tokens.warningBg,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: tokens.warningBorder),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.lock_clock_outlined, size: 18, color: tokens.warningDot),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          'Operations Suspended ($openReason) — Collections and field receipts cannot be posted on closed days or weekends.',
+                          style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: tokens.warningText),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              Container(
+                padding: const EdgeInsets.all(32),
+                decoration: BoxDecoration(
+                  color: tokens.surface,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: tokens.borderSubtle),
+                ),
+                child: Center(
+                  child: Text('No registered active clients found.', style: TextStyle(color: tokens.textMuted)),
+                ),
+              ),
+            ],
           );
         }
 
@@ -3927,6 +3988,30 @@ Status: CONFIRMED & POSTED TO LEDGER''';
               style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: tokens.textPrimary),
             ),
             const SizedBox(height: 16),
+
+            if (!canPostClientTx)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(14),
+                margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(
+                  color: tokens.warningBg,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: tokens.warningBorder),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.lock_clock_outlined, size: 18, color: tokens.warningDot),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Operations Suspended ($openReason) — Collections and field receipts cannot be posted on closed days or weekends.',
+                        style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: tokens.warningText),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
 
             // Search & Group Filter Card
             Container(
@@ -4675,12 +4760,18 @@ Status: CONFIRMED & POSTED TO LEDGER''';
                     height: 46,
 
                     child: ElevatedButton(
-                      onPressed: _isSubmitting
+                      onPressed: (_isSubmitting || !canPostClientTx)
                           ? null
                           : () {
                               final clientObj = selClient;
                               if (clientObj != null) {
-                                _submitSingleClient(clientObj, dateStr, expRep);
+                                _submitSingleClient(
+                                  clientObj,
+                                  dateStr,
+                                  expRep,
+                                  canPostClientTx,
+                                  openReason,
+                                );
                               }
                             },
                       style: ElevatedButton.styleFrom(
@@ -4691,7 +4782,12 @@ Status: CONFIRMED & POSTED TO LEDGER''';
                       ),
                       child: _isSubmitting
                           ? const CircularProgressIndicator(color: Colors.white)
-                          : const Text('Post Client Transaction', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
+                          : Text(
+                              canPostClientTx
+                                  ? 'Post Client Transaction'
+                                  : 'Suspended ($openReason)',
+                              style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+                            ),
                     ),
                   ),
                 ],
